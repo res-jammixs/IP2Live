@@ -1,0 +1,1 @@
+{"name":"IP2Live_Core","author":"James Michael Restauro Siton","description":"Core plugin for IP2Live. Initializes the IndexedDB telemetry system and provides the custom main menu with Start, Settings, Credits, and Quit Game options.","defaultParameters":[],"parameters":[],"commands":[]}
