@@ -144,6 +144,8 @@ class IP2LiveNameInputScreen extends Scene.Base {
                 mode: 'replace',
                 status: 'Saving Progress',
                 detail: 'Loading Tutorial Stage',
+                fadeMusicOnStart: true,
+                musicFadeDurationMs: 2200,
                 onComplete: startTutorial,
             });
         } else {

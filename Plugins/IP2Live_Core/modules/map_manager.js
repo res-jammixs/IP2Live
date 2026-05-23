@@ -5,7 +5,7 @@
 
 const MapManager = {
     NEXT_STAGE_MAP_ID: 3,
-    DEFAULT_WORLD_SPAWN: { x: 16, y: 0, z: 31 },
+    DEFAULT_WORLD_SPAWN: { x: 6, y: 0, z: 17 },
     DEFAULT_WORLD_EXIT: { x: 16, y: 0, z: 4 },
 
     // Fallback ordered stage list. Maps named "Stage X Level Y" in treeMaps.json
@@ -188,6 +188,8 @@ const MapManager = {
                 mode: opts.loadingMode || 'replace',
                 status: opts.status || this._loadingStatusFor(targetMapId, currentMapId),
                 detail: opts.detail || this._stageName(targetMapId),
+                fadeMusicOnStart: opts.fadeMusicOnStart !== false,
+                musicFadeDurationMs: opts.musicFadeDurationMs || 2200,
                 onComplete: function () {
                     manager._goToImmediate(targetMapId, opts);
                     if (typeof opts.onAfterLoad === 'function') opts.onAfterLoad(targetMapId);
@@ -345,6 +347,8 @@ const MapManager = {
                 mode: opts.loadingMode || 'replace',
                 status: opts.status || 'Loading Tutorial Stage',
                 detail: opts.detail || 'Loading New Game',
+                fadeMusicOnStart: opts.fadeMusicOnStart !== false,
+                musicFadeDurationMs: opts.musicFadeDurationMs || 2200,
                 onComplete: function () {
                     manager.goTo(tutorialMapId, { useLoading: false });
                     afterLoad();
@@ -364,6 +368,17 @@ const MapManager = {
         for (let i = 0; i < this.stages.length; i++) {
             const stage = this.stages[i];
             if (!this.isGameplayStage(stage.id)) continue;
+
+            if (IP2Live.GameplayManager && typeof IP2Live.GameplayManager.registerStageGameplayQuests === 'function') {
+                const gameplayQuestIds = IP2Live.GameplayManager.registerStageGameplayQuests(qm, this, stage);
+                if (gameplayQuestIds && gameplayQuestIds.length) {
+                    qm.registerMapQuests(stage.id, gameplayQuestIds, {
+                        append: true,
+                        autoStart: true,
+                        showFinished: false,
+                    });
+                }
+            }
 
             const questId = this._stageQuestId(stage);
             const existingQuest = qm.quests && qm.quests[questId];
@@ -613,6 +628,8 @@ const MapManager = {
         const mapId = this._getMapIdFromScene(scene);
         if (!this.isGameplayStage(mapId)) return false;
 
+        this._ensureStageMusic(scene, mapId);
+
         if (!scene._ip2liveStageFoundationSynced) {
             scene._ip2liveStageFoundationSynced = this.syncStageFoundation();
         }
@@ -622,6 +639,22 @@ const MapManager = {
         }
 
         this._ensureStageIntro(scene, mapId);
+        return true;
+    },
+
+    _ensureStageMusic(scene, mapId) {
+        const stage = this.stageFor(mapId);
+        const music = IP2Live.MusicManager;
+        if (!stage || !music || !music.ZONE || typeof music.play !== 'function') return false;
+
+        let zone = null;
+        if (stage.stage === 1) zone = music.ZONE.STAGE_1;
+        if (!zone) return false;
+
+        const musicKey = String(mapId) + ':' + zone;
+        if (scene._ip2liveMusicZoneKey === musicKey) return true;
+        scene._ip2liveMusicZoneKey = musicKey;
+        music.play(zone);
         return true;
     },
 

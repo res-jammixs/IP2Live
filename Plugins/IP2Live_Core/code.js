@@ -142,232 +142,6 @@ window.IP2Live = IP2Live;
     }, true, true);
 })();
 
-(function() {
-    let dumped = false;
-    inject(Scene.Map, 'update', function() {
-        this.super();
-        try {
-            if (!dumped && Manager && Manager.Camera) {
-                let keys = Object.keys(Manager.Camera).join(',');
-                document.title = "IP2_DEBUG: " + keys;
-                dumped = true;
-            }
-        } catch(e) {}
-    }, false, true);
-})();
-
-// ================================================================
-//  § 1.7 AUTO CAMERA PANNING (Map Edge Correction)
-//
-//  When the character is near a wall and the camera ends up
-//  outside the map, this system automatically and smoothly pans the
-//  camera back inside the room.
-// ================================================================
-(function() {
-    const PAN_SPEED = 3.0; // Degrees to rotate per frame when auto-panning
-    const MARGIN_TILES = 1; // Tolerance before panning triggers
-
-    inject(Scene.Map, 'update', function() {
-        this.super();
-
-        try {
-            const map = this.currentMap;
-            if (!map || !map.mapProperties) return;
-
-            const hero = this.heroMapObject || (this.mapObjects && this.mapObjects[0]);
-            if (!hero || !hero.position) return;
-
-            // RPG Paper Maker stores the active camera object directly on the scene
-            const cam = this.camera;
-            if (!cam || !cam.getThreeCamera) return;
-
-            const cam3 = cam.getThreeCamera(); // Gets the underlying Three.js camera
-            if (!cam3) return;
-
-            const ss = (Common.Datas && Common.Datas.Systems && Common.Datas.Systems.SQUARE_SIZE) || 16;
-            const mapW = (map.mapProperties.length || 0) * ss;
-            const mapH = (map.mapProperties.width || 0) * ss;
-            if (mapW <= 0 || mapH <= 0) return;
-
-            // Camera world bounds check
-            const cx = cam3.position.x;
-            const cz = cam3.position.z;
-            const limitMargin = MARGIN_TILES * ss;
-
-            const isOutLeft   = cx < -limitMargin;
-            const isOutRight  = cx > mapW + limitMargin;
-            const isOutTop    = cz < -limitMargin;
-            const isOutBottom = cz > mapH + limitMargin;
-
-            // If the camera is outside the boundaries, auto-pan it
-            if (isOutLeft || isOutRight || isOutTop || isOutBottom) {
-                // Determine direction based on which wall we clip through
-                const panAmount = (isOutLeft || isOutTop) ? PAN_SPEED : -PAN_SPEED;
-                
-                // RPM Camera properties
-                if (typeof cam.addHorizontalAngle === 'function') {
-                    cam.addHorizontalAngle(panAmount);
-                } else if (cam.horizontalAngle !== undefined) {
-                    cam.horizontalAngle += panAmount;
-                }
-                
-                // Force engine to recalculate camera matrices
-                if (typeof cam.update === 'function') {
-                    cam.update();
-                } else if (typeof cam.updateAngles === 'function') {
-                    cam.updateAngles();
-                }
-            }
-        } catch (e) {}
-    }, false, true);
-})();
-
-
-
-(function() {
-    // ── Tuning constants ─────────────────────────────────────────
-    // How many EXTRA tile-lengths of margin to leave beyond the camera
-    // position itself (accounts for the visible frustum width).
-    // Increase if you still see clipping; decrease if locks feel too early.
-    const FRUSTUM_MARGIN_TILES = 5;
-
-    // Estimate of how many radians RPM rotates the camera per key press.
-    // Made intentionally larger than the real step so the check acts as a
-    // lookahead buffer — blocks a little BEFORE the clip actually happens.
-    const ROT_STEP_RAD = 0.18; // ≈ 10° per tick lookahead
-
-    // Fallback: tile distance from edge that triggers the proximity lock
-    const BORDER_THRESHOLD = 5;
-
-    // ── Camera shortcut cache ────────────────────────────────────
-    let camLeftSC = [], camRightSC = [];
-    let shortcutsReady = false;
-
-    function loadShortcuts() {
-        if (shortcutsReady) return;
-        try {
-            const cmds = Data.Keyboards.getCommandsGraphics();
-            for (let i = 0; i < cmds.length; i++) {
-                if (cmds[i].id === 9  && cmds[i].sc) camLeftSC  = cmds[i].sc;
-                if (cmds[i].id === 10 && cmds[i].sc) camRightSC = cmds[i].sc;
-            }
-            shortcutsReady = true;
-        } catch(e) {}
-    }
-
-    function isLeftCam(key) {
-        for (let i = 0; i < camLeftSC.length;  i++) if (Data.Keyboards.isKeyEqual(key, camLeftSC[i]))  return true;
-        return false;
-    }
-    function isRightCam(key) {
-        for (let i = 0; i < camRightSC.length; i++) if (Data.Keyboards.isKeyEqual(key, camRightSC[i])) return true;
-        return false;
-    }
-
-    // ── Scene context helper ─────────────────────────────────────
-    function getCtx(scene) {
-        try {
-            const hero = scene.heroMapObject
-                || (scene.mapObjects && scene.mapObjects[0])
-                || null;
-            if (!hero || !hero.position) return null;
-
-            const map = scene.currentMap;
-            if (!map || !map.mapProperties) return null;
-
-            const ss   = (Common.Datas && Common.Datas.Systems && Common.Datas.Systems.SQUARE_SIZE) || 16;
-            const mapW = (map.mapProperties.length || 0) * ss;
-            const mapH = (map.mapProperties.width  || 0) * ss;
-            if (mapW <= 0 || mapH <= 0) return null;
-
-            // Three.js camera
-            const cam3 = Manager.Camera && Manager.Camera.camera;
-
-            return { heroPos: hero.position, mapW, mapH, ss, cam3 };
-        } catch(e) { return null; }
-    }
-
-    // ── Primary check: predict camera position after rotation ────
-    // Returns true if rotating in `direction` (+1 = right, -1 = left)
-    // would push the camera outside the map bounds.
-    function predictWouldClip(ctx, direction) {
-        try {
-            if (!ctx.cam3) return false; // skip — let fallback handle it
-
-            const heroPos  = ctx.heroPos;
-            const cam3     = ctx.cam3;
-
-            // Current camera offset from hero in the XZ plane
-            const dx = cam3.position.x - heroPos.x;
-            const dz = cam3.position.z - heroPos.z;
-            const distance   = Math.sqrt(dx * dx + dz * dz);
-            if (distance < 0.01) return false;
-
-            const currentAngle = Math.atan2(dx, dz);
-            const newAngle     = currentAngle + direction * ROT_STEP_RAD;
-
-            // Projected camera position after rotation
-            const newCamX = heroPos.x + distance * Math.sin(newAngle);
-            const newCamZ = heroPos.z + distance * Math.cos(newAngle);
-
-            // Frustum margin — derived from the actual camera FOV if available,
-            // otherwise fall back to the tile-count constant.
-            let margin = FRUSTUM_MARGIN_TILES * ctx.ss;
-            try {
-                const fovRad  = (cam3.fov || 45) * (Math.PI / 180);
-                const aspect  = cam3.aspect || (16 / 9);
-                margin = Math.max(margin, distance * Math.tan(fovRad / 2) * aspect);
-            } catch(e) {}
-
-            return (
-                newCamX - margin < 0          ||
-                newCamX + margin > ctx.mapW   ||
-                newCamZ - margin < 0          ||
-                newCamZ + margin > ctx.mapH
-            );
-        } catch(e) { return false; }
-    }
-
-    // ── Fallback check: hero tile proximity ──────────────────────
-    function heroNearBorder(ctx) {
-        try {
-            const tx = ctx.heroPos.x / ctx.ss;
-            const tz = ctx.heroPos.z / ctx.ss;
-            const mW = ctx.mapW / ctx.ss;
-            const mH = ctx.mapH / ctx.ss;
-            return (tx < BORDER_THRESHOLD || tx > mW - BORDER_THRESHOLD ||
-                    tz < BORDER_THRESHOLD || tz > mH - BORDER_THRESHOLD);
-        } catch(e) { return false; }
-    }
-
-    // ── Key intercept ────────────────────────────────────────────
-    inject(Scene.Map, 'onKeyPressedAndRepeat', function(key) {
-        loadShortcuts();
-
-        const left  = isLeftCam(key);
-        const right = isRightCam(key);
-
-        if (left || right) {
-            const ctx = getCtx(this);
-            if (ctx) {
-                const direction = left ? -1 : 1;
-
-                if (ctx.cam3) {
-                    // Primary: precise per-direction predictive check
-                    if (predictWouldClip(ctx, direction)) return true;
-                } else {
-                    // Fallback: block all rotation when hero is near any edge
-                    if (heroNearBorder(ctx)) return true;
-                }
-            }
-        }
-
-        return this.super(key);
-    }, true, true);
-})();
-
-
-
 // ================================================================
 //  § 1.5  GLOBAL CSS OVERRIDES (Font Anti-Aliasing)
 //  Injects CSS to force hard edges on fonts for a crisper, pixel-
@@ -876,14 +650,42 @@ IP2Live.LightingManagerReady = (async function () {
 }());
 
 // ================================================================
-//  Section 2.5.2  QUEST ARROW ASSET LOADER
+//  Section 2.5.2  QUEST PATHFINDER ASSET LOADER
+//  Read-only map-grid helper used by the quest guide route renderer.
+// ================================================================
+IP2Live.QuestPathfinderReady = (async function () {
+    const root = Common.Platform.ROOT_DIRECTORY;
+    const src  = root + 'Plugins/IP2Live_Core/assets/quest_pathfinder.js';
+    try {
+        const versionedSrc = src + '?v=20260523_quest_pathfinder_01_' + Date.now();
+        let resp = await fetch(versionedSrc, { cache: 'no-store' });
+        if (!resp.ok) {
+            console.warn('[IP2Live] Versioned quest pathfinder asset fetch failed, retrying plain path:', versionedSrc);
+            resp = await fetch(src, { cache: 'no-store' });
+        }
+        if (!resp.ok) throw new Error('HTTP ' + resp.status);
+        const code = await resp.text();
+        new Function(
+            'Common', 'Core', 'Data', 'Graphic',
+            'Manager', 'Scene', 'Model', 'Main', 'THREE', 'IP2Live', 'inject',
+            code
+        )(Common, Core, Data, Graphic, Manager, Scene, Model, Main, THREE, IP2Live, inject);
+        console.log('[IP2Live] Quest pathfinder asset loaded from:', resp.url || src);
+    } catch (e) {
+        console.error('[IP2Live] Failed to load quest pathfinder asset:', src, e);
+    }
+}());
+
+// ================================================================
+//  Section 2.5.3  QUEST ARROW ASSET LOADER
 //  Reusable world arrow/path marker lives in the plugin assets folder.
 // ================================================================
 IP2Live.QuestArrowAssetReady = (async function () {
+    if (IP2Live.QuestPathfinderReady) await IP2Live.QuestPathfinderReady;
     const root = Common.Platform.ROOT_DIRECTORY;
     const src  = root + 'Plugins/IP2Live_Core/assets/quest_arrow.js';
     try {
-        const versionedSrc = src + '?v=20260518_quest_arrow_02_' + Date.now();
+        const versionedSrc = src + '?v=20260523_quest_arrow_pathfinder_01_' + Date.now();
         let resp = await fetch(versionedSrc, { cache: 'no-store' });
         if (!resp.ok) {
             console.warn('[IP2Live] Versioned quest arrow asset fetch failed, retrying plain path:', versionedSrc);
@@ -903,12 +705,50 @@ IP2Live.QuestArrowAssetReady = (async function () {
 }());
 
 // ================================================================
-//  Section 2.5.3  QUEST MANAGER LOADER
+//  Section 2.5.4  GAMEPLAY MANAGER LOADER
+//  Stage gameplay screens and gameplay quest hooks live in
+//  gameplay/IPWires/modules.
+// ================================================================
+IP2Live.GameplayManagerReady = (async function () {
+    if (IP2Live.QuestArrowAssetReady) await IP2Live.QuestArrowAssetReady;
+    if (IP2Live.DialogueManagerReady) await IP2Live.DialogueManagerReady;
+    const root = Common.Platform.ROOT_DIRECTORY;
+    const baseDir = root + 'Plugins/IP2Live_Core/gameplay/IPWires/modules/';
+    const files = [
+        'ip_wires_tutorial.js',
+        'ip_wires_gameplay.js',
+    ];
+    try {
+        for (let i = 0; i < files.length; i++) {
+            const src = baseDir + files[i];
+            const versionedSrc = src + '?v=20260523_ip_wires_02_' + Date.now();
+            let resp = await fetch(versionedSrc, { cache: 'no-store' });
+            if (!resp.ok) {
+                console.warn('[IP2Live] Versioned gameplay module fetch failed, retrying plain path:', versionedSrc);
+                resp = await fetch(src, { cache: 'no-store' });
+            }
+            if (!resp.ok) throw new Error('HTTP ' + resp.status);
+            const code = await resp.text();
+            new Function(
+                'Common', 'Core', 'Data', 'Graphic',
+                'Manager', 'Scene', 'Model', 'Main', 'THREE', 'IP2Live', 'inject',
+                code
+            )(Common, Core, Data, Graphic, Manager, Scene, Model, Main, THREE, IP2Live, inject);
+            console.log('[IP2Live] Gameplay module loaded from:', resp.url || src);
+        }
+    } catch (e) {
+        console.error('[IP2Live] Failed to load gameplay modules:', baseDir, e);
+    }
+}());
+
+// ================================================================
+//  Section 2.5.5  QUEST MANAGER LOADER
 //  Objective queues, completion state, and the upper-left quest panel.
 // ================================================================
 IP2Live.QuestManagerReady = (async function () {
     if (IP2Live.LightingManagerReady) await IP2Live.LightingManagerReady;
     if (IP2Live.QuestArrowAssetReady) await IP2Live.QuestArrowAssetReady;
+    if (IP2Live.GameplayManagerReady) await IP2Live.GameplayManagerReady;
     const root = Common.Platform.ROOT_DIRECTORY;
     const src  = root + 'Plugins/IP2Live_Core/modules/quest_manager.js';
     try {
@@ -937,6 +777,7 @@ IP2Live.QuestManagerReady = (async function () {
 // ================================================================
 IP2Live.MapManagerReady = (async function () {
     if (IP2Live.DialogueManagerReady) await IP2Live.DialogueManagerReady;
+    if (IP2Live.GameplayManagerReady) await IP2Live.GameplayManagerReady;
     const root = Common.Platform.ROOT_DIRECTORY;
     const src  = root + 'Plugins/IP2Live_Core/modules/map_manager.js';
     try {

@@ -505,6 +505,8 @@ class IP2LiveEndCreditsScene extends Scene.Base {
                 mode: 'reset',
                 status: 'Loading New Game',
                 detail: 'Rebooting infiltration route',
+                fadeMusicOnStart: true,
+                musicFadeDurationMs: 2200,
                 onComplete: function () {
                     IP2Live.MapManager.goToTutorial({ useLoading: false });
                 },
@@ -591,7 +593,7 @@ class IP2LiveEndCreditsScene extends Scene.Base {
         }
 
         lines.push('');
-        lines.push('Default spawn: X:16 Y:0 Z:31');
+        lines.push('Default spawn: X:6 Y:0 Z:17');
         lines.push('Default exit node: X:16 Y:0 Z:4');
         return lines.join('\n');
     }
