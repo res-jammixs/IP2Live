@@ -152,6 +152,8 @@ class IP2LiveLoadGameMenu extends Scene.Base {
                         mode: 'replace',
                         status: 'Loading Next Level',
                         detail: 'Restoring save slot ' + slotLabel,
+                        fadeMusicOnStart: true,
+                        musicFadeDurationMs: 2200,
                         onComplete: async function () {
                             Core.Game.current = game;
                             if (Data.TitlescreenGameover.isTitleBackgroundVideo) Manager.Videos.stop();

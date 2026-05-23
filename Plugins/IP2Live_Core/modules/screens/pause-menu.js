@@ -123,6 +123,8 @@ class IP2LivePauseMenu extends Scene.Base {
                         mode: 'replace',
                         status: 'Loading Next Level',
                         detail: 'Rebuilding current stage state',
+                        fadeMusicOnStart: true,
+                        musicFadeDurationMs: 2200,
                         onComplete: function () {
                             IP2Live.RestartManager.restartCurrentLevel();
                         },

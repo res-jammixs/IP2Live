@@ -313,6 +313,11 @@ class IP2LiveQuestArrowGuide {
             ? objective.routeTiles
             : null;
 
+        if (!routeTiles && IP2Live.QuestPathfinder && typeof IP2Live.QuestPathfinder.pathForObjective === 'function') {
+            const smartRoute = IP2Live.QuestPathfinder.pathForObjective(objective, ctx);
+            if (smartRoute && smartRoute.length > 1) routeTiles = smartRoute;
+        }
+
         if (!routeTiles) {
             const heroPos = this._heroEditorPosition(hero, ctx);
             routeTiles = heroPos
