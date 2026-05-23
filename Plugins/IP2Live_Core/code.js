@@ -1140,36 +1140,3 @@ IP2Live.ScreenModulesReady = (async function () {
 }());
 
 console.log('[IP2Live] IP2Live_Core plugin loaded.');
-
-
-
-// ================================================================
-//  § X. FIX FOR 3D OBJECT COLLISIONS WITHOUT DEBUG BOUNDING BOXES
-//  Forces the engine to process bounding box collision logic by
-//  fooling it into thinking 'showBB' is true, but hides the meshes.
-// ================================================================
-if (typeof Data !== 'undefined' && Data.Systems) {
-    Data.Systems.showBB = true;
-}
-
-if (typeof Core !== 'undefined' && Core.BoundingBox) {
-    const OrigBoundingBox = Core.BoundingBox;
-    Core.BoundingBox = class extends OrigBoundingBox {
-        constructor(...args) {
-            super(...args);
-            if (this.mesh) {
-                this.mesh.visible = false;
-            }
-        }
-    };
-
-    const origUpdate = Core.BoundingBox.prototype.update;
-    if (origUpdate) {
-        Core.BoundingBox.prototype.update = function(...args) {
-            origUpdate.apply(this, args);
-            if (this.mesh && this.mesh.visible) {
-                this.mesh.visible = false;
-            }
-        };
-    }
-}
