@@ -695,6 +695,15 @@ class IP2LiveLoadingScreen extends Scene.Base {
 
     static show(options) {
         const opts = options || {};
+        if (opts.fadeMusicOnStart && IP2Live.MusicManager) {
+            const fadeMs = typeof opts.musicFadeDurationMs === 'number' ? opts.musicFadeDurationMs : 2200;
+            if (typeof IP2Live.MusicManager.fadeOutForTransition === 'function') {
+                IP2Live.MusicManager.fadeOutForTransition(fadeMs);
+            } else if (typeof IP2Live.MusicManager.stop === 'function') {
+                IP2Live.MusicManager.stop(fadeMs);
+            }
+        }
+
         const scene = new IP2LiveLoadingScreen(opts);
         const mode = opts.mode || 'push';
         if (mode === 'replace') {
