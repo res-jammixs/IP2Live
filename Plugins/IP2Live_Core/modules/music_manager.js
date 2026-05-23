@@ -24,6 +24,8 @@
 var MUSIC_TRACKS = {
     MAIN_MENU: { src: 'Songs/Musics/Main Menu.mp3', volume: 0.95 },
     TUTORIAL: { src: 'Songs/Musics/Tutorial.mp3', volume: 0.65 },
+    STAGE_1: { src: 'Songs/Musics/Stage 1 Music.mp3', volume: 0.72 },
+    GAMEPLAY_1: { src: 'Songs/Musics/Gameplay 1.mp3', volume: 0.58 },
 };
 
 // ── SHARED AudioContext ──────────────────────────────────────────
@@ -57,6 +59,8 @@ var MusicManager = {
     ZONE: {
         MAIN_MENU: 'MAIN_MENU',
         TUTORIAL: 'TUTORIAL',
+        STAGE_1: 'STAGE_1',
+        GAMEPLAY_1: 'GAMEPLAY_1',
     },
 
     // ────────────────────────────────────────────────────────────
@@ -110,10 +114,36 @@ var MusicManager = {
     // ────────────────────────────────────────────────────────────
     stop: function (fadeDurationMs) {
         if (!this._gainNode) return;
+        if (this._fadeTimer) {
+            clearInterval(this._fadeTimer);
+            this._fadeTimer = null;
+        }
         var dur = (fadeDurationMs !== undefined) ? fadeDurationMs : this._fadeDuration;
+        var fadingGain = this._gainNode;
+        var fadingSource = this._source;
         var self = this;
-        this._fadeGain(this._gainNode, this._gainNode.gain.value, 0, dur, function () {
-            self._stopSource();
+        this._fadeGain(fadingGain, fadingGain.gain.value, 0, dur, function () {
+            self._stopSource(fadingSource, fadingGain);
+        });
+    },
+
+    fadeOutForTransition: function (fadeDurationMs) {
+        if (!this._gainNode) return;
+        if (this._fadeTimer) {
+            clearInterval(this._fadeTimer);
+            this._fadeTimer = null;
+        }
+
+        var dur = (fadeDurationMs !== undefined) ? fadeDurationMs : 2200;
+        var fadingGain = this._gainNode;
+        var fadingSource = this._source;
+        this._source = null;
+        this._gainNode = null;
+        this._currentZone = null;
+
+        var self = this;
+        this._fadeGain(fadingGain, fadingGain.gain.value, 0, dur, function () {
+            self._stopSource(fadingSource, fadingGain);
         });
     },
 
@@ -235,10 +265,14 @@ var MusicManager = {
         }
     },
 
-    _stopSource: function () {
-        if (this._source) { try { this._source.stop(); } catch (e) { } this._source = null; }
-        if (this._gainNode) { this._gainNode.disconnect(); this._gainNode = null; }
-        this._currentZone = null;
+    _stopSource: function (source, gainNode) {
+        var targetSource = source || this._source;
+        var targetGain = gainNode || this._gainNode;
+        if (targetSource) { try { targetSource.stop(); } catch (e) { } }
+        if (targetGain) { try { targetGain.disconnect(); } catch (e) { } }
+        if (!source || this._source === source) this._source = null;
+        if (!gainNode || this._gainNode === gainNode) this._gainNode = null;
+        if ((!source || this._source === null) && (!gainNode || this._gainNode === null)) this._currentZone = null;
     },
 
     // Linear gain ramp via setInterval (for stop fade-out)

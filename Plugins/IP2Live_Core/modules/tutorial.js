@@ -139,8 +139,6 @@ const Tutorial = {
         this._questTargetHighRingMesh = null;
         this._mapSceneRef = null;
         this._lastHeroRef = null;
-        this._lastCollisionLogKey = '';
-        this._lastCollisionLogTick = 0;
         this.isFadingOut = false;
         this.fadeMode = null;
         this.fadeAlpha = 0;
@@ -686,56 +684,6 @@ const Tutorial = {
                 Manager.Events.keysPressed.splice(i, 1);
             }
         }
-    },
-
-    _restoreHeroCollision(hero) {
-        if (!hero) return;
-        hero.through = false;
-        hero.ignoreCollision = false;
-        if (typeof hero.ignoreBoundingBox !== 'undefined') hero.ignoreBoundingBox = false;
-        if (typeof hero.noClip !== 'undefined') hero.noClip = false;
-        if (typeof hero.isThrough !== 'undefined') hero.isThrough = false;
-        if (typeof hero.canPassThrough !== 'undefined') hero.canPassThrough = false;
-        if (hero.properties) {
-            if (typeof hero.properties.through !== 'undefined') hero.properties.through = false;
-            if (typeof hero.properties.ignoreCollision !== 'undefined') hero.properties.ignoreCollision = false;
-        }
-    },
-
-    _debugCollisionState(hero, scene) {
-        const dialogueActive = this._dialogueLocksMovement();
-        const movementEnabled = !dialogueActive;
-        const collisionEnabled = !hero.through &&
-            !hero.ignoreCollision &&
-            !hero.ignoreBoundingBox &&
-            !hero.noClip &&
-            !hero.isThrough &&
-            !hero.canPassThrough;
-        const mapId = scene && (scene.id || scene.mapID || (scene.currentMap && scene.currentMap.id));
-        const key = [
-            this.isActive ? 'active' : 'inactive',
-            this.phase,
-            dialogueActive ? 'dialogue' : 'free',
-            movementEnabled ? 'move-on' : 'move-off',
-            collisionEnabled ? 'collision-on' : 'collision-off',
-            hero.through ? 'through' : 'solid',
-            hero.ignoreCollision ? 'ignore-collision' : 'normal-collision',
-            mapId
-        ].join('|');
-        const tick = this.animTick || 0;
-
-        if (this._lastCollisionLogKey === key && tick - (this._lastCollisionLogTick || 0) < 90) return;
-        this._lastCollisionLogKey = key;
-        this._lastCollisionLogTick = tick;
-
-        console.log("=== TUTORIAL COLLISION DEBUG ===");
-        console.log(`map id: ${mapId}`);
-        console.log(`dialogue active/inactive: ${dialogueActive ? "active" : "inactive"}`);
-        console.log(`player movement enabled/disabled: ${movementEnabled ? "enabled" : "disabled"}`);
-        console.log(`collision enabled/disabled: ${collisionEnabled ? "enabled" : "disabled"}`);
-        console.log(`player "through" or no-clip state: through=${!!hero.through}, ignoreCollision=${!!hero.ignoreCollision}, ignoreBoundingBox=${!!hero.ignoreBoundingBox}, noClip=${!!hero.noClip}`);
-        console.log(`current tutorial phase/state: ${this.phase}`);
-        console.log("===============================");
     },
 
     _checkQuestCompletion() {
@@ -2289,7 +2237,7 @@ Scene.Map.prototype.drawHUD = function () {
     }
 };
 
-// Inject logic into Map Update to enforce collisions and debug logging
+// Inject logic into Map Update for tutorial scene context and dialogue movement locks.
 const _origMapUpdate = Scene.Map.prototype.update;
 Scene.Map.prototype.update = function () {
     Tutorial._setSceneContext(this);
@@ -2298,21 +2246,12 @@ Scene.Map.prototype.update = function () {
         this.heroMapObject ||
         (this.mapObjects && this.mapObjects[0]);
 
-    let hero = getHero();
-    if (hero && Tutorial._isTutorialMap(this)) {
-        Tutorial._restoreHeroCollision(hero);
-        if (Tutorial._dialogueLocksMovement()) {
-            Tutorial._stripMovementInputs();
-        }
+    const hero = getHero();
+    if (hero && Tutorial._isTutorialMap(this) && Tutorial._dialogueLocksMovement()) {
+        Tutorial._stripMovementInputs();
     }
 
     _origMapUpdate.call(this);
-
-    hero = getHero();
-    if (hero && Tutorial._isTutorialMap(this)) {
-        Tutorial._restoreHeroCollision(hero);
-        Tutorial._debugCollisionState(hero, this);
-    }
 };
 
 console.log('[IP2Live] tutorial.js module loaded.');
