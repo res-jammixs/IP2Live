@@ -140,7 +140,7 @@ const IP2LiveGameManager = {
             targetClearMs: 140000,
             objectiveHandler: { manager: 'PatchPanelGameplayManager', method: '_handlePatchObjective' },
             quests: [
-                { id: 'stage.4.ip_patch_panel.01', objectiveId: 'route_ip_patch_panel_01', title: 'SECURE PATCH PANEL NODE', label: 'Patch Panel Node', targetTile: { x: 16, y: 0, z: 18 } },
+                { id: 'stage.4.ip_patch_panel.01', objectiveId: 'route_ip_patch_panel_01', title: 'SECURE PATCH PANEL NODE', label: 'Patch Panel Node', targetTile: { x: 10, y: 0, z: 18 } },
             ],
         },
         ip_cidr_binary_panel: {
