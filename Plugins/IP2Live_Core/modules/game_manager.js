@@ -136,6 +136,12 @@ const IP2LiveGameManager = {
                 manager: 'HarderWiresGameplayManager',
                 method: 'launchHarderWireGameplay',
             },
+            ip_network_repair: {
+                id: 'ip_network_repair',
+                mapId: 15,
+                manager: 'NetworkRepairGameplayManager',
+                method: 'launchNetworkRepairGameplay',
+            },
         },
     },
 
@@ -395,6 +401,7 @@ const IP2LiveGameManager = {
             retries: 0,
             mistakeCount: 0,
             mistakes: [],
+            mistakeEvents: [],
         };
         this._reportActiveAttempts[gameplayId] = attempt;
         this._logTelemetryEvent('attempt_start', attempt);
@@ -407,6 +414,8 @@ const IP2LiveGameManager = {
         const endedAt = Date.now();
         const durationMs = Math.max(0, endedAt - Number(open.startedAt || endedAt));
         const metrics = this._extractGameplayMetrics(gameplayId, data.result || data.payload || {});
+        const retries = Math.max(Number(open.retries || 0) || 0, Number(metrics.retries || 0) || 0);
+        const mistakeCount = Math.max(Number(open.mistakeCount || 0) || 0, Number(metrics.mistakeCount || 0) || 0);
 
         const completion = {
             sessionId: open.sessionId,
@@ -423,8 +432,8 @@ const IP2LiveGameManager = {
             timestamp: endedAt,
             passed: !!passed,
             durationMs: durationMs,
-            retries: open.retries || 0,
-            mistakeCount: open.mistakeCount || 0,
+            retries: retries,
+            mistakeCount: mistakeCount,
             attemptsUsed: Number(metrics.attemptsUsed || 0) || 0,
             maxAttempts: Number(metrics.maxAttempts || 0) || 0,
             mistakeRate: Number(metrics.mistakeRate || 0) || 0,
@@ -432,6 +441,7 @@ const IP2LiveGameManager = {
             payload: Object.assign({}, metrics.payload || {}, {
                 result: this._clonePlain(data.result || {}),
                 mistakes: this._clonePlain(open.mistakes || []),
+                mistakeEvents: this._clonePlain(open.mistakeEvents || []),
             }),
             notes: metrics.notes || null,
         };
@@ -450,6 +460,8 @@ const IP2LiveGameManager = {
             return {
                 attemptsUsed: attemptsUsed,
                 maxAttempts: maxAttempts,
+                retries: attemptsUsed,
+                mistakeCount: mistakes.length,
                 mistakeRate: maxAttempts > 0 ? attemptsUsed / maxAttempts : 0,
                 accuracy: accuracy,
                 payload: {
@@ -468,6 +480,7 @@ const IP2LiveGameManager = {
                 attemptsUsed: delivered,
                 maxAttempts: Number(r.totalPackets || delivered || 0) || 0,
                 retries: Number(r.restarts || 0) || 0,
+                mistakeCount: mistakes,
                 mistakeRate: delivered > 0 ? mistakes / delivered : 0,
                 accuracy: accuracy,
                 payload: {
@@ -486,6 +499,7 @@ const IP2LiveGameManager = {
                 attemptsUsed: 1,
                 maxAttempts: 1,
                 retries: Number(r.retries || 0) || 0,
+                mistakeCount: Number(r.retries || 0) || 0,
                 mistakeRate: Number(r.passed) === false ? 1 : 0,
                 accuracy: Number.isFinite(errorDistance) ? (errorDistance === 0 ? 1 : 0) : (r.passed ? 1 : 0),
                 payload: {
@@ -506,6 +520,7 @@ const IP2LiveGameManager = {
                 attemptsUsed: Number(r.validationAttempts || 1) || 1,
                 maxAttempts: 0,
                 retries: Math.max(0, (Number(r.validationAttempts || 1) || 1) - 1),
+                mistakeCount: wrongChecks,
                 mistakeRate: totalChecks > 0 ? wrongChecks / totalChecks : (r.passed ? 0 : 1),
                 accuracy: accuracy,
                 payload: {
@@ -521,6 +536,7 @@ const IP2LiveGameManager = {
                 attemptsUsed: 1,
                 maxAttempts: 1,
                 retries: passed ? 0 : 1,
+                mistakeCount: Number(r.mistakeCount || 0) || (passed ? 0 : 1),
                 mistakeRate: passed ? 0 : 1,
                 accuracy: passed ? 1 : 0,
                 payload: {
@@ -536,6 +552,7 @@ const IP2LiveGameManager = {
             attemptsUsed: Number(r.attemptsUsed || 0) || 0,
             maxAttempts: Number(r.maxAttempts || 0) || 0,
             retries: Number(r.retries || 0) || 0,
+            mistakeCount: Number(r.mistakeCount || 0) || 0,
             mistakeRate: Number(r.mistakeRate || 0) || 0,
             accuracy: Number(r.accuracy || 0) || 0,
             payload: this._clonePlain(r || {}),
@@ -731,6 +748,8 @@ const IP2LiveGameManager = {
                     _fromGameManager: true,
                     _reservedAttempt: (questId || spec.id) + ':' + (objectiveId || spec.objectiveId),
                     wireCount: opts.wireCount !== undefined ? opts.wireCount : spec.wireCount,
+                }));
+            }
             if (node.id === 'ip_network_repair' && IP2Live.NetworkRepairGameplayManager && typeof IP2Live.NetworkRepairGameplayManager.launchNetworkRepairGameplay === 'function') {
                 return IP2Live.NetworkRepairGameplayManager.launchNetworkRepairGameplay(Object.assign({}, opts, {
                     _fromGameManager: true,
@@ -761,10 +780,18 @@ const IP2LiveGameManager = {
         this.emit('gameplay.mistake', data);
         const active = this._reportActiveAttempt(gameplayId) || this._openReportAttempt(gameplayId, data);
         if (active) {
+            const mistakesThisTry = Array.isArray(data.mistakes) ? data.mistakes.length : 0;
             active.mistakeCount = (active.mistakeCount || 0) + 1;
             if (Array.isArray(data.mistakes) && data.mistakes.length) {
                 for (let i = 0; i < data.mistakes.length; i++) active.mistakes.push(this._clonePlain(data.mistakes[i]));
             }
+            active.mistakeEvents.push({
+                tryNumber: active.mistakeCount,
+                timestamp: Date.now(),
+                mistakesThisTry: mistakesThisTry,
+                attemptsRemaining: Number(data.attemptsRemaining || 0) || 0,
+                mistakes: this._clonePlain(data.mistakes || []),
+            });
             this._logTelemetryEvent('attempt_mistake', {
                 attemptId: active.attemptId,
                 sessionId: active.sessionId,
@@ -774,6 +801,8 @@ const IP2LiveGameManager = {
                 objectiveId: data.objectiveId || active.objectiveId || null,
                 mistakeCount: active.mistakeCount,
                 payload: {
+                    tryNumber: active.mistakeCount,
+                    mistakesThisTry: mistakesThisTry,
                     mistakes: this._clonePlain(data.mistakes || []),
                     attemptsRemaining: Number(data.attemptsRemaining || 0) || 0,
                 },
@@ -866,6 +895,8 @@ const IP2LiveGameManager = {
                 IP2Live.GameplayManager._sendStageBackToFirstWire(spec);
                 return true;
             }
+        }
+
         if (
             gameplayId === 'ip_network_repair' &&
             IP2Live.NetworkRepairGameplayManager &&

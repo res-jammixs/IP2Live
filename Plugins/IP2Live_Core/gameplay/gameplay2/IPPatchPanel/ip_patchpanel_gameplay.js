@@ -650,6 +650,7 @@ class IP2LivePatchPanelGameplayScreen extends Scene.Base {
             this._playConfirm();
         } else {
             this.mistakes++;
+            this._reportRouteMistake(target, selectedClass, correctClass);
             target.flashWrong = 22;
             this._emitBurst(target.x + 24, this._metrics().wireY, '#FF4B5E', 26, 2.8);
             this._emitRouteShock(target, selectedClass, correctClass);
@@ -687,6 +688,30 @@ class IP2LivePatchPanelGameplayScreen extends Scene.Base {
                 size: 1 + Math.random() * 3.3,
             });
         }
+    }
+
+    _reportRouteMistake(packet, selectedClass, correctClass) {
+        if (!IP2Live.GameManager || typeof IP2Live.GameManager.handleGameplayMistake !== 'function') return false;
+        IP2Live.GameManager.handleGameplayMistake('ip_patch_panel_classes', {
+            gameplayId: 'ip_patch_panel_classes',
+            mapId: this.options.mapId || 4,
+            questId: this.options.questId,
+            objectiveId: this.options.objectiveId,
+            mistakes: [{
+                stepKey: 'ip_classification_route',
+                stepLabel: 'IP packet class routing',
+                issueType: 'misroute',
+                expected: correctClass,
+                submitted: selectedClass,
+                sourceClass: correctClass,
+                targetClass: selectedClass,
+                packetIp: packet && packet.ip ? packet.ip : null,
+                packetSerial: packet && packet.serial ? packet.serial : null,
+                gameplayStep: 'packet_classification',
+            }],
+            attemptsRemaining: Math.max(0, this.totalPackets - this.delivered),
+        });
+        return true;
     }
 
     _emitRouteShock(packet, selectedClass, correctClass) {
