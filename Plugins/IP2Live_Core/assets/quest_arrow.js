@@ -22,6 +22,8 @@ class IP2LiveQuestArrowGuide {
         this._targetHighRingMesh = null;
         this._guideEditorUnits = null;
         this._objectiveKey = null;
+        this._smartRouteCacheKey = null;
+        this._smartRouteCache = null;
     }
 
     setObjective(objective) {
@@ -47,6 +49,8 @@ class IP2LiveQuestArrowGuide {
         this._targetRingMesh = null;
         this._targetHighRingMesh = null;
         this._guideEditorUnits = null;
+        this._smartRouteCacheKey = null;
+        this._smartRouteCache = null;
     }
 
     update(context) {
@@ -309,14 +313,7 @@ class IP2LiveQuestArrowGuide {
         const targetTile = this._targetTile(objective);
         const y = targetTile.y * scale + (tileUnits ? 0.12 : 1.8);
         const points = [];
-        let routeTiles = objective && objective.routeTiles && objective.routeTiles.length
-            ? objective.routeTiles
-            : null;
-
-        if (!routeTiles && IP2Live.QuestPathfinder && typeof IP2Live.QuestPathfinder.pathForObjective === 'function') {
-            const smartRoute = IP2Live.QuestPathfinder.pathForObjective(objective, ctx);
-            if (smartRoute && smartRoute.length > 1) routeTiles = smartRoute;
-        }
+        let routeTiles = this._resolveRouteTiles(objective, ctx, hero, targetTile);
 
         if (!routeTiles) {
             const heroPos = this._heroEditorPosition(hero, ctx);
@@ -356,6 +353,51 @@ class IP2LiveQuestArrowGuide {
         }
 
         return points;
+    }
+
+    _resolveRouteTiles(objective, context, hero, targetTile) {
+        const ctx = context || {};
+        const smartRoute = this._smartRoute(objective, ctx, hero, targetTile);
+        if (smartRoute && smartRoute.length > 1) return smartRoute;
+        if (objective && objective.routeTiles && objective.routeTiles.length > 1) return objective.routeTiles;
+        return null;
+    }
+
+    _smartRoute(objective, context, hero, targetTile) {
+        if (!IP2Live.QuestPathfinder || typeof IP2Live.QuestPathfinder.pathForObjective !== 'function') return null;
+        const ctx = context || {};
+        const heroPos = this._heroEditorPosition(hero, ctx);
+        if (!heroPos) return null;
+
+        const mapId = this._mapId(ctx);
+        if (!mapId) return null;
+        const sx = Math.floor(heroPos.x);
+        const sz = Math.floor(heroPos.z);
+        const tx = Math.floor(targetTile.x);
+        const tz = Math.floor(targetTile.z);
+        const key = [
+            mapId,
+            sx,
+            sz,
+            tx,
+            tz,
+            objective && objective.id ? objective.id : 'objective',
+        ].join(':');
+
+        if (this._smartRouteCacheKey === key && this._smartRouteCache && this._smartRouteCache.length > 1) {
+            return this._smartRouteCache;
+        }
+
+        const smartRoute = IP2Live.QuestPathfinder.pathForObjective(objective, ctx);
+        if (smartRoute && smartRoute.length > 1) {
+            this._smartRouteCacheKey = key;
+            this._smartRouteCache = smartRoute;
+            return smartRoute;
+        }
+
+        this._smartRouteCacheKey = key;
+        this._smartRouteCache = null;
+        return null;
     }
 
     _targetTile(objective) {
@@ -423,6 +465,18 @@ class IP2LiveQuestArrowGuide {
             y: pos.y / tileSize,
             z: pos.z / tileSize,
         };
+    }
+
+    _mapId(context) {
+        const ctx = context || {};
+        const scene = ctx.scene || (Scene && Scene.Map && Scene.Map.current) || null;
+        const mapId = scene && (
+            scene.id ||
+            scene.mapID ||
+            (scene.currentMap && scene.currentMap.id) ||
+            (Core.Game.current && Core.Game.current.currentMapID)
+        );
+        return Number(mapId) || (Core.Game.current && Number(Core.Game.current.currentMapID)) || 0;
     }
 
     _questScene(context) {

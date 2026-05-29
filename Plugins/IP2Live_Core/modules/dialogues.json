@@ -1,0 +1,224 @@
+{
+  "version": "dialogues-20260526-01",
+  "dialogues": [
+    {
+      "id": "tutorial.intro",
+      "name": "Tutorial Intro",
+      "title": "MISSION BRIEF",
+      "speaker": "SYSTEM",
+      "timing": "after",
+      "bindings": {
+        "mapId": 1,
+        "trigger": "worldTitle.finished"
+      },
+      "slides": [
+        [
+          "SYSTEM BOOT... NEURAL DECK ONLINE.",
+          "Welcome, Infiltrator."
+        ],
+        [
+          "The world you knew is gone.",
+          "Neo-Gaia is a fractured civilisation where megacorporations",
+          "known as the APEX ELITES seized control of every critical",
+          "facility left standing after the collapse."
+        ],
+        [
+          "Power grids. Water treatment. Medical networks. All locked,",
+          "behind encrypted subnets accessible only to those with the",
+          "proper clearance codes. They have the access. We have nothing."
+        ],
+        [
+          "You were an engineer before the walls went up. You still know",
+          "the systems. You still know the protocols. And you are the",
+          "only one left who can break through."
+        ],
+        [
+          "Your mission:",
+          "Infiltrate the APEX facilities. Crack their subnet protocols.",
+          "Dismantle their infrastructure stage by stage until the world",
+          "belongs to the people once more."
+        ],
+        [
+          "This is not just survival.",
+          "This is reclamation.",
+          "The facility is waiting, Infiltrator.",
+          "Let's get you combat-ready."
+        ]
+      ]
+    },
+    {
+      "id": "tutorial.outro",
+      "name": "Tutorial Outro",
+      "title": "MISSION BRIEF",
+      "speaker": "SYSTEM",
+      "timing": "after",
+      "bindings": {
+        "mapId": 1,
+        "trigger": "tutorial.completed"
+      },
+      "slides": [
+        [
+          "DESTINATION REACHED.",
+          "",
+          "You are now ready to navigate your way through the world.",
+          "Initiating phase shift to the next world..."
+        ]
+      ]
+    },
+    {
+      "id": "stage.3.intro",
+      "name": "Stage 1 Level 1 Intro",
+      "title": "WORLD BRIEF",
+      "speaker": "SYSTEM",
+      "timing": "after",
+      "bindings": {
+        "mapId": 3,
+        "stage": 1,
+        "level": 1,
+        "trigger": "worldTitle.finished"
+      },
+      "slides": [
+        [
+          "Welcome to Stage 1 Level 1.",
+          "",
+          "This subnet sector is live. The route beacon is online, but the path is locked behind unstable IP wire nodes.",
+          "Repair each lever in order, then move to the exit node."
+        ]
+      ]
+    },
+    {
+      "id": "stage1.ipwires.tutorial.opening",
+      "name": "IP Wires Tutorial Opening",
+      "title": "WIRE PATCH",
+      "speaker": "SYSTEM",
+      "timing": "before",
+      "bindings": {
+        "mapId": 3,
+        "gameplayId": "ip_class_wires",
+        "objectiveId": "repair_ip_wires_01",
+        "trigger": "gameplay.before"
+      },
+      "slides": [
+        [
+          "This is your first live wire patch.",
+          "",
+          "Match each source octet to the correct IP class on the destination rail.",
+          "Class A starts from 1 to 126. Class B starts from 128 to 191. Class C starts from 192 to 223. Class D starts from 224 to 239."
+        ]
+      ]
+    },
+    {
+      "id": "stage1.ipwires.tutorial.success",
+      "name": "IP Wires Tutorial Success",
+      "title": "WIRE PATCH",
+      "speaker": "SYSTEM",
+      "timing": "after",
+      "bindings": {
+        "mapId": 3,
+        "gameplayId": "ip_class_wires",
+        "objectiveId": "repair_ip_wires_01",
+        "trigger": "gameplay.completed"
+      },
+      "slides": [
+        [
+          "Patch stable.",
+          "",
+          "Good work. The first lever is repaired and the subnet route is opening.",
+          "Continue to the next wire node."
+        ]
+      ]
+    },
+    {
+      "id": "stage1.ipwires.tutorial.shifted",
+      "name": "IP Wires Tutorial Packets Shifted",
+      "title": "PACKET SHIFT",
+      "speaker": "SYSTEM",
+      "timing": "after",
+      "bindings": {
+        "mapId": 3,
+        "gameplayId": "ip_class_wires",
+        "objectiveId": "repair_ip_wires_01",
+        "trigger": "gameplay.failed"
+      },
+      "slides": [
+        [
+          "Oh no!",
+          "They noticed us and shifted the packets again.",
+          "",
+          "Step back onto the wire node when you are ready.",
+          "The next panel will be a fresh randomized packet set."
+        ]
+      ]
+    },
+    {
+      "id": "stage1.ipwires.recovery.reset",
+      "name": "IP Wires Recovery Reset",
+      "title": "LEVEL INSTABILITY",
+      "speaker": "SYSTEM",
+      "timing": "after",
+      "bindings": {
+        "mapId": 3,
+        "gameplayId": "ip_class_wires",
+        "objectiveId": [
+          "repair_ip_wires_02",
+          "repair_ip_wires_03",
+          "repair_ip_wires_04"
+        ],
+        "trigger": "gameplay.failed"
+      },
+      "slides": [
+        [
+          "Oh no!",
+          "Too many packet errors tripped the APEX rollback circuit.",
+          "",
+          "The first Level 1 lever repair is broken again and needs fixing."
+        ],
+        [
+          "Repair the first lever again.",
+          "After it stabilizes, I will route you back to the active wire node."
+        ]
+      ]
+    },
+    {
+      "id": "stage1.terminal_alpha",
+      "name": "Stage 1 Terminal Alpha",
+      "title": "FIELD TERMINAL",
+      "speaker": "APEX NODE",
+      "timing": "during",
+      "bindings": {
+        "mapId": 3,
+        "itemId": "terminal_alpha",
+        "trigger": "item.interact"
+      },
+      "slides": [
+        [
+          "ACCESS DENIED.",
+          "",
+          "The terminal is locked behind a subnet challenge."
+        ],
+        [
+          "Find the assigned network tools before attempting this breach."
+        ]
+      ]
+    },
+    {
+      "id": "stage1.junction_box_alpha",
+      "name": "Stage 1 Junction Box Alpha",
+      "title": "JUNCTION BOX",
+      "speaker": "SYSTEM",
+      "timing": "during",
+      "bindings": {
+        "mapId": 3,
+        "itemId": "junction_box_alpha",
+        "trigger": "item.interact"
+      },
+      "slides": [
+        [
+          "A live junction box hums behind the panel.",
+          "",
+          "Routing data appears unstable. This may become an interaction point later."
+        ]
+      ]
+    }
+  ]
+}

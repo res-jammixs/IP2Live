@@ -110,12 +110,13 @@ const Tutorial = {
         }
     },
 
-    activate() {
+    activate(options) {
         if (this.isActive) return;
+        const opts = options || {};
         this._syncDialogueContent();
         this._resetQuestManagerState();
         this.isActive = true;
-        this.phase = this.PHASE.INTRO;
+        this.phase = opts.skipIntro ? this.PHASE.MOVE_FB : this.PHASE.INTRO;
         this.slideIndex = 0;
         this.pressedKeys = new Set();
         this._stepTimeout = null;
@@ -166,6 +167,46 @@ const Tutorial = {
 
         if (Manager && Manager.Stack) Manager.Stack.requestPaintHUD = true;
         console.log('[IP2Live] Tutorial finished. Showing replay button.');
+    },
+
+    forceResetState(options) {
+        const opts = options || {};
+        if (this._stepTimeout) {
+            clearTimeout(this._stepTimeout);
+            this._stepTimeout = null;
+        }
+
+        this._detachListeners();
+        this._removeQuestWorldGuides();
+
+        if (this.pressedKeys && typeof this.pressedKeys.clear === 'function') {
+            this.pressedKeys.clear();
+        } else {
+            this.pressedKeys = new Set();
+        }
+
+        this.isActive = false;
+        this.phase = this.PHASE.IDLE;
+        this.slideIndex = 0;
+        this.animTick = 0;
+        this.typeChars = 0;
+        this.typeTimer = 0;
+        this._introEnterTick = 0;
+        this._introSlideLastIdx = -1;
+        this._stepLastPhase = null;
+        this._mapSceneRef = null;
+        this._lastHeroRef = null;
+        this._teleported = false;
+        this.isFadingOut = false;
+        this.fadeMode = null;
+        this.fadeAlpha = 0;
+
+        if (opts.hideQuest !== false && IP2Live.QuestManager && typeof IP2Live.QuestManager.hideQuest === 'function') {
+            IP2Live.QuestManager.hideQuest('tutorial.navigation');
+        }
+
+        if (Manager && Manager.Stack) Manager.Stack.requestPaintHUD = true;
+        return true;
     },
 
     // â”€ Event wiring â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
@@ -1129,7 +1170,12 @@ const Tutorial = {
                 this._removeQuestWorldGuides();
                 const nextId = (IP2Live.MapManager && IP2Live.MapManager.NEXT_STAGE_MAP_ID) || 3;
                 if (Core.Game.current) Core.Game.current.currentMapID = nextId;
-                if (IP2Live.MapManager) {
+                if (IP2Live.GameManager && typeof IP2Live.GameManager.startMapFlow === 'function') {
+                    IP2Live.GameManager.startMapFlow(nextId, null, {
+                        mode: 'stage',
+                        source: 'Tutorial.teleportToNextStage',
+                    });
+                } else if (IP2Live.MapManager) {
                     IP2Live.MapManager.goTo(nextId);
                 } else {
                     Manager.Stack.replace(new Scene.Map(nextId));
@@ -2229,29 +2275,33 @@ window.IP2LiveTutorialDebug = function () {
 };
 
 // Inject the overlay draw call into Scene.Map
-const _origDrawHUD = Scene.Map.prototype.drawHUD;
-Scene.Map.prototype.drawHUD = function () {
-    _origDrawHUD.call(this);
-    if (Tutorial.isActive || Tutorial.phase === Tutorial.PHASE.DONE) {
-        Tutorial.drawOverlay(Common.Platform.ctx, this);
-    }
-};
+if (!Scene.Map.prototype._ip2liveTutorialInjected) {
+    Scene.Map.prototype._ip2liveTutorialInjected = true;
 
-// Inject logic into Map Update for tutorial scene context and dialogue movement locks.
-const _origMapUpdate = Scene.Map.prototype.update;
-Scene.Map.prototype.update = function () {
-    Tutorial._setSceneContext(this);
+    const _origDrawHUD = Scene.Map.prototype.drawHUD;
+    Scene.Map.prototype.drawHUD = function () {
+        _origDrawHUD.call(this);
+        if (Tutorial.isActive || Tutorial.phase === Tutorial.PHASE.DONE) {
+            Tutorial.drawOverlay(Common.Platform.ctx, this);
+        }
+    };
 
-    const getHero = () => (Scene.Map.current && Scene.Map.current.heroMapObject) ||
-        this.heroMapObject ||
-        (this.mapObjects && this.mapObjects[0]);
+    // Inject logic into Map Update for tutorial scene context and dialogue movement locks.
+    const _origMapUpdate = Scene.Map.prototype.update;
+    Scene.Map.prototype.update = function () {
+        Tutorial._setSceneContext(this);
 
-    const hero = getHero();
-    if (hero && Tutorial._isTutorialMap(this) && Tutorial._dialogueLocksMovement()) {
-        Tutorial._stripMovementInputs();
-    }
+        const getHero = () => (Scene.Map.current && Scene.Map.current.heroMapObject) ||
+            this.heroMapObject ||
+            (this.mapObjects && this.mapObjects[0]);
 
-    _origMapUpdate.call(this);
-};
+        const hero = getHero();
+        if (hero && Tutorial._isTutorialMap(this) && Tutorial._dialogueLocksMovement()) {
+            Tutorial._stripMovementInputs();
+        }
+
+        _origMapUpdate.call(this);
+    };
+}
 
 console.log('[IP2Live] tutorial.js module loaded.');

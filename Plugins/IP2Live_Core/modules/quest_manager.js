@@ -182,6 +182,59 @@ class IP2LiveQuestManager {
         if (Manager && Manager.Stack) Manager.Stack.requestPaintHUD = true;
     }
 
+    snapshotProgress() {
+        return {
+            version: 'quest-progress-20260529-01',
+            activeQuestId: this.activeQuestId || null,
+            activeObjectiveId: this.activeObjectiveId || null,
+            activeMapId: this.activeMapId || null,
+            mapQuestMode: !!this._mapQuestMode,
+            visible: !!this.visible,
+            preview: !!this.preview,
+            guideActive: !!this.guideActive,
+            allowCompletion: !!this.allowCompletion,
+            completedObjectives: this._clonePlain(this.completedObjectives || {}),
+            capturedAt: Date.now(),
+        };
+    }
+
+    restoreProgress(snapshot, options) {
+        const state = snapshot || {};
+        const opts = options || {};
+        if (!state || typeof state !== 'object') return false;
+
+        this.completedObjectives = this._clonePlain(state.completedObjectives || {});
+        this.activeMapId = Number(state.activeMapId || opts.mapId || this.activeMapId || 0) || 0;
+        this._mapQuestMode = state.mapQuestMode !== undefined ? !!state.mapQuestMode : true;
+        this._showFinishedPanel = false;
+
+        let restoredQuestId = state.activeQuestId || null;
+        if (!restoredQuestId || !this.quests[restoredQuestId]) restoredQuestId = null;
+        if (restoredQuestId && this._isQuestFinished(restoredQuestId)) restoredQuestId = null;
+
+        this.activeQuestId = restoredQuestId;
+        this.activeObjectiveId = null;
+        if (this.activeQuestId) {
+            const firstOpen = this._firstOpenObjective(this.activeQuestId);
+            const done = this.completedObjectives[this.activeQuestId] || {};
+            const requestedObjective = state.activeObjectiveId || null;
+            this.activeObjectiveId = (requestedObjective && !done[requestedObjective]) ? requestedObjective : firstOpen;
+        }
+
+        if (!this.activeQuestId && this.activeMapId) {
+            this._startNextQuestForMap(this.activeMapId);
+        }
+
+        this.visible = state.visible !== undefined ? !!state.visible : true;
+        this.preview = state.preview !== undefined ? !!state.preview : false;
+        this.guideActive = state.guideActive !== undefined ? !!state.guideActive : true;
+        this.allowCompletion = state.allowCompletion !== undefined ? !!state.allowCompletion : true;
+        if (!this.guideActive && this._arrowGuide) this._arrowGuide.clear();
+        if (this._arrowGuide) this._arrowGuide.setObjective(this.currentObjective());
+        if (Manager && Manager.Stack) Manager.Stack.requestPaintHUD = true;
+        return true;
+    }
+
     hideQuest(questId) {
         if (!questId || questId === this.activeQuestId) {
             this.visible = false;
@@ -230,6 +283,67 @@ class IP2LiveQuestManager {
 
     clearGuide() {
         if (this._arrowGuide) this._arrowGuide.clear();
+    }
+
+    skipToStageExitQuest(mapId, options) {
+        const resolvedMapId = Number(mapId) || this.activeMapId || this._getMapId(this._sceneRef);
+        if (!resolvedMapId) return false;
+
+        const opts = options || {};
+        const exitQuestId = opts.exitQuestId || ('stage.default_exit.' + resolvedMapId);
+        const queue = this._mapQuestQueue(resolvedMapId);
+        const questIds = Array.isArray(queue.questIds) ? queue.questIds.slice() : [];
+        if (!questIds.length) return false;
+
+        let changed = false;
+        for (let i = 0; i < questIds.length; i++) {
+            const questId = questIds[i];
+            if (!questId || questId === exitQuestId) continue;
+            const quest = this.quests[questId];
+            if (!quest || !Array.isArray(quest.objectives) || !quest.objectives.length) continue;
+
+            if (!this.completedObjectives[questId]) this.completedObjectives[questId] = {};
+            const done = this.completedObjectives[questId];
+            for (let o = 0; o < quest.objectives.length; o++) {
+                const objectiveId = quest.objectives[o] && quest.objectives[o].id;
+                if (!objectiveId) continue;
+                if (!done[objectiveId]) changed = true;
+                done[objectiveId] = true;
+            }
+        }
+
+        const hasExitQuest = questIds.indexOf(exitQuestId) !== -1 && !!this.quests[exitQuestId];
+        if (hasExitQuest) {
+            this.mapQuestQueues[resolvedMapId] = Object.assign({}, queue, {
+                questIds: [exitQuestId],
+                autoStart: true,
+                showFinished: false,
+            });
+            changed = true;
+        }
+
+        this._showFinishedPanel = false;
+        this.activeMapId = resolvedMapId;
+
+        if (hasExitQuest) {
+            this.startQuest(exitQuestId, {
+                mapId: resolvedMapId,
+                mapQuestMode: true,
+                keepLastCompletion: true,
+                visible: true,
+                preview: false,
+                guideActive: true,
+                allowCompletion: true,
+            });
+        } else {
+            this.activeQuestId = null;
+            this.activeObjectiveId = null;
+            this._startNextQuestForMap(resolvedMapId);
+        }
+
+        if (this._arrowGuide) this._arrowGuide.setObjective(this.currentObjective());
+        if (Manager && Manager.Stack) Manager.Stack.requestPaintHUD = true;
+        return changed;
     }
 
     currentQuest() {
@@ -467,6 +581,9 @@ class IP2LiveQuestManager {
         }
 
         this._runCompletionHandlers(quest, completedObjective, result);
+        if (IP2Live.GameManager && typeof IP2Live.GameManager.handleQuestObjectiveCompleted === 'function') {
+            IP2Live.GameManager.handleQuestObjectiveCompleted(result);
+        }
         if (Manager && Manager.Stack) Manager.Stack.requestPaintHUD = true;
         return result;
     }
@@ -689,6 +806,14 @@ class IP2LiveQuestManager {
             if (quest.objectives[i].id === objectiveId) return quest.objectives[i];
         }
         return null;
+    }
+
+    _clonePlain(value) {
+        try {
+            return JSON.parse(JSON.stringify(value));
+        } catch (e) {
+            return {};
+        }
     }
 
     _progressLabel(quest, objective) {

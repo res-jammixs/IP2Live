@@ -11,7 +11,7 @@ class IP2LivePauseMenu extends Scene.Base {
 
     initialize() {
         this.selectedIndex = 0;
-        this.menuItems = ["RESUME", "RESTART", "EXPORT REPORT", "MAIN MENU", "QUIT GAME"];
+        this.menuItems = ["RESUME", "RESTART", "SAVE GAME", "EXPORT REPORT", "MAIN MENU", "QUIT GAME"];
         this.hoverIndex = -1;
         this.animTick = 0;
         this.glitchActive = false;
@@ -19,7 +19,23 @@ class IP2LivePauseMenu extends Scene.Base {
         this.pendingAction = null;
         this.scanlineOffset = 0;
         this.bgFx = IP2Live.BgFx.create();
+        this.networkBackdrop = (window.IP2LiveBackgroundScreen)
+            ? new window.IP2LiveBackgroundScreen()
+            : null;
         this.scramble = IP2Live.TextScramble.create(this.menuItems.length);
+    }
+
+    _getLayout(SW, SH) {
+        const panelW = 440;
+        const panelH = 470;
+        const panelX = (SW - panelW) / 2;
+        const panelY = (SH - panelH) / 2;
+        const btnW = 320;
+        const btnH = 46;
+        const btnGap = 10;
+        const bx = panelX + (panelW - btnW) / 2;
+        const startY = panelY + 84;
+        return { panelW, panelH, panelX, panelY, btnW, btnH, btnGap, bx, startY };
     }
 
     async load() {
@@ -84,15 +100,11 @@ class IP2LivePauseMenu extends Scene.Base {
         const cH = Common.Platform.ctx.canvas.height;
         const scaleX = cW / SW;
         const scaleY = cH / SH;
-        const btnW = 320, btnH = 46;
-        const panelW = 420;
-        const panelX = (SW - panelW) / 2;
-        const bx = panelX + (panelW - btnW) / 2;
-        const startY = SH / 2 - 100;
+        const layout = this._getLayout(SW, SH);
         for (let i = 0; i < this.menuItems.length; i++) {
-            const by = startY + i * (btnH + 10);
-            if (x >= bx * scaleX && x <= (bx + btnW) * scaleX &&
-                y >= by * scaleY && y <= (by + btnH) * scaleY) return i;
+            const by = layout.startY + i * (layout.btnH + layout.btnGap);
+            if (x >= layout.bx * scaleX && x <= (layout.bx + layout.btnW) * scaleX &&
+                y >= by * scaleY && y <= (by + layout.btnH) * scaleY) return i;
         }
         return -1;
     }
@@ -104,7 +116,11 @@ class IP2LivePauseMenu extends Scene.Base {
         this.pendingAction = this.selectedIndex;
         Manager.Stack.requestPaintHUD = true;
         const self = this;
-        setTimeout(() => { self._executeAction(self.pendingAction); }, 100);
+        setTimeout(() => {
+            Promise.resolve(self._executeAction(self.pendingAction)).catch((e) => {
+                console.warn('[IP2Live] PauseMenu action failed:', e);
+            });
+        }, 100);
     }
 
     _resume() {
@@ -112,16 +128,17 @@ class IP2LivePauseMenu extends Scene.Base {
         Manager.Stack.pop();
     }
 
-    _executeAction(idx) {
+    async _executeAction(idx) {
         switch (idx) {
             case 0:
                 this._resume();
                 break;
             case 1: {
-                if (IP2Live.LoadingScreen && typeof IP2Live.LoadingScreen.show === 'function') {
-                    IP2Live.LoadingScreen.show({
+                const ScreenClass = IP2Live.LoadingScreen2 || IP2Live.LoadingScreen;
+                if (ScreenClass && typeof ScreenClass.show === 'function') {
+                    ScreenClass.show({
                         mode: 'replace',
-                        status: 'Loading Next Level',
+                        status: 'Reloading Current Stage',
                         detail: 'Rebuilding current stage state',
                         fadeMusicOnStart: true,
                         musicFadeDurationMs: 2200,
@@ -135,10 +152,19 @@ class IP2LivePauseMenu extends Scene.Base {
                 break;
             }
             case 2:
-                console.log('[IP2Live] Export Report triggered.');
-                Manager.Stack.pop();
+                await this._saveGameProgress();
                 break;
             case 3:
+                if (window.IP2LiveExportReportMenu) {
+                    Manager.Stack.push(new IP2LiveExportReportMenu());
+                } else if (IP2Live.GameManager && typeof IP2Live.GameManager.exportProgressReport === 'function') {
+                    await IP2Live.GameManager.exportProgressReport({ scopeDays: 30, format: 'both' });
+                    Manager.Stack.pop();
+                } else {
+                    Data.Systems.soundImpossible.playSound();
+                }
+                break;
+            case 4:
                 if (IP2Live.LoadingScreen && typeof IP2Live.LoadingScreen.show === 'function') {
                     IP2Live.LoadingScreen.show({
                         mode: 'replace',
@@ -154,10 +180,32 @@ class IP2LivePauseMenu extends Scene.Base {
                     Manager.Stack.push(new IP2LiveMainMenu());
                 }
                 break;
-            case 4:
+            case 5:
                 Common.Platform.quit();
                 break;
         }
+    }
+
+    async _saveGameProgress() {
+        if (!window.IP2LiveLoadGameMenu) {
+            Data.Systems.soundImpossible.playSound();
+            console.warn('[IP2Live] Save failed: Save menu screen is not available.');
+            return;
+        }
+        const menu = new IP2LiveLoadGameMenu({
+            saveMode: true,
+            onSaved: function () {
+                Manager.Stack.popAll();
+                Manager.Stack.push(new IP2LiveMainMenu());
+            },
+        });
+        // Safety: enforce save mode even if scene init order differs.
+        menu.options = menu.options || {};
+        menu.options.saveMode = true;
+        menu.saveMode = true;
+        menu.titleText = 'SAVE GAME';
+        menu.panelTitle = 'SYS::SAVE_ARCHIVE_WRITE';
+        Manager.Stack.push(menu);
     }
 
     update() {
@@ -187,8 +235,19 @@ class IP2LivePauseMenu extends Scene.Base {
 
         this.bgFx.drawBg(ctx, IP2Live.Assets.bgImage, cW, cH);
         this.bgFx.drawParticles(ctx, scaleX);
+        if (this.networkBackdrop && typeof this.networkBackdrop.draw === 'function') {
+            ctx.save();
+            ctx.globalAlpha = 0.66;
+            this.networkBackdrop.draw(ctx, cW, cH, this.animTick, 0, 0);
+            ctx.restore();
+        }
+        this._drawPauseTwistBackground(ctx, cW, cH, scaleX, scaleY);
 
-        ctx.fillStyle = 'rgba(0,0,10,0.78)';
+        const veil = ctx.createLinearGradient(0, 0, cW, cH);
+        veil.addColorStop(0, 'rgba(0,0,10,0.74)');
+        veil.addColorStop(0.55, 'rgba(4,0,14,0.66)');
+        veil.addColorStop(1, 'rgba(0,0,14,0.78)');
+        ctx.fillStyle = veil;
         ctx.fillRect(0, 0, cW, cH);
 
         ctx.globalAlpha = 0.05;
@@ -198,11 +257,11 @@ class IP2LivePauseMenu extends Scene.Base {
         }
         ctx.globalAlpha = 1;
 
-        const panelW = 420, panelH = 420;
-        const panelX = (SW - panelW) / 2;
-        const panelY = (SH - panelH) / 2;
-        const px = panelX * scaleX, py = panelY * scaleY;
-        const pw = panelW * scaleX, ph = panelH * scaleY;
+        const layout = this._getLayout(SW, SH);
+        const px = layout.panelX * scaleX;
+        const py = layout.panelY * scaleY;
+        const pw = layout.panelW * scaleX;
+        const ph = layout.panelH * scaleY;
 
         ctx.fillStyle = 'rgba(0,4,20,0.94)';
         ctx.fillRect(px, py, pw, ph);
@@ -219,31 +278,68 @@ class IP2LivePauseMenu extends Scene.Base {
         ctx.beginPath(); ctx.moveTo(px, py + cs); ctx.lineTo(px, py); ctx.lineTo(px + cs, py); ctx.stroke();
         ctx.beginPath(); ctx.moveTo(px + pw - cs, py + ph); ctx.lineTo(px + pw, py + ph); ctx.lineTo(px + pw, py + ph - cs); ctx.stroke();
 
-        this._drawPausedTitle(ctx, scaleX, scaleY, SW, SH, panelX, panelY, panelW);
+        this._drawPausedTitle(ctx, scaleX, scaleY, SW, SH, layout.panelX, layout.panelY, layout.panelW);
 
-        const divY = (panelY + 68) * scaleY;
+        const divY = (layout.panelY + 68) * scaleY;
         ctx.strokeStyle = 'rgba(0,255,255,0.25)';
         ctx.lineWidth = 1 * scaleX;
         ctx.beginPath();
-        ctx.moveTo((panelX + 20) * scaleX, divY);
-        ctx.lineTo((panelX + panelW - 20) * scaleX, divY);
+        ctx.moveTo((layout.panelX + 20) * scaleX, divY);
+        ctx.lineTo((layout.panelX + layout.panelW - 20) * scaleX, divY);
         ctx.stroke();
 
-        const btnW = 320, btnH = 46;
-        const bx = panelX + (panelW - btnW) / 2;
-        const startY = SH / 2 - 100;
-
         for (let i = 0; i < this.menuItems.length; i++) {
-            const by = startY + i * (btnH + 10);
-            this._drawButton(ctx, scaleX, scaleY, bx, by, btnW, btnH, this.menuItems[i],
+            const by = layout.startY + i * (layout.btnH + layout.btnGap);
+            this._drawButton(ctx, scaleX, scaleY, layout.bx, by, layout.btnW, layout.btnH, this.menuItems[i],
                 i === this.selectedIndex, i === this.hoverIndex, i);
         }
 
         ctx.font = (8 * scaleX) + 'px monospace';
         ctx.fillStyle = 'rgba(0,255,255,0.35)';
         ctx.textAlign = 'center';
-        ctx.fillText('[ GAME PAUSED â€” SYS::STANDBY ]', (SW / 2) * scaleX, (panelY + panelH - 14) * scaleY);
+        ctx.fillText('[ GAME PAUSED - SYS::STANDBY ]', (SW / 2) * scaleX, (layout.panelY + layout.panelH - 14) * scaleY);
         ctx.textAlign = 'left';
+
+        ctx.restore();
+    }
+
+    _drawPauseTwistBackground(ctx, cW, cH, scaleX, scaleY) {
+        const t = this.animTick || 0;
+        const cx = cW * 0.52;
+        const cy = cH * 0.52;
+
+        ctx.save();
+        ctx.translate(cx, cy);
+        ctx.rotate(-0.16);
+
+        // Pause-specific twist: containment rings + command rails.
+        ctx.strokeStyle = 'rgba(255,0,60,0.18)';
+        ctx.lineWidth = 1.2 * scaleX;
+        ctx.beginPath();
+        ctx.ellipse(0, 0, cW * 0.23, cH * 0.17, 0, 0, Math.PI * 2);
+        ctx.stroke();
+
+        ctx.strokeStyle = 'rgba(0,240,255,0.16)';
+        ctx.beginPath();
+        ctx.ellipse(0, 0, cW * 0.18, cH * 0.12, 0, 0, Math.PI * 2);
+        ctx.stroke();
+
+        for (let i = -5; i <= 5; i++) {
+            const y = i * (20 * scaleY);
+            const pulse = 0.10 + 0.10 * (0.5 + 0.5 * Math.sin(t * 0.03 + i));
+            ctx.strokeStyle = i % 2 === 0
+                ? 'rgba(0,240,255,' + pulse.toFixed(3) + ')'
+                : 'rgba(255,0,60,' + (pulse * 0.9).toFixed(3) + ')';
+            ctx.lineWidth = 1 * scaleX;
+            ctx.beginPath();
+            ctx.moveTo(-cW * 0.36, y);
+            ctx.lineTo(cW * 0.36, y - 24 * scaleY);
+            ctx.stroke();
+
+            const travel = ((t * (0.9 + i * 0.02)) + i * 57) % (cW * 0.72);
+            ctx.fillStyle = 'rgba(255,230,0,0.70)';
+            ctx.fillRect(-cW * 0.36 + travel, y - 2 * scaleY, 12 * scaleX, 3 * scaleY);
+        }
 
         ctx.restore();
     }
@@ -262,7 +358,7 @@ class IP2LivePauseMenu extends Scene.Base {
 
     _drawButton(ctx, scaleX, scaleY, bx, by, bw, bh, label, isSelected, isHover, index) {
         const isActive = isSelected || isHover;
-        const isDanger = (index === 4 || index === 1); // 4=Quit, 1=Restart
+        const isDanger = (index === 5 || index === 1); // 5=Quit, 1=Restart
         
         IP2Live.UI.drawCyberButton({
             ctx,
@@ -293,4 +389,5 @@ inject(Scene.Map, 'onKeyPressed', function (key) {
 }, false, true, false);
 
 console.log('[IP2Live] pause-menu.js loaded.');
+
 
