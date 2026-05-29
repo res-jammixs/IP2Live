@@ -822,6 +822,14 @@ IP2Live.GameplayManagerReady = (async function () {
                 'ip_subnetsim_gameplay.js',
             ],
         },
+        {
+            baseDir: root + 'Plugins/IP2Live_Core/gameplay/gameplay7/NetworkRepair/',
+            version: '20260529_ip_networkrepair_01_',
+            files: [
+                'tutorial.js',
+                'gameplay.js',
+            ],
+        },
     ];
     try {
         for (let b = 0; b < bundles.length; b++) {

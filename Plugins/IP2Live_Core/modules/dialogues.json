@@ -285,6 +285,128 @@
           "Routing data appears unstable. This may become an interaction point later."
         ]
       ]
+    },
+    {
+      "id": "stage.15.intro",
+      "name": "Stage 4 Level 1 Intro",
+      "title": "WORLD BRIEF",
+      "speaker": "SYSTEM",
+      "timing": "after",
+      "bindings": {
+        "mapId": 15,
+        "stage": 4,
+        "level": 1,
+        "trigger": "worldTitle.finished"
+      },
+      "slides": [
+        [
+          "Stage 4 Level 1 is a damaged office subnet.",
+          "",
+          "Five PCs are broadcasting corrupted address tables across this map.",
+          "Follow the route beacon, catch the falling data octets at each PC, and rebuild the missing IP addresses."
+        ]
+      ]
+    },
+    {
+      "id": "stage4.networkrepair.opening",
+      "name": "Network Repair Opening",
+      "title": "NETWORK REPAIR",
+      "speaker": "SYSTEM",
+      "timing": "before",
+      "bindings": {
+        "mapId": 15,
+        "gameplayId": "ip_network_repair",
+        "trigger": "gameplay.before"
+      },
+      "slides": [
+        [
+          "This PC is leaking corrupted data packets.",
+          "",
+          "Octets are falling through five data lanes. Move the receptor to catch the four octets that form the missing IP address."
+        ],
+        [
+          "Network address clears host bits to 0.",
+          "Broadcast address sets host bits to 1.",
+          "The gateway is the first usable IP, and the reserve is the last usable IP.",
+          "After catching four correct octets, arrange them in order and submit."
+        ]
+      ]
+    },
+    {
+      "id": "stage4.networkrepair.quest1.correction",
+      "name": "Network Repair Quest 1 Correction",
+      "title": "REPAIR COACH",
+      "speaker": "SYSTEM",
+      "timing": "during",
+      "bindings": {
+        "mapId": 15,
+        "gameplayId": "ip_network_repair",
+        "objectiveId": "repair_network_pc_01",
+        "trigger": "gameplay.mistake"
+      },
+      "slides": [
+        [
+          "Pause the data stream.",
+          "",
+          "This first PC is your calibration node. A wrong catch here means we review the subnet edge and keep the same PC active."
+        ],
+        [
+          "Find the block created by the CIDR.",
+          "The network address is the first address in that block.",
+          "The broadcast address is the last address in that block.",
+          "Usable hosts sit between those two edges. Catch only the matching octets."
+        ]
+      ]
+    },
+    {
+      "id": "stage4.networkrepair.rollback",
+      "name": "Network Repair Rollback",
+      "title": "ROLLBACK CIRCUIT",
+      "speaker": "SYSTEM",
+      "timing": "after",
+      "bindings": {
+        "mapId": 15,
+        "gameplayId": "ip_network_repair",
+        "objectiveId": [
+          "repair_network_pc_02",
+          "repair_network_pc_03",
+          "repair_network_pc_04",
+          "repair_network_pc_05"
+        ],
+        "trigger": "gameplay.failed"
+      },
+      "slides": [
+        [
+          "APEX detected the corrupted octets.",
+          "",
+          "Their rollback circuit reopened PC 01."
+        ],
+        [
+          "Catch and arrange the correct octets at PC 01 again to prove the route table is stable.",
+          "After that, the beacon will return you to the PC where the failure happened."
+        ]
+      ]
+    },
+    {
+      "id": "stage4.networkrepair.complete",
+      "name": "Network Repair Complete",
+      "title": "NETWORK REPAIR",
+      "speaker": "SYSTEM",
+      "timing": "after",
+      "bindings": {
+        "mapId": 15,
+        "gameplayId": "ip_network_repair",
+        "objectiveId": "repair_network_pc_05",
+        "trigger": "gameplay.completed"
+      },
+      "slides": [
+        [
+          "All five PCs are routing cleanly.",
+          "",
+          "Every corrupted IP address has been rebuilt from the captured octets.",
+          "Network address, broadcast address, and usable range traces are restored across the subnet."
+        ]
+      ]
     }
   ]
 }

@@ -433,14 +433,6 @@ const MapManager = {
                 }
             }
 
-            if (gameplayQuestIds && gameplayQuestIds.length) {
-                qm.registerMapQuests(stage.id, gameplayQuestIds, {
-                    append: true,
-                    autoStart: true,
-                    showFinished: false,
-                });
-            }
-
             const questId = this._stageQuestId(stage);
             const existingQuest = qm.quests && qm.quests[questId];
             if (!this._registeredStageQuestIds[questId] || !existingQuest || existingQuest.resetOnMapEnter !== true) {
@@ -470,8 +462,10 @@ const MapManager = {
                 this._registeredStageQuestIds[questId] = true;
             }
 
-            qm.registerMapQuests(stage.id, [questId], {
-                append: true,
+            const orderedQuestIds = gameplayQuestIds ? gameplayQuestIds.slice() : [];
+            if (orderedQuestIds.indexOf(questId) === -1) orderedQuestIds.push(questId);
+            qm.registerMapQuests(stage.id, orderedQuestIds, {
+                append: false,
                 autoStart: true,
                 showFinished: false,
             });
