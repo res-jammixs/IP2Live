@@ -182,7 +182,7 @@ class IP2LiveLoadingScreen extends Scene.Base {
         ctx.save();
         this._drawBackground(ctx, cW, cH, sX, sY);
         this._drawTitle(ctx, cW, sX, sY, titleFont);
-        this._drawCenterObject(ctx, cW / 2, cH * 0.49, Math.min(cW, cH) / 720);
+        this._drawCenterObject(ctx, cW / 2, cH * 0.44, Math.min(cW, cH) / 720);
         this._drawStatus(ctx, cW, cH, sX, sY, font);
         this._drawFactPanel(ctx, cW, cH, sX, sY, font);
         this._drawLoadingLine(ctx, cW, cH, sX, sY, font);
@@ -301,47 +301,159 @@ class IP2LiveLoadingScreen extends Scene.Base {
         const cyan = '#00F0FF';
         const yellow = '#FFE600';
         const pulse = 0.5 + 0.5 * Math.sin(tick * 0.09);
+        const pct = Math.floor(this.progress * 100);
 
         ctx.save();
         ctx.translate(cx, cy);
 
+        // Soft radial halo behind the icon.
+        const haloR = 188 * unit;
+        const halo = ctx.createRadialGradient(0, 0, 14 * unit, 0, 0, haloR);
+        halo.addColorStop(0, 'rgba(0,240,255,0.16)');
+        halo.addColorStop(0.55, 'rgba(255,0,60,0.10)');
+        halo.addColorStop(1, 'rgba(0,0,0,0)');
+        ctx.fillStyle = halo;
+        ctx.beginPath();
+        ctx.arc(0, 0, haloR, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Orbit rings with depth and glow.
         ctx.shadowColor = cyan;
-        ctx.shadowBlur = 28 * unit;
-        for (let i = 0; i < 4; i++) {
+        ctx.shadowBlur = 30 * unit;
+        for (let i = 0; i < 5; i++) {
             ctx.save();
-            ctx.rotate(tick * 0.012 * (i % 2 === 0 ? 1 : -1) + i * Math.PI / 4);
-            ctx.strokeStyle = i % 2 === 0 ? 'rgba(0,240,255,0.42)' : 'rgba(255,0,60,0.36)';
-            ctx.lineWidth = (2 + i * 0.35) * unit;
+            const dir = i % 2 === 0 ? 1 : -1;
+            ctx.rotate(tick * 0.011 * dir + i * Math.PI / 5);
+            ctx.strokeStyle = i % 2 === 0 ? 'rgba(0,240,255,0.48)' : 'rgba(255,0,60,0.40)';
+            ctx.lineWidth = (1.8 + i * 0.30) * unit;
             ctx.beginPath();
-            ctx.ellipse(0, 0, (92 + i * 27) * unit, (42 + i * 12) * unit, 0, Math.PI * 0.08, Math.PI * 1.72);
+            ctx.ellipse(
+                0,
+                0,
+                (76 + i * 22) * unit,
+                (36 + i * 10) * unit,
+                0,
+                Math.PI * (0.05 + i * 0.03),
+                Math.PI * (1.68 - i * 0.03)
+            );
             ctx.stroke();
             ctx.restore();
         }
         ctx.shadowBlur = 0;
 
+        // Segmented ring accents inspired by sleek HUD motifs.
+        for (let i = 0; i < 3; i++) {
+            const r = (56 + i * 17) * unit;
+            ctx.save();
+            ctx.rotate(-tick * 0.013 + i * 0.7);
+            ctx.lineWidth = (3 - i * 0.6) * unit;
+            ctx.strokeStyle = i === 1 ? 'rgba(255,230,0,0.72)' : 'rgba(0,240,255,0.62)';
+            for (let seg = 0; seg < 6; seg++) {
+                const a0 = seg * (Math.PI * 2 / 6) + 0.08;
+                const a1 = a0 + 0.38;
+                ctx.beginPath();
+                ctx.arc(0, 0, r, a0, a1);
+                ctx.stroke();
+            }
+            ctx.restore();
+        }
+
+        // Outer frame with layered bevel.
         ctx.save();
         ctx.rotate(Math.PI / 4 + tick * 0.018);
-        this._poly(ctx, 0, 0, 76 * unit, 4, 'rgba(3,7,20,0.94)', cyan, 3 * unit);
+        this._poly(ctx, 0, 0, 80 * unit, 4, 'rgba(3,7,20,0.95)', 'rgba(0,240,255,0.96)', 3.2 * unit);
+        this._poly(ctx, 0, 0, 70 * unit, 4, 'rgba(1,3,10,0.90)', 'rgba(0,240,255,0.24)', 1.2 * unit);
         ctx.restore();
 
+        // Core diamond with gradient + specular highlight.
         ctx.save();
         ctx.rotate(-Math.PI / 4 - tick * 0.026);
-        this._poly(ctx, 0, 0, (38 + pulse * 6) * unit, 4, 'rgba(255,0,60,0.88)', '#FFFFFF', 1.5 * unit);
+        const coreR = (40 + pulse * 5) * unit;
+        const coreGrad = ctx.createLinearGradient(-coreR, -coreR, coreR, coreR);
+        coreGrad.addColorStop(0, 'rgba(255,70,120,0.98)');
+        coreGrad.addColorStop(0.42, 'rgba(255,0,60,0.94)');
+        coreGrad.addColorStop(1, 'rgba(120,0,38,0.92)');
+        this._poly(ctx, 0, 0, coreR, 4, coreGrad, '#FFFFFF', 1.7 * unit);
+        ctx.globalAlpha = 0.26;
+        this._poly(ctx, -8 * unit, -8 * unit, 18 * unit, 4, 'rgba(255,255,255,0.22)', 'rgba(255,255,255,0)', 0);
+        ctx.globalAlpha = 1;
         ctx.restore();
 
-        ctx.fillStyle = yellow;
-        ctx.fillRect(-7 * unit, -122 * unit, 14 * unit, 46 * unit);
-        ctx.fillRect(-7 * unit, 76 * unit, 14 * unit, 46 * unit);
-        ctx.fillStyle = red;
-        ctx.fillRect(-154 * unit, -5 * unit, 58 * unit, 10 * unit);
-        ctx.fillStyle = cyan;
-        ctx.fillRect(96 * unit, -5 * unit, 58 * unit, 10 * unit);
+        // Directional blades / pylons replacing flat bars.
+        this._drawCenterBlade(ctx, 0, -110 * unit, 20 * unit, 58 * unit, yellow, tick, true);
+        this._drawCenterBlade(ctx, 0, 110 * unit, 20 * unit, 58 * unit, yellow, tick, false);
+        this._drawCenterBlade(ctx, -128 * unit, 0, 74 * unit, 14 * unit, red, tick, true);
+        this._drawCenterBlade(ctx, 128 * unit, 0, 74 * unit, 14 * unit, cyan, tick, false);
 
-        ctx.font = 'bold ' + Math.round(18 * unit) + 'px monospace';
+        // Progress text with subtle glow.
+        ctx.shadowColor = '#FFFFFF';
+        ctx.shadowBlur = 10 * unit;
+        ctx.font = 'bold ' + Math.round(19 * unit) + 'px monospace';
         ctx.textAlign = 'center';
         ctx.fillStyle = '#FFFFFF';
-        ctx.fillText(String(Math.floor(this.progress * 100)).padStart(2, '0') + '%', 0, 7 * unit);
+        ctx.fillText(String(pct).padStart(2, '0') + '%', 0, 7 * unit);
+        ctx.shadowBlur = 0;
 
+        // Tiny orbiting indicator nodes for extra motion depth.
+        for (let i = 0; i < 6; i++) {
+            const a = tick * 0.03 + i * (Math.PI * 2 / 6);
+            const rr = (112 + Math.sin(tick * 0.05 + i) * 8) * unit;
+            const x = Math.cos(a) * rr;
+            const y = Math.sin(a) * rr * 0.52;
+            ctx.fillStyle = i % 2 === 0 ? 'rgba(0,240,255,0.85)' : 'rgba(255,230,0,0.85)';
+            ctx.beginPath();
+            ctx.arc(x, y, (2.2 + (i % 3) * 0.4) * unit, 0, Math.PI * 2);
+            ctx.fill();
+        }
+
+        ctx.restore();
+    }
+
+    _drawCenterBlade(ctx, x, y, w, h, color, tick, reverse) {
+        ctx.save();
+        ctx.translate(x, y);
+
+        const glow = color === '#FFE600' ? '#FFE600' : (color === '#FF003C' ? '#FF003C' : '#00F0FF');
+        const light = color === '#FFE600' ? 'rgba(255,244,120,0.95)' : (color === '#FF003C' ? 'rgba(255,82,128,0.95)' : 'rgba(120,250,255,0.95)');
+        const dark = color === '#FFE600' ? 'rgba(140,120,0,0.95)' : (color === '#FF003C' ? 'rgba(120,0,42,0.95)' : 'rgba(0,88,120,0.95)');
+
+        const grad = ctx.createLinearGradient(reverse ? -w / 2 : -w / 3, -h / 2, w / 2, h / 2);
+        grad.addColorStop(0, light);
+        grad.addColorStop(0.45, color);
+        grad.addColorStop(1, dark);
+
+        const skew = Math.max(3, Math.min(w, h) * 0.28);
+        ctx.beginPath();
+        if (w > h) {
+            ctx.moveTo(-w / 2 + skew, -h / 2);
+            ctx.lineTo(w / 2, -h / 2);
+            ctx.lineTo(w / 2 - skew, h / 2);
+            ctx.lineTo(-w / 2, h / 2);
+        } else {
+            ctx.moveTo(-w / 2, -h / 2 + skew);
+            ctx.lineTo(w / 2, -h / 2);
+            ctx.lineTo(w / 2, h / 2 - skew);
+            ctx.lineTo(-w / 2, h / 2);
+        }
+        ctx.closePath();
+        ctx.fillStyle = grad;
+        ctx.fill();
+
+        ctx.strokeStyle = 'rgba(255,255,255,0.46)';
+        ctx.lineWidth = Math.max(1, Math.min(w, h) * 0.08);
+        ctx.stroke();
+
+        ctx.globalAlpha = 0.24 + 0.14 * Math.sin(tick * 0.1);
+        ctx.fillStyle = '#FFFFFF';
+        if (w > h) ctx.fillRect(-w * 0.18, -h * 0.22, w * 0.34, h * 0.18);
+        else ctx.fillRect(-w * 0.20, -h * 0.18, w * 0.26, h * 0.34);
+
+        ctx.globalAlpha = 1;
+        ctx.shadowColor = glow;
+        ctx.shadowBlur = Math.max(5, Math.min(w, h) * 0.34);
+        ctx.strokeStyle = this._rgba(glow, 0.38);
+        ctx.lineWidth = Math.max(1, Math.min(w, h) * 0.07);
+        ctx.stroke();
         ctx.restore();
     }
 

@@ -9,7 +9,7 @@
 
 class IP2LiveDialogueManager {
     constructor() {
-        this.VERSION = 'dialogue-manager-20260518-01';
+        this.VERSION = 'dialogue-manager-20260527-02';
 
         this.EVENT = {
             MAP_ENTER: 'map:enter',
@@ -21,6 +21,8 @@ class IP2LiveDialogueManager {
         this.tutorialSteps = this._createTutorialSteps();
         this.mapTriggers = this._createMapTriggers();
         this.itemTriggers = this._createItemTriggers();
+        this.dialogueLibrary = [];
+        this._manualTimingQueue = [];
 
         this._active = null;
         this._booted = false;
@@ -31,6 +33,7 @@ class IP2LiveDialogueManager {
         this._lastMapEnterKey = null;
         this._sceneSerial = 0;
         this._questPanelSuppressed = false;
+        this._queuedStarts = [];
 
         this.boot();
     }
@@ -226,6 +229,69 @@ class IP2LiveDialogueManager {
         return true;
     }
 
+    loadDialogueLibrary(library) {
+        const entries = Array.isArray(library) ? library : (library && library.dialogues) || [];
+        if (!Array.isArray(entries)) return false;
+
+        this.dialogueLibrary = [];
+        for (let i = 0; i < entries.length; i++) {
+            const normalized = this._normalizeDialogueDefinition(entries[i]);
+            if (!normalized) continue;
+            this.dialogues[normalized.id] = normalized;
+            this.dialogueLibrary.push(normalized.id);
+        }
+        return this.dialogueLibrary.length > 0;
+    }
+
+    startById(dialogueId, context) {
+        return this.start(dialogueId, context || {});
+    }
+
+    enqueue(dialogueId, timing, scope) {
+        if (!dialogueId || !this.getDialogue(dialogueId)) return false;
+        this._manualTimingQueue.push({
+            dialogueId,
+            timing: timing || (this.getDialogue(dialogueId).timing || 'during'),
+            scope: scope || {},
+        });
+        return true;
+    }
+
+    queueByTiming(scope, timing) {
+        const resolvedTiming = timing || 'during';
+        const resolvedScope = scope || {};
+        const output = [];
+        const seen = {};
+
+        for (let i = 0; i < this.dialogueLibrary.length; i++) {
+            const id = this.dialogueLibrary[i];
+            const dialogue = this.getDialogue(id);
+            if (!dialogue || !dialogue.timing) continue;
+            if (dialogue.timing !== resolvedTiming) continue;
+            if (!this._matchesScope(dialogue.bindings || {}, resolvedScope)) continue;
+            if (!seen[id]) {
+                output.push(id);
+                seen[id] = true;
+            }
+        }
+
+        const remaining = [];
+        for (let i = 0; i < this._manualTimingQueue.length; i++) {
+            const entry = this._manualTimingQueue[i];
+            if (entry.timing === resolvedTiming && this._matchesScope(entry.scope || {}, resolvedScope)) {
+                if (!seen[entry.dialogueId]) {
+                    output.push(entry.dialogueId);
+                    seen[entry.dialogueId] = true;
+                }
+            } else {
+                remaining.push(entry);
+            }
+        }
+        this._manualTimingQueue = remaining;
+
+        return output;
+    }
+
     getDialogue(id) {
         return this.dialogues[id] || null;
     }
@@ -330,6 +396,18 @@ class IP2LiveDialogueManager {
     }
 
     start(dialogueId, context) {
+        const ctx = context || {};
+        const isTitleActive = typeof IP2Live !== 'undefined' && IP2Live.WorldTitleOverlay && IP2Live.WorldTitleOverlay.isActive();
+
+        if (isTitleActive) {
+            return this._queueStart(dialogueId, ctx);
+        }
+
+        if (this._active) {
+            if (this._active.id === dialogueId) return false;
+            return this._queueStart(dialogueId, ctx);
+        }
+
         const dialogue = this.getDialogue(dialogueId);
         if (!dialogue || !dialogue.slides || dialogue.slides.length === 0) {
             console.warn('[IP2Live] DialogueManager: missing dialogue', dialogueId);
@@ -345,9 +423,12 @@ class IP2LiveDialogueManager {
             slides: this._cloneSlides(dialogue.slides),
             slideIndex: 0,
             lockMovement: dialogue.lockMovement !== false,
+            allowMovementDuringDialogue: !!(dialogue.allowMovementDuringDialogue || ctx.allowMovementDuringDialogue),
+            autoWrapText: dialogue.autoWrapText !== false && ctx.autoWrapText !== false,
+            preserveLineBreaks: !!(dialogue.preserveLineBreaks || ctx.preserveLineBreaks),
             hideQuestPanel: dialogue.hideQuestPanel !== false,
-            context: context || {},
-            onComplete: dialogue.onComplete || null,
+            context: ctx,
+            onComplete: typeof ctx.onComplete === 'function' ? ctx.onComplete : (dialogue.onComplete || null),
             animTick: 0,
             typeChars: 0,
             typeTimer: 0,
@@ -357,6 +438,13 @@ class IP2LiveDialogueManager {
 
         if (this._active.hideQuestPanel) this._setQuestPanelSuppressed(true);
         if (Manager && Manager.Stack) Manager.Stack.requestPaintHUD = true;
+        if (IP2Live.GameManager && typeof IP2Live.GameManager.emit === 'function') {
+            IP2Live.GameManager.emit(IP2Live.GameManager.EVENT.DIALOGUE_STARTED, {
+                dialogueId,
+                timing: dialogue.timing || ctx.timing || null,
+                context: ctx,
+            });
+        }
         return true;
     }
 
@@ -365,6 +453,13 @@ class IP2LiveDialogueManager {
         const done = this._active;
         this._active = null;
         if (done.hideQuestPanel) this._setQuestPanelSuppressed(false);
+        if (IP2Live.GameManager && typeof IP2Live.GameManager.emit === 'function') {
+            IP2Live.GameManager.emit(IP2Live.GameManager.EVENT.DIALOGUE_FINISHED, {
+                dialogueId: done.id,
+                timing: done.context && done.context.timing,
+                context: done.context || {},
+            });
+        }
         if (typeof done.onComplete === 'function') {
             try {
                 done.onComplete(done.context, this);
@@ -372,6 +467,7 @@ class IP2LiveDialogueManager {
                 console.warn('[IP2Live] DialogueManager onComplete failed:', e);
             }
         }
+        this._startQueuedIfPossible();
         if (Manager && Manager.Stack) Manager.Stack.requestPaintHUD = true;
     }
 
@@ -401,7 +497,10 @@ class IP2LiveDialogueManager {
     }
 
     locksMovement() {
-        return !!(this._active && this._active.lockMovement);
+        if (!this._active || !this._active.lockMovement) return false;
+        if (this._active.allowMovementDuringDialogue) return false;
+        if (this._isTutorialControlsTeachingActive()) return false;
+        return true;
     }
 
     _setQuestPanelSuppressed(isSuppressed) {
@@ -426,94 +525,219 @@ class IP2LiveDialogueManager {
         const tick = active.animTick;
         const font = IP2Live.Assets && IP2Live.Assets.nebulaLoaded ? 'Nebula-Regular' : 'monospace';
         const pulse = 0.5 + 0.5 * Math.sin(tick * 0.08);
+        const blink = Math.floor(tick / 24) % 2 === 0;
 
         const panelW = cW - 52 * sX;
-        const panelH = Math.min(230 * sY, cH * 0.32);
+        const panelH = Math.min(300 * sY, cH * 0.355);
         const panelX = 26 * sX;
-        const panelY = cH - panelH - 24 * sY;
-        const cut = 26 * sX;
-        const headerH = 42 * sY;
+        const panelY = cH - panelH - 26 * sY;
+        const cut = 32 * sX;
+        const headerH = 50 * sY;
+        const promptH = 25 * sY;
 
         ctx.save();
-
-        ctx.fillStyle = 'rgba(0, 0, 0, 0.36)';
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.24)';
         ctx.fillRect(0, 0, cW, cH);
+
+        // Main frame
+        ctx.beginPath();
+        ctx.moveTo(panelX + cut, panelY);
+        ctx.lineTo(panelX + panelW, panelY);
+        ctx.lineTo(panelX + panelW, panelY + panelH - 22 * sY);
+        ctx.lineTo(panelX + panelW - 14 * sX, panelY + panelH);
+        ctx.lineTo(panelX, panelY + panelH);
+        ctx.lineTo(panelX, panelY + 36 * sY);
+        ctx.closePath();
+        ctx.fillStyle = 'rgba(3,7,20,0.965)';
+        ctx.fill();
+
+        // Body gradient + scanlines
+        ctx.save();
+        ctx.clip();
+        const bodyGrad = ctx.createLinearGradient(panelX, panelY, panelX + panelW, panelY);
+        bodyGrad.addColorStop(0, 'rgba(255,0,60,0.13)');
+        bodyGrad.addColorStop(0.18, 'rgba(0,240,255,0.08)');
+        bodyGrad.addColorStop(0.72, 'rgba(5,10,28,0.20)');
+        bodyGrad.addColorStop(1, 'rgba(255,230,0,0.06)');
+        ctx.fillStyle = bodyGrad;
+        ctx.fillRect(panelX, panelY, panelW, panelH);
+        for (let sy2 = panelY; sy2 < panelY + panelH; sy2 += 4 * sY) {
+            ctx.fillStyle = 'rgba(255,255,255,0.025)';
+            ctx.fillRect(panelX, sy2, panelW, Math.max(1, 1 * sY));
+        }
+        const sweepY = panelY + ((tick * 1.35) % panelH);
+        ctx.fillStyle = 'rgba(0,240,255,0.05)';
+        ctx.fillRect(panelX, sweepY, panelW, 7 * sY);
+        ctx.restore();
 
         ctx.beginPath();
         ctx.moveTo(panelX + cut, panelY);
         ctx.lineTo(panelX + panelW, panelY);
-        ctx.lineTo(panelX + panelW - 12 * sX, panelY + panelH);
+        ctx.lineTo(panelX + panelW, panelY + panelH - 22 * sY);
+        ctx.lineTo(panelX + panelW - 14 * sX, panelY + panelH);
         ctx.lineTo(panelX, panelY + panelH);
-        ctx.lineTo(panelX, panelY + 32 * sY);
+        ctx.lineTo(panelX, panelY + 36 * sY);
         ctx.closePath();
-        ctx.fillStyle = 'rgba(3, 7, 20, 0.96)';
-        ctx.fill();
-
-        ctx.save();
-        ctx.clip();
-        for (let y = panelY; y < panelY + panelH; y += 5 * sY) {
-            ctx.fillStyle = 'rgba(255,255,255,0.03)';
-            ctx.fillRect(panelX, y, panelW, Math.max(1, sY));
-        }
-        ctx.fillStyle = 'rgba(0,240,255,0.06)';
-        ctx.fillRect(panelX, panelY + ((tick * 1.1) % panelH), panelW, 7 * sY);
-        ctx.restore();
-
         ctx.shadowColor = '#00F0FF';
-        ctx.shadowBlur = 8 + pulse * 10;
+        ctx.shadowBlur = 10 + pulse * 12;
         ctx.strokeStyle = 'rgba(0,240,255,' + (0.62 + pulse * 0.22) + ')';
         ctx.lineWidth = 1.5 * sX;
         ctx.stroke();
         ctx.shadowBlur = 0;
 
+        // Header tab
         ctx.beginPath();
         ctx.moveTo(panelX, panelY);
-        ctx.lineTo(panelX + 360 * sX, panelY);
-        ctx.lineTo(panelX + 395 * sX, panelY + headerH);
+        ctx.lineTo(panelX + Math.min(400 * sX, panelW * 0.36), panelY);
+        ctx.lineTo(panelX + Math.min(450 * sX, panelW * 0.42), panelY + headerH);
         ctx.lineTo(panelX, panelY + headerH);
         ctx.closePath();
-        ctx.fillStyle = 'rgba(255,0,60,0.94)';
+        const headerGrad = ctx.createLinearGradient(panelX, panelY, panelX + panelW * 0.45, panelY);
+        headerGrad.addColorStop(0, 'rgba(255,0,60,0.96)');
+        headerGrad.addColorStop(0.68, 'rgba(60,0,28,0.80)');
+        headerGrad.addColorStop(1, 'rgba(3,7,20,0.10)');
+        ctx.fillStyle = headerGrad;
         ctx.fill();
 
-        ctx.font = 'bold ' + Math.round(10 * sX) + 'px monospace';
+        const incomingText = '// INCOMING TRANSMISSION //';
+        const incomingFont = 'bolder italic ' + Math.round(14 * sX) + 'px monospace';
+        ctx.font = incomingFont;
+        const incomingTextW = ctx.measureText(incomingText).width;
+        const yellowMinX = panelX + 24 * sX + incomingTextW + 26 * sX;
+        const yellowX = Math.max(panelX + Math.min(390 * sX, panelW * 0.35), yellowMinX);
+        const tagFontPx = Math.round(13 * sX);
+        const tagFont = 'bolder italic ' + tagFontPx + 'px monospace';
+        const tagText = String(active.title || 'MISSION').toUpperCase();
+        ctx.font = tagFont;
+        const tagTextW = ctx.measureText(tagText).width;
+        const tagPadL = 18 * sX;
+        const tagPadR = 40 * sX;
+        const yellowTopWDesired = tagPadL + tagTextW + tagPadR;
+        const yellowTopW = Math.max(120 * sX, Math.min(yellowTopWDesired, panelX + panelW - 16 * sX - yellowX));
+        const yellowBottomW = Math.max(96 * sX, yellowTopW - 36 * sX);
+        const yellowBackX = 26 * sX;
+        ctx.beginPath();
+        ctx.moveTo(yellowX, panelY);
+        ctx.lineTo(yellowX + yellowTopW, panelY);
+        ctx.lineTo(yellowX + yellowBottomW, panelY + headerH);
+        ctx.lineTo(yellowX - yellowBackX, panelY + headerH);
+        ctx.closePath();
+        ctx.fillStyle = 'rgba(255,230,0,0.96)';
+        ctx.fill();
+
+        // Header text
         ctx.fillStyle = '#FFFFFF';
+        ctx.font = incomingFont;
         ctx.textAlign = 'left';
-        ctx.fillText('// ' + active.title + ' //', panelX + 20 * sX, panelY + 27 * sY);
+        ctx.fillText(incomingText, panelX + 24 * sX, panelY + 33 * sY);
 
-        ctx.font = 'bold ' + Math.round(8 * sX) + 'px monospace';
-        ctx.fillStyle = 'rgba(0,255,255,0.76)';
+        ctx.fillStyle = '#07101C';
+        ctx.font = tagFont;
+        const tagX = yellowX + tagPadL;
+        const tagY = panelY + 33 * sY;
+        ctx.fillText(tagText, tagX, tagY);
+
+        ctx.font = Math.round(8.5 * sX) + 'px monospace';
+        ctx.fillStyle = 'rgba(0,255,255,0.72)';
         ctx.textAlign = 'right';
-        ctx.fillText(active.speaker, panelX + panelW - 24 * sX, panelY + 27 * sY);
+        const speakerText = String(active.speaker || 'SYSTEM').toUpperCase();
+        ctx.fillText('SIGNAL: ' + speakerText, panelX + panelW - 26 * sX, panelY + 30 * sY);
 
+        // Slide pips
+        const totalSlides = Math.max(1, active.slides.length);
+        const pipGap = 16 * sX;
+        const pipStart = panelX + panelW - 34 * sX - Math.max(0, totalSlides - 1) * pipGap;
+        for (let pi = 0; pi < totalSlides; pi++) {
+            const isCurrent = pi === active.slideIndex;
+            ctx.save();
+            ctx.translate(pipStart + pi * pipGap, panelY + headerH + 14 * sY);
+            ctx.rotate(Math.PI / 4);
+            const ps = (isCurrent ? 5.2 : 3.4) * sX;
+            ctx.shadowColor = isCurrent ? '#FFE600' : 'transparent';
+            ctx.shadowBlur = isCurrent ? 9 : 0;
+            ctx.fillStyle = isCurrent ? '#FFE600' : 'rgba(218,238,255,0.34)';
+            ctx.fillRect(-ps, -ps, ps * 2, ps * 2);
+            ctx.restore();
+        }
+
+        // Info row
+        const infoY = panelY + headerH + 25 * sY;
+        ctx.fillStyle = blink ? '#00FFFF' : 'rgba(0,255,255,0.42)';
+        ctx.shadowColor = '#00FFFF';
+        ctx.shadowBlur = blink ? 8 : 2;
+        ctx.fillRect(panelX + 25 * sX, infoY - 12 * sY, 5 * sX, 13 * sY);
+        ctx.shadowBlur = 0;
+
+        const slideNum = active.slideIndex + 1;
+        const sLabel = slideNum < 10 ? '0' + slideNum : '' + slideNum;
+        ctx.font = Math.round(8.5 * sX) + 'px monospace';
+        ctx.fillStyle = 'rgba(0,255,255,0.68)';
+        ctx.textAlign = 'left';
+        ctx.fillText('SYS://NEURAL_LINK > ' + tagText.replace(/\s+/g, '_') + ' > SLIDE_' + sLabel, panelX + 39 * sX, infoY);
+
+        ctx.strokeStyle = 'rgba(0,255,255,0.16)';
+        ctx.lineWidth = 1 * sX;
+        ctx.beginPath();
+        ctx.moveTo(panelX + 24 * sX, infoY + 11 * sY);
+        ctx.lineTo(panelX + panelW - 24 * sX, infoY + 11 * sY);
+        ctx.stroke();
+
+        // Dialogue text
         const slide = active.slides[active.slideIndex] || [];
-        const fullText = slide.join('\n');
+        const fullText = this._displayTextForSlide(slide, active);
         const displayed = this._typedText(fullText);
-        const textX = panelX + 30 * sX;
-        const textY = panelY + headerH + 38 * sY;
-        const textW = panelW - 60 * sX;
-        const lineH = 20 * sY;
+        const textX = panelX + 28 * sX;
+        const textW = panelW - 56 * sX;
+        const textTop = infoY + 43 * sY;
+        const promptY = panelY + panelH - promptH - 13 * sY;
+        const textBottom = promptY - 18 * sY;
+        const lineH = 18 * sY;
 
-        ctx.font = Math.round(15 * sX) + 'px ' + font;
+        ctx.font = Math.round(24 * sX) + 'px ' + font;
         ctx.fillStyle = '#DAEEFF';
         ctx.textAlign = 'left';
         const lines = this._wrapText(ctx, displayed, textW);
-        let y = textY;
-        for (let i = 0; i < lines.length && y < panelY + panelH - 42 * sY; i++) {
-            if (!lines[i]) {
-                y += 10 * sY;
+        let ty = textTop;
+        for (let li = 0; li < lines.length && ty <= textBottom; li++) {
+            if (!lines[li]) {
+                ty += 9 * sY;
                 continue;
             }
-            ctx.fillText(lines[i], textX, y);
-            y += lineH;
+            ctx.fillText(lines[li], textX, ty);
+            ty += lineH;
         }
 
+        // Continue prompt
         if (active.typeChars >= fullText.length) {
-            const blink = Math.floor(tick / 24) % 2 === 0;
-            ctx.font = Math.round(8 * sX) + 'px monospace';
-            ctx.fillStyle = blink ? '#00FFFF' : 'rgba(0,255,255,0.42)';
+            const pA = 0.34 + 0.42 * Math.sin(tick * 0.1);
+            ctx.beginPath();
+            ctx.moveTo(panelX + 28 * sX, promptY);
+            ctx.lineTo(panelX + panelW - 28 * sX, promptY);
+            ctx.lineTo(panelX + panelW - 38 * sX, promptY + promptH);
+            ctx.lineTo(panelX + 38 * sX, promptY + promptH);
+            ctx.closePath();
+            ctx.fillStyle = 'rgba(0,255,255,' + (0.05 + pA * 0.06) + ')';
+            ctx.fill();
+            ctx.strokeStyle = 'rgba(0,255,255,' + (0.18 + pA * 0.34) + ')';
+            ctx.stroke();
+            ctx.font = Math.round(9 * sX) + 'px monospace';
+            ctx.fillStyle = 'rgba(0,255,255,' + pA + ')';
             ctx.textAlign = 'center';
-            ctx.fillText('ENTER / CLICK TO CONTINUE', panelX + panelW / 2, panelY + panelH - 18 * sY);
+            ctx.fillText((blink ? '> ' : '  ') + 'ENTER / CLICK TO CONTINUE' + (blink ? ' <' : '  '), panelX + panelW / 2, promptY + promptH * 0.68);
         }
+
+        // Corner accents
+        ctx.strokeStyle = '#FFE600';
+        ctx.shadowColor = '#FFE600';
+        ctx.shadowBlur = 6;
+        ctx.lineWidth = 2 * sX;
+        const cr = 14 * sX;
+        ctx.beginPath();
+        ctx.moveTo(panelX, panelY + cr); ctx.lineTo(panelX, panelY); ctx.lineTo(panelX + cr, panelY);
+        ctx.moveTo(panelX + panelW - cr, panelY); ctx.lineTo(panelX + panelW, panelY); ctx.lineTo(panelX + panelW, panelY + cr);
+        ctx.moveTo(panelX + panelW, panelY + panelH - cr); ctx.lineTo(panelX + panelW, panelY + panelH); ctx.lineTo(panelX + panelW - cr, panelY + panelH);
+        ctx.moveTo(panelX + cr, panelY + panelH); ctx.lineTo(panelX, panelY + panelH); ctx.lineTo(panelX, panelY + panelH - cr);
+        ctx.stroke();
 
         ctx.restore();
     }
@@ -528,15 +752,24 @@ class IP2LiveDialogueManager {
 
     _injectMapHooks() {
         if (!Scene || !Scene.Map || !Scene.Map.prototype) return;
+        if (Scene.Map.prototype._ip2liveDialogueManagerInjected) return;
+        Scene.Map.prototype._ip2liveDialogueManagerInjected = true;
 
         const manager = this;
         const originalUpdate = Scene.Map.prototype.update;
         Scene.Map.prototype.update = function () {
-            if (manager.locksMovement()) manager._stripMovementInputs();
+            const isTitleActive = typeof IP2Live !== 'undefined' && IP2Live.WorldTitleOverlay && IP2Live.WorldTitleOverlay.isActive();
+            if (manager.locksMovement() || isTitleActive) manager._stripMovementInputs();
+            
             originalUpdate.call(this);
-            manager.triggerMapEnter(this);
-            if (manager.isActive() && Manager && Manager.Stack) Manager.Stack.requestPaintHUD = true;
-            if (manager.locksMovement()) manager._stripMovementInputs();
+            
+            if (!isTitleActive) {
+                manager._startQueuedIfPossible();
+                manager.triggerMapEnter(this);
+            }
+            
+            if ((manager.isActive() || isTitleActive) && Manager && Manager.Stack) Manager.Stack.requestPaintHUD = true;
+            if (manager.locksMovement() || isTitleActive) manager._stripMovementInputs();
         };
 
         const originalDrawHUD = Scene.Map.prototype.drawHUD;
@@ -544,6 +777,59 @@ class IP2LiveDialogueManager {
             originalDrawHUD.call(this);
             manager.drawOverlay(Common.Platform.ctx);
         };
+    }
+
+    clearQueuedStarts() {
+        this._queuedStarts = [];
+        return true;
+    }
+
+    resetTransitionState(options) {
+        const opts = options || {};
+        if (opts.stopActive && this.isActive()) this.stop();
+        this.clearQueuedStarts();
+        const keys = Object.keys(this._pendingTriggers || {});
+        for (let i = 0; i < keys.length; i++) {
+            const timer = this._pendingTriggers[keys[i]];
+            if (timer) clearTimeout(timer);
+        }
+        this._pendingTriggers = {};
+        this._lastMapEnterKey = null;
+        this._setQuestPanelSuppressed(false);
+        return true;
+    }
+
+    _queueStart(dialogueId, context) {
+        if (!dialogueId) return false;
+        const ctx = context || {};
+        const key = this._startQueueKey(dialogueId, ctx);
+
+        if (this._active && this._startQueueKey(this._active.id, this._active.context || {}) === key) {
+            return false;
+        }
+        for (let i = 0; i < this._queuedStarts.length; i++) {
+            if (this._queuedStarts[i].key === key) return false;
+        }
+
+        this._queuedStarts.push({ key, dialogueId, context: ctx });
+        return true;
+    }
+
+    _startQueuedIfPossible() {
+        const isTitleActive = typeof IP2Live !== 'undefined' && IP2Live.WorldTitleOverlay && IP2Live.WorldTitleOverlay.isActive();
+        if (isTitleActive || this._active || !this._queuedStarts || this._queuedStarts.length === 0) return false;
+
+        const q = this._queuedStarts.shift();
+        if (!q) return false;
+        return this.start(q.dialogueId, q.context);
+    }
+
+    _startQueueKey(dialogueId, context) {
+        const ctx = context || {};
+        const mapId = Number(ctx.mapId) || this.getMapId(ctx.scene) || 0;
+        const trigger = ctx.trigger || '';
+        const timing = ctx.timing || '';
+        return [dialogueId, mapId, trigger, timing].join(':');
     }
 
     _onKey(e) {
@@ -602,6 +888,13 @@ class IP2LiveDialogueManager {
 
     _runAction(action, context) {
         if (action === 'tutorial.activate') {
+            if (
+                IP2Live.GameManager &&
+                typeof IP2Live.GameManager.handleTutorialStart === 'function' &&
+                IP2Live.GameManager.handleTutorialStart(context || {})
+            ) {
+                return true;
+            }
             if (IP2Live.Tutorial && typeof IP2Live.Tutorial.activate === 'function') {
                 IP2Live.Tutorial.activate(context);
                 return true;
@@ -628,6 +921,61 @@ class IP2LiveDialogueManager {
         return true;
     }
 
+    _normalizeDialogueDefinition(entry) {
+        if (!entry || typeof entry !== 'object') return null;
+        const id = String(entry.id || entry.name || '').trim();
+        if (!id) return null;
+
+        return Object.assign({}, entry, {
+            id,
+            name: entry.name || id,
+            title: entry.title || 'TRANSMISSION',
+            speaker: entry.speaker || 'SYSTEM',
+            timing: entry.timing || null,
+            bindings: Object.assign({}, entry.bindings || {}),
+            slides: this._cloneSlides(entry.slides || []),
+        });
+    }
+
+    _matchesScope(bindings, scope) {
+        const b = bindings || {};
+        const s = scope || {};
+        const keys = ['mapId', 'stage', 'level', 'gameplayId', 'nodeId', 'questId', 'objectiveId', 'itemId', 'trigger'];
+
+        for (let i = 0; i < keys.length; i++) {
+            const key = keys[i];
+            if (b[key] === undefined || b[key] === null || b[key] === '') continue;
+            if (!this._bindingValueMatches(b[key], s[key], key)) return false;
+        }
+
+        return true;
+    }
+
+    _bindingValueMatches(expected, actual, key) {
+        if (Array.isArray(expected)) {
+            for (let i = 0; i < expected.length; i++) {
+                if (this._bindingValueMatches(expected[i], actual, key)) return true;
+            }
+            return false;
+        }
+
+        if (actual === undefined || actual === null) return false;
+        if (key === 'mapId' || key === 'stage' || key === 'level') {
+            return Number(expected) === Number(actual);
+        }
+
+        return String(expected) === String(actual);
+    }
+
+    _isTutorialControlsTeachingActive() {
+        if (typeof IP2Live === 'undefined' || !IP2Live.Tutorial) return false;
+        const tutorial = IP2Live.Tutorial;
+        if (!tutorial.isActive || !tutorial.PHASE) return false;
+        return tutorial.phase === tutorial.PHASE.MOVE_FB ||
+            tutorial.phase === tutorial.PHASE.MOVE_LR ||
+            tutorial.phase === tutorial.PHASE.CAMERA;
+    }
+
     _typedText(fullText) {
         const active = this._active;
         if (!active) return '';
@@ -648,6 +996,16 @@ class IP2LiveDialogueManager {
 
         const chars = '01#$@!?|ABCDEF';
         return revealed + chars[Math.floor(Math.random() * chars.length)];
+    }
+
+    _displayTextForSlide(slide, active) {
+        const arr = Array.isArray(slide) ? slide : [String(slide || '')];
+        const joins = (active && active.preserveLineBreaks) ? '\n' : ' ';
+        let text = arr.join(joins);
+        if (active && active.autoWrapText && !(active && active.preserveLineBreaks)) {
+            text = text.replace(/\s*\n+\s*/g, ' ');
+        }
+        return text.replace(/\s{2,}/g, ' ').trim();
     }
 
     _activeFullText() {

@@ -14,7 +14,7 @@ const inject = Manager.Plugins.inject;
 const IP2Live = {};
 
 IP2Live.DBManager = {
-    dbName: 'IP2Live_Database', dbVersion: 1, db: null,
+    dbName: 'IP2Live_Database', dbVersion: 2, db: null,
     initDB() {
         return new Promise((resolve, reject) => {
             const request = window.indexedDB.open(this.dbName, this.dbVersion);
@@ -22,10 +22,29 @@ IP2Live.DBManager = {
                 const db = e.target.result;
                 if (!db.objectStoreNames.contains('profiles'))
                     db.createObjectStore('profiles', { keyPath: 'infiltratorName' });
+                if (!db.objectStoreNames.contains('sessions')) {
+                    const sessions = db.createObjectStore('sessions', { keyPath: 'id', autoIncrement: true });
+                    sessions.createIndex('infiltratorName', 'infiltratorName', { unique: false });
+                    sessions.createIndex('startedAt', 'startedAt', { unique: false });
+                }
                 if (!db.objectStoreNames.contains('telemetry')) {
                     const s = db.createObjectStore('telemetry', { keyPath: 'id', autoIncrement: true });
                     s.createIndex('infiltratorName', 'infiltratorName', { unique: false });
                     s.createIndex('stageId', 'stageId', { unique: false });
+                    s.createIndex('timestamp', 'timestamp', { unique: false });
+                    s.createIndex('gameplayId', 'gameplayId', { unique: false });
+                    s.createIndex('eventType', 'eventType', { unique: false });
+                } else {
+                    // Upgrade existing telemetry store indexes for report queries.
+                    const tx = e.target.transaction;
+                    if (tx) {
+                        const s = tx.objectStore('telemetry');
+                        if (!s.indexNames.contains('infiltratorName')) s.createIndex('infiltratorName', 'infiltratorName', { unique: false });
+                        if (!s.indexNames.contains('stageId')) s.createIndex('stageId', 'stageId', { unique: false });
+                        if (!s.indexNames.contains('timestamp')) s.createIndex('timestamp', 'timestamp', { unique: false });
+                        if (!s.indexNames.contains('gameplayId')) s.createIndex('gameplayId', 'gameplayId', { unique: false });
+                        if (!s.indexNames.contains('eventType')) s.createIndex('eventType', 'eventType', { unique: false });
+                    }
                 }
             };
             request.onsuccess = (e) => { this.db = e.target.result; resolve(this.db); };
@@ -45,6 +64,60 @@ IP2Live.DBManager = {
         return new Promise((resolve, reject) => {
             const req = this.db.transaction([storeName], 'readonly').objectStore(storeName).get(key);
             req.onsuccess = () => resolve(req.result);
+            req.onerror = (e) => reject(e.target.error);
+        });
+    },
+    async getAllRecords(storeName) {
+        if (!this.db) await this.initDB();
+        return new Promise((resolve, reject) => {
+            const req = this.db.transaction([storeName], 'readonly').objectStore(storeName).getAll();
+            req.onsuccess = () => resolve(req.result || []);
+            req.onerror = (e) => reject(e.target.error);
+        });
+    },
+    async getRecordsByIndex(storeName, indexName, value) {
+        if (!this.db) await this.initDB();
+        return new Promise((resolve, reject) => {
+            const store = this.db.transaction([storeName], 'readonly').objectStore(storeName);
+            if (!store.indexNames.contains(indexName)) {
+                resolve([]);
+                return;
+            }
+            const req = store.index(indexName).getAll(value);
+            req.onsuccess = () => resolve(req.result || []);
+            req.onerror = (e) => reject(e.target.error);
+        });
+    },
+    async getRecordsByIndexRange(storeName, indexName, lowerValue, upperValue) {
+        if (!this.db) await this.initDB();
+        return new Promise((resolve, reject) => {
+            const store = this.db.transaction([storeName], 'readonly').objectStore(storeName);
+            if (!store.indexNames.contains(indexName)) {
+                resolve([]);
+                return;
+            }
+            const range = IDBKeyRange.bound(lowerValue, upperValue);
+            const req = store.index(indexName).getAll(range);
+            req.onsuccess = () => resolve(req.result || []);
+            req.onerror = (e) => reject(e.target.error);
+        });
+    },
+    async getRecordsByFilter(storeName, predicateFn) {
+        if (!this.db) await this.initDB();
+        return new Promise((resolve, reject) => {
+            const out = [];
+            const req = this.db.transaction([storeName], 'readonly').objectStore(storeName).openCursor();
+            req.onsuccess = (e) => {
+                const cursor = e.target.result;
+                if (!cursor) {
+                    resolve(out);
+                    return;
+                }
+                try {
+                    if (!predicateFn || predicateFn(cursor.value)) out.push(cursor.value);
+                } catch (err) {}
+                cursor.continue();
+            };
             req.onerror = (e) => reject(e.target.error);
         });
     }
@@ -707,37 +780,69 @@ IP2Live.QuestArrowAssetReady = (async function () {
 // ================================================================
 //  Section 2.5.4  GAMEPLAY MANAGER LOADER
 //  Stage gameplay screens and gameplay quest hooks live in
-//  gameplay/IPWires/modules.
+//  gameplay/gameplay1 and gameplay/gameplay2 modules.
 // ================================================================
 IP2Live.GameplayManagerReady = (async function () {
     if (IP2Live.QuestArrowAssetReady) await IP2Live.QuestArrowAssetReady;
     if (IP2Live.DialogueManagerReady) await IP2Live.DialogueManagerReady;
     const root = Common.Platform.ROOT_DIRECTORY;
-    const baseDir = root + 'Plugins/IP2Live_Core/gameplay/IPWires/modules/';
-    const files = [
-        'ip_wires_tutorial.js',
-        'ip_wires_gameplay.js',
+    const bundles = [
+        {
+            baseDir: root + 'Plugins/IP2Live_Core/gameplay/gameplay1/IPWires/',
+            version: '20260523_ip_wires_02_',
+            files: [
+                'ip_wires_tutorial.js',
+                'ip_wires_gameplay.js',
+            ],
+        },
+        {
+            baseDir: root + 'Plugins/IP2Live_Core/gameplay/gameplay2/IPPatchPanel/',
+            version: '20260528_ip_patchpanel_01_',
+            files: [
+                'ip_patchpanel_tutorial.js',
+                'ip_patchpanel_gameplay.js',
+            ],
+        },
+        {
+            baseDir: root + 'Plugins/IP2Live_Core/gameplay/gameplay3/CIDRPanel/',
+            version: '20260528_ip_cidrpanel_01_',
+            files: [
+                'ip_cidrpanel_tutorial.js',
+                'ip_cidrpanel_gameplay.js',
+            ],
+        },
+        {
+            baseDir: root + 'Plugins/IP2Live_Core/gameplay/gameplay4/SubnetSimulator/',
+            version: '20260529_ip_subnetsim_01_',
+            files: [
+                'ip_subnetsim_tutorial.js',
+                'ip_subnetsim_gameplay.js',
+            ],
+        },
     ];
     try {
-        for (let i = 0; i < files.length; i++) {
-            const src = baseDir + files[i];
-            const versionedSrc = src + '?v=20260523_ip_wires_02_' + Date.now();
-            let resp = await fetch(versionedSrc, { cache: 'no-store' });
-            if (!resp.ok) {
-                console.warn('[IP2Live] Versioned gameplay module fetch failed, retrying plain path:', versionedSrc);
-                resp = await fetch(src, { cache: 'no-store' });
+        for (let b = 0; b < bundles.length; b++) {
+            const bundle = bundles[b];
+            for (let i = 0; i < bundle.files.length; i++) {
+                const src = bundle.baseDir + bundle.files[i];
+                const versionedSrc = src + '?v=' + bundle.version + Date.now();
+                let resp = await fetch(versionedSrc, { cache: 'no-store' });
+                if (!resp.ok) {
+                    console.warn('[IP2Live] Versioned gameplay module fetch failed, retrying plain path:', versionedSrc);
+                    resp = await fetch(src, { cache: 'no-store' });
+                }
+                if (!resp.ok) throw new Error('HTTP ' + resp.status);
+                const code = await resp.text();
+                new Function(
+                    'Common', 'Core', 'Data', 'Graphic',
+                    'Manager', 'Scene', 'Model', 'Main', 'THREE', 'IP2Live', 'inject',
+                    code
+                )(Common, Core, Data, Graphic, Manager, Scene, Model, Main, THREE, IP2Live, inject);
+                console.log('[IP2Live] Gameplay module loaded from:', resp.url || src);
             }
-            if (!resp.ok) throw new Error('HTTP ' + resp.status);
-            const code = await resp.text();
-            new Function(
-                'Common', 'Core', 'Data', 'Graphic',
-                'Manager', 'Scene', 'Model', 'Main', 'THREE', 'IP2Live', 'inject',
-                code
-            )(Common, Core, Data, Graphic, Manager, Scene, Model, Main, THREE, IP2Live, inject);
-            console.log('[IP2Live] Gameplay module loaded from:', resp.url || src);
         }
     } catch (e) {
-        console.error('[IP2Live] Failed to load gameplay modules:', baseDir, e);
+        console.error('[IP2Live] Failed to load gameplay modules:', e);
     }
 }());
 
@@ -822,34 +927,31 @@ IP2Live.RestartManager = {
         newGame.initializeDefault();
         newGame.infiltratorName = currentName; // Restore profile name
         Core.Game.current = newGame;
-        
-        // Teleport back to the start of the map
-        Manager.Stack.push(new Scene.Map(mapId));
-        Manager.Stack.clearHUD();
-        if (IP2Live.LightingManager) {
-            IP2Live.LightingManager.refresh(Scene.Map.current);
+
+        if (IP2Live.DialogueManager && typeof IP2Live.DialogueManager.resetTransitionState === 'function') {
+            IP2Live.DialogueManager.resetTransitionState({ stopActive: true });
         }
-        
-        // Check if we are restarting Stage 1 to re-trigger tutorial
-        if (IP2Live.MapManager && IP2Live.MapManager.stages.length > 0 && mapId === IP2Live.MapManager.stages[0].id) {
-            // Restart tutorial music
-            if (IP2Live.MusicManager) {
-                IP2Live.MusicManager.play(IP2Live.MusicManager.ZONE.TUTORIAL);
+
+        const stage = IP2Live.MapManager && typeof IP2Live.MapManager.stageFor === 'function'
+            ? IP2Live.MapManager.stageFor(mapId)
+            : null;
+        const flowMode = stage && stage.tutorial ? 'tutorial' : 'stage';
+
+        if (IP2Live.GameManager && typeof IP2Live.GameManager.startMapFlow === 'function') {
+            IP2Live.GameManager.startMapFlow(mapId, null, {
+                mode: flowMode,
+                useLoading: false,
+                source: 'RestartManager.restartCurrentLevel',
+                status: flowMode === 'tutorial' ? 'Loading Tutorial Stage' : 'Loading Next Level',
+                detail: stage && stage.name ? stage.name : ('Map ' + mapId),
+            });
+        } else {
+            // Fallback path if GameManager is unavailable.
+            Manager.Stack.push(new Scene.Map(mapId));
+            Manager.Stack.clearHUD();
+            if (IP2Live.LightingManager) {
+                IP2Live.LightingManager.refresh(Scene.Map.current);
             }
-            setTimeout(() => {
-                if (IP2Live.LightingManager) {
-                    IP2Live.LightingManager.refresh(Scene.Map.current);
-                }
-                if (IP2Live.DialogueManager) {
-                    const handled = IP2Live.DialogueManager.triggerMapEvent(
-                        mapId,
-                        IP2Live.DialogueManager.EVENT.TUTORIAL_START,
-                        { source: 'RestartManager.restartCurrentLevel', scene: Scene.Map.current }
-                    );
-                    if (handled) return;
-                }
-                if (IP2Live.Tutorial) IP2Live.Tutorial.activate();
-            }, 1800);
         }
         
         console.log(`[IP2Live] RestartManager: Reloaded Stage MapID ${mapId}`);
@@ -928,6 +1030,76 @@ IP2Live.TutorialReady = (async function () {
 //  Each file is fetched as text then executed via new Function() with
 //  the same engine-injected variables as code.js itself.
 // ================================================================
+// ================================================================
+//  Section 2.6.1  GAME MANAGER LOADER
+//  Top-level orchestration for map flow, world titles, dialogue timing,
+//  tutorial activation, and gameplay lifecycle events.
+// ================================================================
+IP2Live.GameManagerReady = (async function () {
+    if (IP2Live.DialogueManagerReady) await IP2Live.DialogueManagerReady;
+    if (IP2Live.MapManagerReady) await IP2Live.MapManagerReady;
+    if (IP2Live.TutorialReady) await IP2Live.TutorialReady;
+    if (IP2Live.MusicManagerReady) await IP2Live.MusicManagerReady;
+    const root = Common.Platform.ROOT_DIRECTORY;
+    const src  = root + 'Plugins/IP2Live_Core/modules/game_manager.js';
+    try {
+        const versionedSrc = src + '?v=20260526_game_manager_01_' + Date.now();
+        let resp = await fetch(versionedSrc, { cache: 'no-store' });
+        if (!resp.ok) {
+            console.warn('[IP2Live] Versioned game manager fetch failed, retrying plain path:', versionedSrc);
+            resp = await fetch(src, { cache: 'no-store' });
+        }
+        if (!resp.ok) throw new Error('HTTP ' + resp.status);
+        const code = await resp.text();
+        new Function(
+            'Common', 'Core', 'Data', 'Graphic',
+            'Manager', 'Scene', 'Model', 'Main', 'THREE', 'IP2Live', 'inject',
+            code
+        )(Common, Core, Data, Graphic, Manager, Scene, Model, Main, THREE, IP2Live, inject);
+        if (IP2Live.GameManager && typeof IP2Live.GameManager.boot === 'function') {
+            await IP2Live.GameManager.boot();
+        }
+        console.log('[IP2Live] Game manager loaded from:', resp.url || src);
+    } catch (e) {
+        console.error('[IP2Live] Failed to load game manager:', src, e);
+    }
+}());
+
+// ================================================================
+//  Section 2.6.2  REPORT MANAGER LOADER
+//  Unified telemetry aggregation + PDF/Excel export.
+// ================================================================
+IP2Live.ReportManagerReady = (async function () {
+    if (IP2Live.GameManagerReady) await IP2Live.GameManagerReady;
+    const root = Common.Platform.ROOT_DIRECTORY;
+    const src  = root + 'Plugins/IP2Live_Core/modules/report_manager.js';
+    try {
+        const versionedSrc = src + '?v=20260529_report_manager_01_' + Date.now();
+        let resp = await fetch(versionedSrc, { cache: 'no-store' });
+        if (!resp.ok) {
+            console.warn('[IP2Live] Versioned report manager fetch failed, retrying plain path:', versionedSrc);
+            resp = await fetch(src, { cache: 'no-store' });
+        }
+        if (!resp.ok) throw new Error('HTTP ' + resp.status);
+        const code = await resp.text();
+        new Function(
+            'Common', 'Core', 'Data', 'Graphic',
+            'Manager', 'Scene', 'Model', 'Main', 'THREE', 'IP2Live', 'inject',
+            code
+        )(Common, Core, Data, Graphic, Manager, Scene, Model, Main, THREE, IP2Live, inject);
+        if (IP2Live.ReportManager && typeof IP2Live.ReportManager.boot === 'function') {
+            await IP2Live.ReportManager.boot();
+        }
+        console.log('[IP2Live] Report manager loaded from:', resp.url || src);
+    } catch (e) {
+        console.error('[IP2Live] Failed to load report manager:', src, e);
+    }
+}());
+
+// ================================================================
+//  Section 3  SCREEN MODULE LOADER
+//  Custom screen modules are loaded after GameManager is ready.
+// ================================================================
 IP2Live.ScreenModulesReady = (async function () {
     if (IP2Live.DialogueManagerReady) await IP2Live.DialogueManagerReady;
     if (IP2Live.LightingManagerReady) await IP2Live.LightingManagerReady;
@@ -935,15 +1107,21 @@ IP2Live.ScreenModulesReady = (async function () {
     if (IP2Live.MapManagerReady) await IP2Live.MapManagerReady;
     if (IP2Live.MusicManagerReady) await IP2Live.MusicManagerReady;
     if (IP2Live.TutorialReady) await IP2Live.TutorialReady;
+    if (IP2Live.GameManagerReady) await IP2Live.GameManagerReady;
+    if (IP2Live.ReportManagerReady) await IP2Live.ReportManagerReady;
     const root    = Common.Platform.ROOT_DIRECTORY;
     const baseDir = root + 'Plugins/IP2Live_Core/modules/screens/';
 
     // Load order matters: leaf screens first, main-menu last
     const screens = [
         'loading-screen.js',
+        'loading-screen-2.js',
+        'world-title.js',
+        'background-screen.js',
         'credits.js',
         'keyboard-menu.js',
         'load-game.js',
+        'export-report.js',
         'name-input.js',
         'settings.js',
         'pause-menu.js',

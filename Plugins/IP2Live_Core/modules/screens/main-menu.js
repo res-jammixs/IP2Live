@@ -42,6 +42,9 @@ class IP2LiveMainMenu extends Scene.Base {
 
         // Music guard — ensure we only call play() once per session
         this._musicStarted = false;
+        this.networkBackdrop = (window.IP2LiveBackgroundScreen)
+            ? new window.IP2LiveBackgroundScreen()
+            : null;
     }
 
     async load() {
@@ -305,26 +308,11 @@ class IP2LiveMainMenu extends Scene.Base {
         const scaleY = cH / SH;
 
         ctx.save();
+        // Light full-canvas shake to keep UI organized and readable.
+        ctx.translate(this.shakeX * 0.25, this.shakeY * 0.25);
 
-        if (IP2Live.Assets.bgImage) {
-            // Shake offset applied to background only
-            ctx.save();
-            ctx.translate(this.shakeX, this.shakeY);
-            IP2Live.Assets.drawCoverImage(ctx, IP2Live.Assets.bgImage, 0, 0, cW, cH);
-
-            // Horizontal slice glitch
-            if (Math.random() < 0.06) {
-                const sliceY = Math.random() * cH;
-                const sliceH = Math.random() * 60 + 10;
-                const offsetX = (Math.random() - 0.5) * 50;
-                ctx.drawImage(ctx.canvas, 0, sliceY, cW, sliceH, offsetX, sliceY, cW, sliceH);
-                // Chromatic color separation
-                ctx.fillStyle = Math.random() > 0.5 ? 'rgba(0,255,255,0.15)' : 'rgba(255,0,255,0.15)';
-                ctx.globalCompositeOperation = 'screen';
-                ctx.fillRect(0, sliceY, cW, sliceH);
-                ctx.globalCompositeOperation = 'source-over';
-            }
-            ctx.restore();
+        if (this.networkBackdrop && typeof this.networkBackdrop.draw === 'function') {
+            this.networkBackdrop.draw(ctx, cW, cH, this.animTick, 0, 0);
         } else {
             ctx.fillStyle = '#0a0a1a';
             ctx.fillRect(0, 0, cW, cH);
@@ -375,8 +363,6 @@ class IP2LiveMainMenu extends Scene.Base {
         ctx.fillText('// INFILTRATION PROTOCOL v1.0', 25 * scaleX, 195 * scaleY);
         ctx.globalAlpha = 1;
 
-        this._drawRightHackDeck(ctx, scaleX, scaleY, cW, cH);
-
         const layout = this._menuLayout();
 
         for (let i = 0; i < this.menuItems.length; i++) {
@@ -396,6 +382,9 @@ class IP2LiveMainMenu extends Scene.Base {
         }
 
         ctx.restore();
+
+        // Draw rare full-screen glitch slices above all menu UI.
+        this._drawGlobalGlitch(ctx, cW, cH, scaleX, scaleY);
     }
 
     _drawTitle(ctx, scaleX, scaleY, cW, cH) {
@@ -524,199 +513,406 @@ class IP2LiveMainMenu extends Scene.Base {
 
     _drawRightHackDeck(ctx, scaleX, scaleY, cW, cH) {
         const tick = this.animTick || 0;
-        const cx = cW * 0.735;
-        const cy = cH * 0.425;
+        // Keep icon centered in the middle of the right half.
+        const cx = cW * 0.75;
+        const cy = cH * 0.50;
         const unit = Math.min(cW, cH) / 1080;
-        const red = '#FF003C';
-        const cyan = '#00F0FF';
-        const yellow = '#FFE600';
 
         ctx.save();
-        ctx.globalAlpha = 0.96;
+        ctx.globalAlpha = 0.97;
 
-        const halo = ctx.createRadialGradient(cx, cy, 20 * unit, cx, cy, 360 * unit);
+        const halo = ctx.createRadialGradient(cx, cy, 10 * unit, cx, cy, 360 * unit);
         halo.addColorStop(0, 'rgba(0,240,255,0.20)');
-        halo.addColorStop(0.42, 'rgba(255,0,60,0.10)');
+        halo.addColorStop(0.5, 'rgba(255,0,60,0.16)');
         halo.addColorStop(1, 'rgba(0,0,0,0)');
         ctx.fillStyle = halo;
-        ctx.fillRect(cx - 390 * unit, cy - 310 * unit, 780 * unit, 620 * unit);
+        ctx.fillRect(cx - 400 * unit, cy - 310 * unit, 800 * unit, 620 * unit);
 
-        this._drawSignalRings(ctx, cx, cy, unit, tick, cyan, red, yellow);
-        this._drawDataConstellation(ctx, cx, cy, unit, tick);
-        this._drawCyberDeckDevice(ctx, cx, cy, unit, tick);
-        this._drawDeckPanels(ctx, cx, cy, unit, tick);
+        this._drawAerialOrbits(ctx, cx, cy, unit, tick);
+        this._drawShardField(ctx, cx, cy, unit, tick);
+        this._drawNeuralTerminal(ctx, cx, cy, unit, tick);
+        this._drawHUDTabs(ctx, cx, cy, unit, tick);
 
         ctx.restore();
     }
 
-    _drawSignalRings(ctx, cx, cy, unit, tick, cyan, red, yellow) {
+    _drawAerialOrbits(ctx, cx, cy, unit, tick) {
         ctx.save();
         ctx.translate(cx, cy);
-        ctx.rotate(Math.sin(tick * 0.012) * 0.06);
-        for (let i = 0; i < 4; i++) {
-            const r = (94 + i * 46 + Math.sin(tick * 0.018 + i) * 4) * unit;
+        ctx.rotate(-0.14);
+
+        // A single skewed HUD slab (new layout, no floating side widgets).
+        const slab = [
+            [-278, -190], [236, -176], [314, -34], [224, 186], [-292, 168], [-346, -30]
+        ];
+        ctx.beginPath();
+        for (let i = 0; i < slab.length; i++) {
+            const p = slab[i];
+            const px = p[0] * unit;
+            const py = p[1] * unit;
+            if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+        }
+        ctx.closePath();
+        const slabGrad = ctx.createLinearGradient(-320 * unit, -200 * unit, 300 * unit, 180 * unit);
+        slabGrad.addColorStop(0, 'rgba(255,0,60,0.16)');
+        slabGrad.addColorStop(0.3, 'rgba(3,7,20,0.86)');
+        slabGrad.addColorStop(0.78, 'rgba(2,6,18,0.92)');
+        slabGrad.addColorStop(1, 'rgba(0,240,255,0.18)');
+        ctx.fillStyle = slabGrad;
+        ctx.fill();
+        ctx.strokeStyle = 'rgba(0,240,255,0.52)';
+        ctx.lineWidth = 2.1 * unit;
+        ctx.stroke();
+
+        // Horizontal data lanes clipped to slab.
+        ctx.save();
+        ctx.clip();
+        ctx.lineWidth = 1.1 * unit;
+        for (let y = -188 * unit; y <= 178 * unit; y += 12 * unit) {
+            const laneGlow = 0.13 + 0.10 * Math.sin(tick * 0.03 + y * 0.02);
+            ctx.strokeStyle = 'rgba(0,240,255,' + laneGlow.toFixed(3) + ')';
             ctx.beginPath();
-            ctx.ellipse(0, 0, r * 1.55, r * 0.56, -0.2, Math.PI * 0.12, Math.PI * (1.55 + i * 0.08));
-            ctx.strokeStyle = i % 2 === 0 ? 'rgba(0,240,255,0.32)' : 'rgba(255,0,60,0.26)';
-            ctx.lineWidth = (1.2 + i * 0.28) * unit;
+            ctx.moveTo(-354 * unit, y);
+            ctx.lineTo(338 * unit, y);
             ctx.stroke();
         }
-        ctx.fillStyle = 'rgba(255,230,0,0.84)';
-        ctx.fillRect(-185 * unit, -3 * unit, 36 * unit, 5 * unit);
-        ctx.fillStyle = 'rgba(255,0,60,0.88)';
-        ctx.fillRect(142 * unit, 54 * unit, 56 * unit, 5 * unit);
-        ctx.fillStyle = 'rgba(0,240,255,0.80)';
-        ctx.fillRect(96 * unit, -102 * unit, 44 * unit, 4 * unit);
+        for (let i = -8; i <= 8; i++) {
+            const x = i * 40 * unit + ((tick * 0.8) % (40 * unit));
+            ctx.strokeStyle = i % 2 ? 'rgba(255,230,0,0.13)' : 'rgba(255,0,60,0.10)';
+            ctx.beginPath();
+            ctx.moveTo(x - 140 * unit, -220 * unit);
+            ctx.lineTo(x + 140 * unit, 220 * unit);
+            ctx.stroke();
+        }
+        ctx.restore();
+
+        // CIDR / subnet labels pinned to slab edges.
+        ctx.font = 'bold ' + Math.round(11 * unit) + 'px monospace';
+        ctx.fillStyle = 'rgba(0,240,255,0.72)';
+        ctx.fillText('ROUTE TABLE /24', -256 * unit, -158 * unit);
+        ctx.fillText('VLAN SEGMENT /27', -240 * unit, 150 * unit);
+        ctx.fillStyle = 'rgba(255,230,0,0.62)';
+        ctx.fillText('IP://10.72.14.' + ((Math.floor(tick / 9) % 140) + 24), 98 * unit, 146 * unit);
+
         ctx.restore();
     }
 
-    _drawDataConstellation(ctx, cx, cy, unit, tick) {
+    _drawShardField(ctx, cx, cy, unit, tick) {
         ctx.save();
-        ctx.lineWidth = 1 * unit;
-        for (let i = 0; i < this.deckNodes.length; i++) {
-            const n = this.deckNodes[i];
-            const a = n.angle + tick * n.speed;
-            const x = cx + Math.cos(a) * n.radius * unit * 1.38;
-            const y = cy + Math.sin(a + n.phase * 0.12) * n.radius * unit * 0.52;
-            const pulse = 0.55 + 0.45 * Math.sin(tick * 0.06 + n.phase);
-            ctx.globalAlpha = 0.28 + pulse * 0.55;
-            ctx.fillStyle = n.color;
-            ctx.beginPath();
-            ctx.arc(x, y, n.size * unit, 0, Math.PI * 2);
-            ctx.fill();
-            if (i % 4 === 0) {
-                ctx.strokeStyle = n.color.replace(')', ',0.22)');
-                ctx.globalAlpha = 0.16;
+        ctx.translate(cx, cy);
+        ctx.rotate(-0.14);
+
+        // Network node graph inside slab.
+        const nodes = [
+            [-210, -84], [-132, -124], [-44, -98], [52, -120], [144, -88],
+            [-188, -18], [-94, -36], [4, -24], [102, -42], [196, -16],
+            [-156, 48], [-62, 36], [34, 56], [132, 42], [226, 64]
+        ];
+        ctx.lineWidth = 1.6 * unit;
+        for (let i = 0; i < nodes.length; i++) {
+            const a = nodes[i];
+            const b = nodes[(i + 1) % nodes.length];
+            if (i % 2 === 0 || i % 5 === 0) {
+                ctx.strokeStyle = i % 4 === 0 ? 'rgba(255,0,60,0.30)' : 'rgba(0,240,255,0.32)';
                 ctx.beginPath();
-                ctx.moveTo(cx, cy);
-                ctx.lineTo(x, y);
+                ctx.moveTo(a[0] * unit, a[1] * unit);
+                ctx.lineTo(b[0] * unit, b[1] * unit);
                 ctx.stroke();
             }
         }
-        ctx.globalAlpha = 1;
+        for (let i = 0; i < nodes.length; i++) {
+            const n = nodes[i];
+            const pulse = 0.5 + 0.5 * Math.sin(tick * 0.09 + i * 0.8);
+            const r = (2.2 + (i % 3) * 0.9) * unit;
+            ctx.fillStyle = i % 5 === 0 ? 'rgba(255,230,0,' + (0.6 + pulse * 0.3).toFixed(3) + ')' :
+                (i % 2 === 0 ? 'rgba(0,240,255,' + (0.45 + pulse * 0.4).toFixed(3) + ')' : 'rgba(255,0,60,' + (0.40 + pulse * 0.4).toFixed(3) + ')');
+            ctx.beginPath();
+            ctx.arc(n[0] * unit, n[1] * unit, r, 0, Math.PI * 2);
+            ctx.fill();
+        }
+
+        // Traversing packets.
+        for (let i = 0; i < 5; i++) {
+            const p = (tick * 0.014 + i * 0.19) % 1;
+            const sx = -236 + p * 472;
+            const sy = -106 + Math.sin((p * Math.PI * 2) + i) * 16;
+            ctx.fillStyle = i % 2 ? 'rgba(255,0,60,0.85)' : 'rgba(0,240,255,0.88)';
+            ctx.fillRect((sx - 7) * unit, (sy - 2) * unit, 14 * unit, 4 * unit);
+        }
         ctx.restore();
     }
 
-    _drawCyberDeckDevice(ctx, cx, cy, unit, tick) {
-        const lean = Math.sin(tick * 0.018) * 0.075;
-        const bob = Math.sin(tick * 0.025) * 7 * unit;
+    _drawNeuralTerminal(ctx, cx, cy, unit, tick) {
+        const lean = -0.10 + Math.sin(tick * 0.014) * 0.012;
+        const bob = Math.sin(tick * 0.018) * 2 * unit;
+        const red = '#FF003C';
+        const cyan = '#00F0FF';
+        const yellow = '#FFE600';
+        const pulse = 0.55 + 0.45 * Math.sin(tick * 0.09);
         ctx.save();
         ctx.translate(cx, cy + bob);
         ctx.rotate(lean);
 
-        ctx.shadowColor = '#00F0FF';
-        ctx.shadowBlur = 22 * unit;
-        ctx.beginPath();
-        ctx.moveTo(-170 * unit, -92 * unit);
-        ctx.lineTo(122 * unit, -122 * unit);
-        ctx.lineTo(174 * unit, 42 * unit);
-        ctx.lineTo(-116 * unit, 72 * unit);
-        ctx.closePath();
-        ctx.fillStyle = 'rgba(4,10,22,0.90)';
-        ctx.fill();
-        ctx.shadowBlur = 0;
-        ctx.strokeStyle = 'rgba(0,240,255,0.78)';
-        ctx.lineWidth = 2 * unit;
-        ctx.stroke();
-
-        const screenGrad = ctx.createLinearGradient(-130 * unit, -80 * unit, 145 * unit, 48 * unit);
-        screenGrad.addColorStop(0, 'rgba(0,240,255,0.12)');
-        screenGrad.addColorStop(0.56, 'rgba(6,15,32,0.94)');
-        screenGrad.addColorStop(1, 'rgba(255,0,60,0.14)');
-        ctx.beginPath();
-        ctx.moveTo(-126 * unit, -70 * unit);
-        ctx.lineTo(93 * unit, -92 * unit);
-        ctx.lineTo(132 * unit, 26 * unit);
-        ctx.lineTo(-86 * unit, 48 * unit);
-        ctx.closePath();
-        ctx.fillStyle = screenGrad;
-        ctx.fill();
-
-        for (let i = 0; i < 12; i++) {
-            const yy = (-57 + i * 9) * unit;
-            const xx = (-105 + ((tick * 1.2 + i * 19) % 150)) * unit;
-            ctx.fillStyle = i % 3 === 0 ? 'rgba(255,230,0,0.74)' : (i % 2 === 0 ? 'rgba(255,0,60,0.62)' : 'rgba(0,240,255,0.68)');
-            ctx.fillRect(xx, yy, (28 + (i % 4) * 13) * unit, 3 * unit);
-        }
-
-        ctx.beginPath();
-        ctx.moveTo(-196 * unit, 82 * unit);
-        ctx.lineTo(168 * unit, 44 * unit);
-        ctx.lineTo(248 * unit, 116 * unit);
-        ctx.lineTo(-124 * unit, 158 * unit);
-        ctx.closePath();
-        ctx.fillStyle = 'rgba(5,8,18,0.94)';
-        ctx.fill();
-        ctx.strokeStyle = 'rgba(255,230,0,0.82)';
-        ctx.lineWidth = 2 * unit;
-        ctx.stroke();
-
-        for (let row = 0; row < 4; row++) {
-            for (let col = 0; col < 10; col++) {
-                const x = (-138 + col * 27 + row * 7) * unit;
-                const y = (94 + row * 12) * unit;
-                ctx.fillStyle = (row + col + Math.floor(tick / 12)) % 5 === 0 ? 'rgba(255,0,60,0.86)' : 'rgba(0,240,255,0.23)';
-                ctx.fillRect(x, y, 18 * unit, 5 * unit);
+        // New central concept: aggressive chevron + shield core.
+        ctx.save();
+        const wingL = [
+            [-188, -26], [-88, -72], [6, -54], [-86, 2], [-176, 20]
+        ];
+        const wingR = [
+            [188, 26], [90, 70], [-6, 54], [88, -2], [178, -22]
+        ];
+        const drawWing = (pts, colA, colB) => {
+            ctx.beginPath();
+            for (let i = 0; i < pts.length; i++) {
+                const p = pts[i];
+                const x = p[0] * unit;
+                const y = p[1] * unit;
+                if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
             }
+            ctx.closePath();
+            const g = ctx.createLinearGradient(-180 * unit, -80 * unit, 180 * unit, 80 * unit);
+            g.addColorStop(0, colA);
+            g.addColorStop(1, colB);
+            ctx.fillStyle = g;
+            ctx.fill();
+            ctx.strokeStyle = 'rgba(255,255,255,0.22)';
+            ctx.lineWidth = 1.2 * unit;
+            ctx.stroke();
+        };
+        drawWing(wingL, 'rgba(255,0,60,0.72)', 'rgba(64,0,30,0.35)');
+        drawWing(wingR, 'rgba(0,240,255,0.30)', 'rgba(0,240,255,0.72)');
+        ctx.restore();
+
+        // Shield core.
+        ctx.shadowColor = cyan;
+        ctx.shadowBlur = 22 * unit;
+        ctx.save();
+        ctx.rotate(tick * 0.004);
+        const shield = [
+            [0, -80], [66, -40], [50, 54], [0, 92], [-50, 54], [-66, -40]
+        ];
+        ctx.beginPath();
+        for (let i = 0; i < shield.length; i++) {
+            const p = shield[i];
+            if (i === 0) ctx.moveTo(p[0] * unit, p[1] * unit);
+            else ctx.lineTo(p[0] * unit, p[1] * unit);
+        }
+        ctx.closePath();
+        const coreGrad = ctx.createLinearGradient(-70 * unit, -84 * unit, 70 * unit, 96 * unit);
+        coreGrad.addColorStop(0, 'rgba(255,0,60,0.52)');
+        coreGrad.addColorStop(0.45, 'rgba(4,10,28,0.95)');
+        coreGrad.addColorStop(1, 'rgba(0,240,255,0.50)');
+        ctx.fillStyle = coreGrad;
+        ctx.fill();
+        ctx.strokeStyle = 'rgba(0,240,255,0.94)';
+        ctx.lineWidth = 2.8 * unit;
+        ctx.stroke();
+        ctx.restore();
+        ctx.shadowBlur = 0;
+
+        // Infiltrator glyph inside core.
+        ctx.save();
+        ctx.rotate(-0.56 + Math.sin(tick * 0.01) * 0.04);
+        ctx.lineWidth = 4.2 * unit;
+        ctx.strokeStyle = 'rgba(255,230,0,0.92)';
+        ctx.beginPath();
+        ctx.moveTo(-26 * unit, -18 * unit);
+        ctx.lineTo(8 * unit, -18 * unit);
+        ctx.lineTo(28 * unit, -38 * unit);
+        ctx.stroke();
+        ctx.strokeStyle = 'rgba(0,240,255,0.96)';
+        ctx.beginPath();
+        ctx.moveTo(-24 * unit, 10 * unit);
+        ctx.lineTo(12 * unit, 10 * unit);
+        ctx.lineTo(38 * unit, 34 * unit);
+        ctx.stroke();
+        ctx.fillStyle = 'rgba(255,0,60,0.95)';
+        ctx.beginPath();
+        ctx.arc(-34 * unit, -18 * unit, 4.0 * unit, 0, Math.PI * 2);
+        ctx.arc(-30 * unit, 10 * unit, 3.8 * unit, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+
+        // Support struts.
+        for (let i = 0; i < 3; i++) {
+            const a = -0.8 + i * 0.8 + Math.sin(tick * 0.006 + i) * 0.02;
+            const sx = Math.cos(a) * 166 * unit;
+            const sy = Math.sin(a) * 70 * unit;
+            this._drawMenuCoreBlade(
+                ctx, sx, sy,
+                (i === 1 ? 46 : 34) * unit,
+                (i === 1 ? 14 : 28) * unit,
+                i === 0 ? red : (i === 1 ? yellow : cyan),
+                tick + i * 9
+            );
         }
 
-        ctx.fillStyle = '#FF003C';
-        ctx.beginPath();
-        ctx.moveTo(-222 * unit, 75 * unit);
-        ctx.lineTo(-162 * unit, 65 * unit);
-        ctx.lineTo(-190 * unit, 112 * unit);
-        ctx.closePath();
-        ctx.fill();
+        // Subnet/IP telemetry labels.
+        ctx.textAlign = 'center';
+        ctx.font = 'bold ' + Math.round(14 * unit) + 'px monospace';
+        ctx.fillStyle = '#FFFFFF';
+        const subnetPct = ((Math.floor(tick * 0.72) % 41) + 58);
+        ctx.fillText(subnetPct + '%', 0, 2 * unit);
 
-        ctx.fillStyle = '#FFE600';
-        ctx.beginPath();
-        ctx.moveTo(174 * unit, 42 * unit);
-        ctx.lineTo(226 * unit, 52 * unit);
-        ctx.lineTo(194 * unit, 84 * unit);
-        ctx.closePath();
-        ctx.fill();
+        ctx.font = Math.round(10 * unit) + 'px monospace';
+        ctx.fillStyle = 'rgba(0,240,255,0.7)';
+        ctx.fillText('INTRUSION VECTOR', 0, 112 * unit);
+        ctx.fillStyle = 'rgba(255,230,0,0.70)';
+        const subnetTail = 20 + (Math.floor(tick / 8) % 176);
+        ctx.fillText('172.19.' + ((Math.floor(tick / 11) % 48) + 4) + '.' + subnetTail + '/27', 0, 127 * unit);
 
         ctx.restore();
     }
 
-    _drawDeckPanels(ctx, cx, cy, unit, tick) {
-        const font = IP2Live.Assets.nebulaLoaded ? 'Nebula-Regular' : 'monospace';
+    _drawHUDTabs(ctx, cx, cy, unit, tick) {
         ctx.save();
-        const panels = [
-            { x: cx - 330 * unit, y: cy - 160 * unit, w: 174 * unit, h: 54 * unit, title: 'ROOT', color: '#00F0FF' },
-            { x: cx + 208 * unit, y: cy - 122 * unit, w: 190 * unit, h: 58 * unit, title: 'TRACE', color: '#FF003C' },
-            { x: cx + 132 * unit, y: cy + 166 * unit, w: 218 * unit, h: 56 * unit, title: 'ACCESS', color: '#FFE600' }
+        ctx.translate(cx, cy);
+        ctx.rotate(-0.14);
+
+        // Top command ribbon integrated into same slab.
+        const ribbon = [
+            [-302, -202], [-42, -196], [-10, -164], [-272, -170]
         ];
-
-        for (let i = 0; i < panels.length; i++) {
-            const p = panels[i];
-            const sl = 12 * unit;
-            ctx.beginPath();
-            ctx.moveTo(p.x + sl, p.y);
-            ctx.lineTo(p.x + p.w, p.y);
-            ctx.lineTo(p.x + p.w - sl, p.y + p.h);
-            ctx.lineTo(p.x, p.y + p.h);
-            ctx.closePath();
-            ctx.fillStyle = 'rgba(3,7,20,0.72)';
-            ctx.fill();
-            ctx.strokeStyle = p.color;
-            ctx.lineWidth = 1.4 * unit;
-            ctx.stroke();
-
-            ctx.font = 'bold ' + Math.round(12 * unit) + 'px ' + font;
-            ctx.fillStyle = p.color;
-            ctx.textAlign = 'left';
-            ctx.fillText(p.title, p.x + 16 * unit, p.y + 20 * unit);
-
-            const bars = 4;
-            for (let b = 0; b < bars; b++) {
-                const bw = (42 + ((tick + b * 17 + i * 23) % 74)) * unit;
-                ctx.fillStyle = b % 2 ? 'rgba(0,240,255,0.38)' : 'rgba(255,255,255,0.18)';
-                ctx.fillRect(p.x + 16 * unit, p.y + (29 + b * 5) * unit, bw, 2 * unit);
-            }
+        ctx.beginPath();
+        for (let i = 0; i < ribbon.length; i++) {
+            const p = ribbon[i];
+            if (i === 0) ctx.moveTo(p[0] * unit, p[1] * unit);
+            else ctx.lineTo(p[0] * unit, p[1] * unit);
         }
+        ctx.closePath();
+        const rGrad = ctx.createLinearGradient(-302 * unit, -202 * unit, -10 * unit, -164 * unit);
+        rGrad.addColorStop(0, 'rgba(255,0,60,0.74)');
+        rGrad.addColorStop(1, 'rgba(70,0,34,0.36)');
+        ctx.fillStyle = rGrad;
+        ctx.fill();
+        ctx.strokeStyle = 'rgba(255,0,60,0.52)';
+        ctx.lineWidth = 1.4 * unit;
+        ctx.stroke();
 
+        ctx.font = 'bold ' + Math.round(11 * unit) + 'px monospace';
+        ctx.fillStyle = 'rgba(255,255,255,0.88)';
+        ctx.textAlign = 'left';
+        ctx.fillText('// GHOST_TUNNEL :: ACTIVE', -286 * unit, -178 * unit);
+
+        // Bottom command ribbon.
+        const ribbon2 = [
+            [26, 170], [304, 178], [274, 206], [2, 196]
+        ];
+        ctx.beginPath();
+        for (let i = 0; i < ribbon2.length; i++) {
+            const p = ribbon2[i];
+            if (i === 0) ctx.moveTo(p[0] * unit, p[1] * unit);
+            else ctx.lineTo(p[0] * unit, p[1] * unit);
+        }
+        ctx.closePath();
+        const yGrad = ctx.createLinearGradient(2 * unit, 170 * unit, 304 * unit, 206 * unit);
+        yGrad.addColorStop(0, 'rgba(255,230,0,0.74)');
+        yGrad.addColorStop(1, 'rgba(80,74,0,0.35)');
+        ctx.fillStyle = yGrad;
+        ctx.fill();
+        ctx.strokeStyle = 'rgba(255,230,0,0.56)';
+        ctx.lineWidth = 1.4 * unit;
+        ctx.stroke();
+
+        ctx.fillStyle = 'rgba(16,16,16,0.85)';
+        ctx.textAlign = 'right';
+        ctx.fillText('TARGET: APEX_GATEWAY', 286 * unit, 194 * unit);
+
+        // Right-side compact stats block (not floating panel; attached coordinates to slab zone).
+        ctx.fillStyle = 'rgba(0,240,255,0.78)';
+        ctx.textAlign = 'left';
+        ctx.font = 'bold ' + Math.round(10 * unit) + 'px monospace';
+        ctx.fillText('PING  09ms', 168 * unit, -132 * unit);
+        ctx.fillText('LOSS  00.2%', 168 * unit, -116 * unit);
+        ctx.fillText('AUTH  SSH-T', 168 * unit, -100 * unit);
+
+        // Progress notches.
+        const notchX = 158 * unit;
+        const notchY = -82 * unit;
+        for (let i = 0; i < 6; i++) {
+            ctx.fillStyle = i <= ((Math.floor(tick / 8) % 6)) ? 'rgba(255,0,60,0.90)' : 'rgba(0,240,255,0.24)';
+            ctx.fillRect(notchX + i * 14 * unit, notchY, 10 * unit, 3 * unit);
+        }
         ctx.restore();
+    }
+
+    _drawMenuCoreBlade(ctx, x, y, w, h, color, tick) {
+        ctx.save();
+        ctx.translate(x, y);
+        const light = color === '#FFE600' ? 'rgba(255,244,120,0.96)' : (color === '#FF003C' ? 'rgba(255,82,128,0.95)' : 'rgba(120,250,255,0.95)');
+        const dark = color === '#FFE600' ? 'rgba(140,120,0,0.95)' : (color === '#FF003C' ? 'rgba(120,0,42,0.95)' : 'rgba(0,88,120,0.95)');
+        const grad = ctx.createLinearGradient(-w / 2, -h / 2, w / 2, h / 2);
+        grad.addColorStop(0, light);
+        grad.addColorStop(0.45, color);
+        grad.addColorStop(1, dark);
+
+        const skew = Math.max(3, Math.min(w, h) * 0.28);
+        ctx.beginPath();
+        if (w > h) {
+            ctx.moveTo(-w / 2 + skew, -h / 2);
+            ctx.lineTo(w / 2, -h / 2);
+            ctx.lineTo(w / 2 - skew, h / 2);
+            ctx.lineTo(-w / 2, h / 2);
+        } else {
+            ctx.moveTo(-w / 2, -h / 2 + skew);
+            ctx.lineTo(w / 2, -h / 2);
+            ctx.lineTo(w / 2, h / 2 - skew);
+            ctx.lineTo(-w / 2, h / 2);
+        }
+        ctx.closePath();
+        ctx.fillStyle = grad;
+        ctx.fill();
+
+        ctx.strokeStyle = 'rgba(255,255,255,0.42)';
+        ctx.lineWidth = Math.max(1, Math.min(w, h) * 0.08);
+        ctx.stroke();
+
+        ctx.globalAlpha = 0.22 + 0.18 * Math.sin(tick * 0.1);
+        ctx.fillStyle = '#FFFFFF';
+        if (w > h) ctx.fillRect(-w * 0.18, -h * 0.22, w * 0.34, h * 0.18);
+        else ctx.fillRect(-w * 0.20, -h * 0.18, w * 0.26, h * 0.34);
+        ctx.globalAlpha = 1;
+        ctx.restore();
+    }
+
+    _drawGlobalGlitch(ctx, cW, cH, scaleX, scaleY) {
+        if (Math.random() > 0.035) return;
+        const slices = 1 + Math.floor(Math.random() * 2);
+        ctx.save();
+        for (let i = 0; i < slices; i++) {
+            const h = (4 + Math.random() * 10) * scaleY;
+            const y = Math.random() * (cH - h);
+            const dx = (Math.random() - 0.5) * 10 * scaleX;
+            ctx.drawImage(ctx.canvas, 0, y, cW, h, dx, y, cW, h);
+
+            ctx.globalCompositeOperation = 'screen';
+            ctx.fillStyle = i % 2 ? 'rgba(0,240,255,0.05)' : 'rgba(255,0,60,0.05)';
+            ctx.fillRect(0, y, cW, h);
+            ctx.globalCompositeOperation = 'source-over';
+        }
+        ctx.restore();
+    }
+
+    _poly(ctx, x, y, radius, sides, fill, stroke, lineWidth) {
+        if (!ctx || sides < 3 || radius <= 0) return;
+        ctx.beginPath();
+        for (let i = 0; i < sides; i++) {
+            const a = -Math.PI / 2 + i * (Math.PI * 2 / sides);
+            const px = x + Math.cos(a) * radius;
+            const py = y + Math.sin(a) * radius;
+            if (i === 0) ctx.moveTo(px, py);
+            else ctx.lineTo(px, py);
+        }
+        ctx.closePath();
+        if (fill) {
+            ctx.fillStyle = fill;
+            ctx.fill();
+        }
+        if (stroke && lineWidth > 0) {
+            ctx.strokeStyle = stroke;
+            ctx.lineWidth = lineWidth;
+            ctx.stroke();
+        }
     }
 
 

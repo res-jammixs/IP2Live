@@ -181,10 +181,13 @@ const MapManager = {
         const opts = options || {};
         const targetMapId = Number(mapId) || this.NEXT_STAGE_MAP_ID;
 
-        if (opts.useLoading !== false && IP2Live.LoadingScreen && typeof IP2Live.LoadingScreen.show === 'function') {
+        const isGameplayOrTutorial = this.isGameplayStage(targetMapId) || (this.stageFor(targetMapId) && this.stageFor(targetMapId).tutorial);
+        const ScreenClass = (isGameplayOrTutorial && IP2Live.LoadingScreen2) ? IP2Live.LoadingScreen2 : IP2Live.LoadingScreen;
+
+        if (opts.useLoading !== false && ScreenClass && typeof ScreenClass.show === 'function') {
             const manager = this;
             const currentMapId = this._currentMapId();
-            IP2Live.LoadingScreen.show({
+            ScreenClass.show({
                 mode: opts.loadingMode || 'replace',
                 status: opts.status || this._loadingStatusFor(targetMapId, currentMapId),
                 detail: opts.detail || this._stageName(targetMapId),
@@ -210,9 +213,13 @@ const MapManager = {
         if (Core.Game.current) Core.Game.current.currentMapID = targetMapId;
         const scene = new Scene.Map(targetMapId);
         if (opts.spawn) scene._ip2liveStageSpawnOverride = this._cloneTile(opts.spawn);
-        Manager.Stack.replace(scene);
-        Manager.Stack.clearHUD();
-        if (Manager.Stack) Manager.Stack.requestPaintHUD = true;
+        if (Manager && Manager.Stack) {
+            const stack = Manager.Stack;
+            if (stack.top) stack.replace(scene);
+            else stack.push(scene);
+            stack.clearHUD();
+            stack.requestPaintHUD = true;
+        }
         console.log(`[IP2Live] MapManager.goTo -> Map ${targetMapId}`);
     },
 
@@ -244,6 +251,22 @@ const MapManager = {
         const opts = options || {};
         const userAfterLoad = opts.onAfterLoad;
         this._stageRouteLocked = true;
+        if (
+            !opts._fromGameManager &&
+            IP2Live.GameManager &&
+            typeof IP2Live.GameManager.startMapFlow === 'function'
+        ) {
+            IP2Live.GameManager.startMapFlow(nextId, nextStage && nextStage.spawn, Object.assign({}, opts, {
+                mode: 'stage',
+                status: 'Loading Next Stage',
+                detail: nextStage ? nextStage.name : this._stageName(nextId),
+                onAfterLoad: function (targetMapId) {
+                    manager._stageRouteLocked = false;
+                    if (typeof userAfterLoad === 'function') userAfterLoad(targetMapId);
+                },
+            }));
+            return true;
+        }
         this.goTo(nextId, Object.assign({}, opts, {
             status: 'Loading Next Stage',
             detail: nextStage ? nextStage.name : this._stageName(nextId),
@@ -310,8 +333,17 @@ const MapManager = {
 
     /** Convenience: launch the first stage and queue the tutorial overlay. */
     goToTutorial(options) {
-        this._stageRouteLocked = false;
         const opts = options || {};
+        if (
+            !opts._fromGameManager &&
+            IP2Live.GameManager &&
+            typeof IP2Live.GameManager.startTutorialFlow === 'function'
+        ) {
+            this._stageRouteLocked = false;
+            return IP2Live.GameManager.startTutorialFlow(opts);
+        }
+
+        this._stageRouteLocked = false;
         const tutorialMapId = this.getInitialMapId();
         const afterLoad = () => {
             if (IP2Live.LightingManager) {
@@ -325,7 +357,10 @@ const MapManager = {
             // Allow the map scene to fully initialise before showing the tutorial.
             // DialogueManager owns the trigger so tutorial dialogue routing stays
             // in one place.
-            setTimeout(() => {
+            const checkAndStartTutorial = setInterval(() => {
+                if (typeof IP2Live !== 'undefined' && IP2Live.WorldTitleOverlay && IP2Live.WorldTitleOverlay.isActive()) return;
+                clearInterval(checkAndStartTutorial);
+                
                 if (IP2Live.LightingManager) {
                     IP2Live.LightingManager.refresh(Scene.Map.current);
                 }
@@ -338,12 +373,13 @@ const MapManager = {
                     if (handled) return;
                 }
                 if (IP2Live.Tutorial) IP2Live.Tutorial.activate();
-            }, 1800);
+            }, 100);
         };
 
-        if (opts.useLoading !== false && IP2Live.LoadingScreen && typeof IP2Live.LoadingScreen.show === 'function') {
+        const ScreenClass = IP2Live.LoadingScreen2 || IP2Live.LoadingScreen;
+        if (opts.useLoading !== false && ScreenClass && typeof ScreenClass.show === 'function') {
             const manager = this;
-            IP2Live.LoadingScreen.show({
+            ScreenClass.show({
                 mode: opts.loadingMode || 'replace',
                 status: opts.status || 'Loading Tutorial Stage',
                 detail: opts.detail || 'Loading New Game',
@@ -369,15 +405,30 @@ const MapManager = {
             const stage = this.stages[i];
             if (!this.isGameplayStage(stage.id)) continue;
 
-            if (IP2Live.GameplayManager && typeof IP2Live.GameplayManager.registerStageGameplayQuests === 'function') {
-                const gameplayQuestIds = IP2Live.GameplayManager.registerStageGameplayQuests(qm, this, stage);
-                if (gameplayQuestIds && gameplayQuestIds.length) {
-                    qm.registerMapQuests(stage.id, gameplayQuestIds, {
-                        append: true,
-                        autoStart: true,
-                        showFinished: false,
-                    });
+            let gameplayQuestIds = [];
+            if (IP2Live.GameManager && typeof IP2Live.GameManager.registerStageGameplayQuests === 'function') {
+                gameplayQuestIds = IP2Live.GameManager.registerStageGameplayQuests(qm, this, stage) || [];
+            } else {
+                const gameplayQuestManagers = [
+                    IP2Live.GameplayManager,
+                    IP2Live.PatchPanelGameplayManager,
+                    IP2Live.CIDRPanelGameplayManager,
+                    IP2Live.SubnetSimulatorGameplayManager,
+                ];
+                for (let g = 0; g < gameplayQuestManagers.length; g++) {
+                    const gameplayManager = gameplayQuestManagers[g];
+                    if (!gameplayManager || typeof gameplayManager.registerStageGameplayQuests !== 'function') continue;
+                    const ids = gameplayManager.registerStageGameplayQuests(qm, this, stage) || [];
+                    for (let j = 0; j < ids.length; j++) gameplayQuestIds.push(ids[j]);
                 }
+            }
+
+            if (gameplayQuestIds && gameplayQuestIds.length) {
+                qm.registerMapQuests(stage.id, gameplayQuestIds, {
+                    append: true,
+                    autoStart: true,
+                    showFinished: false,
+                });
             }
 
             const questId = this._stageQuestId(stage);
@@ -440,6 +491,9 @@ const MapManager = {
                     once: false,
                     delay: 320,
                     action: function (context, manager) {
+                        if (IP2Live.GameManager && typeof IP2Live.GameManager.handlesMapIntro === 'function' && IP2Live.GameManager.handlesMapIntro(targetMapId)) {
+                            return false;
+                        }
                         const scene = context && context.scene;
                         const activeScene = Scene && Scene.Map && Scene.Map.current ? Scene.Map.current : scene;
                         if (scene && scene._ip2liveStageIntroStarted) return false;
@@ -450,6 +504,9 @@ const MapManager = {
                         return manager.start(dialogueId, context);
                     },
                     condition: function (context, manager) {
+                        if (IP2Live.GameManager && typeof IP2Live.GameManager.handlesMapIntro === 'function' && IP2Live.GameManager.handlesMapIntro(targetMapId)) {
+                            return false;
+                        }
                         const scene = context && context.scene;
                         if (scene && scene._ip2liveStageIntroStarted) return false;
                         if (manager && typeof manager.isActive === 'function' && manager.isActive()) return false;
@@ -601,6 +658,22 @@ const MapManager = {
         const mapId = this._getMapIdFromScene(scene);
         if (!this.isGameplayStage(mapId)) return false;
 
+        const game = Core && Core.Game ? Core.Game.current : null;
+        const pending = game && game._ip2livePendingHeroPosition ? game._ip2livePendingHeroPosition : null;
+        if (pending && this._matchesPendingRestoreMap(mapId, pending)) {
+            const heroForRestore = this._heroForScene(scene);
+            if (heroForRestore && heroForRestore.position) {
+                this._setPosition(heroForRestore.position, pending);
+                scene._ip2liveStageSpawnApplied = true;
+                scene._ip2liveStageSpawnBypassed = true;
+                scene._ip2liveStageSpawnRequired = false;
+                delete game._ip2livePendingHeroPosition;
+                if (Manager && Manager.Stack) Manager.Stack.requestPaintHUD = true;
+                console.log('[IP2Live] Applied restored hero position for ' + this._stageName(mapId) + ' at X:' + pending.x + ' Y:' + pending.y + ' Z:' + pending.z);
+                return true;
+            }
+        }
+
         const spawn = scene._ip2liveStageSpawnOverride || this.spawnFor(mapId);
         if (!spawn) return false;
 
@@ -621,6 +694,13 @@ const MapManager = {
         if (Manager && Manager.Stack) Manager.Stack.requestPaintHUD = true;
         console.log('[IP2Live] Spawned player for ' + this._stageName(mapId) + ' at X:' + spawn.x + ' Y:' + spawn.y + ' Z:' + spawn.z);
         return true;
+    },
+
+    _matchesPendingRestoreMap(mapId, pending) {
+        if (!pending) return false;
+        const pendingMapId = Number(pending.mapId) || 0;
+        if (!pendingMapId) return true;
+        return pendingMapId === Number(mapId);
     },
 
     _ensureGameplayStageReady(scene) {
@@ -660,6 +740,9 @@ const MapManager = {
 
     _ensureStageIntro(scene, mapId) {
         if (!scene || scene._ip2liveStageIntroStarted || scene._ip2liveStageIntroPending) return false;
+        if (IP2Live.GameManager && typeof IP2Live.GameManager.handlesMapIntro === 'function' && IP2Live.GameManager.handlesMapIntro(mapId)) {
+            return false;
+        }
 
         const stage = this.stageFor(mapId);
         const dm = IP2Live.DialogueManager;

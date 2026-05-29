@@ -22,7 +22,7 @@ class IP2LiveCreditsScene extends Scene.Base {
     }
 
     onKeyPressed(key) { Data.Systems.soundCancel.playSound(); Manager.Stack.pop(); }
-    onMouseUp(x, y)   { Data.Systems.soundCancel.playSound(); Manager.Stack.pop(); }
+    onMouseUp(x, y) { Data.Systems.soundCancel.playSound(); Manager.Stack.pop(); }
     onKeyPressedAndRepeat(key) { return true; }
     draw3D() { Manager.GL.renderer.clear(); }
 
@@ -33,9 +33,9 @@ class IP2LiveCreditsScene extends Scene.Base {
     }
 
     drawHUD() {
-        const ctx    = Common.Platform.ctx;
-        const cW     = Common.ScreenResolution.CANVAS_WIDTH;
-        const cH     = Common.ScreenResolution.CANVAS_HEIGHT;
+        const ctx = Common.Platform.ctx;
+        const cW = Common.ScreenResolution.CANVAS_WIDTH;
+        const cH = Common.ScreenResolution.CANVAS_HEIGHT;
         const scaleX = cW / Common.ScreenResolution.SCREEN_X;
         const scaleY = cH / Common.ScreenResolution.SCREEN_Y;
 
@@ -551,23 +551,24 @@ class IP2LiveEndCreditsScene extends Scene.Base {
     }
 
     _exportReport() {
-        const report = this._buildReport();
-        try {
-            if (typeof Blob === 'undefined' || typeof document === 'undefined') throw new Error('download unavailable');
-            const blob = new Blob([report], { type: 'text/plain;charset=utf-8' });
-            const url = URL.createObjectURL(blob);
-            const link = document.createElement('a');
-            link.href = url;
-            link.download = 'IP2Live_Run_Report.txt';
-            document.body.appendChild(link);
-            link.click();
-            document.body.removeChild(link);
-            URL.revokeObjectURL(url);
-            this.statusLine = 'REPORT EXPORTED';
-        } catch (e) {
-            console.log(report);
-            this.statusLine = 'REPORT PRINTED TO CONSOLE';
+        if (window.IP2LiveExportReportMenu) {
+            Manager.Stack.push(new IP2LiveExportReportMenu());
+            return;
         }
+        if (IP2Live.GameManager && typeof IP2Live.GameManager.exportProgressReport === 'function') {
+            IP2Live.GameManager.exportProgressReport({
+                scopeDays: 30,
+                format: 'both',
+            }).then(() => {
+                this.statusLine = 'REPORT EXPORTED';
+                if (Manager && Manager.Stack) Manager.Stack.requestPaintHUD = true;
+            }).catch(() => {
+                this.statusLine = 'REPORT EXPORT FAILED';
+                if (Manager && Manager.Stack) Manager.Stack.requestPaintHUD = true;
+            });
+            return;
+        }
+        this.statusLine = 'REPORT SYSTEM UNAVAILABLE';
         if (Manager && Manager.Stack) Manager.Stack.requestPaintHUD = true;
     }
 
