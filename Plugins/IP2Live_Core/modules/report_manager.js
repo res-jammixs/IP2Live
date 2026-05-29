@@ -97,6 +97,8 @@ const IP2LiveReportManager = {
         const catalog = Array.isArray(input.gameplayCatalog) ? input.gameplayCatalog : [];
         const catalogByGameplay = this._catalogByGameplayId(catalog);
         const attempts = this._attemptRows(telemetry);
+        const attemptMistakes = this._mistakeAttemptRows(telemetry, catalogByGameplay);
+        const stepAnalysis = this._stepAnalysisRows(attemptMistakes, attempts);
         const sessionsCount = this._uniqueCount(attempts.map(function (a) { return a.sessionId || null; }).filter(Boolean));
         const totalActiveMs = attempts.reduce(function (sum, a) { return sum + Math.max(0, Number(a.durationMs || 0) || 0); }, 0);
         const passedCount = attempts.filter(function (a) { return !!a.passed; }).length;
@@ -139,6 +141,7 @@ const IP2LiveReportManager = {
             attemptSummary: attemptSummary,
             daily: daily,
             mastery: mastery,
+            stepAnalysis: stepAnalysis,
         });
         const performanceSummary = this._generatePerformanceSummary(stats);
 
@@ -169,9 +172,11 @@ const IP2LiveReportManager = {
             competencies: competencies,
             daily: daily,
             attemptSummary: attemptSummary,
+            stepAnalysis: stepAnalysis,
             stats: stats,
             performanceSummary: performanceSummary,
             attemptsRaw: attempts,
+            attemptMistakes: attemptMistakes,
         };
     },
 
@@ -179,6 +184,7 @@ const IP2LiveReportManager = {
         const attempts = Array.isArray(input.attempts) ? input.attempts.slice() : [];
         const catalogByGameplay = input.catalogByGameplay || {};
         const mastery = input.mastery || {};
+        const stepAnalysis = Array.isArray(input.stepAnalysis) ? input.stepAnalysis.slice() : [];
 
         attempts.sort(function (a, b) { return (Number(a.timestamp) || 0) - (Number(b.timestamp) || 0); });
 
@@ -500,6 +506,15 @@ const IP2LiveReportManager = {
                 series: sessionRows.map(function (row) { return row.accuracyRate; }),
             },
             errorPatterns: repeatedFailurePatterns,
+            stepAnalysis: stepAnalysis,
+            strongestSteps: stepAnalysis.slice().sort(function (a, b) {
+                if (a.mistakeRate !== b.mistakeRate) return a.mistakeRate - b.mistakeRate;
+                return a.totalMistakes - b.totalMistakes;
+            }).slice(0, 5),
+            weakestSteps: stepAnalysis.slice().sort(function (a, b) {
+                if (b.mistakeRate !== a.mistakeRate) return b.mistakeRate - a.mistakeRate;
+                return b.totalMistakes - a.totalMistakes;
+            }).slice(0, 5),
             strongestGameplay: gameplaySorted.length ? gameplaySorted[0] : null,
             weakestGameplay: gameplayWorst.length ? gameplayWorst[0] : null,
         };
@@ -510,6 +525,7 @@ const IP2LiveReportManager = {
         const strongest = stats && stats.strongestGameplay ? stats.strongestGameplay : null;
         const weakest = stats && stats.weakestGameplay ? stats.weakestGameplay : null;
         const errors = stats && Array.isArray(stats.errorPatterns) ? stats.errorPatterns : [];
+        const weakSteps = stats && Array.isArray(stats.weakestSteps) ? stats.weakestSteps : [];
         const trend = stats && stats.progressionTrend ? stats.progressionTrend : { direction: 'plateau', deltaAccuracyRate: 0 };
         const mastery = Math.max(0, Math.min(100, Number(overall.weightedMastery || 0) || 0));
 
@@ -531,7 +547,10 @@ const IP2LiveReportManager = {
         }
 
         const recommendationTarget = weakest ? weakest.gameplayLabel : 'the weakest gameplay area';
-        return 'Overall performance is ' + level + '. ' + strongestName + ' is the strongest area, while ' + weakestName + ' needs the most attention. ' + errorText + ' ' + trendText + ' Focus on ' + recommendationTarget + ' before advancing to the next stage.';
+        const stepText = weakSteps.length
+            ? ' The most repeated step-level issue is ' + weakSteps[0].stepLabel + ' in ' + weakSteps[0].gameplayLabel + ', based on ' + weakSteps[0].totalMistakes + ' recorded try-level mistake(s).'
+            : ' No repeated step-level mistake pattern is available yet.';
+        return 'Overall performance is ' + level + '. ' + strongestName + ' is the strongest area, while ' + weakestName + ' needs the most attention. ' + errorText + ' ' + trendText + stepText + ' Focus on ' + recommendationTarget + ' before advancing to the next stage.';
     },
 
     _moduleFamilyKey(gameplayId) {
@@ -547,9 +566,11 @@ const IP2LiveReportManager = {
         const key = String(moduleKey || 'unknown_gameplay');
         const map = {
             ip_class_wires: 'IP Wires',
+            ip_class_wires_harder: 'Advanced IP Wires',
             ip_patch_panel_classes: 'IP Patch Panel',
             ip_cidr_binary_panel: 'CIDR Binary Panel',
             ip_subnet_simulator: 'Subnet Simulator',
+            ip_network_repair: 'Network Repair PCs',
         };
         return map[key] || key;
     },
@@ -598,6 +619,190 @@ const IP2LiveReportManager = {
                 payload: row.payload || {},
             });
         }
+        return out;
+    },
+
+    _mistakeAttemptRows(telemetry, catalogByGameplay) {
+        const out = [];
+        const catalog = catalogByGameplay || {};
+        for (let i = 0; i < telemetry.length; i++) {
+            const row = telemetry[i] || {};
+            if (row.eventType !== 'attempt_mistake') continue;
+            const gameplayId = row.gameplayId || 'unknown_gameplay';
+            const c = catalog[gameplayId] || {};
+            const payload = row.payload || {};
+            const mistakes = Array.isArray(payload.mistakes) ? payload.mistakes : [];
+            const tryNumber = Number(payload.tryNumber || row.mistakeCount || 0) || 0;
+            const base = {
+                timestamp: Number(row.timestamp || 0) || 0,
+                sessionId: row.sessionId || null,
+                attemptId: row.attemptId || null,
+                gameplayId: gameplayId,
+                gameplayLabel: c.label || row.gameplayLabel || gameplayId,
+                competencyKey: c.competencyKey || row.competencyKey || null,
+                competencyLabel: c.competencyLabel || row.competencyLabel || null,
+                stageId: Number(row.stageId || row.mapId || 0) || 0,
+                levelId: Number(row.levelId || 0) || 0,
+                mapId: Number(row.mapId || 0) || 0,
+                questId: row.questId || null,
+                objectiveId: row.objectiveId || null,
+                tryNumber: tryNumber,
+                attemptsRemaining: Number(payload.attemptsRemaining || 0) || 0,
+                mistakesThisTry: Number(payload.mistakesThisTry || mistakes.length || 0) || 0,
+            };
+            if (!mistakes.length) {
+                out.push(Object.assign({}, base, this._normalizeMistakeDetail(gameplayId, {}, 0)));
+                continue;
+            }
+            for (let m = 0; m < mistakes.length; m++) {
+                out.push(Object.assign({}, base, this._normalizeMistakeDetail(gameplayId, mistakes[m] || {}, m)));
+            }
+        }
+        out.sort(function (a, b) {
+            if (a.timestamp !== b.timestamp) return a.timestamp - b.timestamp;
+            if (a.tryNumber !== b.tryNumber) return a.tryNumber - b.tryNumber;
+            return a.mistakeIndex - b.mistakeIndex;
+        });
+        return out;
+    },
+
+    _normalizeMistakeDetail(gameplayId, mistake, index) {
+        const m = mistake || {};
+        const stepKey = m.stepKey || m.gameplayStep || this._defaultMistakeStepKey(gameplayId, m);
+        const expected = m.expectedText || m.expected || m.correctClass || m.sourceClass || null;
+        const submitted = m.submittedText || m.submitted || m.targetClass || m.selectedClass || null;
+        const issueType = m.issueType || m.mistakeType || this._defaultMistakeIssueType(gameplayId, m);
+        return {
+            mistakeIndex: Number(index || 0) || 0,
+            stepKey: stepKey,
+            stepLabel: m.stepLabel || this._stepDisplayName(stepKey),
+            issueType: issueType,
+            expected: this._stringifyCell(expected),
+            submitted: this._stringifyCell(submitted),
+            detail: this._mistakeDetailText(gameplayId, m, expected, submitted, issueType),
+        };
+    },
+
+    _defaultMistakeStepKey(gameplayId, mistake) {
+        const id = String(gameplayId || '');
+        const taskType = mistake && mistake.taskType ? String(mistake.taskType) : '';
+        if (id === 'ip_network_repair') return taskType || 'network_range_calculation';
+        if (id === 'ip_cidr_binary_panel') return 'cidr_prefix';
+        if (id === 'ip_subnet_simulator') return 'subnet_calculation';
+        if (id === 'ip_patch_panel_classes') return 'ip_classification_route';
+        if (id === 'ip_class_wires' || id === 'ip_class_wires_harder') return 'ip_classification';
+        return id || 'unknown_step';
+    },
+
+    _defaultMistakeIssueType(gameplayId, mistake) {
+        if (mistake && mistake.issueType) return mistake.issueType;
+        if (mistake && mistake.mistakeType) return mistake.mistakeType;
+        if (gameplayId === 'ip_patch_panel_classes') return 'misroute';
+        if (gameplayId === 'ip_class_wires' || gameplayId === 'ip_class_wires_harder') return 'wrong_class_mapping';
+        return 'wrong_answer';
+    },
+
+    _stepDisplayName(stepKey) {
+        const key = String(stepKey || 'unknown_step');
+        const map = {
+            ip_classification: 'IP class identification',
+            ip_classification_route: 'IP class routing',
+            subnet_mask_binary: 'Subnet mask binary',
+            cidr_prefix: 'CIDR prefix calculation',
+            usableSubnets: 'Usable subnets',
+            totalSubnets: 'Total subnets',
+            totalHosts: 'Total hosts',
+            usableHosts: 'Usable hosts',
+            networkAddress: 'Network address',
+            broadcastAddress: 'Broadcast address',
+            gatewayAddress: 'First usable address',
+            firstUsable: 'First usable address',
+            usableRange: 'Usable range',
+            reserveAddress: 'Last usable address',
+            lastUsable: 'Last usable address',
+            network_range_calculation: 'Network range calculation',
+            subnet_calculation: 'Subnet calculation',
+            mask_to_binary: 'Mask to binary',
+            binary_to_cidr: 'Binary to CIDR',
+        };
+        return map[key] || key.replace(/_/g, ' ');
+    },
+
+    _mistakeDetailText(gameplayId, mistake, expected, submitted, issueType) {
+        const m = mistake || {};
+        if (m.detail) return String(m.detail);
+        if (m.packetIp) return 'Packet ' + m.packetIp + ' routed as ' + this._stringifyCell(submitted) + '; expected ' + this._stringifyCell(expected) + '.';
+        if (m.sourceClass || m.targetClass) return 'Mapped class ' + this._stringifyCell(m.sourceClass) + ' to ' + this._stringifyCell(m.targetClass) + '.';
+        if (m.expectedText || m.submittedText) return 'Submitted ' + this._stringifyCell(submitted) + '; expected ' + this._stringifyCell(expected) + '.';
+        return String(issueType || 'mistake') + ': submitted ' + this._stringifyCell(submitted) + '; expected ' + this._stringifyCell(expected) + '.';
+    },
+
+    _stepAnalysisRows(attemptMistakes, attempts) {
+        const byGameplayAttempts = {};
+        for (let i = 0; i < attempts.length; i++) {
+            const id = attempts[i].gameplayId || 'unknown_gameplay';
+            byGameplayAttempts[id] = (byGameplayAttempts[id] || 0) + 1;
+        }
+
+        const groups = {};
+        for (let i = 0; i < attemptMistakes.length; i++) {
+            const m = attemptMistakes[i];
+            const key = [m.gameplayId, m.stepKey].join('|');
+            if (!groups[key]) {
+                groups[key] = {
+                    gameplayId: m.gameplayId,
+                    gameplayLabel: m.gameplayLabel,
+                    competencyKey: m.competencyKey,
+                    competencyLabel: m.competencyLabel,
+                    stepKey: m.stepKey,
+                    stepLabel: m.stepLabel,
+                    totalMistakes: 0,
+                    affectedAttempts: {},
+                    tries: {},
+                    issueCounts: {},
+                    examples: [],
+                };
+            }
+            const g = groups[key];
+            g.totalMistakes++;
+            if (m.attemptId) g.affectedAttempts[m.attemptId] = true;
+            g.tries[(m.attemptId || 'attempt') + ':' + (m.tryNumber || 0)] = true;
+            g.issueCounts[m.issueType || 'wrong_answer'] = (g.issueCounts[m.issueType || 'wrong_answer'] || 0) + 1;
+            if (g.examples.length < 3) g.examples.push(m.detail);
+        }
+
+        const out = Object.keys(groups).map(function (key) {
+            const g = groups[key];
+            const attemptsForGameplay = Number(byGameplayAttempts[g.gameplayId] || 0) || 0;
+            const affectedAttemptCount = Object.keys(g.affectedAttempts).length;
+            const mistakeRate = attemptsForGameplay > 0 ? affectedAttemptCount / attemptsForGameplay : 0;
+            const topIssues = Object.keys(g.issueCounts).sort(function (a, b) {
+                return g.issueCounts[b] - g.issueCounts[a];
+            });
+            let status = 'Low';
+            if (g.totalMistakes >= 5 || mistakeRate >= 0.6) status = 'High';
+            else if (g.totalMistakes >= 2 || mistakeRate >= 0.3) status = 'Moderate';
+            return {
+                gameplayId: g.gameplayId,
+                gameplayLabel: g.gameplayLabel,
+                competencyKey: g.competencyKey,
+                competencyLabel: g.competencyLabel,
+                stepKey: g.stepKey,
+                stepLabel: g.stepLabel,
+                totalMistakes: g.totalMistakes,
+                affectedAttempts: affectedAttemptCount,
+                tryEvents: Object.keys(g.tries).length,
+                gameplayAttempts: attemptsForGameplay,
+                mistakeRate: mistakeRate,
+                topIssue: topIssues.length ? topIssues[0] : 'wrong_answer',
+                examples: g.examples.join(' | '),
+                status: status,
+            };
+        });
+        out.sort(function (a, b) {
+            if (b.totalMistakes !== a.totalMistakes) return b.totalMistakes - a.totalMistakes;
+            return String(a.stepLabel || '').localeCompare(String(b.stepLabel || ''));
+        });
         return out;
     },
 
@@ -955,6 +1160,12 @@ const IP2LiveReportManager = {
 
         this._pdfStartPage(ctx, { title: 'Mistake Breakdown' });
         this._pdfRenderMistakeSection(ctx);
+
+        this._pdfStartPage(ctx, { title: 'Try-Level Mistakes' });
+        this._pdfRenderTryMistakeSection(ctx);
+
+        this._pdfStartPage(ctx, { title: 'Subnetting Step Analysis' });
+        this._pdfRenderStepAnalysisSection(ctx);
 
         this._pdfStartPage(ctx, { title: 'Attempts Raw' });
         this._pdfRenderAttemptsRawSection(ctx);
@@ -1362,15 +1573,24 @@ const IP2LiveReportManager = {
         const left = ctx.margin;
         const top = ctx.contentTop;
         const rows = [];
-        const pg = Array.isArray(report.perGameplay) ? report.perGameplay : [];
-        for (let i = 0; i < pg.length; i++) {
-            const g = pg[i];
+        const perGameplay = report.perGameplay || {};
+        const pgKeys = Object.keys(perGameplay);
+        for (let i = 0; i < pgKeys.length; i++) {
+            const g = perGameplay[pgKeys[i]] || {};
             const mapping = g.wrongClassMappings || {};
             const keys = Object.keys(mapping);
             for (let j = 0; j < keys.length; j++) rows.push({ gameplayId: g.gameplayId, issue: keys[j], count: mapping[keys[j]] });
             const slots = g.slotWrongFrequency || {};
             const slotKeys = Object.keys(slots);
             for (let k = 0; k < slotKeys.length; k++) rows.push({ gameplayId: g.gameplayId, issue: 'slot:' + slotKeys[k], count: slots[slotKeys[k]] });
+        }
+        const steps = Array.isArray(report.stepAnalysis) ? report.stepAnalysis : [];
+        for (let s = 0; s < steps.length; s++) {
+            rows.push({
+                gameplayId: steps[s].gameplayId,
+                issue: 'step:' + steps[s].stepLabel,
+                count: steps[s].totalMistakes,
+            });
         }
 
         this._pdfRenderSectionHeader(writer, left, top, 520, 'Mistake Breakdown', 'Error clusters, slot mismatches, and repeated failure streaks');
@@ -1390,6 +1610,65 @@ const IP2LiveReportManager = {
             ],
             rows: rows,
             rowColor: function (row, index) { return index % 2 === 0 ? [0.98, 0.99, 1, 1] : [1, 1, 1, 1]; },
+        });
+    },
+
+    _pdfRenderTryMistakeSection(ctx) {
+        const report = ctx.report;
+        const writer = ctx.writer;
+        const left = ctx.margin;
+        const top = ctx.contentTop;
+        const rows = Array.isArray(report.attemptMistakes) ? report.attemptMistakes.slice(0, 24) : [];
+
+        this._pdfRenderSectionHeader(writer, left, top, 520, 'Try-Level Mistakes', 'Mistakes recorded before final pass/fail, grouped by try number');
+        this._pdfRenderTable(writer, {
+            x: left,
+            y: top - 58,
+            width: 520,
+            title: 'Recorded Mistakes During Attempts',
+            columns: [
+                { key: 'timestamp', label: 'Time', width: 0.14, formatter: this._formatPdfTimestamp.bind(this) },
+                { key: 'gameplayLabel', label: 'Gameplay', width: 0.18 },
+                { key: 'tryNumber', label: 'Try', width: 0.06, align: 'right' },
+                { key: 'stepLabel', label: 'Step', width: 0.18 },
+                { key: 'issueType', label: 'Issue', width: 0.13 },
+                { key: 'submitted', label: 'Submitted', width: 0.14 },
+                { key: 'expected', label: 'Expected', width: 0.14 },
+            ],
+            rows: rows,
+            rowColor: function (row, index) { return index % 2 === 0 ? [0.98, 0.99, 1, 1] : [1, 1, 1, 1]; },
+        });
+    },
+
+    _pdfRenderStepAnalysisSection(ctx) {
+        const report = ctx.report;
+        const writer = ctx.writer;
+        const left = ctx.margin;
+        const top = ctx.contentTop;
+        const rows = Array.isArray(report.stepAnalysis) ? report.stepAnalysis.slice(0, 22) : [];
+
+        this._pdfRenderSectionHeader(writer, left, top, 520, 'Subnetting Step Analysis', 'Weakness and strength signals from recorded try-level mistakes');
+        this._pdfRenderTable(writer, {
+            x: left,
+            y: top - 58,
+            width: 520,
+            title: 'Step-Level Weakness Table',
+            columns: [
+                { key: 'gameplayLabel', label: 'Gameplay', width: 0.18 },
+                { key: 'stepLabel', label: 'Step', width: 0.22 },
+                { key: 'totalMistakes', label: 'Mistakes', width: 0.08, align: 'right' },
+                { key: 'affectedAttempts', label: 'Attempts', width: 0.08, align: 'right' },
+                { key: 'tryEvents', label: 'Tries', width: 0.07, align: 'right' },
+                { key: 'mistakeRate', label: 'Rate', width: 0.08, align: 'right', formatter: this._pct.bind(this) },
+                { key: 'topIssue', label: 'Top Issue', width: 0.15 },
+                { key: 'status', label: 'Concern', width: 0.10 },
+            ],
+            rows: rows,
+            rowColor: function (row) {
+                if (row.status === 'High') return [0.99, 0.91, 0.89, 1];
+                if (row.status === 'Moderate') return [0.99, 0.96, 0.84, 1];
+                return [0.90, 0.96, 0.91, 1];
+            },
         });
     },
 
@@ -2409,6 +2688,22 @@ const IP2LiveReportManager = {
         }
         sheets.push({ name: 'Mistake Breakdown', rows: mistakeRows });
 
+        const stepRows = [['GameplayId', 'GameplayLabel', 'Competency', 'StepKey', 'StepLabel', 'TotalMistakes', 'AffectedAttempts', 'TryEvents', 'GameplayAttempts', 'MistakeRate', 'TopIssue', 'Concern', 'Examples']];
+        const stepAnalysis = Array.isArray(report.stepAnalysis) ? report.stepAnalysis : [];
+        for (let i = 0; i < stepAnalysis.length; i++) {
+            const s = stepAnalysis[i];
+            stepRows.push([s.gameplayId, s.gameplayLabel, s.competencyLabel, s.stepKey, s.stepLabel, s.totalMistakes, s.affectedAttempts, s.tryEvents, s.gameplayAttempts, s.mistakeRate, s.topIssue, s.status, s.examples]);
+        }
+        sheets.push({ name: 'Step Analysis', rows: stepRows });
+
+        const tryRows = [['Timestamp', 'SessionId', 'AttemptId', 'GameplayId', 'GameplayLabel', 'TryNumber', 'AttemptsRemaining', 'StepKey', 'StepLabel', 'IssueType', 'Submitted', 'Expected', 'Detail', 'MapId', 'StageId', 'LevelId', 'QuestId', 'ObjectiveId']];
+        const attemptMistakes = Array.isArray(report.attemptMistakes) ? report.attemptMistakes : [];
+        for (let i = 0; i < attemptMistakes.length; i++) {
+            const m = attemptMistakes[i];
+            tryRows.push([m.timestamp, m.sessionId, m.attemptId, m.gameplayId, m.gameplayLabel, m.tryNumber, m.attemptsRemaining, m.stepKey, m.stepLabel, m.issueType, m.submitted, m.expected, m.detail, m.mapId, m.stageId, m.levelId, m.questId, m.objectiveId]);
+        }
+        sheets.push({ name: 'Try Mistakes', rows: tryRows });
+
         const rawRows = [['Timestamp', 'SessionId', 'AttemptId', 'GameplayId', 'Passed', 'DurationMs', 'Accuracy', 'MistakeCount', 'Retries', 'MapId', 'StageId', 'LevelId']];
         for (let i = 0; i < report.attemptsRaw.length; i++) {
             const a = report.attemptsRaw[i];
@@ -2502,6 +2797,17 @@ const IP2LiveReportManager = {
         }
         if (current) lines.push(current);
         return lines;
+    },
+
+    _stringifyCell(value) {
+        if (value === null || value === undefined) return '';
+        if (typeof value === 'string') return value;
+        if (typeof value === 'number' || typeof value === 'boolean') return String(value);
+        try {
+            return JSON.stringify(value);
+        } catch (e) {
+            return String(value);
+        }
     },
 
     _defaultFileBase(infiltratorName) {

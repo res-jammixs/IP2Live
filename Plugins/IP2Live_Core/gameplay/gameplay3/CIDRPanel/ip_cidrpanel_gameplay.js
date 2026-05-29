@@ -403,6 +403,16 @@ class IP2LiveCIDRPanelGameplayScreen extends Scene.Base {
         this.failReason = 'SUBNET MASK BINARY DOES NOT MATCH TARGET.';
         this.statusText = 'RECALIBRATE BULBS AND TRY AGAIN.';
         this.maskFailures++;
+        this._reportCIDRMistake({
+            stepKey: 'subnet_mask_binary',
+            stepLabel: 'Subnet mask binary',
+            issueType: 'wrong_binary_mask',
+            expected: this.targetMask,
+            submitted: this._currentBulbBinary(),
+            expectedBinary: this.targetBits.map((row) => row.map((on) => on ? '1' : '0').join('')).join('.'),
+            tryNumber: this.maskConfirmAttempts,
+            gameplayStep: 'mask_to_binary',
+        });
 
         this.phase = 'fail';
         this.phaseTimer = 46;
@@ -434,8 +444,41 @@ class IP2LiveCIDRPanelGameplayScreen extends Scene.Base {
         this.failReason = 'CIDR INPUT IS INCORRECT. COUNT ALL TURNED-ON BITS.';
         this.statusText = 'CIDR CHECK FAILED. ENTER THE CORRECT PREFIX.';
         this.cidrFailures++;
+        this._reportCIDRMistake({
+            stepKey: 'cidr_prefix',
+            stepLabel: 'CIDR prefix',
+            issueType: 'wrong_cidr_prefix',
+            expected: this.targetCIDR,
+            submitted: enteredCIDR,
+            mask: this.targetMask,
+            tryNumber: this.maskConfirmAttempts + this.cidrVerifyAttempts,
+            gameplayStep: 'binary_to_cidr',
+        });
         this.failJitter = 10;
         this._playCancel();
+    }
+
+    _currentBulbBinary() {
+        const rows = [];
+        for (let r = 0; r < this.totalRows; r++) {
+            const bits = [];
+            for (let c = 0; c < this.totalCols; c++) bits.push(this.bulbs[r][c] ? '1' : '0');
+            rows.push(bits.join(''));
+        }
+        return rows.join('.');
+    }
+
+    _reportCIDRMistake(mistake) {
+        if (!IP2Live.GameManager || typeof IP2Live.GameManager.handleGameplayMistake !== 'function') return false;
+        IP2Live.GameManager.handleGameplayMistake('ip_cidr_binary_panel', {
+            gameplayId: 'ip_cidr_binary_panel',
+            mapId: this.options.mapId || 5,
+            questId: this.options.questId,
+            objectiveId: this.options.objectiveId,
+            mistakes: [mistake],
+            attemptsRemaining: 0,
+        });
+        return true;
     }
 
     _prepareIconAnimation() {
