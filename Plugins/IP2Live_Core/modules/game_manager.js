@@ -86,6 +86,24 @@ const IP2LiveGameManager = {
                 worldTitle: true,
                 gameplayNodes: ['ip_cidr_binary_panel', 'ip_subnet_simulator'],
             },
+            6: {
+                id: 6,
+                name: 'Stage 1 Level 4',
+                stage: 1,
+                level: 4,
+                spawn: { x: 6, y: 0, z: 17 },
+                worldTitle: true,
+                gameplayNodes: ['ip_network_repair'],
+            },
+            15: {
+                id: 15,
+                name: 'Stage 4 Level 1',
+                stage: 4,
+                level: 1,
+                spawn: { x: 6, y: 0, z: 17 },
+                worldTitle: true,
+                gameplayNodes: ['ip_network_repair'],
+            },
         },
         gameplayNodes: {
             ip_class_wires: {
@@ -111,6 +129,12 @@ const IP2LiveGameManager = {
                 mapId: 5,
                 manager: 'SubnetSimulatorGameplayManager',
                 method: 'launchSubnetSimulatorGameplay',
+            },
+            ip_network_repair: {
+                id: 'ip_network_repair',
+                mapId: 15,
+                manager: 'NetworkRepairGameplayManager',
+                method: 'launchNetworkRepairGameplay',
             },
         },
     },
@@ -140,7 +164,7 @@ const IP2LiveGameManager = {
             targetClearMs: 140000,
             objectiveHandler: { manager: 'PatchPanelGameplayManager', method: '_handlePatchObjective' },
             quests: [
-                { id: 'stage.4.ip_patch_panel.01', objectiveId: 'route_ip_patch_panel_01', title: 'SECURE PATCH PANEL NODE', label: 'Patch Panel Node', targetTile: { x: 10, y: 0, z: 18 } },
+                { id: 'stage.4.ip_patch_panel.01', objectiveId: 'route_ip_patch_panel_01', title: 'SECURE PATCH PANEL NODE', label: 'Patch Panel Node', targetTile: { x: 16, y: 0, z: 18 } },
             ],
         },
         ip_cidr_binary_panel: {
@@ -165,6 +189,24 @@ const IP2LiveGameManager = {
             objectiveHandler: { manager: 'SubnetSimulatorGameplayManager', method: '_handleObjective' },
             quests: [
                 { id: 'stage.5.ip_subnetsim.01', objectiveId: 'solve_subnet_sim_01', title: 'SOLVE SUBNET SIMULATOR', label: 'Subnet Simulator', targetTile: { x: 16, y: 0, z: 20 } },
+            ],
+        },
+        ip_network_repair: {
+            gameplayId: 'ip_network_repair',
+            mapId: 15,
+            label: 'Network Repair PCs',
+            competencyKey: 'network_broadcast_usable_range',
+            competencyLabel: 'Network, broadcast, and usable IP range calculation',
+            targetClearMs: 180000,
+            pcCount: 5,
+            objectiveHandler: { manager: 'NetworkRepairGameplayManager', method: '_handleObjective' },
+            quests: [
+                { id: 'stage.6.ip_network_repair.test', objectiveId: 'repair_network_pc_test_map6', title: 'TEST NETWORK REPAIR PC', label: 'MAP0006 Test PC', mapId: 6, targetTile: { x: 23, y: 0, z: 20 }, tutorial: true, taskType: 'broadcastAddress' },
+                { id: 'stage.15.ip_network_repair.01', objectiveId: 'repair_network_pc_01', title: 'REPAIR PC 01', label: 'PC 01', targetTile: { x: 7, y: 0, z: 22 }, tutorial: true, taskType: 'networkAddress' },
+                { id: 'stage.15.ip_network_repair.02', objectiveId: 'repair_network_pc_02', title: 'REPAIR PC 02', label: 'PC 02', targetTile: { x: 27, y: 0, z: 22 }, taskType: 'broadcastAddress' },
+                { id: 'stage.15.ip_network_repair.03', objectiveId: 'repair_network_pc_03', title: 'REPAIR PC 03', label: 'PC 03', targetTile: { x: 8, y: 0, z: 9 }, taskType: 'usableRange' },
+                { id: 'stage.15.ip_network_repair.04', objectiveId: 'repair_network_pc_04', title: 'REPAIR PC 04', label: 'PC 04', targetTile: { x: 26, y: 0, z: 9 }, taskType: 'networkAddress' },
+                { id: 'stage.15.ip_network_repair.05', objectiveId: 'repair_network_pc_05', title: 'REPAIR PC 05', label: 'PC 05', targetTile: { x: 17, y: 0, z: 16 }, taskType: 'usableRange' },
             ],
         },
     },
@@ -453,6 +495,23 @@ const IP2LiveGameManager = {
                 },
             };
         }
+        if (gameplayId === 'ip_network_repair') {
+            const passed = r.passed !== false;
+            return {
+                attemptsUsed: 1,
+                maxAttempts: 1,
+                retries: passed ? 0 : 1,
+                mistakeRate: passed ? 0 : 1,
+                accuracy: passed ? 1 : 0,
+                payload: {
+                    taskType: r.taskType || null,
+                    expected: this._clonePlain(r.expected || null),
+                    expectedText: r.expectedText || null,
+                    submitted: this._clonePlain(r.submitted || null),
+                    scenario: this._clonePlain(r.scenario || null),
+                },
+            };
+        }
         return {
             attemptsUsed: Number(r.attemptsUsed || 0) || 0,
             maxAttempts: Number(r.maxAttempts || 0) || 0,
@@ -647,6 +706,13 @@ const IP2LiveGameManager = {
                     mode: 'replace',
                 }));
             }
+            if (node.id === 'ip_network_repair' && IP2Live.NetworkRepairGameplayManager && typeof IP2Live.NetworkRepairGameplayManager.launchNetworkRepairGameplay === 'function') {
+                return IP2Live.NetworkRepairGameplayManager.launchNetworkRepairGameplay(Object.assign({}, opts, {
+                    _fromGameManager: true,
+                    showIntro: opts.showIntro,
+                    mode: 'replace',
+                }));
+            }
             return false;
         };
 
@@ -681,6 +747,20 @@ const IP2LiveGameManager = {
                     attemptsRemaining: Number(data.attemptsRemaining || 0) || 0,
                 },
             });
+        }
+
+        if (
+            gameplayId === 'ip_network_repair' &&
+            IP2Live.IPNetworkRepairTutorial &&
+            typeof IP2Live.IPNetworkRepairTutorial.showQuestOneCorrection === 'function'
+        ) {
+            const mistakes = Array.isArray(data.mistakes) ? data.mistakes : [];
+            IP2Live.IPNetworkRepairTutorial.showQuestOneCorrection(
+                mistakes[0] || {},
+                data.scenario || {},
+                data.onComplete
+            );
+            return true;
         }
 
         const runDynamicFeedback = () => {
@@ -734,6 +814,14 @@ const IP2LiveGameManager = {
                 IP2Live.IPWiresTutorial.showPacketsShifted();
             }
             return true;
+        }
+
+        if (
+            gameplayId === 'ip_network_repair' &&
+            IP2Live.NetworkRepairGameplayManager &&
+            typeof IP2Live.NetworkRepairGameplayManager._handleRollbackFailure === 'function'
+        ) {
+            return IP2Live.NetworkRepairGameplayManager._handleRollbackFailure(data);
         }
 
         if (IP2Live.GameplayManager && typeof IP2Live.GameplayManager._sendStageBackToFirstWire === 'function') {
@@ -915,15 +1003,18 @@ const IP2LiveGameManager = {
         const catalog = this.getGameplayCatalog();
         for (let i = 0; i < catalog.length; i++) {
             const gameplay = catalog[i];
-            if (!gameplay || Number(gameplay.mapId) !== stageId) continue;
+            if (!gameplay) continue;
             const quests = Array.isArray(gameplay.quests) ? gameplay.quests : [];
             for (let q = 0; q < quests.length; q++) {
                 const spec = quests[q];
                 if (!spec || !spec.id || !spec.objectiveId) continue;
+                const specMapId = Number(spec.mapId || gameplay.mapId);
+                if (specMapId !== stageId) continue;
                 registeredQuestIds.push(spec.id);
                 if (this._registeredGameplayQuestIds[spec.id] && qm.quests && qm.quests[spec.id]) continue;
 
                 const target = this._cloneTile(spec.targetTile || { x: 0, y: 0, z: 0 });
+                const gameplayForSpec = Object.assign({}, gameplay, { mapId: stageId });
                 qm.registerQuest({
                     id: spec.id,
                     title: 'QUEST AREA',
@@ -937,7 +1028,7 @@ const IP2LiveGameManager = {
                             targetTile: target,
                             completionRadiusTiles: 0.55,
                             isComplete: (context, activeQuestManager) => {
-                                return this._runGameplayObjectiveHandler(gameplay, spec, context, activeQuestManager);
+                                return this._runGameplayObjectiveHandler(gameplayForSpec, spec, context, activeQuestManager);
                             },
                         },
                     ],
