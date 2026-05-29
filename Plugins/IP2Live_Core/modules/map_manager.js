@@ -13,10 +13,19 @@ const MapManager = {
     stages: [
         { id: 1, name: 'Tutorial Stage', tutorial: true, questEnabled: false },
         { id: 3, name: 'Stage 1 Level 1', stage: 1, level: 1 },
-        { id: 4, name: 'Stage 1 Level 2', stage: 1, level: 2 },
+        { id: 4, name: 'Stage 1 Level 2', stage: 1, level: 2, exit: { x: 26, y: 0, z: 0 }  },
         { id: 5, name: 'Stage 1 Level 3', stage: 1, level: 3 },
         { id: 6, name: 'Stage 1 Level 4', stage: 1, level: 4 },
+        { id: 7, name: 'Stage 2 Level 1', stage: 2, level: 1, exit: { x: 12, y: 0, z: 4 } },
+        { id: 8, name: 'Stage 2 Level 2', stage: 2, level: 2 },
+        { id: 9, name: 'Stage 2 Level 3', stage: 2, level: 3, exit: { x: 12, y: 0, z: 4 } },
+        { id: 10, name: 'Stage 2 Level 4', stage: 2, level: 4 },
+        { id: 11, name: 'Stage 3 Level 1', stage: 3, level: 1, spawn: { x: 8, y: 0, z: 17 } },
+        { id: 12, name: 'Stage 3 Level 2', stage: 3, level: 2, spawn: { x: 6, y: 0, z: 16 } },
+        { id: 13, name: 'Stage 3 Level 3', stage: 3, level: 3 },
+        { id: 14, name: 'Stage 3 Level 4', stage: 3, level: 4 },
     ],
+
     _registeredStageQuestIds: {},
     _registeredStageDialogueIds: {},
     _stageDiscoveryStarted: false,
@@ -411,6 +420,7 @@ const MapManager = {
             } else {
                 const gameplayQuestManagers = [
                     IP2Live.GameplayManager,
+                    IP2Live.HarderWiresGameplayManager,
                     IP2Live.PatchPanelGameplayManager,
                     IP2Live.CIDRPanelGameplayManager,
                     IP2Live.SubnetSimulatorGameplayManager,

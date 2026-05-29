@@ -1,12 +1,12 @@
 /**
  * IP2Live - IP Patch Panel Tutorial Dialogue Helpers
  *
- * Dynamic dialogue content for the Stage 1 Level 1 patch-panel classifier gameplay.
+ * Dynamic dialogue content for the Stage 1 Level 2 patch-panel classifier gameplay.
  * Loaded before ip_patchpanel_gameplay.js.
  */
 
 const IPPatchPanelTutorial = {
-    VERSION: 'ip-patchpanel-tutorial-20260528-01',
+    VERSION: 'ip-patchpanel-tutorial-20260530-02',
     _dialogueSerial: 0,
 
     showIntro(onComplete) {
@@ -15,28 +15,99 @@ const IPPatchPanelTutorial = {
             speaker: 'SYSTEM',
             timing: 'before',
             bindings: {
-                mapId: 3,
+                mapId: 4,
                 gameplayId: 'ip_patch_panel_classes',
                 trigger: 'gameplay.before',
             },
             slides: [
                 [
-                    'Welcome to Patch Panel Classifier v2.',
-                    'Packets will travel from LEFT to RIGHT through the panel.',
+                    'There are multiple failing wires in this stage.',
+                    'Reroute each packet properly so the connection becomes stable.',
                     '',
-                    'Use A / B / C / D to rotate the class wheel before a packet reaches the center tunnel.',
-                ],
-                [
-                    'The XRAY window reveals packet labels while they pass the core.',
-                    'Classify each packet into the correct tunnel class.',
+                    'Once the patch panel is stable, the door to the next stage can open.',
+                ], [
+                    'Packets will travel from LEFT to RIGHT through the panel.',
+                    'Use the class wheel to send each packet into the right tunnel.',
                     '',
                     'Objective: secure at least 10 correct packets out of 15 deliveries.',
                 ],
-                [
-                    'If your score is below 10 after all 15 packets, the round auto-restarts.',
-                    'Stay sharp, Infiltrator.',
-                ],
             ],
+            onComplete,
+        });
+    },
+
+    showPacketGuide(onComplete) {
+        return this._startDynamicDialogue('stage1.ippatchpanel.guided.packet.', {
+            title: 'PACKET FLOW',
+            speaker: 'SYSTEM',
+            timing: 'during',
+            bindings: {
+                mapId: 4,
+                gameplayId: 'ip_patch_panel_classes',
+                trigger: 'gameplay.during',
+            },
+            slides: [[
+                'These are the packets that needs to be redirected properly on the right Class tunnel.',
+                '',
+                'Watch the packet as it moves toward the classifier core.',
+            ]],
+            onComplete,
+        });
+    },
+
+    showXrayGuide(kind, onComplete) {
+        const label = String(kind || '').toUpperCase() === 'MASK' ? 'subnet mask' : 'IP address';
+        return this._startDynamicDialogue('stage1.ippatchpanel.guided.xray.', {
+            title: 'XRAY INSPECTOR',
+            speaker: 'SYSTEM',
+            timing: 'during',
+            bindings: {
+                mapId: 4,
+                gameplayId: 'ip_patch_panel_classes',
+                trigger: 'gameplay.during',
+            },
+            slides: [[
+                'This is the ' + label + ' that needs to be classified.',
+                '',
+                'Read the XRAY signal, then choose the correct Class tunnel before the packet reaches the center.',
+            ]],
+            onComplete,
+        });
+    },
+
+    showControlsGuide(onComplete) {
+        return this._startDynamicDialogue('stage1.ippatchpanel.guided.controls.', {
+            title: 'CLASS CONTROL',
+            speaker: 'SYSTEM',
+            timing: 'during',
+            bindings: {
+                mapId: 4,
+                gameplayId: 'ip_patch_panel_classes',
+                trigger: 'gameplay.during',
+            },
+            slides: [[
+                'Use A, B, C, or D on the keyboard to rotate directly to a Class.',
+                'You can also use the arrow keys to change direction, or click the Class buttons.',
+            ]],
+            onComplete,
+        });
+    },
+
+    showUpcomingGuide(onComplete) {
+        return this._startDynamicDialogue('stage1.ippatchpanel.guided.upcoming.', {
+            title: 'QUEUE PREVIEW',
+            speaker: 'SYSTEM',
+            timing: 'during',
+            bindings: {
+                mapId: 4,
+                gameplayId: 'ip_patch_panel_classes',
+                trigger: 'gameplay.during',
+            },
+            slides: [[
+                'The upcoming packets section gives you a head start.',
+                '',
+                'Use it to prepare the correct Class before the next packet reaches the tunnel.',
+            ]],
             onComplete,
         });
     },
@@ -50,7 +121,7 @@ const IPPatchPanelTutorial = {
             speaker: 'SYSTEM',
             timing: 'after',
             bindings: {
-                mapId: 3,
+                mapId: 4,
                 gameplayId: 'ip_patch_panel_classes',
                 trigger: 'gameplay.failed',
             },
@@ -75,7 +146,7 @@ const IPPatchPanelTutorial = {
             speaker: 'SYSTEM',
             timing: 'after',
             bindings: {
-                mapId: 3,
+                mapId: 4,
                 gameplayId: 'ip_patch_panel_classes',
                 trigger: 'gameplay.completed',
             },

@@ -789,15 +789,18 @@ IP2Live.GameplayManagerReady = (async function () {
     const bundles = [
         {
             baseDir: root + 'Plugins/IP2Live_Core/gameplay/gameplay1/IPWires/',
-            version: '20260523_ip_wires_02_',
+            version: '20260530_ip_wires_05_',
             files: [
+                'ip_wires_core.js',
                 'ip_wires_tutorial.js',
                 'ip_wires_gameplay.js',
+                'ip_wires_gameplay_harder_tutorial.js',
+                'ip_wires_gameplay_harder.js',
             ],
         },
         {
             baseDir: root + 'Plugins/IP2Live_Core/gameplay/gameplay2/IPPatchPanel/',
-            version: '20260528_ip_patchpanel_01_',
+            version: '20260530_ip_patchpanel_03_',
             files: [
                 'ip_patchpanel_tutorial.js',
                 'ip_patchpanel_gameplay.js',
@@ -886,7 +889,7 @@ IP2Live.MapManagerReady = (async function () {
     const root = Common.Platform.ROOT_DIRECTORY;
     const src  = root + 'Plugins/IP2Live_Core/modules/map_manager.js';
     try {
-        const versionedSrc = src + '?v=20260518_map_route_04_' + Date.now();
+        const versionedSrc = src + '?v=20260530_map_route_05_' + Date.now();
         let resp = await fetch(versionedSrc, { cache: 'no-store' });
         if (!resp.ok) {
             console.warn('[IP2Live] Versioned map manager fetch failed, retrying plain path:', versionedSrc);
@@ -1043,7 +1046,7 @@ IP2Live.GameManagerReady = (async function () {
     const root = Common.Platform.ROOT_DIRECTORY;
     const src  = root + 'Plugins/IP2Live_Core/modules/game_manager.js';
     try {
-        const versionedSrc = src + '?v=20260526_game_manager_01_' + Date.now();
+        const versionedSrc = src + '?v=20260530_game_manager_04_' + Date.now();
         let resp = await fetch(versionedSrc, { cache: 'no-store' });
         if (!resp.ok) {
             console.warn('[IP2Live] Versioned game manager fetch failed, retrying plain path:', versionedSrc);

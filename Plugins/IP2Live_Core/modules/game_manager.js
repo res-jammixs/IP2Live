@@ -84,7 +84,7 @@ const IP2LiveGameManager = {
                 level: 3,
                 spawn: { x: 6, y: 0, z: 17 },
                 worldTitle: true,
-                gameplayNodes: ['ip_cidr_binary_panel', 'ip_subnet_simulator'],
+                gameplayNodes: ['ip_class_wires_harder', 'ip_cidr_binary_panel', 'ip_subnet_simulator'],
             },
         },
         gameplayNodes: {
@@ -112,6 +112,12 @@ const IP2LiveGameManager = {
                 manager: 'SubnetSimulatorGameplayManager',
                 method: 'launchSubnetSimulatorGameplay',
             },
+            ip_class_wires_harder: {
+                id: 'ip_class_wires_harder',
+                mapId: 5,
+                manager: 'HarderWiresGameplayManager',
+                method: 'launchHarderWireGameplay',
+            },
         },
     },
 
@@ -131,6 +137,21 @@ const IP2LiveGameManager = {
                 { id: 'stage.3.ip_wires.04', objectiveId: 'repair_ip_wires_04', title: 'REPAIR IP WIRES 04', label: 'Lever 04', targetTile: { x: 19, y: 0, z: 27 } },
             ],
         },
+        ip_class_wires_harder: {
+            gameplayId: 'ip_class_wires_harder',
+            mapId: 5,
+            label: 'IP Class Wires Harder',
+            competencyKey: 'ip_classification_advanced',
+            competencyLabel: 'Advanced IP class identification',
+            targetClearMs: 150000,
+            objectiveHandler: { manager: 'HarderWiresGameplayManager', method: '_handleWireObjective' },
+            quests: [
+                { id: 'stage.5.ip_wires_harder.01.tutorial', objectiveId: 'repair_ip_wires_harder_01_tutorial', title: 'SECURITY BRIEFING LEVER', label: 'Strict Tutorial Lever', targetTile: { x: 2, y: 0, z: 32 }, tutorial: true, wireCount: 5 },
+                { id: 'stage.5.ip_wires_harder.02', objectiveId: 'repair_ip_wires_harder_02', title: 'STRICT IP WIRES CHALLENGE', label: 'Strict Gameplay Lever', targetTile: { x: 4, y: 0, z: 32 }, wireCount: 6 },
+                { id: 'stage.5.ip_wires_harder.03', objectiveId: 'repair_ip_wires_harder_03', title: 'STRICT IP WIRES CHALLENGE', label: 'Strict Gameplay Lever', targetTile: { x: 28, y: 0, z: 25 }, wireCount: 7 },
+                { id: 'stage.5.ip_wires_harder.04', objectiveId: 'repair_ip_wires_harder_04', title: 'STRICT IP WIRES CHALLENGE', label: 'Strict Gameplay Lever', targetTile: { x: 32, y: 0, z: 25 }, wireCount: 8 },
+            ],
+        },
         ip_patch_panel_classes: {
             gameplayId: 'ip_patch_panel_classes',
             mapId: 4,
@@ -140,7 +161,13 @@ const IP2LiveGameManager = {
             targetClearMs: 140000,
             objectiveHandler: { manager: 'PatchPanelGameplayManager', method: '_handlePatchObjective' },
             quests: [
-                { id: 'stage.4.ip_patch_panel.01', objectiveId: 'route_ip_patch_panel_01', title: 'SECURE PATCH PANEL NODE', label: 'Patch Panel Node', targetTile: { x: 10, y: 0, z: 18 } },
+                { id: 'stage.4.ip_patch_panel.01.tutorial', objectiveId: 'route_ip_patch_panel_01', title: 'SECURE PATCH PANEL NODE', label: 'Patch Panel Node', targetTile: { x: 3, y: 0, z: 29 }, tutorial: true },
+                { id: 'stage.4.ip_patch_panel.02', objectiveId: 'route_ip_patch_panel_02', title: 'SECURE PATCH PANEL NODE', label: 'Patch Panel Node', targetTile: { x: 21, y: 0, z: 31 } },
+                { id: 'stage.4.ip_patch_panel.03', objectiveId: 'route_ip_patch_panel_03', title: 'SECURE PATCH PANEL NODE', label: 'Patch Panel Node', targetTile: { x: 21, y: 0, z: 26 } },
+                { id: 'stage.4.ip_patch_panel.04', objectiveId: 'route_ip_patch_panel_04', title: 'SECURE PATCH PANEL NODE', label: 'Patch Panel Node', targetTile: { x: 21, y: 0, z: 17 } },
+                { id: 'stage.4.ip_patch_panel.05', objectiveId: 'route_ip_patch_panel_05', title: 'SECURE PATCH PANEL NODE', label: 'Patch Panel Node', targetTile: { x: 12, y: 0, z: 6 } },
+                { id: 'stage.4.ip_patch_panel.06', objectiveId: 'route_ip_patch_panel_06', title: 'SECURE PATCH PANEL NODE', label: 'Patch Panel Node', targetTile: { x: 19, y: 0, z: 6 } },
+                { id: 'stage.4.ip_patch_panel.07', objectiveId: 'route_ip_patch_panel_07', title: 'SECURE PATCH PANEL NODE', label: 'Patch Panel Node', targetTile:{ x: 33, y: 0, z: 1 } },
             ],
         },
         ip_cidr_binary_panel: {
@@ -206,7 +233,7 @@ const IP2LiveGameManager = {
     },
 
     on(eventName, handler) {
-        if (!eventName || typeof handler !== 'function') return function () {};
+        if (!eventName || typeof handler !== 'function') return function () { };
         if (!this._listeners[eventName]) this._listeners[eventName] = [];
         this._listeners[eventName].push(handler);
         return () => this.off(eventName, handler);
@@ -380,7 +407,7 @@ const IP2LiveGameManager = {
 
     _extractGameplayMetrics(gameplayId, result) {
         const r = result || {};
-        if (gameplayId === 'ip_class_wires') {
+        if (gameplayId === 'ip_class_wires' || gameplayId === 'ip_class_wires_harder') {
             const mistakes = Array.isArray(r.mistakes) ? r.mistakes : [];
             const attemptsUsed = Number(r.attemptsUsed || mistakes.length || 0) || 0;
             const maxAttempts = Number(r.maxAttempts || 3) || 3;
@@ -647,8 +674,21 @@ const IP2LiveGameManager = {
                     mode: 'replace',
                 }));
             }
+            if (node.id === 'ip_class_wires_harder' && IP2Live.HarderWiresGameplayManager && typeof IP2Live.HarderWiresGameplayManager.launchHarderWireGameplay === 'function') {
+                return IP2Live.HarderWiresGameplayManager.launchHarderWireGameplay(Object.assign({}, opts, {
+                    _fromGameManager: true,
+                    _reservedAttempt: (questId || spec.id) + ':' + (objectiveId || spec.objectiveId),
+                    wireCount: opts.wireCount !== undefined ? opts.wireCount : spec.wireCount,
+                }));
+            }
             return false;
         };
+
+        if (opts.skipBeforeDialogues) {
+            this._setState(this.STATE.DIALOGUE_BEFORE, payload);
+            openGameplay();
+            return true;
+        }
 
         this._setState(this.STATE.DIALOGUE_BEFORE, payload);
         const hadDialogue = this._runTimingDialogues(payload, 'before', openGameplay);
@@ -684,6 +724,10 @@ const IP2LiveGameManager = {
         }
 
         const runDynamicFeedback = () => {
+            if (gameplayId !== 'ip_class_wires') {
+                if (typeof data.onComplete === 'function') data.onComplete();
+                return false;
+            }
             if (IP2Live.IPWiresTutorial && typeof IP2Live.IPWiresTutorial.showMistakeAnalysis === 'function') {
                 IP2Live.IPWiresTutorial.showMistakeAnalysis(
                     data.mistakes || [],
@@ -728,19 +772,45 @@ const IP2LiveGameManager = {
         this._closeReportAttempt(gameplayId, data, false);
         this._setState(this.STATE.DIALOGUE_AFTER, data);
 
-        if (spec.tutorial) {
-            const hadDialogue = this._runTimingDialogues(data, 'after');
-            if (!hadDialogue && IP2Live.IPWiresTutorial && typeof IP2Live.IPWiresTutorial.showPacketsShifted === 'function') {
-                IP2Live.IPWiresTutorial.showPacketsShifted();
+        if (gameplayId === 'ip_class_wires_harder') {
+            if (spec.tutorial) {
+                const hadDialogueHarder = this._runTimingDialogues(data, 'after');
+                if (!hadDialogueHarder && IP2Live.IPWiresHarderTutorial && typeof IP2Live.IPWiresHarderTutorial.showPacketsShifted === 'function') {
+                    IP2Live.IPWiresHarderTutorial.showPacketsShifted();
+                }
             }
             return true;
         }
 
-        if (IP2Live.GameplayManager && typeof IP2Live.GameplayManager._sendStageBackToFirstWire === 'function') {
-            IP2Live.GameplayManager._sendStageBackToFirstWire(spec);
-            return true;
+        if (gameplayId === 'ip_class_wires') {
+            if (spec.tutorial) {
+                const hadDialogue = this._runTimingDialogues(data, 'after');
+                if (!hadDialogue && IP2Live.IPWiresTutorial && typeof IP2Live.IPWiresTutorial.showPacketsShifted === 'function') {
+                    IP2Live.IPWiresTutorial.showPacketsShifted();
+                }
+                return true;
+            }
+
+            if (IP2Live.GameplayManager && typeof IP2Live.GameplayManager._sendStageBackToFirstWire === 'function') {
+                IP2Live.GameplayManager._sendStageBackToFirstWire(spec);
+                return true;
+            }
         }
         return false;
+    },
+
+    handleGameplayCancelled(gameplayId, payload) {
+        const data = Object.assign({}, payload || {}, {
+            gameplayId,
+            trigger: 'gameplay.cancelled',
+        });
+        this._activeGameplayNode = null;
+        this.emit('gameplay.cancelled', data);
+        this._closeReportAttempt(gameplayId, Object.assign({}, data, {
+            result: Object.assign({}, data.result || {}, { cancelled: true }),
+        }), false);
+        this._setState(this.STATE.NEXT_NODE, data);
+        return true;
     },
 
     handleQuestObjectiveCompleted(result) {
@@ -921,7 +991,6 @@ const IP2LiveGameManager = {
                 const spec = quests[q];
                 if (!spec || !spec.id || !spec.objectiveId) continue;
                 registeredQuestIds.push(spec.id);
-                if (this._registeredGameplayQuestIds[spec.id] && qm.quests && qm.quests[spec.id]) continue;
 
                 const target = this._cloneTile(spec.targetTile || { x: 0, y: 0, z: 0 });
                 qm.registerQuest({
@@ -1456,11 +1525,11 @@ const IP2LiveGameManager = {
     },
 
     _playCursor() {
-        try { if (Data.Systems.soundCursor) Data.Systems.soundCursor.playSound(); } catch (e) {}
+        try { if (Data.Systems.soundCursor) Data.Systems.soundCursor.playSound(); } catch (e) { }
     },
 
     _playConfirm() {
-        try { if (Data.Systems.soundConfirmation) Data.Systems.soundConfirmation.playSound(); } catch (e) {}
+        try { if (Data.Systems.soundConfirmation) Data.Systems.soundConfirmation.playSound(); } catch (e) { }
     },
 
     _sceneKey(scene, mapId) {

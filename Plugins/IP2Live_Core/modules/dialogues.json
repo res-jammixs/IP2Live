@@ -1,5 +1,5 @@
 {
-  "version": "dialogues-20260526-01",
+  "version": "dialogues-20260530-01",
   "dialogues": [
     {
       "id": "tutorial.intro",
@@ -100,10 +100,14 @@
       },
       "slides": [
         [
-          "This is your first live wire patch.",
+          "Welcome to your first live wire patch.",
           "",
-          "Match each source octet to the correct IP class on the destination rail.",
-          "Class A starts from 1 to 126. Class B starts from 128 to 191. Class C starts from 192 to 223. Class D starts from 224 to 239."
+          "Match each full IP address on the left to the correct Class connector on the right.",
+          "Class A: 1.0.0.0 to 126.255.255.255",
+          "Class B: 127.0.0.0 to 191.255.255.255",
+          "Class C: 192.0.0.0 to 223.255.255.255",
+          "Class D: 224.0.0.0 to 239.255.255.255",
+          "Class E: 240.0.0.0 to 255.255.255.255"
         ]
       ]
     },
@@ -176,6 +180,68 @@
         [
           "Repair the first lever again.",
           "After it stabilizes, I will route you back to the active wire node."
+        ]
+      ]
+    },
+    {
+      "id": "stage1.ipwires.harder.tutorial.opening",
+      "name": "IP Wires Harder Tutorial Opening",
+      "title": "STRICT SECURITY",
+      "speaker": "SYSTEM",
+      "timing": "before",
+      "bindings": {
+        "mapId": 5,
+        "gameplayId": "ip_class_wires_harder",
+        "objectiveId": "repair_ip_wires_harder_01_tutorial",
+        "trigger": "gameplay.before"
+      },
+      "slides": [
+        [
+          "The security of this floor has been more strict to avoid access from outsiders.",
+          "",
+          "You must be smart, critical, and apply all your IP address class knowledge.",
+          "There might be trick Class connectors that do not receive any wires.",
+          "It is also possible that one Class connector receives multiple wires."
+        ]
+      ]
+    },
+    {
+      "id": "stage1.ipwires.harder.tutorial.success",
+      "name": "IP Wires Harder Tutorial Success",
+      "title": "STRICT SECURITY",
+      "speaker": "SYSTEM",
+      "timing": "after",
+      "bindings": {
+        "mapId": 5,
+        "gameplayId": "ip_class_wires_harder",
+        "objectiveId": "repair_ip_wires_harder_01_tutorial",
+        "trigger": "gameplay.completed"
+      },
+      "slides": [
+        [
+          "Briefing complete.",
+          "",
+          "Proceed to the strict challenge lever and apply your class range mastery."
+        ]
+      ]
+    },
+    {
+      "id": "stage1.ipwires.harder.challenge.success",
+      "name": "IP Wires Harder Challenge Success",
+      "title": "STRICT SECURITY",
+      "speaker": "SYSTEM",
+      "timing": "after",
+      "bindings": {
+        "mapId": 5,
+        "gameplayId": "ip_class_wires_harder",
+        "objectiveId": "repair_ip_wires_harder_02",
+        "trigger": "gameplay.completed"
+      },
+      "slides": [
+        [
+          "Excellent work.",
+          "",
+          "Strict class-wire security is stabilized. Continue to the next quest node."
         ]
       ]
     },
