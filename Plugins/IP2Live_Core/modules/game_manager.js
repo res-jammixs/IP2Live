@@ -282,8 +282,8 @@ const IP2LiveGameManager = {
                     targetMask: '255.255.255.192',
                     mapId: 8,
                     objectives: [
-                        { gameplayId: 'ip_cidr_binary_panel', objectiveId: 'solve_cidr_chain_02_panel', title: 'SOLVE CIDR PANEL 02', label: 'CIDR Panel 02', targetTile: { x: 14, y: 0, z: 30 } },
-                        { gameplayId: 'ip_subnet_simulator', objectiveId: 'solve_cidr_chain_02_subnet', title: 'SOLVE SUBNET SIMULATOR 02', label: 'Subnet Simulator 02', targetTile: { x: 16, y: 0, z: 30 } },
+                        { gameplayId: 'ip_cidr_binary_panel', objectiveId: 'solve_cidr_chain_02_panel', title: 'SOLVE CIDR PANEL 02', label: 'CIDR Panel 02', targetTile: { x: 12, y: 0, z: 30 } },
+                        { gameplayId: 'ip_subnet_simulator', objectiveId: 'solve_cidr_chain_02_subnet', title: 'SOLVE SUBNET SIMULATOR 02', label: 'Subnet Simulator 02', targetTile: { x: 12, y: 0, z: 28 } },
                     ],
                 },
                 {

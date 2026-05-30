@@ -17,7 +17,7 @@ const MapManager = {
         { id: 5, name: 'Stage 1 Level 3', stage: 1, level: 3 },
         { id: 6, name: 'Stage 1 Level 4', stage: 1, level: 4 },
         { id: 7, name: 'Stage 2 Level 1', stage: 2, level: 1, exit: { x: 12, y: 0, z: 4 } },
-        { id: 8, name: 'Stage 2 Level 2', stage: 2, level: 2 },
+        { id: 8, name: 'Stage 2 Level 2', stage: 2, level: 2, exit: { x: 34, y: 0, z: 19 } },
         { id: 9, name: 'Stage 2 Level 3', stage: 2, level: 3, exit: { x: 12, y: 0, z: 4 } },
         { id: 10, name: 'Stage 2 Level 4', stage: 2, level: 4 },
         { id: 11, name: 'Stage 3 Level 1', stage: 3, level: 1, spawn: { x: 8, y: 0, z: 17 } },
