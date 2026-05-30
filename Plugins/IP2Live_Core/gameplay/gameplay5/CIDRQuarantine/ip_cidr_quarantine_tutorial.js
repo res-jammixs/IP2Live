@@ -1,116 +1,101 @@
 /**
- * IP2Live - Stage 3 Level 1 CIDR Quarantine tutorial dialogue helpers.
+ * IP2Live - Stage 3 Level 1 path connector tutorial dialogue helpers.
  *
  * Tutorial flow:
- *   showIntro  → 3 slides: game concept, UI layout, your goal
- *   showStep 1 → set the PREFIX
- *   showStep 2 → move the OFFSET
- *   showStep 3 → press SUBMIT
- *   showFeedback(reason) → contextual correction
- *   showComplete → success + what comes next
- *   showRecovery → route back after hard fail
+ *   showIntro -> 3 slides: concept, UI, goal
+ *   showStep 1 -> start drawing the connector
+ *   showStep 2 -> reach the second node and watch CIDR capacity
+ *   showStep 3 -> confirm and watch animated calculation
+ *   showFeedback(reason) -> contextual correction
+ *   showComplete -> success + what comes next
+ *   showRecovery -> route back after hard fail
  */
 
 const IPCIDRQuarantineTutorial = {
-    VERSION: 'ip-cidr-quarantine-tutorial-20260530-03',
+    VERSION: 'ip-cidr-quarantine-path-tutorial-20260530-02',
     _dialogueSerial: 0,
-
-    // ─── INTRO ────────────────────────────────────────────────────────────────
 
     showIntro(context, onComplete) {
         const c = context || {};
         return this._startDynamicDialogue('stage3.cidrquarantine.intro.', {
-            title: 'QUARANTINE BRIEF',
+            title: 'PATH QUARANTINE BRIEF',
             speaker: 'SYSTEM',
             timing: 'before',
             slides: [
-                // Slide 1 – What is this game
                 [
-                    'CIDR QUARANTINE — Your Mission',
-                    'A rogue AI is hiding inside a network segment.',
-                    'Draw a CIDR cage (a block of IP addresses) that traps',
-                    'all infected addresses without capturing protected nodes.',
+                    'CIDR QUARANTINE - Path Connector',
+                    'Two blue network nodes must be linked by a clean wire.',
+                    'Red virus nodes are rogue AI traps. Do not route through them.',
                     '',
-                    'Too small = AI escapes. Too large = you hit friendly nodes.',
-                    'Find the tightest block that covers the rogue span exactly.',
+                    'Every tile movement adds bits to the original CIDR.',
+                    'The final block must fit the requested hosts efficiently.',
                 ],
-                // Slide 2 – UI overview
                 [
                     'THE INTERFACE',
-                    'GRID (left): each cell = one address in the relay.',
-                    '  RED   = rogue AI  (must be INSIDE your cage)',
-                    '  CYAN  = protected (must stay OUTSIDE your cage)',
-                    '  YELLOW = your current quarantine zone',
+                    'GRID: drag or click adjacent tiles to preview a connector.',
+                    'BLUE NODES: start and destination.',
+                    'RED VIRUS: blocked tiles that corrupt the route.',
+                    'YELLOW LINE: your preview path.',
                     '',
-                    'CONTROLS (right):',
-                    '  OFFSET  [ <  > ] — slide zone left / right',
-                    '  PREFIX  [ /+  /- ] — make zone larger / smaller',
-                    '  SUBMIT — lock and validate your cage',
+                    'Use UNDO, CLEAR, or click a previous tile to rewind.',
                 ],
-                // Slide 3 – Goal for this puzzle
                 [
-                    'YOUR GOAL — 3 Steps',
-                    'Relay: ' + (c.baseCIDR || '?') + '   Demand: ' + (c.hostDemand || '?') + ' hosts',
+                    'YOUR GOAL',
+                    'Relay: ' + (c.ipAddress || '?') + '/' + (c.originalCIDR || '?') + '   Class ' + (c.ipClass || '?'),
+                    'Needed hosts: ' + (c.requiredHosts || '?'),
                     '',
-                    'Step 1 — Set PREFIX to the right block size.',
-                    'Step 2 — Move OFFSET so cage covers the red span.',
-                    'Step 3 — Press SUBMIT to validate.',
-                    '',
-                    'I will guide you and correct mistakes in real time.',
-                    'Press ENTER or click to begin Step 1.',
+                    'Right adds 1, Left adds 2, Up adds 3, Down adds 4.',
+                    'Find the CIDR that gives the smallest larger power-of-two capacity.',
+                    'Press ENTER or click to begin.',
                 ],
             ],
             onComplete,
         });
     },
 
-    // ─── STEPS ────────────────────────────────────────────────────────────────
-
     showStep(step, context, onComplete) {
         const c = context || {};
         const n = Number(step) || 1;
-
         const slidesByStep = {
             1: [
                 [
-                    'STEP 1 of 3 — Set the PREFIX (block size)',
-                    'Host demand: ' + (c.hostDemand || '?') + '  |  Target prefix: /' + (c.solutionPrefix || '?'),
+                    'STEP 1 of 3 - Start the path',
+                    'Drag from blue node A or click adjacent tiles.',
                     '',
-                    '  /+  makes the block LARGER (lower prefix number)',
-                    '  /-  makes the block SMALLER (higher prefix number)',
+                    'The preview panel updates live:',
+                    'path bits, new CIDR, host bits, and host capacity.',
                     '',
-                    'Press /+ or /- until SELECTED ZONE ends with',
-                    '/' + (c.solutionPrefix || '?') + '.  Watch "Usable hosts" — it must',
-                    'be >= host demand but as tight as possible.',
+                    'Make your first move without touching a red virus node.',
                 ],
             ],
             2: [
                 [
-                    'STEP 2 of 3 — Move the OFFSET (zone position)',
-                    'Block size is correct. Now position it.',
+                    'STEP 2 of 3 - Reach blue node B',
+                    'Continue the connector until it reaches the second blue node.',
                     '',
-                    '  <  slides zone LEFT     >  slides zone RIGHT',
-                    '  Or CLICK the red area on the grid directly.',
+                    'Needed hosts: ' + (c.requiredHosts || '?'),
+                    'Current CIDR: /' + (c.currentCIDR || c.originalCIDR || '?'),
+                    'Current capacity: 2^' + (c.currentHostBits || '?') + ' = ' + (c.currentCapacity || '?'),
                     '',
-                    'Target CIDR: ' + (c.solutionCIDR || '?'),
-                    'Move until SELECTED ZONE reads: ' + (c.solutionCIDR || '?'),
+                    'Connected is not enough. Extra capacity still exposes signal space.',
                 ],
             ],
             3: [
                 [
-                    'STEP 3 of 3 — Submit',
-                    'Quick check before you submit:',
-                    '  ✓ Yellow zone covers all RED cells.',
-                    '  ✓ No CYAN cells are inside the yellow zone.',
-                    '  ✓ SELECTED ZONE = ' + (c.solutionCIDR || '?'),
+                    'STEP 3 of 3 - Confirm path',
+                    'Confirm when both blue nodes are connected.',
                     '',
-                    'Press SUBMIT (or ENTER) to run the simulation.',
+                    'The connector will replay tile by tile.',
+                    'Watch the animated calculation:',
+                    'path bits become a new CIDR, then host bits become capacity.',
+                    '',
+                    'Press CONFIRM PATH or ENTER.',
                 ],
             ],
         };
 
         return this._startDynamicDialogue('stage3.cidrquarantine.step.', {
-            title: 'GUIDED QUARANTINE',
+            title: 'GUIDED PATH QUARANTINE',
             speaker: 'SYSTEM',
             timing: 'during',
             bindings: { mapId: 11, gameplayId: 'ip_cidr_quarantine', trigger: 'tutorial.step' },
@@ -119,47 +104,30 @@ const IPCIDRQuarantineTutorial = {
         });
     },
 
-    // ─── FEEDBACK ─────────────────────────────────────────────────────────────
-
     showFeedback(reason, context, onComplete) {
         const c = context || {};
         const text = {
-            prefixTooSmall: [
-                'Block too LARGE — prefix is too low.',
-                'Press  /-  to shrink the block.',
-                'Target prefix: /' + (c.solutionPrefix || '?'),
-            ],
-            prefixTooLarge: [
-                'Block too SMALL — cannot fit ' + (c.hostDemand || '?') + ' hosts.',
-                'Press  /+  to widen the block.',
-                'Target prefix: /' + (c.solutionPrefix || '?'),
-            ],
-            offset: [
-                'Zone is the right size but not over the rogue span.',
-                'Use  <  >  or click the red cells on the grid.',
-                'Target CIDR: ' + (c.solutionCIDR || '?'),
-            ],
             submitEarly: [
-                'Not ready to submit yet.',
-                'Complete the current step first:',
-                '  Step 1 → prefix /' + (c.solutionPrefix || '?'),
-                '  Step 2 → position the cage over the red span.',
-                'I will tell you when to submit.',
+                'Not ready to confirm.',
+                'Build the connector until it reaches the second blue node.',
+                'Use adjacent tiles only and avoid red virus nodes.',
             ],
             submitWrong: [
-                'Simulation rejected. Zone does not match solution.',
-                'Reset to: ' + (c.solutionCIDR || '?'),
-                'Use /+ /- to fix size, then < > to fix position.',
-            ],
-            prefixFirst: [
-                'Set PREFIX first before moving the zone.',
-                'Press /+ or /- until zone reads /' + (c.solutionPrefix || '?') + '.',
-                'Then you can position it.',
+                'Simulation rejected.',
+                'The path connected, but the CIDR block was not optimized.',
+                'Needed hosts: ' + (c.requiredHosts || '?'),
+                'Current /' + (c.currentCIDR || '?') + ' gives ' + (c.currentCapacity || '?') + ' hosts.',
+                'Use UNDO or click an earlier tile to rewind.',
             ],
             submitReady: [
-                'Zone is already aligned — submit now!',
-                'Do not adjust PREFIX or OFFSET further.',
-                'Press SUBMIT (or ENTER) to validate.',
+                'Path is connected.',
+                'Check the CIDR preview before confirming.',
+                'Needed hosts: ' + (c.requiredHosts || '?'),
+                'Current /' + (c.currentCIDR || '?') + ' gives ' + (c.currentCapacity || '?') + ' hosts.',
+            ],
+            virus: [
+                'Virus tile blocked.',
+                'Route around red nodes. They are rogue AI detection points.',
             ],
         };
 
@@ -168,36 +136,31 @@ const IPCIDRQuarantineTutorial = {
             speaker: 'SYSTEM',
             timing: 'during',
             bindings: { mapId: 11, gameplayId: 'ip_cidr_quarantine', trigger: 'tutorial.feedback' },
-            slides: [text[reason] || text.offset],
+            slides: [text[reason] || text.submitWrong],
             onComplete,
         });
     },
 
-    // ─── COMPLETE ─────────────────────────────────────────────────────────────
-
     showComplete(onComplete) {
         return this._startDynamicDialogue('stage3.cidrquarantine.complete.', {
-            title: 'QUARANTINE STABLE',
+            title: 'PATH QUARANTINE STABLE',
             speaker: 'SYSTEM',
             timing: 'after',
             bindings: { mapId: 11, gameplayId: 'ip_cidr_quarantine', trigger: 'tutorial.completed' },
             slides: [
                 [
                     'Quarantine successful.',
-                    '✓ Sized cage with correct PREFIX.',
-                    '✓ Positioned cage over the rogue span.',
-                    '✓ No protected nodes captured.',
+                    'Blue nodes connected.',
+                    'Virus nodes avoided.',
+                    'Animated CIDR calculation reached the optimized capacity.',
                     '',
-                    'Future nodes randomize their givens.',
-                    'Read demand → resize → position → submit.',
-                    'Proceeding to next objective.',
+                    'Future nodes change layout, IP class, and host demand.',
+                    'Preview first, then confirm only when the route is optimized.',
                 ],
             ],
             onComplete,
         });
     },
-
-    // ─── RECOVERY ─────────────────────────────────────────────────────────────
 
     showRecovery(context, onComplete) {
         return this._startDynamicDialogue('stage3.cidrquarantine.recovery.', {
@@ -207,21 +170,18 @@ const IPCIDRQuarantineTutorial = {
             bindings: { mapId: 11, gameplayId: 'ip_cidr_quarantine', trigger: 'gameplay.failed' },
             slides: [
                 [
-                    'Quarantine collapsed. All attempts used.',
+                    'Connector collapsed. All attempts used.',
                     'Routing back to tutorial node.',
                     '',
                     'Recap:',
-                    '  1. PREFIX — resize until usable hosts >= demand.',
-                    '  2. OFFSET — cover all red cells, avoid cyan.',
-                    '  3. SUBMIT.',
-                    'Good luck on your next run.',
+                    '1. Connect blue node A to blue node B.',
+                    '2. Avoid red virus nodes.',
+                    '3. Add the CIDR bits that create the smallest fitting host block.',
                 ],
             ],
             onComplete,
         });
     },
-
-    // ─── INTERNAL ─────────────────────────────────────────────────────────────
 
     _startDynamicDialogue(prefix, definition) {
         const dm = IP2Live.DialogueManager;
