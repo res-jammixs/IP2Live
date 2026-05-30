@@ -226,26 +226,26 @@ const IP2LiveGameManager = {
         },
         ip_cidr_binary_panel: {
             gameplayId: 'ip_cidr_binary_panel',
-            mapId: 5,
+            mapId: 7,
             label: 'CIDR Binary Panel',
             competencyKey: 'cidr_custom_mask',
             competencyLabel: 'CIDR and custom subnet mask understanding',
             targetClearMs: 120000,
             objectiveHandler: { manager: 'CIDRPanelGameplayManager', method: '_handleCIDRObjective' },
             quests: [
-                { id: 'stage.5.ip_cidr_panel.01', objectiveId: 'solve_cidr_panel_01', title: 'SOLVE CIDR BINARY PANEL', label: 'CIDR Binary Panel', targetTile: { x: 16, y: 0, z: 18 } },
+                { id: 'stage.5.ip_cidr_panel.01', objectiveId: 'solve_cidr_panel_01', title: 'SOLVE CIDR BINARY PANEL', label: 'CIDR Binary Panel', targetTile: { x: 28, y: 0, z: 32 } },
             ],
         },
         ip_subnet_simulator: {
             gameplayId: 'ip_subnet_simulator',
-            mapId: 5,
+            mapId: 7,
             label: 'Subnet Simulator',
             competencyKey: 'hosts_subnets_calculation',
             competencyLabel: 'Hosts and subnets calculation',
             targetClearMs: 150000,
             objectiveHandler: { manager: 'SubnetSimulatorGameplayManager', method: '_handleObjective' },
             quests: [
-                { id: 'stage.5.ip_subnetsim.01', objectiveId: 'solve_subnet_sim_01', title: 'SOLVE SUBNET SIMULATOR', label: 'Subnet Simulator', targetTile: { x: 16, y: 0, z: 20 } },
+                { id: 'stage.5.ip_subnetsim.01', objectiveId: 'solve_subnet_sim_01', title: 'SOLVE SUBNET SIMULATOR', label: 'Subnet Simulator', targetTile: { x: 28, y: 0, z: 28 } },
             ],
         },
         ip_cidr_quarantine: {
@@ -593,7 +593,44 @@ const IP2LiveGameManager = {
                 },
             };
         }
-        if (gameplayId === 'ip_cidr_quarantine' || gameplayId === 'ip_cidr_quarantine_matrix') {
+        if (gameplayId === 'ip_cidr_quarantine') {
+            const attemptsUsed = Number(r.attemptsUsed || 0) || 0;
+            const maxAttempts = Number(r.maxAttempts || 3) || 3;
+            const passed = r.passed !== false;
+            const targetCIDR = Number(r.targetCIDR || 0) || 0;
+            const currentCIDR = Number(r.currentCIDR || 0) || 0;
+            const cidrDistance = Math.abs(currentCIDR - targetCIDR);
+            return {
+                attemptsUsed: attemptsUsed,
+                maxAttempts: maxAttempts,
+                retries: Number(r.retries || Math.max(0, attemptsUsed - 1)) || 0,
+                mistakeCount: passed ? Math.max(0, attemptsUsed - 1) : attemptsUsed,
+                mistakeRate: maxAttempts > 0 ? Math.max(0, Math.min(1, passed ? Math.max(0, attemptsUsed - 1) / maxAttempts : attemptsUsed / maxAttempts)) : 0,
+                accuracy: passed ? 1 : (targetCIDR > 0 ? Math.max(0, 1 - (cidrDistance / Math.max(targetCIDR, 1))) : 0),
+                payload: {
+                    problemId: r.problemId || null,
+                    ipAddress: r.ipAddress || null,
+                    ipClass: r.ipClass || null,
+                    originalCIDR: Number(r.originalCIDR || 0) || 0,
+                    requiredHosts: r.requiredHosts || null,
+                    targetAddedBits: Number(r.targetAddedBits || 0) || 0,
+                    currentAddedBits: Number(r.currentAddedBits || 0) || 0,
+                    targetCIDR: targetCIDR,
+                    currentCIDR: currentCIDR,
+                    cidrDistance: cidrDistance,
+                    optimizedHostBits: Number(r.optimizedHostBits || 0) || 0,
+                    currentHostBits: Number(r.currentHostBits || 0) || 0,
+                    optimizedCapacity: r.optimizedCapacity || null,
+                    currentCapacity: r.currentCapacity || null,
+                    allocatedCIDR: r.allocatedCIDR || null,
+                    pathLength: Number(r.pathLength || 0) || 0,
+                    pathTiles: this._clonePlain(r.pathTiles || []),
+                    moveWeights: this._clonePlain(r.moveWeights || []),
+                    diagnosticReason: r.diagnosticReason || null,
+                },
+            };
+        }
+        if (gameplayId === 'ip_cidr_quarantine_matrix') {
             const attemptsUsed = Number(r.attemptsUsed || 0) || 0;
             const maxAttempts = Number(r.maxAttempts || 3) || 3;
             const passed = r.passed !== false;
