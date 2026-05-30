@@ -203,10 +203,12 @@ class IP2LiveQuestManager {
         const opts = options || {};
         if (!state || typeof state !== 'object') return false;
 
+        this._syncStageFoundation();
         this.completedObjectives = this._clonePlain(state.completedObjectives || {});
         this.activeMapId = Number(state.activeMapId || opts.mapId || this.activeMapId || 0) || 0;
         this._mapQuestMode = state.mapQuestMode !== undefined ? !!state.mapQuestMode : true;
         this._showFinishedPanel = false;
+        this._pendingSlotRestore = opts.restoreContext || this._pendingSlotRestore || null;
 
         let restoredQuestId = state.activeQuestId || null;
         if (!restoredQuestId || !this.quests[restoredQuestId]) restoredQuestId = null;
@@ -225,10 +227,11 @@ class IP2LiveQuestManager {
             this._startNextQuestForMap(this.activeMapId);
         }
 
-        this.visible = state.visible !== undefined ? !!state.visible : true;
+        const hasActiveObjective = !!(this.activeQuestId && this.activeObjectiveId);
+        this.visible = hasActiveObjective ? state.visible !== false : !!state.visible;
         this.preview = state.preview !== undefined ? !!state.preview : false;
-        this.guideActive = state.guideActive !== undefined ? !!state.guideActive : true;
-        this.allowCompletion = state.allowCompletion !== undefined ? !!state.allowCompletion : true;
+        this.guideActive = hasActiveObjective ? state.guideActive !== false : !!state.guideActive;
+        this.allowCompletion = hasActiveObjective ? state.allowCompletion !== false : !!state.allowCompletion;
         if (!this.guideActive && this._arrowGuide) this._arrowGuide.clear();
         if (this._arrowGuide) this._arrowGuide.setObjective(this.currentObjective());
         if (Manager && Manager.Stack) Manager.Stack.requestPaintHUD = true;
@@ -259,6 +262,12 @@ class IP2LiveQuestManager {
         if (!queue.autoStart) return false;
 
         const resetForScene = this._resetMapEntryQuestsForScene(scene, resolvedMapId);
+        const resetBypassed = !!(scene && scene._ip2liveQuestEntryResetBypassed);
+        if (resetForScene && !resetBypassed) {
+            this.activeQuestId = null;
+            this.activeObjectiveId = null;
+            this._showFinishedPanel = false;
+        }
         const questIds = queue.questIds || [];
         const hasCurrentQuest = !!(
             this.activeQuestId &&
@@ -664,6 +673,12 @@ class IP2LiveQuestManager {
         if (!mapId) return;
 
         const resetForScene = this._resetMapEntryQuestsForScene(context && context.scene, mapId);
+        const resetBypassed = !!(context && context.scene && context.scene._ip2liveQuestEntryResetBypassed);
+        if (resetForScene && !resetBypassed) {
+            this.activeQuestId = null;
+            this.activeObjectiveId = null;
+            this._showFinishedPanel = false;
+        }
         if (this.activeMapId !== mapId) {
             this.activeMapId = mapId;
             this._lastCompletion = null;
@@ -753,7 +768,33 @@ class IP2LiveQuestManager {
         const queue = this._mapQuestQueue(mapId);
         if (!queue.questIds || queue.questIds.length === 0) return false;
         scene._ip2liveQuestEntryReset = true;
+        if (this._consumeSlotRestoreResetBypass(scene, mapId)) {
+            scene._ip2liveQuestEntryResetBypassed = true;
+            return true;
+        }
+        scene._ip2liveQuestEntryResetBypassed = false;
         this._resetMapEntryQuests(mapId);
+        return true;
+    }
+
+    _pendingSlotRestoreContext(scene) {
+        const game = Core && Core.Game ? Core.Game.current : null;
+        return (scene && scene._ip2livePendingSlotRestore) ||
+            (game && game._ip2livePendingSlotRestore) ||
+            this._pendingSlotRestore ||
+            null;
+    }
+
+    _consumeSlotRestoreResetBypass(scene, mapId) {
+        const context = this._pendingSlotRestoreContext(scene);
+        if (!context || context.resetBypassConsumed) return false;
+        const restoreMapId = Number(context.mapId) || 0;
+        if (restoreMapId && restoreMapId !== Number(mapId)) return false;
+        if (!context.questState || typeof context.questState !== 'object') return false;
+
+        context.resetBypassConsumed = true;
+        if (scene) scene._ip2livePendingSlotRestore = context;
+        this._pendingSlotRestore = context;
         return true;
     }
 

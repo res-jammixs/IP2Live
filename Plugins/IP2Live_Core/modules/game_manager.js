@@ -1266,23 +1266,39 @@ const IP2LiveGameManager = {
         }
     },
 
+    _slotSnapshotMapKey(slot, profileName) {
+        const slotKey = String(Number(slot) || 0);
+        const name = String(profileName || '').trim();
+        return name ? ('profile:' + name + ':slot:' + slotKey) : slotKey;
+    },
+
     _persistSlotSnapshot(slot, snapshot) {
         const key = String(Number(slot) || 0);
         if (key === '0' || !snapshot) return false;
         const map = this._readSlotSnapshotMap();
-        map[key] = Object.assign({}, snapshot, {
+        const profileName = String(snapshot.profileName || '').trim();
+        const storageKey = this._slotSnapshotMapKey(slot, profileName);
+        map[storageKey] = Object.assign({}, snapshot, {
             slot: Number(slot) || 0,
             savedAt: Number(snapshot.savedAt) || Date.now(),
         });
         return this._writeSlotSnapshotMap(map);
     },
 
-    _readSlotSnapshot(slot) {
+    _readSlotSnapshot(slot, profileName) {
         const key = String(Number(slot) || 0);
         if (key === '0') return null;
         const map = this._readSlotSnapshotMap();
-        const snapshot = map[key];
-        return snapshot && typeof snapshot === 'object' ? snapshot : null;
+        const name = String(profileName || '').trim();
+        const exactKey = this._slotSnapshotMapKey(slot, name);
+        const exactSnapshot = map[exactKey];
+        if (exactSnapshot && typeof exactSnapshot === 'object') return exactSnapshot;
+
+        const legacySnapshot = map[key];
+        if (!legacySnapshot || typeof legacySnapshot !== 'object') return null;
+        const legacyProfile = String(legacySnapshot.profileName || '').trim();
+        if (name && legacyProfile && legacyProfile !== name) return null;
+        return legacySnapshot;
     },
 
     async _readProfileSlotSnapshot(profileName, slot) {
@@ -1312,15 +1328,10 @@ const IP2LiveGameManager = {
 
         let profileSnapshot = null;
         if (profileName) profileSnapshot = await this._readProfileSlotSnapshot(profileName, resolvedSlot);
-        const cachedSnapshot = this._readSlotSnapshot(resolvedSlot);
+        const cachedSnapshot = this._readSlotSnapshot(resolvedSlot, profileName);
 
-        if (!profileSnapshot && !cachedSnapshot) return null;
-        if (profileSnapshot && !cachedSnapshot) return profileSnapshot;
-        if (!profileSnapshot && cachedSnapshot) return cachedSnapshot;
-
-        const pTime = Number(profileSnapshot.savedAt) || 0;
-        const cTime = Number(cachedSnapshot.savedAt) || 0;
-        return cTime >= pTime ? cachedSnapshot : profileSnapshot;
+        if (profileSnapshot) return profileSnapshot;
+        return cachedSnapshot || null;
     },
 
     async _saveCoreGame(slot) {
@@ -1379,6 +1390,29 @@ const IP2LiveGameManager = {
         g.hero.position.x = x;
         g.hero.position.y = y;
         g.hero.position.z = z;
+        return true;
+    },
+
+    _buildSlotRestoreContext(slot, snapshot) {
+        const snap = snapshot || {};
+        const mapId = Number(snap.mapId) || 0;
+        return {
+            version: 'slot-restore-20260530-01',
+            slot: Number(slot) || 0,
+            mapId: mapId,
+            profileName: String(snap.profileName || '').trim() || null,
+            questState: this._clonePlain(snap.questState || null),
+            heroPosition: this._clonePlain(snap.heroPosition || null),
+            restoredAt: Date.now(),
+            resetBypassConsumed: false,
+        };
+    },
+
+    _attachPendingSlotRestore(game, context) {
+        if (!game || !context) return false;
+        game._ip2livePendingSlotRestore = context;
+        const scene = this._currentScene();
+        if (scene) scene._ip2livePendingSlotRestore = context;
         return true;
     },
 
@@ -1451,6 +1485,8 @@ const IP2LiveGameManager = {
 
         const qm = IP2Live.QuestManager;
         const positionApplied = this._applyHeroPosition(game, snapshot.heroPosition);
+        const restoreContext = this._buildSlotRestoreContext(slot, snapshot);
+        this._attachPendingSlotRestore(game, restoreContext);
         if (snapshot.heroPosition) {
             game._ip2livePendingHeroPosition = {
                 x: Number(snapshot.heroPosition.x),
@@ -1465,6 +1501,9 @@ const IP2LiveGameManager = {
         if (snapshot.questState && qm && typeof qm.restoreProgress === 'function') {
             qm.restoreProgress(snapshot.questState, {
                 mapId: Number(game.currentMapID) || snapshot.mapId || this._currentMapId(),
+                slot: slot,
+                restoreContext: restoreContext,
+                preserveMapEntryReset: true,
             });
             return { restored: true, slot: slot, snapshot: snapshot, positionApplied: positionApplied };
         }
