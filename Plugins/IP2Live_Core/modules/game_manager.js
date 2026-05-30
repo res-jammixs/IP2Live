@@ -733,6 +733,10 @@ const IP2LiveGameManager = {
                     selectedCIDRs: this._clonePlain(r.selectedCIDRs || []),
                     solutionCIDR: r.solutionCIDR || null,
                     solutionCIDRs: this._clonePlain(r.solutionCIDRs || []),
+                    pairCount: r.pairCount || null,
+                    pairResults: this._clonePlain(r.pairResults || []),
+                    pathTilesByPair: this._clonePlain(r.pathTilesByPair || []),
+                    moveWeightsByPair: this._clonePlain(r.moveWeightsByPair || []),
                     diagnosticReason: r.diagnosticReason || null,
                 },
             };
