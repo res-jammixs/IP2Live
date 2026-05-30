@@ -93,7 +93,25 @@ const IP2LiveGameManager = {
                 level: 4,
                 spawn: { x: 6, y: 0, z: 17 },
                 worldTitle: true,
-                gameplayNodes: ['ip_network_repair'],
+                gameplayNodes: ['ip_class_wires', 'ip_class_wires_harder', 'ip_patch_panel_classes'],
+            },
+            7: {
+                id: 7,
+                name: 'Stage 2 Level 1',
+                stage: 2,
+                level: 1,
+                spawn: { x: 6, y: 0, z: 17 },
+                worldTitle: true,
+                gameplayNodes: ['ip_cidr_binary_panel'],
+            },
+            8: {
+                id: 8,
+                name: 'Stage 2 Level 2',
+                stage: 2,
+                level: 2,
+                spawn: { x: 6, y: 0, z: 17 },
+                worldTitle: true,
+                gameplayNodes: ['ip_cidr_binary_panel', 'ip_subnet_simulator'],
             },
             15: {
                 id: 15,
@@ -138,13 +156,13 @@ const IP2LiveGameManager = {
             },
             ip_cidr_binary_panel: {
                 id: 'ip_cidr_binary_panel',
-                mapId: 5,
+                mapId: 7,
                 manager: 'CIDRPanelGameplayManager',
                 method: 'launchCIDRGameplay',
             },
             ip_subnet_simulator: {
                 id: 'ip_subnet_simulator',
-                mapId: 5,
+                mapId: 8,
                 manager: 'SubnetSimulatorGameplayManager',
                 method: 'launchSubnetSimulatorGameplay',
             },
@@ -189,6 +207,14 @@ const IP2LiveGameManager = {
                 { id: 'stage.3.ip_wires.02', objectiveId: 'repair_ip_wires_02', title: 'REPAIR IP WIRES 02', label: 'Lever 02', targetTile: { x: 27, y: 0, z: 10 } },
                 { id: 'stage.3.ip_wires.03', objectiveId: 'repair_ip_wires_03', title: 'REPAIR IP WIRES 03', label: 'Lever 03', targetTile: { x: 13, y: 0, z: 6 } },
                 { id: 'stage.3.ip_wires.04', objectiveId: 'repair_ip_wires_04', title: 'REPAIR IP WIRES 04', label: 'Lever 04', targetTile: { x: 19, y: 0, z: 27 } },
+                { id: 'stage.6.ultimate.01.ip_wires', gameplayId: 'ip_class_wires', objectiveId: 'stage6_ultimate_01_ip_wires', title: 'ULTIMATE IP WIRES 01', label: 'Ultimate Wires 01', mapId: 6, targetTile: { x: 4, y: 0, z: 28 } },
+                { id: 'stage.6.ultimate.02.patch_panel', gameplayId: 'ip_patch_panel_classes', objectiveId: 'stage6_ultimate_02_patch_panel', title: 'ULTIMATE PATCH PANEL 02', label: 'Ultimate Patch 02', mapId: 6, targetTile: { x: 12, y: 0, z: 30 } },
+                { id: 'stage.6.ultimate.03.ip_wires_harder', gameplayId: 'ip_class_wires_harder', objectiveId: 'stage6_ultimate_03_ip_wires_harder', title: 'ULTIMATE STRICT WIRES 03', label: 'Ultimate Strict 03', mapId: 6, targetTile: { x: 21, y: 0, z: 27 }, wireCount: 6 },
+                { id: 'stage.6.ultimate.04.patch_panel', gameplayId: 'ip_patch_panel_classes', objectiveId: 'stage6_ultimate_04_patch_panel', title: 'ULTIMATE PATCH PANEL 04', label: 'Ultimate Patch 04', mapId: 6, targetTile: { x: 30, y: 0, z: 30 } },
+                { id: 'stage.6.ultimate.05.ip_wires', gameplayId: 'ip_class_wires', objectiveId: 'stage6_ultimate_05_ip_wires', title: 'ULTIMATE IP WIRES 05', label: 'Ultimate Wires 05', mapId: 6, targetTile: { x: 31, y: 0, z: 18 } },
+                { id: 'stage.6.ultimate.06.ip_wires_harder', gameplayId: 'ip_class_wires_harder', objectiveId: 'stage6_ultimate_06_ip_wires_harder', title: 'ULTIMATE STRICT WIRES 06', label: 'Ultimate Strict 06', mapId: 6, targetTile: { x: 23, y: 0, z: 12 }, wireCount: 8 },
+                { id: 'stage.6.ultimate.07.patch_panel', gameplayId: 'ip_patch_panel_classes', objectiveId: 'stage6_ultimate_07_patch_panel', title: 'ULTIMATE PATCH PANEL 07', label: 'Ultimate Patch 07', mapId: 6, targetTile: { x: 12, y: 0, z: 9 } },
+                { id: 'stage.6.ultimate.08.ip_wires', gameplayId: 'ip_class_wires', objectiveId: 'stage6_ultimate_08_ip_wires', title: 'ULTIMATE IP WIRES 08', label: 'Ultimate Wires 08', mapId: 6, targetTile: { x: 4, y: 0, z: 14 } },
             ],
         },
         ip_class_wires_harder: {
@@ -233,20 +259,77 @@ const IP2LiveGameManager = {
             targetClearMs: 120000,
             objectiveHandler: { manager: 'CIDRPanelGameplayManager', method: '_handleCIDRObjective' },
             quests: [
-                { id: 'stage.5.ip_cidr_panel.01', objectiveId: 'solve_cidr_panel_01', title: 'SOLVE CIDR BINARY PANEL', label: 'CIDR Binary Panel', targetTile: { x: 28, y: 0, z: 32 } },
+                { id: 'stage.7.ip_cidr_panel.01', objectiveId: 'solve_cidr_panel_01', title: 'SOLVE CIDR BINARY PANEL 01', label: 'CIDR Panel 01', targetTile: { x: 4, y: 0, z: 28 } },
+                { id: 'stage.7.ip_cidr_panel.02', objectiveId: 'solve_cidr_panel_02', title: 'SOLVE CIDR BINARY PANEL 02', label: 'CIDR Panel 02', targetTile: { x: 10, y: 0, z: 30 } },
+                { id: 'stage.7.ip_cidr_panel.03', objectiveId: 'solve_cidr_panel_03', title: 'SOLVE CIDR BINARY PANEL 03', label: 'CIDR Panel 03', targetTile: { x: 18, y: 0, z: 27 } },
+                { id: 'stage.7.ip_cidr_panel.04', objectiveId: 'solve_cidr_panel_04', title: 'SOLVE CIDR BINARY PANEL 04', label: 'CIDR Panel 04', targetTile: { x: 27, y: 0, z: 30 } },
+                { id: 'stage.7.ip_cidr_panel.05', objectiveId: 'solve_cidr_panel_05', title: 'SOLVE CIDR BINARY PANEL 05', label: 'CIDR Panel 05', targetTile: { x: 31, y: 0, z: 21 } },
+                {
+                    id: 'stage.8.cidr_chain.01',
+                    label: 'CIDR Chain 01',
+                    handoffKey: 'stage8-cidr-chain-01',
+                    targetMask: '255.255.255.128',
+                    mapId: 8,
+                    objectives: [
+                        { gameplayId: 'ip_cidr_binary_panel', objectiveId: 'solve_cidr_chain_01_panel', title: 'SOLVE CIDR PANEL 01', label: 'CIDR Panel 01', targetTile: { x: 5, y: 0, z: 28 } },
+                        { gameplayId: 'ip_subnet_simulator', objectiveId: 'solve_cidr_chain_01_subnet', title: 'SOLVE SUBNET SIMULATOR 01', label: 'Subnet Simulator 01', targetTile: { x: 7, y: 0, z: 28 } },
+                    ],
+                },
+                {
+                    id: 'stage.8.cidr_chain.02',
+                    label: 'CIDR Chain 02',
+                    handoffKey: 'stage8-cidr-chain-02',
+                    targetMask: '255.255.255.192',
+                    mapId: 8,
+                    objectives: [
+                        { gameplayId: 'ip_cidr_binary_panel', objectiveId: 'solve_cidr_chain_02_panel', title: 'SOLVE CIDR PANEL 02', label: 'CIDR Panel 02', targetTile: { x: 14, y: 0, z: 30 } },
+                        { gameplayId: 'ip_subnet_simulator', objectiveId: 'solve_cidr_chain_02_subnet', title: 'SOLVE SUBNET SIMULATOR 02', label: 'Subnet Simulator 02', targetTile: { x: 16, y: 0, z: 30 } },
+                    ],
+                },
+                {
+                    id: 'stage.8.cidr_chain.03',
+                    label: 'CIDR Chain 03',
+                    handoffKey: 'stage8-cidr-chain-03',
+                    targetMask: '255.255.255.224',
+                    mapId: 8,
+                    objectives: [
+                        { gameplayId: 'ip_cidr_binary_panel', objectiveId: 'solve_cidr_chain_03_panel', title: 'SOLVE CIDR PANEL 03', label: 'CIDR Panel 03', targetTile: { x: 24, y: 0, z: 28 } },
+                        { gameplayId: 'ip_subnet_simulator', objectiveId: 'solve_cidr_chain_03_subnet', title: 'SOLVE SUBNET SIMULATOR 03', label: 'Subnet Simulator 03', targetTile: { x: 26, y: 0, z: 28 } },
+                    ],
+                },
+                {
+                    id: 'stage.8.cidr_chain.04',
+                    label: 'CIDR Chain 04',
+                    handoffKey: 'stage8-cidr-chain-04',
+                    targetMask: '255.255.255.240',
+                    mapId: 8,
+                    objectives: [
+                        { gameplayId: 'ip_cidr_binary_panel', objectiveId: 'solve_cidr_chain_04_panel', title: 'SOLVE CIDR PANEL 04', label: 'CIDR Panel 04', targetTile: { x: 8, y: 0, z: 18 } },
+                        { gameplayId: 'ip_subnet_simulator', objectiveId: 'solve_cidr_chain_04_subnet', title: 'SOLVE SUBNET SIMULATOR 04', label: 'Subnet Simulator 04', targetTile: { x: 10, y: 0, z: 18 } },
+                    ],
+                },
+                {
+                    id: 'stage.8.cidr_chain.05',
+                    label: 'CIDR Chain 05',
+                    handoffKey: 'stage8-cidr-chain-05',
+                    targetMask: '255.255.255.248',
+                    mapId: 8,
+                    objectives: [
+                        { gameplayId: 'ip_cidr_binary_panel', objectiveId: 'solve_cidr_chain_05_panel', title: 'SOLVE CIDR PANEL 05', label: 'CIDR Panel 05', targetTile: { x: 22, y: 0, z: 18 } },
+                        { gameplayId: 'ip_subnet_simulator', objectiveId: 'solve_cidr_chain_05_subnet', title: 'SOLVE SUBNET SIMULATOR 05', label: 'Subnet Simulator 05', targetTile: { x: 24, y: 0, z: 18 } },
+                    ],
+                },
             ],
         },
         ip_subnet_simulator: {
             gameplayId: 'ip_subnet_simulator',
-            mapId: 7,
+            mapId: 8,
             label: 'Subnet Simulator',
             competencyKey: 'hosts_subnets_calculation',
             competencyLabel: 'Hosts and subnets calculation',
             targetClearMs: 150000,
             objectiveHandler: { manager: 'SubnetSimulatorGameplayManager', method: '_handleObjective' },
-            quests: [
-                { id: 'stage.5.ip_subnetsim.01', objectiveId: 'solve_subnet_sim_01', title: 'SOLVE SUBNET SIMULATOR', label: 'Subnet Simulator', targetTile: { x: 28, y: 0, z: 28 } },
-            ],
+            quests: [],
         },
         ip_cidr_quarantine: {
             gameplayId: 'ip_cidr_quarantine',
@@ -1254,30 +1337,42 @@ const IP2LiveGameManager = {
             const quests = Array.isArray(gameplay.quests) ? gameplay.quests : [];
             for (let q = 0; q < quests.length; q++) {
                 const spec = quests[q];
-                if (!spec || !spec.id || !spec.objectiveId) continue;
+                if (!spec || !spec.id) continue;
                 const specMapId = Number(spec.mapId || gameplay.mapId);
                 if (specMapId !== stageId) continue;
+                const objectiveSpecs = Array.isArray(spec.objectives) && spec.objectives.length
+                    ? spec.objectives.map((objectiveSpec) => Object.assign({}, spec, objectiveSpec, {
+                        id: spec.id,
+                        handoffKey: objectiveSpec.handoffKey || spec.handoffKey,
+                        targetMask: objectiveSpec.targetMask || spec.targetMask,
+                    }))
+                    : (spec.objectiveId ? [spec] : []);
+                if (!objectiveSpecs.length) continue;
                 registeredQuestIds.push(spec.id);
 
-                const target = this._cloneTile(spec.targetTile || { x: 0, y: 0, z: 0 });
-                const gameplayForSpec = Object.assign({}, gameplay, { mapId: stageId });
+                const objectives = objectiveSpecs.map((objectiveSpec) => {
+                    const objectiveGameplayId = objectiveSpec.gameplayId || gameplay.gameplayId;
+                    const objectiveGameplay = this.gameplayCatalog[objectiveGameplayId] || gameplay;
+                    const target = this._cloneTile(objectiveSpec.targetTile || { x: 0, y: 0, z: 0 });
+                    const gameplayForSpec = Object.assign({}, objectiveGameplay, { mapId: stageId });
+                    return {
+                        id: objectiveSpec.objectiveId,
+                        title: objectiveSpec.title || spec.title || 'SOLVE OBJECTIVE',
+                        detail: this._targetDetail(target),
+                        targetTile: target,
+                        completionRadiusTiles: typeof objectiveSpec.completionRadiusTiles === 'number' ? objectiveSpec.completionRadiusTiles : 0.55,
+                        isComplete: (context, activeQuestManager) => {
+                            return this._runGameplayObjectiveHandler(gameplayForSpec, objectiveSpec, context, activeQuestManager);
+                        },
+                    };
+                });
+
                 qm.registerQuest({
                     id: spec.id,
                     title: 'QUEST AREA',
                     stageMapId: stageId,
                     resetOnMapEnter: true,
-                    objectives: [
-                        {
-                            id: spec.objectiveId,
-                            title: spec.title || 'SOLVE OBJECTIVE',
-                            detail: this._targetDetail(target),
-                            targetTile: target,
-                            completionRadiusTiles: 0.55,
-                            isComplete: (context, activeQuestManager) => {
-                                return this._runGameplayObjectiveHandler(gameplayForSpec, spec, context, activeQuestManager);
-                            },
-                        },
-                    ],
+                    objectives: objectives,
                 });
                 this._registeredGameplayQuestIds[spec.id] = true;
             }

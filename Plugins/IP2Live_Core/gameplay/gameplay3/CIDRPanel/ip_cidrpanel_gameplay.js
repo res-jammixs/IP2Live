@@ -550,8 +550,10 @@ class IP2LiveCIDRPanelGameplayScreen extends Scene.Base {
         IP2Live.CIDRGameplayState.generatedMasks[this.targetMask] = true;
         const icon = this._buildInterestingOctetIconFromTarget();
         const enteredCIDR = this._parseCIDRInput(enteredCIDRText);
-        IP2Live.CIDRGameplayState.latest = {
+        const handoffKey = this.options && this.options.handoffKey ? String(this.options.handoffKey) : null;
+        const state = {
             gameplayId: 'ip_cidr_binary_panel',
+            handoffKey: handoffKey,
             mask: this.targetMask,
             cidr: this.targetCIDR,
             enteredCIDR: enteredCIDR,
@@ -566,8 +568,14 @@ class IP2LiveCIDRPanelGameplayScreen extends Scene.Base {
             },
             savedAt: Date.now(),
         };
+        IP2Live.CIDRGameplayState.latest = state;
+        if (handoffKey) {
+            if (!IP2Live.CIDRGameplayState.handoffs) IP2Live.CIDRGameplayState.handoffs = {};
+            IP2Live.CIDRGameplayState.handoffs[handoffKey] = Object.assign({}, state);
+        }
         this.lastResult = {
             gameplayId: 'ip_cidr_binary_panel',
+            handoffKey: handoffKey,
             passed: true,
             mask: this.targetMask,
             cidr: this.targetCIDR,
@@ -1415,7 +1423,9 @@ const CIDRPanelGameplayManager = {
             spec,
             questId: spec.id,
             objectiveId: spec.objectiveId,
-            mapId: Number(context && context.mapId) || 5,
+            mapId: Number(context && context.mapId) || Number(spec.mapId) || 7,
+            targetMask: spec.targetMask,
+            handoffKey: spec.handoffKey,
             _fromObjective: true,
             tutorialMode: true,
         };
@@ -1468,6 +1478,7 @@ const CIDRPanelGameplayManager = {
         const open = () => {
             const screen = new IP2LiveCIDRPanelGameplayScreen({
                 targetMask: opts.targetMask,
+                handoffKey: opts.handoffKey,
                 tutorialMode: !!opts.tutorialMode,
                 onComplete: (result) => this._onComplete(opts, result),
                 onCancel: () => this._onCancel(opts),
@@ -1550,7 +1561,7 @@ const CIDRPanelGameplayManager = {
         if (!this._showLoadingScreen2({
             mode: 'replace',
             status: 'Loading Stage',
-            detail: 'Returning to Stage 1 Level 3',
+            detail: 'Returning to Stage',
             onComplete: finalizeExit,
         })) {
             finalizeExit();

@@ -48,7 +48,7 @@ class IP2LiveSubnetSimulatorGameplayScreen extends Scene.Base {
             },
         };
 
-        const state = (IP2Live.CIDRGameplayState && IP2Live.CIDRGameplayState.latest) || null;
+        const state = this._resolveCIDRState();
         this.cidrState = state;
         this.bitsBinary = state && state.bitsBinary ? state.bitsBinary : '11100000';
         this.borrowedBits = this._countBits(this.bitsBinary);
@@ -79,6 +79,74 @@ class IP2LiveSubnetSimulatorGameplayScreen extends Scene.Base {
         const s = String(bitsBinary || '');
         for (let i = 0; i < s.length; i++) if (s[i] === '1') count++;
         return count;
+    }
+
+    _resolveCIDRState() {
+        const key = this.options && this.options.handoffKey ? String(this.options.handoffKey) : null;
+        const store = IP2Live.CIDRGameplayState || {};
+        if (key && store.handoffs && store.handoffs[key]) return store.handoffs[key];
+        const latest = store.latest || null;
+        if (latest && (!key || latest.handoffKey === key)) return latest;
+        if (this.options && this.options.targetMask) return this._buildCIDRStateFromMask(this.options.targetMask, key);
+        return latest;
+    }
+
+    _buildCIDRStateFromMask(mask, handoffKey) {
+        const octets = this._parseMask(mask);
+        const cidr = this._maskToCIDR(octets);
+        const octetIndex = this._interestingOctetIndex(octets);
+        const bitsBinary = this._octetToBits(octets[octetIndex] || 0);
+        return {
+            gameplayId: 'ip_cidr_binary_panel',
+            handoffKey: handoffKey || null,
+            mask: octets.join('.'),
+            cidr,
+            enteredCIDR: cidr,
+            enteredCIDRText: '/' + cidr,
+            targetOctets: octets,
+            interestingOctetIndex: octetIndex,
+            interestingOctetValue: octets[octetIndex] || 0,
+            bitsBinary,
+            icon: {
+                type: 'octet-borrowed-bits',
+                circles: bitsBinary.split('').map((bit, index) => ({
+                    index,
+                    borrowed: bit === '1',
+                    color: bit === '1' ? '#FFD84A' : '#6E7886',
+                    blink: bit === '1',
+                })),
+            },
+            rebuiltFromQuestSpec: true,
+            savedAt: Date.now(),
+        };
+    }
+
+    _parseMask(mask) {
+        const parts = String(mask || '').split('.').map((part) => Number(part));
+        if (parts.length !== 4) return [255, 255, 255, 0];
+        for (let i = 0; i < parts.length; i++) {
+            if (!Number.isInteger(parts[i]) || parts[i] < 0 || parts[i] > 255) return [255, 255, 255, 0];
+        }
+        return parts;
+    }
+
+    _maskToCIDR(octets) {
+        let total = 0;
+        for (let i = 0; i < octets.length; i++) total += this._countBits(this._octetToBits(octets[i]));
+        return total;
+    }
+
+    _interestingOctetIndex(octets) {
+        for (let i = 0; i < octets.length; i++) if (octets[i] !== 255 && octets[i] !== 0) return i;
+        for (let i = 0; i < octets.length; i++) if (octets[i] !== 255) return i;
+        return 3;
+    }
+
+    _octetToBits(value) {
+        let n = Math.max(0, Math.min(255, Number(value) || 0));
+        let out = '';
+        for (let i = 7; i >= 0; i--) out += (n & (1 << i)) ? '1' : '0';
+        return out;
     }
 
     _seedBalls() {
@@ -657,8 +725,8 @@ class IP2LiveSubnetSimulatorGameplayScreen extends Scene.Base {
 
     _saveState() {
         if (!IP2Live.CIDRGameplayState) IP2Live.CIDRGameplayState = {};
-        if (!IP2Live.CIDRGameplayState.latest) IP2Live.CIDRGameplayState.latest = {};
-        IP2Live.CIDRGameplayState.latest.gameplay4 = {
+        const state = this.cidrState || IP2Live.CIDRGameplayState.latest || {};
+        state.gameplay4 = {
             totalSubnets: this.answers.totalSubnets,
             usableSubnets: this.answers.usableSubnets,
             totalHosts: this.answers.totalHosts,
@@ -668,6 +736,11 @@ class IP2LiveSubnetSimulatorGameplayScreen extends Scene.Base {
             hostBits: this.hostBits,
             solvedAt: Date.now(),
         };
+        IP2Live.CIDRGameplayState.latest = state;
+        if (state.handoffKey) {
+            if (!IP2Live.CIDRGameplayState.handoffs) IP2Live.CIDRGameplayState.handoffs = {};
+            IP2Live.CIDRGameplayState.handoffs[state.handoffKey] = Object.assign({}, state);
+        }
     }
 
     _emitPop(x, y, color, count) {
@@ -714,6 +787,9 @@ class IP2LiveSubnetSimulatorGameplayScreen extends Scene.Base {
         if (typeof this.options.onComplete === 'function') {
             this.options.onComplete({
                 gameplayId: 'ip_subnet_simulator',
+                handoffKey: this.cidrState && this.cidrState.handoffKey,
+                mask: this.cidrState && this.cidrState.mask,
+                cidr: this.cidrState && this.cidrState.cidr,
                 passed: true,
                 answers: Object.assign({}, this.answers),
                 validationAttempts: this.validationAttempts,
@@ -1257,7 +1333,9 @@ const SubnetSimulatorGameplayManager = {
             spec,
             questId: spec.id,
             objectiveId: spec.objectiveId,
-            mapId: Number(context && context.mapId) || 5,
+            mapId: Number(context && context.mapId) || Number(spec.mapId) || 8,
+            targetMask: spec.targetMask,
+            handoffKey: spec.handoffKey,
             _fromObjective: true,
         };
 
@@ -1296,6 +1374,56 @@ const SubnetSimulatorGameplayManager = {
         return true;
     },
 
+    _handoffStateForOptions(options) {
+        const opts = options || {};
+        const key = opts.handoffKey ? String(opts.handoffKey) : null;
+        const store = IP2Live.CIDRGameplayState || {};
+        if (key && store.handoffs && store.handoffs[key]) return store.handoffs[key];
+        if (store.latest && (!key || store.latest.handoffKey === key)) return store.latest;
+        if (opts.targetMask) return this._buildCIDRStateFromMask(opts.targetMask, key);
+        return store.latest || {};
+    },
+
+    _buildCIDRStateFromMask(mask, handoffKey) {
+        const octets = String(mask || '255.255.255.0').split('.').map((part) => Number(part));
+        while (octets.length < 4) octets.push(0);
+        const normalized = octets.slice(0, 4).map((value) => Math.max(0, Math.min(255, Number(value) || 0)));
+        let cidr = 0;
+        for (let i = 0; i < normalized.length; i++) {
+            const bits = this._octetToBits(normalized[i]);
+            for (let b = 0; b < bits.length; b++) if (bits[b] === '1') cidr++;
+        }
+        let octetIndex = 3;
+        for (let i = 0; i < normalized.length; i++) {
+            if (normalized[i] !== 255 && normalized[i] !== 0) {
+                octetIndex = i;
+                break;
+            }
+        }
+        const bitsBinary = this._octetToBits(normalized[octetIndex]);
+        return {
+            gameplayId: 'ip_cidr_binary_panel',
+            handoffKey: handoffKey || null,
+            mask: normalized.join('.'),
+            cidr,
+            enteredCIDR: cidr,
+            enteredCIDRText: '/' + cidr,
+            targetOctets: normalized,
+            interestingOctetIndex: octetIndex,
+            interestingOctetValue: normalized[octetIndex],
+            bitsBinary,
+            rebuiltFromQuestSpec: true,
+            savedAt: Date.now(),
+        };
+    },
+
+    _octetToBits(value) {
+        const n = Math.max(0, Math.min(255, Number(value) || 0));
+        let out = '';
+        for (let i = 7; i >= 0; i--) out += (n & (1 << i)) ? '1' : '0';
+        return out;
+    },
+
     launchSubnetSimulatorGameplay(options) {
         const opts = options || {};
         const attemptKey = this._resolveAttemptKey(opts);
@@ -1307,6 +1435,8 @@ const SubnetSimulatorGameplayManager = {
 
         const open = () => {
             const screen = new IP2LiveSubnetSimulatorGameplayScreen({
+                targetMask: opts.targetMask,
+                handoffKey: opts.handoffKey,
                 onComplete: (result) => this._onComplete(opts, result),
                 onCancel: () => this._onCancel(opts),
             });
@@ -1342,7 +1472,7 @@ const SubnetSimulatorGameplayManager = {
         const shouldShowIntro = opts.showIntro !== false && !this._introShown;
         if (shouldShowIntro && IP2Live.IPSubnetSimulatorTutorial && typeof IP2Live.IPSubnetSimulatorTutorial.showIntro === 'function') {
             this._introShown = true;
-            const state = (IP2Live.CIDRGameplayState && IP2Live.CIDRGameplayState.latest) || {};
+            const state = this._handoffStateForOptions(opts);
             IP2Live.IPSubnetSimulatorTutorial.showIntro(state, openSafely);
         } else {
             openSafely();
@@ -1383,7 +1513,7 @@ const SubnetSimulatorGameplayManager = {
         if (!this._showLoadingScreen2({
             mode: 'replace',
             status: 'Loading Stage',
-            detail: 'Returning to Stage 1 Level 3',
+            detail: 'Returning to Stage',
             onComplete: finalizeExit,
         })) finalizeExit();
     },
