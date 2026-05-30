@@ -1,20 +1,10 @@
 /**
- * IP2Live - Stage 3 Level 2 CIDR Quarantine Matrix tutorial dialogue helpers.
- *
- * Tutorial flow:
- *   showIntro    → 3 slides: multi-zone concept, UI, rules
- *   showStep     → per-zone instructions + final submit
- *   showFeedback → contextual correction
- *   showComplete → success + next steps
- *   showRecovery → route back after hard fail
- *   showRollback → trace compromised, go back one level
+ * IP2Live - Stage 3 Level 2 dual-pair connector tutorial dialogue helpers.
  */
 
 const IPCIDRQuarantineMatrixTutorial = {
-    VERSION: 'ip-cidr-quarantine-matrix-tutorial-20260530-03',
+    VERSION: 'ip-cidr-quarantine-matrix-tutorial-20260530-dual-connector-01',
     _dialogueSerial: 0,
-
-    // ─── INTRO ────────────────────────────────────────────────────────────────
 
     showIntro(context, onComplete) {
         const c = context || {};
@@ -23,79 +13,63 @@ const IPCIDRQuarantineMatrixTutorial = {
             speaker: 'SYSTEM',
             timing: 'before',
             slides: [
-                // Slide 1 – What is the Matrix game
                 [
-                    'CIDR QUARANTINE MATRIX — Your Mission',
-                    'APEX split the rogue AI into multiple SHARDS.',
-                    'Build one CIDR cage per shard so that:',
-                    '  ✓ Every red shard is fully inside one cage.',
-                    '  ✗ Cages must NOT overlap each other.',
-                    '  ✗ No cyan protected nodes inside any cage.',
-                    'Tune all zones, then submit the full matrix.',
+                    'CIDR QUARANTINE MATRIX - Your Mission',
+                    'APEX split the relay into two unstable node pairs.',
+                    'Draw two clean connector paths:',
+                    '  Pair 1: A1 to B1.',
+                    '  Pair 2: A2 to B2.',
+                    'Each route must match its CIDR movement-bit target.',
+                    'Red virus nodes are traps. Do not route through them.',
                 ],
-                // Slide 2 – UI overview
                 [
                     'THE INTERFACE',
-                    'GRID: RED = AI shard, CYAN = protected,',
-                    '  YELLOW = active zone, BLUE = other zones.',
+                    'GRID: blue nodes are endpoints, red nodes are viruses.',
+                    'YELLOW route = Pair 1. CYAN route = Pair 2.',
                     '',
-                    'ZONE SLOTS (right): click a slot to select it.',
-                    'OFFSET [ < > ] — slide active zone left/right.',
-                    'PREFIX [ /+ /- ] — resize active zone.',
-                    'TAB — switch to next zone.  SUBMIT — validate all.',
+                    'Click a pair card or press TAB to switch active pair.',
+                    'Drag or click adjacent tiles to extend the active route.',
+                    'UNDO removes one tile. CLEAR resets the active pair.',
+                    'SUBMIT validates both connectors together.',
                 ],
-                // Slide 3 – Goal
                 [
-                    'YOUR GOAL — One zone at a time',
-                    'Relay: ' + (c.baseCIDR || '?'),
+                    'YOUR GOAL - Two routes, one matrix',
+                    (c.pairLabel || 'Pair 1') + ': ' + (c.ipAddress || '?') + '/' + (c.originalCIDR || '?'),
                     '',
-                    'For each zone:',
-                    '  A. Select the zone slot.',
-                    '  B. Set PREFIX to correct size.',
-                    '  C. Move OFFSET to cover the shard.',
-                    'When all zones are set, I will tell you to submit.',
-                    'Press ENTER or click to begin Zone 1.',
+                    'Move weights: R=+1, L=+2, U=+3, D=+4.',
+                    'Target CIDR for the active pair: /' + (c.targetCIDR || '?'),
+                    'Connect both pairs, avoid viruses, then confirm.',
+                    'Press ENTER or click to begin Pair 1.',
                 ],
             ],
             onComplete,
         });
     },
 
-    // ─── STEPS ────────────────────────────────────────────────────────────────
-
     showStep(step, context, onComplete) {
         const c = context || {};
-        const zone = Number(c.zoneIndex || 0) + 1;
-        const total = Number(c.totalZones || 2);
+        const pair = Number(c.pairIndex || 0) + 1;
+        const total = Number(c.totalPairs || 2);
+        const slides = step === 'submit' ? [[
+            'BOTH PAIRS LINKED - Submit now',
+            'Final check:',
+            '  Pair 1 reaches B1.',
+            '  Pair 2 reaches B2.',
+            '  No route touches a virus.',
+            '  Both routes match their CIDR targets.',
+            '',
+            'Press SUBMIT or ENTER to run the matrix simulation.',
+        ]] : [[
+            'PAIR ' + pair + ' of ' + total + ' - Build this connector',
+            'Select Pair ' + pair + ' on the right or press TAB.',
+            '',
+            'Start at ' + (c.startLabel || 'A') + ' and reach ' + (c.endLabel || 'B') + '.',
+            'Target: /' + (c.originalCIDR || '?') + ' +' + (c.targetAddedBits || '?') + ' = /' + (c.targetCIDR || '?') + '.',
+            'Use turns to route around red virus nodes.',
+            '',
+            'I will advance after this pair is linked.',
+        ]];
 
-        const slidesByStep = {
-            zone: [
-                [
-                    'ZONE ' + zone + ' of ' + total + ' — Tune this zone',
-                    'Select ZONE ' + zone + ' slot on the right (or press TAB).',
-                    '',
-                    'A. PREFIX: press /+ or /- until zone ends with',
-                    '   /' + (c.solutionPrefix || '?'),
-                    'B. OFFSET: use < > or click grid until zone reads',
-                    '   ' + (c.solutionCIDR || '?'),
-                    '',
-                    'I will advance you to the next zone automatically.',
-                ],
-            ],
-            submit: [
-                [
-                    'ALL ZONES ALIGNED — Submit now',
-                    'Final check:',
-                    '  ✓ All red shards covered by a zone.',
-                    '  ✓ No cyan nodes inside any zone.',
-                    '  ✓ Zones do not overlap.',
-                    '',
-                    'Press SUBMIT (or ENTER) to run the matrix simulation.',
-                ],
-            ],
-        };
-
-        const slides = step === 'submit' ? slidesByStep.submit : slidesByStep.zone;
         return this._startDynamicDialogue('stage3.cidrmatrix.step.', {
             title: 'GUIDED MATRIX',
             speaker: 'SYSTEM',
@@ -106,42 +80,39 @@ const IPCIDRQuarantineMatrixTutorial = {
         });
     },
 
-    // ─── FEEDBACK ─────────────────────────────────────────────────────────────
-
     showFeedback(reason, context, onComplete) {
         const c = context || {};
-        const zone = Number(c.zoneIndex || 0) + 1;
-
+        const pair = Number(c.pairIndex || 0) + 1;
         const text = {
             selectZone: [
-                'Wrong zone selected.',
-                'Click ZONE ' + zone + ' slot on the right panel,',
-                'or press TAB until ZONE ' + zone + ' is highlighted.',
+                'Wrong pair selected.',
+                'Click Pair ' + pair + ' on the right panel,',
+                'or press TAB until Pair ' + pair + ' is highlighted.',
             ],
             prefix: [
-                'ZONE ' + zone + ' has the wrong size.',
-                'Press /+ or /- to adjust the PREFIX.',
-                'Target: ' + (c.solutionCIDR || '?'),
+                'Pair ' + pair + ' has the wrong movement-bit total.',
+                'Adjust the connector route until it reaches /' + (c.targetCIDR || '?') + '.',
+                'Remember: R=+1, L=+2, U=+3, D=+4.',
             ],
             offset: [
-                'ZONE ' + zone + ' is the right size but wrong position.',
-                'Use < > or click the red shard on the grid.',
-                'Target: ' + (c.solutionCIDR || '?'),
+                'Pair ' + pair + ' has not reached the correct endpoint.',
+                'Continue the route from ' + (c.startLabel || 'A') + ' to ' + (c.endLabel || 'B') + '.',
+                'Avoid red virus nodes.',
             ],
             submitEarly: [
-                'Not ready to submit — still tuning ZONE ' + zone + '.',
-                'Finish each zone first.',
-                'I will tell you when to submit.',
+                'Not ready to submit yet.',
+                'Both node pairs must be linked first.',
+                'Finish Pair ' + pair + ', then the matrix can validate.',
             ],
             submitWrong: [
-                'Simulation rejected the matrix layout.',
-                'Check each zone slot — at least one is incorrect.',
-                'ZONE ' + zone + ' target: ' + (c.solutionCIDR || '?'),
+                'Simulation rejected the dual connector layout.',
+                'Check for a virus hit, wrong endpoint, path overlap, or wrong CIDR bits.',
+                'Pair ' + pair + ' target: /' + (c.targetCIDR || '?'),
             ],
             submitReady: [
-                'All zones set — press SUBMIT now.',
-                'Do not adjust any zone further.',
-                'Press SUBMIT (or ENTER) to validate.',
+                'Both pairs are linked - press SUBMIT now.',
+                'Do not adjust the routes further.',
+                'Press SUBMIT or ENTER to validate.',
             ],
         };
 
@@ -155,31 +126,25 @@ const IPCIDRQuarantineMatrixTutorial = {
         });
     },
 
-    // ─── COMPLETE ─────────────────────────────────────────────────────────────
-
     showComplete(onComplete) {
         return this._startDynamicDialogue('stage3.cidrmatrix.complete.', {
             title: 'MATRIX STABLE',
             speaker: 'SYSTEM',
             timing: 'after',
             bindings: { mapId: 12, gameplayId: 'ip_cidr_quarantine_matrix', trigger: 'tutorial.completed' },
-            slides: [
-                [
-                    'Matrix quarantine successful.',
-                    '✓ All shards contained.',
-                    '✓ No overlaps between zones.',
-                    '✓ No protected nodes captured.',
-                    '',
-                    'Future nodes randomize shards and protected positions.',
-                    'TAB=zone  /+/-=size  < >=move  ENTER=submit.',
-                    'Proceeding to next objective.',
-                ],
-            ],
+            slides: [[
+                'Matrix quarantine successful.',
+                'Pair 1 linked.',
+                'Pair 2 linked.',
+                'Virus nodes avoided.',
+                '',
+                'Future nodes randomize formations, routes, and virus blockers.',
+                'TAB=pair  Z=undo  R=clear  ENTER=submit.',
+                'Proceeding to next objective.',
+            ]],
             onComplete,
         });
     },
-
-    // ─── RECOVERY ─────────────────────────────────────────────────────────────
 
     showRecovery(context, onComplete) {
         return this._startDynamicDialogue('stage3.cidrmatrix.recovery.', {
@@ -187,23 +152,18 @@ const IPCIDRQuarantineMatrixTutorial = {
             speaker: 'SYSTEM',
             timing: 'after',
             bindings: { mapId: 12, gameplayId: 'ip_cidr_quarantine_matrix', trigger: 'gameplay.failed' },
-            slides: [
-                [
-                    'Matrix collapsed. All attempts used.',
-                    'Routing back to tutorial node.',
-                    '',
-                    'Common mistakes:',
-                    '  Wrong PREFIX, wrong OFFSET, zones overlapping,',
-                    '  or cyan node inside a cage.',
-                    'Work one zone at a time. Select → Resize → Position.',
-                    'Submit only when I confirm all zones are aligned.',
-                ],
-            ],
+            slides: [[
+                'Matrix collapsed. All attempts used.',
+                'Routing back to tutorial node.',
+                '',
+                'Common mistakes:',
+                '  One pair unfinished, wrong movement bits,',
+                '  paths overlapping, or a virus node touched.',
+                'Work one pair at a time. Link both before submitting.',
+            ]],
             onComplete,
         });
     },
-
-    // ─── ROLLBACK ─────────────────────────────────────────────────────────────
 
     showRollback(onComplete) {
         return this._startDynamicDialogue('stage3.cidrmatrix.rollback.', {
@@ -211,22 +171,18 @@ const IPCIDRQuarantineMatrixTutorial = {
             speaker: 'SYSTEM',
             timing: 'after',
             bindings: { mapId: 12, gameplayId: 'ip_cidr_quarantine_matrix', trigger: 'gameplay.failed' },
-            slides: [
-                [
-                    'Trace compromised. APEX has our signal.',
-                    'Pulling back one sector to protect the relay.',
-                    '',
-                    'Rules to remember:',
-                    '  Each cage must cover exactly its assigned shard.',
-                    '  Cages cannot overlap. Cyan = off limits.',
-                    'Rebuild from the previous level. Cold signal this time.',
-                ],
-            ],
+            slides: [[
+                'Trace compromised. APEX has our signal.',
+                'Pulling back one sector to protect the relay.',
+                '',
+                'Rules to remember:',
+                '  Connect each A node to its matching B node.',
+                '  Routes cannot touch viruses or overlap each other.',
+                'Rebuild from the previous level. Cold signal this time.',
+            ]],
             onComplete,
         });
     },
-
-    // ─── INTERNAL ─────────────────────────────────────────────────────────────
 
     _startDynamicDialogue(prefix, definition) {
         const dm = IP2Live.DialogueManager;
