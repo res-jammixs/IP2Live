@@ -22,8 +22,15 @@ class IP2LiveCIDRQuarantineGameplayScreen extends Scene.Base {
         this.phase = 'build';
         this.maxAttempts = Math.max(1, Number(this.options.maxAttempts) || 3);
         this.attemptsUsed = 0;
+        const virusConfig = this.options.virusConfig || {};
+        this.virusConfig = {
+            edgeBuffer: Math.max(0, Number(virusConfig.edgeBuffer) || 0),
+            solutionBufferMin: Math.max(0, Number(virusConfig.solutionBufferMin) || 1),
+            solutionBufferMax: Math.max(0, Number(virusConfig.solutionBufferMax) || 4),
+        };
         this.directionWeights = { R: 1, L: 2, U: 3, D: 4 };
         this.problem = this.options.problem || this._generateProblem(this.options.spec || {});
+        this._initVirusSpread();
         this.path = [this._cloneTile(this.problem.start)];
         this.draggingPath = false;
         this.buttonRects = [];
@@ -66,6 +73,8 @@ class IP2LiveCIDRQuarantineGameplayScreen extends Scene.Base {
         }
         const blockedKeys = {};
         for (let i = 0; i < solutionPath.length; i++) blockedKeys[this._tileKey(solutionPath[i])] = true;
+        const edgeBuffer = this._virusEdgeBuffer();
+        const solutionBufferKeys = this._buildSolutionBufferKeys(solutionPath);
 
         const viruses = [];
         const desiredVirusCount = Math.min(34, 18 + questIndex * 3);
@@ -75,6 +84,8 @@ class IP2LiveCIDRQuarantineGameplayScreen extends Scene.Base {
             const tile = { col: seed % 16, row: Math.floor(seed / 16) % 16 };
             const key = this._tileKey(tile);
             if (blockedKeys[key]) continue;
+            if (edgeBuffer > 0 && this._isInEdgeBuffer(tile, edgeBuffer)) continue;
+            if (solutionBufferKeys[this._tileKey(tile)]) continue;
             if (this._manhattan(tile, start) <= 1 || this._manhattan(tile, cursor) <= 1) continue;
             blockedKeys[key] = true;
             viruses.push(tile);
@@ -87,6 +98,7 @@ class IP2LiveCIDRQuarantineGameplayScreen extends Scene.Base {
             end: this._cloneTile(cursor),
             viruses,
             solutionPath,
+            solutionBufferKeys,
             solutionMoves,
             ipAddress,
             ipInt,
@@ -108,6 +120,7 @@ class IP2LiveCIDRQuarantineGameplayScreen extends Scene.Base {
 
     update() {
         this.animTick++;
+        this._updateVirusSpread();
         if (this.trace) this._updateTrace();
         if (this.tutorialMode && !this.tutorialStarted) {
             this.tutorialStarted = true;
@@ -420,6 +433,7 @@ class IP2LiveCIDRQuarantineGameplayScreen extends Scene.Base {
         this._drawGrid(ctx, m);
         this._drawControls(ctx, m);
         this._drawStatus(ctx, m);
+        this._drawVirusAlert(ctx, m);
         if (IP2Live.DialogueManager && typeof IP2Live.DialogueManager.drawOverlay === 'function') {
             IP2Live.DialogueManager.drawOverlay(ctx);
         }
@@ -561,6 +575,32 @@ class IP2LiveCIDRQuarantineGameplayScreen extends Scene.Base {
         ctx.fillText('TRIES ' + this.attemptsUsed + '/' + this.maxAttempts + '   Drag/click path   Z: undo   R: clear   ENTER: confirm', m.panelX + 30 * m.sX, m.panelY + m.panelH - 28 * m.sY);
     }
 
+    _drawVirusAlert(ctx, m) {
+        if (!this.virusState) return;
+        let intensity = 0;
+        if (this.virusState.overrun) intensity = 0.65;
+        else if (this._shouldTriggerOverrun()) intensity = 0.35;
+        if (intensity <= 0) return;
+
+        const pulse = 0.5 + 0.5 * Math.sin(this.animTick * 0.3);
+        const alpha = Math.min(0.85, intensity + pulse * 0.25);
+        ctx.save();
+        ctx.globalAlpha = alpha;
+        ctx.fillStyle = '#FF0B2F';
+        ctx.fillRect(0, 0, m.cW, m.cH);
+        ctx.restore();
+
+        if (this.virusState.overrun) {
+            const shake = 6 * (0.5 + 0.5 * Math.sin(this.animTick * 0.8));
+            ctx.save();
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.15)';
+            ctx.font = 'bold ' + Math.round(26 * m.sY) + 'px monospace';
+            ctx.textAlign = 'center';
+            ctx.fillText('QUARANTINE BREACHED', m.cW / 2 + shake, m.cH / 2 + shake);
+            ctx.restore();
+        }
+    }
+
     _drawButton(ctx, b, m, label) {
         if (!b) return;
         const g = ctx.createLinearGradient(b.x, b.y, b.x + b.w, b.y + b.h);
@@ -639,6 +679,290 @@ class IP2LiveCIDRQuarantineGameplayScreen extends Scene.Base {
         this.trace = { result, tick: 0, stepTicks: 24, finished: false, resolveDelay: 44 };
         this.statusText = result.ok ? 'Signal locked. Tracing optimized CIDR connector.' : 'Signal unstable. Tracing CIDR fault location.';
         this.statusTone = result.ok ? 'good' : 'bad';
+    }
+
+    _initVirusSpread() {
+        const solutionKeys = {};
+        const solutionPath = (this.problem && this.problem.solutionPath) || [];
+        for (let i = 0; i < solutionPath.length; i++) solutionKeys[this._tileKey(solutionPath[i])] = true;
+
+        const virusKeys = {};
+        const viruses = (this.problem && this.problem.viruses) || [];
+        for (let i = 0; i < viruses.length; i++) virusKeys[this._tileKey(viruses[i])] = true;
+
+        const totalTiles = 16 * 16;
+        const totalSolutionTiles = Object.keys(solutionKeys).length;
+        const totalNonSolutionTiles = Math.max(0, totalTiles - totalSolutionTiles);
+        const virusNonSolutionCount = this._countNonSolutionViruses(virusKeys, solutionKeys);
+        const edgeBuffer = this._virusEdgeBuffer();
+        const solutionBufferKeys = this.problem.solutionBufferKeys || this._buildSolutionBufferKeys(this.problem.solutionPath || []);
+        const totalSpawnableNonSolution = this._countSpawnableNonSolutionTiles(edgeBuffer, solutionBufferKeys, solutionKeys);
+        this.virusState = {
+            elapsedTicks: 0,
+            lastSpawnTick: 0,
+            totalTiles,
+            totalSolutionTiles,
+            totalNonSolutionTiles,
+            totalSpawnableNonSolution,
+            virusKeys,
+            solutionKeys,
+            solutionBufferKeys,
+            virusNonSolutionCount,
+            overrun: false,
+            overrunTick: 0,
+            edgeBuffer,
+            revealThreshold: Math.max(6, Math.round(totalSpawnableNonSolution * 0.06)),
+        };
+    }
+
+    _updateVirusSpread() {
+        if (this.finished) return;
+        if (!this.virusState) this._initVirusSpread();
+        if (this.phase === 'tracing' || this.phase === 'diagnostic' || this.phase === 'tutorial_complete') return;
+
+        if (this.virusState.overrun) {
+            this._advanceVirusOverrun();
+            return;
+        }
+
+        if (this.phase !== 'build') return;
+        this.virusState.elapsedTicks++;
+
+        const elapsedSeconds = this.virusState.elapsedTicks / 60;
+        const config = this._virusGrowthConfig(elapsedSeconds);
+        if (this.virusState.elapsedTicks - this.virusState.lastSpawnTick < config.interval) return;
+        this.virusState.lastSpawnTick = this.virusState.elapsedTicks;
+
+        const minPathDistance = this._virusMinPathDistance(elapsedSeconds);
+        this._spawnVirusBatch(config.batch, {
+            allowSolution: false,
+            avoidPath: true,
+            minPathDistance,
+            edgeBuffer: this.virusState.edgeBuffer,
+        });
+        if (this._shouldTriggerOverrun()) {
+            this._triggerVirusOverrun();
+        }
+    }
+
+    _virusGrowthConfig(elapsedSeconds) {
+        if (elapsedSeconds < 20) return { interval: 180, batch: 1 };
+        if (elapsedSeconds < 40) return { interval: 140, batch: 1 };
+        if (elapsedSeconds < 60) return { interval: 100, batch: 2 };
+        if (elapsedSeconds < 90) return { interval: 70, batch: 2 };
+        if (elapsedSeconds < 120) return { interval: 50, batch: 3 };
+        if (elapsedSeconds < 150) return { interval: 36, batch: 4 };
+        return { interval: 18, batch: 6 };
+    }
+
+    _virusMinPathDistance(elapsedSeconds) {
+        if (elapsedSeconds < 40) return 2;
+        if (elapsedSeconds < 80) return 1;
+        return 0;
+    }
+
+    _shouldTriggerOverrun() {
+        const remaining = this._remainingSpawnableNonSolution();
+        return remaining <= this.virusState.revealThreshold;
+    }
+
+    _triggerVirusOverrun() {
+        if (this.virusState.overrun) return;
+        this.virusState.overrun = true;
+        this.virusState.overrunTick = 0;
+        this.phase = 'overrun';
+        this._setStatus('WARNING: Virus outbreak detected. Quarantine collapsing.', 'bad');
+        this._playCancel();
+    }
+
+    _advanceVirusOverrun() {
+        if (!this.virusState || !this.virusState.overrun) return;
+        this.virusState.overrunTick++;
+        const burst = this.virusState.overrunTick < 20 ? 10 : 18;
+        this._spawnVirusBatch(burst, {
+            allowSolution: false,
+            avoidPath: false,
+            minPathDistance: 0,
+            minSolutionDistance: this.virusState.solutionBuffer,
+            edgeBuffer: this.virusState.edgeBuffer,
+        });
+
+        if (this.virusState.overrunTick >= 45 || this.problem.viruses.length >= this.virusState.totalTiles) {
+            this._applyVirusOverrunFailure();
+        }
+    }
+
+    _applyVirusOverrunFailure() {
+        if (this.finished) return;
+        const result = this._diagnostic('virus_overrun', [
+            'SYSTEM FAILURE.',
+            'The virus reached critical density and consumed the quarantine grid.',
+            'Retry before the next surge overwhelms the sector.',
+        ], this._baseResult(this._pathStats()));
+
+        this.attemptsUsed++;
+        if (this.attemptsUsed >= this.maxAttempts) {
+            this._failOut(result);
+        } else {
+            this._showDiagnostic(result);
+        }
+    }
+
+    _spawnVirusBatch(count, options) {
+        const opts = options || {};
+        const allowSolution = !!opts.allowSolution;
+        const avoidPath = opts.avoidPath !== false;
+        const minPathDistance = Number(opts.minPathDistance || 0);
+        const edgeBuffer = Number(opts.edgeBuffer || 0);
+        let spawned = 0;
+        let tries = 0;
+        const maxTries = Math.max(30, count * 40);
+        while (spawned < count && tries < maxTries) {
+            tries++;
+            const tile = { col: this._randomInt(0, 15), row: this._randomInt(0, 15) };
+            if (!this._isSpawnableVirusTile(tile, allowSolution, avoidPath, minPathDistance, edgeBuffer)) continue;
+            this._addVirus(tile, { allowSolution });
+            spawned++;
+        }
+        if (spawned < count && !allowSolution && this._remainingSpawnableNonSolution() <= 0) {
+            // If only near-path tiles remain, force an overrun to end quickly.
+            this._triggerVirusOverrun();
+        }
+        return spawned;
+    }
+
+    _isSpawnableVirusTile(tile, allowSolution, avoidPath, minPathDistance, edgeBuffer) {
+        if (!this._inGrid(tile)) return false;
+        if (this._isVirus(tile)) return false;
+        if (!allowSolution && this.virusState.solutionKeys[this._tileKey(tile)]) return false;
+        if (avoidPath && this._pathIndex(tile) !== -1) return false;
+        if (minPathDistance > 0 && this._distanceToPath(tile) <= minPathDistance) return false;
+        if (edgeBuffer > 0 && this._isInEdgeBuffer(tile, edgeBuffer)) return false;
+        if (!allowSolution && this._isInSolutionBuffer(tile)) return false;
+        if (this._sameTile(tile, this.problem.start)) return false;
+        if (this._sameTile(tile, this.problem.end)) return false;
+        return true;
+    }
+
+    _addVirus(tile, options) {
+        const opts = options || {};
+        const key = this._tileKey(tile);
+        if (this.virusState.virusKeys[key]) return false;
+        this.problem.viruses.push(this._cloneTile(tile));
+        this.virusState.virusKeys[key] = true;
+        if (!this.virusState.solutionKeys[key] || opts.allowSolution) {
+            if (!this.virusState.solutionKeys[key]) this.virusState.virusNonSolutionCount++;
+        }
+        return true;
+    }
+
+    _countNonSolutionViruses(virusKeys, solutionKeys) {
+        let count = 0;
+        const keys = Object.keys(virusKeys || {});
+        for (let i = 0; i < keys.length; i++) {
+            if (!solutionKeys[keys[i]]) count++;
+        }
+        return count;
+    }
+
+    _randomSolutionTile() {
+        const pool = [];
+        const solutionPath = this.problem.solutionPath || [];
+        for (let i = 0; i < solutionPath.length; i++) {
+            const tile = solutionPath[i];
+            if (this._sameTile(tile, this.problem.start)) continue;
+            if (this._sameTile(tile, this.problem.end)) continue;
+            pool.push(tile);
+        }
+        if (!pool.length) return null;
+        return this._cloneTile(pool[this._randomInt(0, pool.length - 1)]);
+    }
+
+    _countSpawnableNonSolutionTiles(edgeBuffer, solutionBufferKeys, solutionKeys) {
+        let count = 0;
+        for (let row = 0; row < 16; row++) {
+            for (let col = 0; col < 16; col++) {
+                const tile = { col, row };
+                const key = this._tileKey(tile);
+                if (solutionKeys && solutionKeys[key]) continue;
+                if (edgeBuffer > 0 && this._isInEdgeBuffer(tile, edgeBuffer)) continue;
+                if (solutionBufferKeys && solutionBufferKeys[key]) continue;
+                count++;
+            }
+        }
+        return count;
+    }
+
+    _remainingSpawnableNonSolution() {
+        if (!this.virusState) return 0;
+        return Math.max(0, this.virusState.totalSpawnableNonSolution - this.virusState.virusNonSolutionCount);
+    }
+
+    _isInSolutionBuffer(tile) {
+        if (!this.virusState || !this.virusState.solutionBufferKeys) return false;
+        return !!this.virusState.solutionBufferKeys[this._tileKey(tile)];
+    }
+
+    _isInEdgeBuffer(tile, edgeBuffer) {
+        if (!tile) return false;
+        const buffer = Math.max(0, Number(edgeBuffer) || 0);
+        if (buffer <= 0) return false;
+        return tile.col < buffer || tile.col > 15 - buffer || tile.row < buffer || tile.row > 15 - buffer;
+    }
+
+    _virusEdgeBuffer() {
+        return Math.max(0, Number(this.virusConfig && this.virusConfig.edgeBuffer) || 0);
+    }
+
+    _virusSolutionBufferRange() {
+        const min = Math.max(0, Number(this.virusConfig && this.virusConfig.solutionBufferMin) || 0);
+        const max = Math.max(min, Number(this.virusConfig && this.virusConfig.solutionBufferMax) || min);
+        return { min, max };
+    }
+
+    _buildSolutionBufferKeys(solutionPath) {
+        const keys = {};
+        const path = solutionPath || [];
+        for (let i = 0; i < path.length; i++) {
+            const radius = this._randomSolutionBufferRadius();
+            const base = path[i];
+            for (let row = base.row - radius; row <= base.row + radius; row++) {
+                for (let col = base.col - radius; col <= base.col + radius; col++) {
+                    const tile = { col, row };
+                    if (!this._inGrid(tile)) continue;
+                    if (this._manhattan(base, tile) > radius) continue;
+                    keys[this._tileKey(tile)] = true;
+                }
+            }
+        }
+        return keys;
+    }
+
+    _randomSolutionBufferRadius() {
+        const range = this._virusSolutionBufferRange();
+        const min = range.min;
+        const max = range.max;
+        if (max <= min) return min;
+        const roll = Math.random();
+        const r1 = Math.max(min, Math.min(max, 1));
+        const r2 = Math.max(min, Math.min(max, 2));
+        const r3 = Math.max(min, Math.min(max, 3));
+        const r4 = Math.max(min, Math.min(max, 4));
+        if (roll < 0.05) return r1;
+        if (roll < 0.30) return r2;
+        if (roll < 0.85) return r3;
+        return r4;
+    }
+
+    _distanceToPath(tile) {
+        if (!tile || !this.path || !this.path.length) return 99;
+        let best = 99;
+        for (let i = 0; i < this.path.length; i++) {
+            const d = this._manhattan(tile, this.path[i]);
+            if (d < best) best = d;
+            if (best <= 1) return best;
+        }
+        return best;
     }
 
     _updateTrace() {
@@ -1044,6 +1368,7 @@ class IP2LiveCIDRQuarantineGameplayScreen extends Scene.Base {
         const labels = {
             disconnected: 'route incomplete',
             virus: 'virus contact',
+            virus_overrun: 'virus overrun',
             too_small: 'hosts too small',
             too_big: 'hosts too large',
             not_optimized: 'CIDR not optimized',
