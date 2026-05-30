@@ -843,6 +843,9 @@ IP2Live.GameplayManagerReady = (async function () {
             files: [
                 'ip_cidr_quarantine_matrix_tutorial.js',
                 'ip_cidr_quarantine_matrix_gameplay.js',
+            ],
+        },
+        {
             baseDir: root + 'Plugins/IP2Live_Core/gameplay/gameplay7/NetworkRepair/',
             version: '20260529_ip_networkrepair_01_',
             files: [
