@@ -159,6 +159,7 @@ const IP2LiveGameManager = {
                 mapId: 12,
                 manager: 'CIDRQuarantineMatrixGameplayManager',
                 method: 'launchCIDRQuarantineMatrixGameplay',
+            },
             ip_class_wires_harder: {
                 id: 'ip_class_wires_harder',
                 mapId: 5,
@@ -278,6 +279,8 @@ const IP2LiveGameManager = {
                 { id: 'stage.12.cidr_matrix.03', objectiveId: 'solve_cidr_matrix_03', title: 'SEAL SHARD TRIAD', label: 'Matrix Node 03', targetTile: { x: 27, y: 0, z: 17 }, profile: { index: 3, zoneCount: 3, parentPrefix: 23 } },
                 { id: 'stage.12.cidr_matrix.04', objectiveId: 'solve_cidr_matrix_04', title: 'LOCK RELAY MATRIX', label: 'Matrix Node 04', targetTile: { x: 11, y: 0, z: 25 }, profile: { index: 4, zoneCount: 3, parentPrefix: 22 } },
                 { id: 'stage.12.cidr_matrix.05', objectiveId: 'solve_cidr_matrix_05', title: 'FINALIZE AI CONTAINMENT', label: 'Matrix Node 05', targetTile: { x: 24, y: 0, z: 29 }, profile: { index: 5, zoneCount: 3, parentPrefix: 22 } },
+            ],
+        },
         ip_network_repair: {
             gameplayId: 'ip_network_repair',
             mapId: 15,
@@ -598,6 +601,7 @@ const IP2LiveGameManager = {
                 attemptsUsed: attemptsUsed,
                 maxAttempts: maxAttempts,
                 retries: Number(r.retries || Math.max(0, attemptsUsed - 1)) || 0,
+                mistakeCount: passed ? Math.max(0, attemptsUsed - 1) : attemptsUsed,
                 mistakeRate: maxAttempts > 0 ? Math.max(0, Math.min(1, passed ? Math.max(0, attemptsUsed - 1) / maxAttempts : attemptsUsed / maxAttempts)) : 0,
                 accuracy: passed ? Math.max(0, Math.min(1, (maxAttempts - Math.max(0, attemptsUsed - 1)) / maxAttempts)) : 0,
                 payload: {
@@ -610,6 +614,9 @@ const IP2LiveGameManager = {
                     solutionCIDR: r.solutionCIDR || null,
                     solutionCIDRs: this._clonePlain(r.solutionCIDRs || []),
                     diagnosticReason: r.diagnosticReason || null,
+                },
+            };
+        }
         if (gameplayId === 'ip_network_repair') {
             const passed = r.passed !== false;
             return {
@@ -835,6 +842,8 @@ const IP2LiveGameManager = {
                     _fromGameManager: true,
                     showIntro: opts.showIntro,
                     mode: opts.mode || 'push',
+                }));
+            }
             if (node.id === 'ip_class_wires_harder' && IP2Live.HarderWiresGameplayManager && typeof IP2Live.HarderWiresGameplayManager.launchHarderWireGameplay === 'function') {
                 return IP2Live.HarderWiresGameplayManager.launchHarderWireGameplay(Object.assign({}, opts, {
                     _fromGameManager: true,
@@ -916,7 +925,6 @@ const IP2LiveGameManager = {
         }
 
         const runDynamicFeedback = () => {
-            if (gameplayId === 'ip_class_wires' && IP2Live.IPWiresTutorial && typeof IP2Live.IPWiresTutorial.showMistakeAnalysis === 'function') {
             if (gameplayId !== 'ip_class_wires') {
                 if (typeof data.onComplete === 'function') data.onComplete();
                 return false;
@@ -979,10 +987,6 @@ const IP2LiveGameManager = {
             }
         }
 
-        if (spec.tutorial) {
-            const hadDialogue = this._runTimingDialogues(data, 'after');
-            if (!hadDialogue && IP2Live.IPWiresTutorial && typeof IP2Live.IPWiresTutorial.showPacketsShifted === 'function') {
-                IP2Live.IPWiresTutorial.showPacketsShifted();
         if (gameplayId === 'ip_class_wires_harder') {
             if (spec.tutorial) {
                 const hadDialogueHarder = this._runTimingDialogues(data, 'after');
