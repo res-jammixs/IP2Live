@@ -11,7 +11,7 @@ class IP2LivePauseMenu extends Scene.Base {
 
     initialize() {
         this.selectedIndex = 0;
-        this.menuItems = ["RESUME", "RESTART", "SAVE GAME", "EXPORT REPORT", "MAIN MENU", "QUIT GAME"];
+        this.menuItems = ["RESUME", "RESTART", "SAVE GAME", "EXPORT REPORT", "DEBUG MAP JUMP", "MAIN MENU", "QUIT GAME"];
         this.hoverIndex = -1;
         this.animTick = 0;
         this.glitchActive = false;
@@ -23,11 +23,15 @@ class IP2LivePauseMenu extends Scene.Base {
             ? new window.IP2LiveBackgroundScreen()
             : null;
         this.scramble = IP2Live.TextScramble.create(this.menuItems.length);
+        this.debugMode = false;
+        this.debugIndex = 0;
+        this.debugStages = this._buildDebugStages();
+        this.debugItemRects = [];
     }
 
     _getLayout(SW, SH) {
         const panelW = 440;
-        const panelH = 470;
+        const panelH = 520;
         const panelX = (SW - panelW) / 2;
         const panelY = (SH - panelH) / 2;
         const btnW = 320;
@@ -48,6 +52,14 @@ class IP2LivePauseMenu extends Scene.Base {
     }
 
     onKeyPressed(key) {
+        if (this.debugMode) {
+            if (Data.Keyboards.checkActionMenu(key)) {
+                this._jumpToDebugStage();
+            } else if (Data.Keyboards.checkCancelMenu(key)) {
+                this._exitDebugMode();
+            }
+            return;
+        }
         if (Data.Keyboards.checkActionMenu(key)) {
             this._confirmSelection();
         } else if (Data.Keyboards.checkCancelMenu(key)) {
@@ -56,6 +68,19 @@ class IP2LivePauseMenu extends Scene.Base {
     }
 
     onKeyPressedAndRepeat(key) {
+        if (this.debugMode) {
+            const prev = this.debugIndex;
+            if (Data.Keyboards.isKeyEqual(key, Data.Keyboards.menuControls.Up)) {
+                this.debugIndex = (this.debugIndex - 1 + this.debugStages.length) % Math.max(1, this.debugStages.length);
+            } else if (Data.Keyboards.isKeyEqual(key, Data.Keyboards.menuControls.Down)) {
+                this.debugIndex = (this.debugIndex + 1) % Math.max(1, this.debugStages.length);
+            }
+            if (this.debugIndex !== prev) {
+                Data.Systems.soundCursor.playSound();
+                Manager.Stack.requestPaintHUD = true;
+            }
+            return true;
+        }
         const prev = this.selectedIndex;
         if (Data.Keyboards.isKeyEqual(key, Data.Keyboards.menuControls.Up)) {
             this.selectedIndex = (this.selectedIndex - 1 + this.menuItems.length) % this.menuItems.length;
@@ -71,6 +96,15 @@ class IP2LivePauseMenu extends Scene.Base {
     }
 
     onMouseMove(x, y) {
+        if (this.debugMode) {
+            const idx = this._getDebugItemAt(x, y);
+            if (idx >= 0 && idx !== this.debugIndex) {
+                this.debugIndex = idx;
+                Data.Systems.soundCursor.playSound();
+                Manager.Stack.requestPaintHUD = true;
+            }
+            return;
+        }
         const newHover = this._getButtonAt(x, y);
         if (newHover !== this.hoverIndex) {
             this.hoverIndex = newHover;
@@ -83,6 +117,15 @@ class IP2LivePauseMenu extends Scene.Base {
     }
 
     onMouseUp(x, y) {
+        if (this.debugMode) {
+            const idx = this._getDebugItemAt(x, y);
+            if (idx >= 0) {
+                this.debugIndex = idx;
+                Data.Systems.soundConfirmation.playSound();
+                this._jumpToDebugStage();
+            }
+            return;
+        }
         const idx = this._getButtonAt(x, y);
         if (idx >= 0) {
             if (idx !== this.selectedIndex) {
@@ -165,6 +208,9 @@ class IP2LivePauseMenu extends Scene.Base {
                 }
                 break;
             case 4:
+                this._enterDebugMode();
+                break;
+            case 5:
                 if (IP2Live.LoadingScreen && typeof IP2Live.LoadingScreen.show === 'function') {
                     IP2Live.LoadingScreen.show({
                         mode: 'replace',
@@ -180,10 +226,159 @@ class IP2LivePauseMenu extends Scene.Base {
                     Manager.Stack.push(new IP2LiveMainMenu());
                 }
                 break;
-            case 5:
+            case 6:
                 Common.Platform.quit();
                 break;
         }
+    }
+
+    _buildDebugStages() {
+        const mapManager = IP2Live.MapManager;
+        const stages = mapManager && Array.isArray(mapManager.stages) ? mapManager.stages : [];
+        const output = [];
+        for (let i = 0; i < stages.length; i++) {
+            const stage = stages[i];
+            if (!stage || !stage.id) continue;
+            output.push({
+                id: Number(stage.id) || 0,
+                name: stage.name || ('Map ' + String(stage.id).padStart(4, '0')),
+                stage: typeof stage.stage === 'number' ? stage.stage : null,
+                level: typeof stage.level === 'number' ? stage.level : null,
+                tutorial: !!stage.tutorial,
+            });
+        }
+        output.sort((a, b) => {
+            if (a.tutorial !== b.tutorial) return a.tutorial ? -1 : 1;
+            if (a.stage !== b.stage) return (a.stage || 0) - (b.stage || 0);
+            if (a.level !== b.level) return (a.level || 0) - (b.level || 0);
+            return a.id - b.id;
+        });
+        return output;
+    }
+
+    _enterDebugMode() {
+        this.debugStages = this._buildDebugStages();
+        this.debugIndex = Math.min(this.debugIndex, Math.max(0, this.debugStages.length - 1));
+        this.debugMode = true;
+        this.hoverIndex = -1;
+        Manager.Stack.requestPaintHUD = true;
+    }
+
+    _exitDebugMode() {
+        this.debugMode = false;
+        this.debugItemRects = [];
+        Manager.Stack.requestPaintHUD = true;
+    }
+
+    _jumpToDebugStage() {
+        const entry = this.debugStages[this.debugIndex];
+        if (!entry || !entry.id) return;
+        const mapId = Number(entry.id) || 0;
+        if (!mapId) return;
+        const detail = entry.name || ('Map ' + String(mapId).padStart(4, '0'));
+        const mode = entry.tutorial ? 'tutorial' : 'stage';
+
+        this._exitDebugMode();
+        Manager.Stack.pop();
+
+        if (IP2Live.GameManager && typeof IP2Live.GameManager.startMapFlow === 'function') {
+            IP2Live.GameManager.startMapFlow(mapId, null, {
+                mode,
+                useLoading: true,
+                status: 'Debug Jump',
+                detail,
+                source: 'PauseMenu.debugJump',
+            });
+            return;
+        }
+        if (IP2Live.MapManager && typeof IP2Live.MapManager.goTo === 'function') {
+            IP2Live.MapManager.goTo(mapId, { status: 'Debug Jump', detail });
+        }
+    }
+
+    _debugListLayout(cW, cH) {
+        const panelW = Math.min(640, cW * 0.82);
+        const panelH = Math.min(420, cH * 0.72);
+        const panelX = (cW - panelW) / 2;
+        const panelY = (cH - panelH) / 2;
+        return { panelW, panelH, panelX, panelY };
+    }
+
+    _getDebugItemAt(x, y) {
+        for (let i = 0; i < this.debugItemRects.length; i++) {
+            const r = this.debugItemRects[i];
+            if (x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h) return r.index;
+        }
+        return -1;
+    }
+
+    _drawDebugJumpOverlay(ctx, cW, cH) {
+        const layout = this._debugListLayout(cW, cH);
+        const panelX = layout.panelX;
+        const panelY = layout.panelY;
+        const panelW = layout.panelW;
+        const panelH = layout.panelH;
+        const listX = panelX + 28;
+        const listY = panelY + 78;
+        const rowH = 34;
+        const maxRows = Math.floor((panelH - 120) / rowH);
+        const stages = this.debugStages || [];
+
+        this.debugItemRects = [];
+
+        ctx.save();
+        ctx.fillStyle = 'rgba(5, 8, 18, 0.92)';
+        ctx.fillRect(panelX, panelY, panelW, panelH);
+        ctx.strokeStyle = '#00F0FF';
+        ctx.lineWidth = 2;
+        ctx.strokeRect(panelX, panelY, panelW, panelH);
+
+        ctx.fillStyle = '#FF003C';
+        ctx.fillRect(panelX, panelY, panelW, 44);
+        ctx.fillStyle = '#FFFFFF';
+        ctx.font = 'bold 16px monospace';
+        ctx.textAlign = 'left';
+        ctx.fillText('DEBUG MAP JUMP', panelX + 18, panelY + 28);
+
+        ctx.fillStyle = '#9ADFFF';
+        ctx.font = '12px monospace';
+        ctx.fillText('UP/DOWN: Select   ENTER: Jump   ESC: Back', panelX + 18, panelY + panelH - 18);
+
+        if (!stages.length) {
+            ctx.fillStyle = '#FFE600';
+            ctx.font = '13px monospace';
+            ctx.fillText('No stages discovered.', listX, listY + 20);
+            ctx.restore();
+            return;
+        }
+
+        const start = Math.max(0, Math.min(stages.length - 1, this.debugIndex) - Math.floor(maxRows / 2));
+        const end = Math.min(stages.length, start + maxRows);
+        let row = 0;
+        for (let i = start; i < end; i++) {
+            const entry = stages[i];
+            const y = listY + row * rowH;
+            const isSelected = i === this.debugIndex;
+            const label = entry.name || ('Map ' + String(entry.id).padStart(4, '0'));
+            const suffix = (entry.stage !== null && entry.level !== null)
+                ? '  (Stage ' + entry.stage + ' / Level ' + entry.level + ')'
+                : (entry.tutorial ? '  (Tutorial)' : '');
+
+            ctx.fillStyle = isSelected ? 'rgba(255, 216, 74, 0.22)' : 'rgba(0, 0, 0, 0.25)';
+            ctx.fillRect(listX - 8, y - 4, panelW - 40, rowH - 4);
+
+            ctx.fillStyle = isSelected ? '#FFE600' : '#DAEEFF';
+            ctx.font = 'bold 13px monospace';
+            ctx.fillText(label, listX, y + 16);
+            ctx.fillStyle = isSelected ? '#FFFFFF' : '#8ACAE8';
+            ctx.font = '11px monospace';
+            ctx.fillText(suffix, listX, y + 30);
+
+            this.debugItemRects.push({ index: i, x: listX - 8, y: y - 4, w: panelW - 40, h: rowH - 4 });
+            row++;
+        }
+
+        ctx.restore();
     }
 
     async _saveGameProgress() {
@@ -301,6 +496,10 @@ class IP2LivePauseMenu extends Scene.Base {
         ctx.textAlign = 'left';
 
         ctx.restore();
+
+        if (this.debugMode) {
+            this._drawDebugJumpOverlay(ctx, cW, cH);
+        }
     }
 
     _drawPauseTwistBackground(ctx, cW, cH, scaleX, scaleY) {

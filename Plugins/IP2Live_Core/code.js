@@ -819,6 +819,29 @@ IP2Live.GameplayManagerReady = (async function () {
                 'ip_subnetsim_gameplay.js',
             ],
         },
+        {
+            baseDir: root + 'Plugins/IP2Live_Core/gameplay/common/',
+            version: '20260530_ip_cidr_tools_01_',
+            files: [
+                'ip_cidr_tools.js',
+            ],
+        },
+        {
+            baseDir: root + 'Plugins/IP2Live_Core/gameplay/gameplay5/CIDRQuarantine/',
+            version: '20260530_ip_cidr_quarantine_01_',
+            files: [
+                'ip_cidr_quarantine_tutorial.js',
+                'ip_cidr_quarantine_gameplay.js',
+            ],
+        },
+        {
+            baseDir: root + 'Plugins/IP2Live_Core/gameplay/gameplay6/CIDRQuarantineMatrix/',
+            version: '20260530_ip_cidr_matrix_01_',
+            files: [
+                'ip_cidr_quarantine_matrix_tutorial.js',
+                'ip_cidr_quarantine_matrix_gameplay.js',
+            ],
+        },
     ];
     try {
         for (let b = 0; b < bundles.length; b++) {
@@ -1116,6 +1139,7 @@ IP2Live.ScreenModulesReady = (async function () {
     const screens = [
         'loading-screen.js',
         'loading-screen-2.js',
+        'ar-diagnostic-rewind.js',
         'world-title.js',
         'background-screen.js',
         'credits.js',
