@@ -2658,26 +2658,36 @@ const IP2LiveReportManager = {
         const dWeakest = report.stats && report.stats.weakestGameplay ? report.stats.weakestGameplay : null;
         const dTrend = report.stats && report.stats.progressionTrend ? report.stats.progressionTrend : null;
         const dSteps = report.stats && Array.isArray(report.stats.weakestSteps) ? report.stats.weakestSteps : [];
+        const makeRow = function (cells, meta) {
+            const row = Array.isArray(cells) ? cells.slice() : [cells];
+            if (meta) {
+                for (const key in meta) row[key] = meta[key];
+            }
+            return row;
+        };
         sheets.push({
             name: 'Dashboard',
             rows: [
-                ['IP2Live Progress Report', '', '', ''],
-                ['Student', report.summary.infiltratorName, 'Generated', new Date(report.summary.generatedAt).toISOString()],
-                ['Scope', 'Last ' + report.summary.scopeDays + ' days', 'Sessions', report.summary.sessionsCount],
+                makeRow(['IP2Live Progress Report'], { __style: 'Title', __mergeAcross: 3, __height: 30 }),
+                makeRow(['Formal telemetry progress report'], { __style: 'Note', __mergeAcross: 3, __height: 20 }),
+                makeRow(['Student', report.summary.infiltratorName, 'Generated', new Date(report.summary.generatedAt).toISOString()], { __style: 'Section', __height: 20 }),
+                makeRow(['Scope', 'Last ' + report.summary.scopeDays + ' days', 'Sessions', report.summary.sessionsCount], { __height: 19 }),
                 [],
-                ['KPI', 'Value', 'Visual', 'Signal'],
-                ['Attempts', report.kpi.attempts, this._excelBar(Math.min(1, Number(report.kpi.attempts || 0) / 20), 1, 18), 'Total completed gameplay attempts'],
-                ['Completion Rate', report.kpi.completionRate, this._excelBar(report.kpi.completionRate, 1, 18), 'Final pass rate'],
-                ['Accuracy', report.kpi.accuracy, this._excelBar(report.kpi.accuracy, 1, 18), 'Weighted by attempts used'],
-                ['Weighted Mastery', report.kpi.weightedMastery, this._excelBar(report.kpi.weightedMastery, 100, 18), 'Overall mastery score'],
+                makeRow(['KPI', 'Value', 'Visual', 'Signal'], { __style: 'Header', __height: 22 }),
+                makeRow(['Attempts', report.kpi.attempts, this._excelBar(Math.min(1, Number(report.kpi.attempts || 0) / 20), 1, 18), 'Total completed gameplay attempts'], { __height: 20 }),
+                makeRow(['Completion Rate', report.kpi.completionRate, this._excelBar(report.kpi.completionRate, 1, 18), 'Final pass rate'], { __height: 20 }),
+                makeRow(['Accuracy', report.kpi.accuracy, this._excelBar(report.kpi.accuracy, 1, 18), 'Weighted by attempts used'], { __height: 20 }),
+                makeRow(['Weighted Mastery', report.kpi.weightedMastery, this._excelBar(report.kpi.weightedMastery, 100, 18), 'Overall mastery score'], { __height: 20 }),
                 [],
-                ['Insight', 'Label', 'Value', 'Details'],
-                ['Strength', dStrongest ? dStrongest.gameplayLabel : 'No gameplay data', dStrongest ? dStrongest.accuracyRate : '', 'Most consistent gameplay area'],
-                ['Weakness', dWeakest ? dWeakest.gameplayLabel : 'No gameplay data', dWeakest ? dWeakest.accuracyRate : '', 'Lowest-performing gameplay area'],
-                ['Trend', dTrend ? dTrend.direction : 'plateau', dTrend ? dTrend.deltaAccuracyRate : '', 'Accuracy delta across sessions'],
-                ['Top Step Issue', dSteps.length ? dSteps[0].stepLabel : 'No step pattern yet', dSteps.length ? dSteps[0].totalMistakes : '', dSteps.length ? dSteps[0].gameplayLabel : 'Collect more try-level mistakes'],
+                makeRow(['Insights'], { __style: 'Section', __mergeAcross: 3, __height: 24 }),
+                makeRow(['Type', 'Label', 'Value', 'Details'], { __style: 'Header', __height: 22 }),
+                makeRow(['Strength', dStrongest ? dStrongest.gameplayLabel : 'No gameplay data', dStrongest ? dStrongest.accuracyRate : '', 'Most consistent gameplay area'], { __height: 20 }),
+                makeRow(['Weakness', dWeakest ? dWeakest.gameplayLabel : 'No gameplay data', dWeakest ? dWeakest.accuracyRate : '', 'Lowest-performing gameplay area'], { __height: 20 }),
+                makeRow(['Trend', dTrend ? dTrend.direction : 'plateau', dTrend ? dTrend.deltaAccuracyRate : '', 'Accuracy delta across sessions'], { __height: 20 }),
+                makeRow(['Top Step Issue', dSteps.length ? dSteps[0].stepLabel : 'No step pattern yet', dSteps.length ? dSteps[0].totalMistakes : '', dSteps.length ? dSteps[0].gameplayLabel : 'Collect more try-level mistakes'], { __height: 20 }),
                 [],
-                ['Performance Summary', report.performanceSummary || '', '', ''],
+                makeRow(['Performance Summary'], { __style: 'Section', __mergeAcross: 3, __height: 24 }),
+                makeRow([report.performanceSummary || ''], { __style: 'Note', __mergeAcross: 3, __height: 44 }),
             ],
         });
         sheets.push({
@@ -2848,14 +2858,23 @@ const IP2LiveReportManager = {
                 body += '<Column ss:AutoFitWidth="0" ss:Width="' + widths[w] + '"/>';
             }
             for (let r = 0; r < rows.length; r++) {
-                const rowHeight = this._excelRowHeight(rows[r], r, s.name);
+                const row = Array.isArray(rows[r]) ? rows[r] : [rows[r]];
+                const rowHeight = this._excelRowHeight(row, r, s.name);
+                const mergeAcross = Number(row.__mergeAcross || 0) || 0;
+                const rowStyle = row.__style || '';
                 body += '<Row' + (rowHeight ? ' ss:Height="' + rowHeight + '"' : '') + '>';
-                const cols = Array.isArray(rows[r]) ? rows[r] : [rows[r]];
-                for (let c = 0; c < cols.length; c++) {
-                    const v = cols[c];
-                    const isNum = typeof v === 'number' && Number.isFinite(v);
-                    const style = this._excelStyleForCell(s.name || '', r, c, v, rows);
-                    body += '<Cell ss:StyleID="' + style + '"><Data ss:Type="' + (isNum ? 'Number' : 'String') + '">' + esc(v === null || v === undefined ? '' : v) + '</Data></Cell>';
+                if (mergeAcross > 0) {
+                    const mergedValue = row[0];
+                    const mergedStyle = rowStyle || this._excelStyleForCell(s.name || '', r, 0, mergedValue, rows);
+                    const mergedNum = typeof mergedValue === 'number' && Number.isFinite(mergedValue);
+                    body += '<Cell ss:StyleID="' + mergedStyle + '" ss:MergeAcross="' + mergeAcross + '"><Data ss:Type="' + (mergedNum ? 'Number' : 'String') + '">' + esc(mergedValue === null || mergedValue === undefined ? '' : mergedValue) + '</Data></Cell>';
+                } else {
+                    for (let c = 0; c < row.length; c++) {
+                        const v = row[c];
+                        const isNum = typeof v === 'number' && Number.isFinite(v);
+                        const style = this._excelStyleForCell(s.name || '', r, c, v, rows);
+                        body += '<Cell ss:StyleID="' + style + '"><Data ss:Type="' + (isNum ? 'Number' : 'String') + '">' + esc(v === null || v === undefined ? '' : v) + '</Data></Cell>';
+                    }
                 }
                 body += '</Row>';
             }
@@ -2870,25 +2889,27 @@ const IP2LiveReportManager = {
     _excelWorkbookStyles() {
         return '<Styles>'
             + '<Style ss:ID="Default" ss:Name="Normal"><Font ss:FontName="Aptos" ss:Size="10" ss:Color="#1F2933"/><Interior ss:Color="#FFFFFF" ss:Pattern="Solid"/></Style>'
-            + '<Style ss:ID="Title"><Font ss:FontName="Aptos Display" ss:Size="18" ss:Bold="1" ss:Color="#0B1F33"/><Interior ss:Color="#DCEEFF" ss:Pattern="Solid"/><Alignment ss:Vertical="Center"/></Style>'
-            + '<Style ss:ID="Section"><Font ss:FontName="Aptos" ss:Size="11" ss:Bold="1" ss:Color="#0B1F33"/><Interior ss:Color="#EEF6FF" ss:Pattern="Solid"/><Borders><Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#1F87D0"/></Borders></Style>'
-            + '<Style ss:ID="Header"><Font ss:FontName="Aptos" ss:Size="10" ss:Bold="1" ss:Color="#FFFFFF"/><Interior ss:Color="#1F87D0" ss:Pattern="Solid"/><Alignment ss:Vertical="Center" ss:WrapText="1"/></Style>'
-            + '<Style ss:ID="Label"><Font ss:FontName="Aptos" ss:Size="10" ss:Bold="1" ss:Color="#344054"/><Interior ss:Color="#F4F8FC" ss:Pattern="Solid"/></Style>'
-            + '<Style ss:ID="Body"><Font ss:FontName="Aptos" ss:Size="10" ss:Color="#1F2933"/><Interior ss:Color="#FFFFFF" ss:Pattern="Solid"/><Alignment ss:Vertical="Top" ss:WrapText="1"/></Style>'
-            + '<Style ss:ID="Zebra"><Font ss:FontName="Aptos" ss:Size="10" ss:Color="#1F2933"/><Interior ss:Color="#F8FBFF" ss:Pattern="Solid"/><Alignment ss:Vertical="Top" ss:WrapText="1"/></Style>'
-            + '<Style ss:ID="Good"><Font ss:FontName="Aptos" ss:Size="10" ss:Color="#14532D"/><Interior ss:Color="#E6F4EA" ss:Pattern="Solid"/><Alignment ss:Vertical="Top" ss:WrapText="1"/></Style>'
-            + '<Style ss:ID="Warn"><Font ss:FontName="Aptos" ss:Size="10" ss:Color="#7A4A00"/><Interior ss:Color="#FFF4CE" ss:Pattern="Solid"/><Alignment ss:Vertical="Top" ss:WrapText="1"/></Style>'
-            + '<Style ss:ID="Bad"><Font ss:FontName="Aptos" ss:Size="10" ss:Color="#7F1D1D"/><Interior ss:Color="#FDE8E8" ss:Pattern="Solid"/><Alignment ss:Vertical="Top" ss:WrapText="1"/></Style>'
-            + '<Style ss:ID="Pct"><NumberFormat ss:Format="0.0%"/><Font ss:FontName="Aptos" ss:Size="10" ss:Color="#1F2933"/><Interior ss:Color="#FFFFFF" ss:Pattern="Solid"/></Style>'
-            + '<Style ss:ID="Note"><Font ss:FontName="Aptos" ss:Size="10" ss:Italic="1" ss:Color="#475467"/><Interior ss:Color="#FFFFFF" ss:Pattern="Solid"/><Alignment ss:Vertical="Top" ss:WrapText="1"/></Style>'
+            + '<Style ss:ID="Title"><Font ss:FontName="Aptos Display" ss:Size="18" ss:Bold="1" ss:Color="#FFFFFF"/><Interior ss:Color="#1F87D0" ss:Pattern="Solid"/><Alignment ss:Vertical="Center" ss:Horizontal="Left"/><Borders><Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#145A8D"/></Borders></Style>'
+            + '<Style ss:ID="Section"><Font ss:FontName="Aptos" ss:Size="11" ss:Bold="1" ss:Color="#0B1F33"/><Interior ss:Color="#DCEEFF" ss:Pattern="Solid"/><Alignment ss:Vertical="Center"/><Borders><Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#7CB8E6"/></Borders></Style>'
+            + '<Style ss:ID="Header"><Font ss:FontName="Aptos" ss:Size="10" ss:Bold="1" ss:Color="#FFFFFF"/><Interior ss:Color="#0B5FA5" ss:Pattern="Solid"/><Alignment ss:Vertical="Center" ss:Horizontal="Center" ss:WrapText="1"/><Borders><Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#084778"/></Borders></Style>'
+            + '<Style ss:ID="Label"><Font ss:FontName="Aptos" ss:Size="10" ss:Bold="1" ss:Color="#344054"/><Interior ss:Color="#F3F8FD" ss:Pattern="Solid"/><Borders><Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="0.5" ss:Color="#D8E5F3"/></Borders></Style>'
+            + '<Style ss:ID="Body"><Font ss:FontName="Aptos" ss:Size="10" ss:Color="#1F2933"/><Interior ss:Color="#FFFFFF" ss:Pattern="Solid"/><Alignment ss:Vertical="Top" ss:WrapText="1"/><Borders><Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="0.5" ss:Color="#E6EDF5"/></Borders></Style>'
+            + '<Style ss:ID="Zebra"><Font ss:FontName="Aptos" ss:Size="10" ss:Color="#1F2933"/><Interior ss:Color="#F7FBFF" ss:Pattern="Solid"/><Alignment ss:Vertical="Top" ss:WrapText="1"/><Borders><Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="0.5" ss:Color="#E2EBF4"/></Borders></Style>'
+            + '<Style ss:ID="Good"><Font ss:FontName="Aptos" ss:Size="10" ss:Bold="1" ss:Color="#14532D"/><Interior ss:Color="#E6F4EA" ss:Pattern="Solid"/><Alignment ss:Vertical="Top" ss:WrapText="1"/><Borders><Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="0.5" ss:Color="#C5E6CE"/></Borders></Style>'
+            + '<Style ss:ID="Warn"><Font ss:FontName="Aptos" ss:Size="10" ss:Bold="1" ss:Color="#7A4A00"/><Interior ss:Color="#FFF4CE" ss:Pattern="Solid"/><Alignment ss:Vertical="Top" ss:WrapText="1"/><Borders><Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="0.5" ss:Color="#F1D58E"/></Borders></Style>'
+            + '<Style ss:ID="Bad"><Font ss:FontName="Aptos" ss:Size="10" ss:Bold="1" ss:Color="#7F1D1D"/><Interior ss:Color="#FDE8E8" ss:Pattern="Solid"/><Alignment ss:Vertical="Top" ss:WrapText="1"/><Borders><Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="0.5" ss:Color="#F2C0C0"/></Borders></Style>'
+            + '<Style ss:ID="Pct"><NumberFormat ss:Format="0.0%"/><Font ss:FontName="Aptos" ss:Size="10" ss:Bold="1" ss:Color="#1F2933"/><Interior ss:Color="#FFFFFF" ss:Pattern="Solid"/><Alignment ss:Horizontal="Center"/><Borders><Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="0.5" ss:Color="#E6EDF5"/></Borders></Style>'
+            + '<Style ss:ID="Note"><Font ss:FontName="Aptos" ss:Size="10" ss:Italic="1" ss:Color="#475467"/><Interior ss:Color="#F9FCFF" ss:Pattern="Solid"/><Alignment ss:Vertical="Top" ss:WrapText="1"/><Borders><Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="0.5" ss:Color="#DDE7F1"/></Borders></Style>'
             + '</Styles>';
     },
 
     _excelStyleForCell(sheetName, rowIndex, colIndex, value, rows) {
         const sheet = String(sheetName || '');
         const row = Array.isArray(rows && rows[rowIndex]) ? rows[rowIndex] : [];
+        const rowStyle = row.__style || '';
         const first = String(row[0] || '');
         const headerLike = rowIndex === 0 || ['KPI', 'Insight', 'Type', 'Competency', 'GameplayId', 'StageId', 'Module', 'Day', 'Timestamp'].indexOf(first) !== -1;
+        if (rowStyle && colIndex === 0) return rowStyle;
         if (sheet === 'Dashboard' && rowIndex === 0) return 'Title';
         if (!row.length) return 'Body';
         if (headerLike) return 'Header';
@@ -2912,6 +2933,7 @@ const IP2LiveReportManager = {
             let maxLen = 8;
             for (let r = 0; r < rows.length; r++) {
                 const row = Array.isArray(rows[r]) ? rows[r] : [rows[r]];
+                if (row.__mergeAcross && c > 0) continue;
                 const text = row[c] === null || row[c] === undefined ? '' : String(row[c]);
                 maxLen = Math.max(maxLen, Math.min(42, text.length));
             }
@@ -2921,6 +2943,7 @@ const IP2LiveReportManager = {
     },
 
     _excelRowHeight(row, rowIndex, sheetName) {
+        if (row && row.__height) return Number(row.__height) || 20;
         if (String(sheetName || '') === 'Dashboard' && rowIndex === 0) return 30;
         if (!Array.isArray(row) || !row.length) return 8;
         const maxLen = row.reduce(function (max, cell) {
