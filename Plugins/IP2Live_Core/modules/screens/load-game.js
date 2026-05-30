@@ -890,7 +890,8 @@ class IP2LiveLoadGameMenu extends Scene.Base {
             ctx.fillStyle = isSelected ? 'rgba(20,20,20,0.84)' : 'rgba(0,240,255,0.76)';
             ctx.fillText(`SESSION: ${this._getPlayTimeStr(game.playTime)}`, x + 70 * scaleX, y + 47 * scaleY);
             ctx.textAlign = 'right';
-            ctx.fillText(`NODE:${String(game.currentMapID || 1).padStart(4, '0')}`, x + w - 18 * scaleX, y + 47 * scaleY);
+            const displayMapId = (meta && Number(meta.mapId)) || game.currentMapID || 1;
+            ctx.fillText(`NODE:${String(displayMapId).padStart(4, '0')}`, x + w - 18 * scaleX, y + 47 * scaleY);
             ctx.textAlign = 'left';
 
             if (meta && meta.saveName) {

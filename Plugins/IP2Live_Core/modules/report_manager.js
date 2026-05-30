@@ -1127,6 +1127,7 @@ const IP2LiveReportManager = {
             pageNumber: 0,
         };
 
+        this._activePdfCtx = ctx;
         this._pdfStartPage(ctx, {
             title: 'IP2Live Progress Report',
             subtitle: 'Confidential progress review for ' + report.summary.infiltratorName,
@@ -1173,7 +1174,9 @@ const IP2LiveReportManager = {
         this._pdfStartPage(ctx, { title: 'Attempts By Stage' });
         this._pdfRenderAttemptsByStageSection(ctx);
 
-        return writer.blob();
+        const blob = writer.blob();
+        this._activePdfCtx = null;
+        return blob;
     },
 
     /** @private Build the cover page with brand styling, metadata, and a compact KPI snapshot. */
@@ -1783,7 +1786,7 @@ const IP2LiveReportManager = {
         if (subtitle) writer.text(x, y - 36, 8.6, this._sanitizePdfText(subtitle), { font: 'F1', color: [0.42, 0.44, 0.48] });
     },
 
-    /** @private Render a branded table with colored rows, truncated cells, and compact column layout. */
+    /** @private Render a branded table with pagination, wrapped cells, and compact column layout. */
     _pdfRenderTable(writer, config) {
         const x = Number(config && config.x !== undefined ? config.x : 34) || 34;
         const y = Number(config && config.y !== undefined ? config.y : 700) || 700;
@@ -1797,10 +1800,13 @@ const IP2LiveReportManager = {
         const headerText = [1, 1, 1];
         const gridColor = [0.84, 0.86, 0.90];
         const bodyText = [0.18, 0.20, 0.23];
-        const pageHeight = Number(config && config.pageHeight !== undefined ? config.pageHeight : 842) || 842;
-        const bottomLimit = Number(config && config.bottomLimit !== undefined ? config.bottomLimit : 52) || 52;
+        const ctx = (config && config.ctx) || this._activePdfCtx || null;
+        const bottomLimit = Number(config && config.bottomLimit !== undefined ? config.bottomLimit : (ctx ? ctx.contentBottom : 52)) || 52;
         const headerHeight = 16;
-        const rowHeight = Number(config && config.rowHeight !== undefined ? config.rowHeight : 16) || 16;
+        const baseRowHeight = Number(config && config.rowHeight !== undefined ? config.rowHeight : 16) || 16;
+        const fontSize = Number(config && config.fontSize !== undefined ? config.fontSize : 7.2) || 7.2;
+        const lineHeight = Math.max(7.2, fontSize + 1.5);
+        const maxCellLines = Math.max(1, Number(config && config.maxCellLines !== undefined ? config.maxCellLines : 2) || 2);
         const colWidths = [];
         let percentTotal = 0;
         for (let i = 0; i < columns.length; i++) percentTotal += Math.max(0, Number(columns[i].width || 0) || 0);
@@ -1830,29 +1836,79 @@ const IP2LiveReportManager = {
             cursorY -= headerHeight;
         }.bind(this);
 
-        const drawRow = function (row, index) {
-            let currentX = x;
-            const bg = typeof rowColor === 'function'
-                ? rowColor(row, index)
-                : (Array.isArray(rowColor) ? rowColor : (index % 2 === 0 ? [0.98, 0.99, 1, 1] : [1, 1, 1, 1]));
-            writer.rect(x, cursorY - rowHeight + 2, width, rowHeight, { fill: bg, stroke: gridColor, lineWidth: 0.2 });
+        const cellLinesFor = function (value, colWidth, column) {
+            const source = value === null || value === undefined ? '' : String(value);
+            if (column && column.wrap === false) {
+                return [this._fitPdfTextToWidth(source, Math.max(10, colWidth - 6), fontSize)];
+            }
+            const maxChars = Math.max(4, Math.floor((colWidth - 6) / Math.max(2.4, fontSize * 0.42)));
+            const limit = Math.max(1, Number((column && column.maxLines) || maxCellLines) || maxCellLines);
+            const wrapped = this._wrapText(source, maxChars).slice(0, limit);
+            if (!wrapped.length) return [''];
+            if (this._wrapText(source, maxChars).length > limit) {
+                wrapped[wrapped.length - 1] = this._truncatePdfText(wrapped[wrapped.length - 1], Math.max(3, maxChars - 1)) + '.';
+            }
+            return wrapped.map(function (line) {
+                return this._fitPdfTextToWidth(line, Math.max(10, colWidth - 6), fontSize);
+            }, this);
+        }.bind(this);
+
+        const rowLayout = function (row) {
+            const cells = [];
+            let maxLines = 1;
             for (let c = 0; c < columns.length; c++) {
                 const column = columns[c] || {};
                 const colWidth = colWidths[c] || 0;
                 const rawValue = row && column.key ? row[column.key] : '';
                 const formatted = typeof column.formatter === 'function' ? column.formatter(rawValue, row, column) : rawValue;
-                const text = this._fitPdfTextToWidth(formatted === null || formatted === undefined ? '' : formatted, Math.max(10, colWidth - 6), 7.2);
-                const textX = currentX + 3;
-                const textY = cursorY - 8;
+                const lines = cellLinesFor(formatted, colWidth, column);
+                maxLines = Math.max(maxLines, lines.length);
+                cells.push({ column: column, colWidth: colWidth, lines: lines });
+            }
+            return {
+                cells: cells,
+                height: Math.max(baseRowHeight, 6 + maxLines * lineHeight),
+            };
+        };
+
+        const startContinuationPage = function () {
+            if (!ctx) return false;
+            this._pdfStartPage(ctx, {
+                title: title ? title + ' (continued)' : 'Report Table (continued)',
+            });
+            cursorY = ctx.contentTop - 28;
+            if (title) {
+                writer.text(x, cursorY, 10.5, title + ' (continued)', { font: 'F2', color: titleColor });
+                cursorY -= 14;
+            }
+            drawHeader();
+            return true;
+        }.bind(this);
+
+        const drawRow = function (row, index, layout) {
+            let currentX = x;
+            const bg = typeof rowColor === 'function'
+                ? rowColor(row, index)
+                : (Array.isArray(rowColor) ? rowColor : (index % 2 === 0 ? [0.98, 0.99, 1, 1] : [1, 1, 1, 1]));
+            const rowHeight = layout.height;
+            writer.rect(x, cursorY - rowHeight + 2, width, rowHeight, { fill: bg, stroke: gridColor, lineWidth: 0.2 });
+            for (let c = 0; c < layout.cells.length; c++) {
+                const cell = layout.cells[c];
+                const column = cell.column || {};
+                const colWidth = cell.colWidth || 0;
                 const align = String(column.align || 'left').toLowerCase();
-                if (align === 'right') {
-                    const estimatedWidth = Math.max(8, String(text).length * 2.5);
-                    writer.text(Math.max(currentX + 3, currentX + colWidth - 3 - estimatedWidth), textY, 7.2, text, { font: 'F1', color: bodyText });
-                } else if (align === 'center') {
-                    const estimatedWidth = Math.max(8, String(text).length * 1.4);
-                    writer.text(Math.max(currentX + 3, currentX + (colWidth / 2) - (estimatedWidth / 2)), textY, 7.2, text, { font: 'F1', color: bodyText });
-                } else {
-                    writer.text(textX, textY, 7.2, text, { font: 'F1', color: bodyText });
+                for (let lineIndex = 0; lineIndex < cell.lines.length; lineIndex++) {
+                    const text = cell.lines[lineIndex];
+                    const textY = cursorY - 8 - lineIndex * lineHeight;
+                    if (align === 'right') {
+                        const estimatedWidth = Math.max(8, String(text).length * fontSize * 0.43);
+                        writer.text(Math.max(currentX + 3, currentX + colWidth - 3 - estimatedWidth), textY, fontSize, text, { font: 'F1', color: bodyText });
+                    } else if (align === 'center') {
+                        const estimatedWidth = Math.max(8, String(text).length * fontSize * 0.30);
+                        writer.text(Math.max(currentX + 3, currentX + (colWidth / 2) - (estimatedWidth / 2)), textY, fontSize, text, { font: 'F1', color: bodyText });
+                    } else {
+                        writer.text(currentX + 3, textY, fontSize, text, { font: 'F1', color: bodyText });
+                    }
                 }
                 writer.rect(currentX, cursorY - rowHeight + 2, colWidth, rowHeight, { stroke: gridColor, lineWidth: 0.2 });
                 currentX += colWidth;
@@ -1862,10 +1918,13 @@ const IP2LiveReportManager = {
 
         drawHeader();
         for (let i = 0; i < rows.length; i++) {
-            if (cursorY - rowHeight < bottomLimit) break;
-            drawRow(rows[i], i);
+            const layout = rowLayout(rows[i]);
+            if (cursorY - layout.height < bottomLimit) {
+                if (!startContinuationPage()) break;
+            }
+            drawRow(rows[i], i, layout);
         }
-        return Math.max(cursorY, pageHeight - bottomLimit);
+        return cursorY;
     },
 
     /** @private Draw a fixed KPI card grid for the report summary page. */
@@ -2595,6 +2654,32 @@ const IP2LiveReportManager = {
 
     _buildExcelXmlBlob(report) {
         const sheets = [];
+        const dStrongest = report.stats && report.stats.strongestGameplay ? report.stats.strongestGameplay : null;
+        const dWeakest = report.stats && report.stats.weakestGameplay ? report.stats.weakestGameplay : null;
+        const dTrend = report.stats && report.stats.progressionTrend ? report.stats.progressionTrend : null;
+        const dSteps = report.stats && Array.isArray(report.stats.weakestSteps) ? report.stats.weakestSteps : [];
+        sheets.push({
+            name: 'Dashboard',
+            rows: [
+                ['IP2Live Progress Report', '', '', ''],
+                ['Student', report.summary.infiltratorName, 'Generated', new Date(report.summary.generatedAt).toISOString()],
+                ['Scope', 'Last ' + report.summary.scopeDays + ' days', 'Sessions', report.summary.sessionsCount],
+                [],
+                ['KPI', 'Value', 'Visual', 'Signal'],
+                ['Attempts', report.kpi.attempts, this._excelBar(Math.min(1, Number(report.kpi.attempts || 0) / 20), 1, 18), 'Total completed gameplay attempts'],
+                ['Completion Rate', report.kpi.completionRate, this._excelBar(report.kpi.completionRate, 1, 18), 'Final pass rate'],
+                ['Accuracy', report.kpi.accuracy, this._excelBar(report.kpi.accuracy, 1, 18), 'Weighted by attempts used'],
+                ['Weighted Mastery', report.kpi.weightedMastery, this._excelBar(report.kpi.weightedMastery, 100, 18), 'Overall mastery score'],
+                [],
+                ['Insight', 'Label', 'Value', 'Details'],
+                ['Strength', dStrongest ? dStrongest.gameplayLabel : 'No gameplay data', dStrongest ? dStrongest.accuracyRate : '', 'Most consistent gameplay area'],
+                ['Weakness', dWeakest ? dWeakest.gameplayLabel : 'No gameplay data', dWeakest ? dWeakest.accuracyRate : '', 'Lowest-performing gameplay area'],
+                ['Trend', dTrend ? dTrend.direction : 'plateau', dTrend ? dTrend.deltaAccuracyRate : '', 'Accuracy delta across sessions'],
+                ['Top Step Issue', dSteps.length ? dSteps[0].stepLabel : 'No step pattern yet', dSteps.length ? dSteps[0].totalMistakes : '', dSteps.length ? dSteps[0].gameplayLabel : 'Collect more try-level mistakes'],
+                [],
+                ['Performance Summary', report.performanceSummary || '', '', ''],
+            ],
+        });
         sheets.push({
             name: 'Summary',
             rows: [
@@ -2616,9 +2701,9 @@ const IP2LiveReportManager = {
         });
 
         const insightRows = [['Type', 'Label', 'Value', 'Details']];
-        const strongest = report.stats && report.stats.strongestGameplay ? report.stats.strongestGameplay : null;
-        const weakest = report.stats && report.stats.weakestGameplay ? report.stats.weakestGameplay : null;
-        const trend = report.stats && report.stats.progressionTrend ? report.stats.progressionTrend : null;
+        const strongest = dStrongest;
+        const weakest = dWeakest;
+        const trend = dTrend;
         const patterns = report.stats && Array.isArray(report.stats.errorPatterns) ? report.stats.errorPatterns : [];
         if (strongest) insightRows.push(['Strength', strongest.gameplayLabel, strongest.accuracyRate, 'Most consistent gameplay area']);
         if (weakest) insightRows.push(['Weakness', weakest.gameplayLabel, weakest.accuracyRate, 'Lowest-performing gameplay area']);
@@ -2633,11 +2718,11 @@ const IP2LiveReportManager = {
         }
         sheets.push({ name: 'Competencies', rows: compRows });
 
-        const gameplayRows = [['GameplayId', 'GameplayLabel', 'ModuleKey', 'Type', 'Attempts', 'Correct', 'Incorrect', 'AccuracyRate', 'CompletionRate', 'AvgTimeOnTaskMs', 'SessionCount', 'StageCount']];
+        const gameplayRows = [['GameplayId', 'GameplayLabel', 'ModuleKey', 'Type', 'Attempts', 'Correct', 'Incorrect', 'AccuracyRate', 'AccuracyBar', 'CompletionRate', 'CompletionBar', 'AvgTimeOnTaskMs', 'SessionCount', 'StageCount']];
         const gameplayStats = report.stats && Array.isArray(report.stats.byGameplay) ? report.stats.byGameplay : [];
         for (let i = 0; i < gameplayStats.length; i++) {
             const g = gameplayStats[i];
-            gameplayRows.push([g.gameplayId, g.gameplayLabel, g.moduleKey, g.isTutorial ? 'tutorial' : 'gameplay', g.attempts, g.correctAttempts, g.incorrectAttempts, g.accuracyRate, g.completionRate, g.avgTimeOnTaskMs, g.sessionCount, g.stageCount]);
+            gameplayRows.push([g.gameplayId, g.gameplayLabel, g.moduleKey, g.isTutorial ? 'tutorial' : 'gameplay', g.attempts, g.correctAttempts, g.incorrectAttempts, g.accuracyRate, this._excelBar(g.accuracyRate, 1, 16), g.completionRate, this._excelBar(g.completionRate, 1, 16), g.avgTimeOnTaskMs, g.sessionCount, g.stageCount]);
         }
         sheets.push({ name: 'Gameplay Stats', rows: gameplayRows });
 
@@ -2657,10 +2742,10 @@ const IP2LiveReportManager = {
         }
         sheets.push({ name: 'Module Compare', rows: moduleRows });
 
-        const dailyRows = [['Day', 'Attempts', 'Passed', 'Failed', 'CompletionRate', 'Accuracy', 'AvgClearMs']];
+        const dailyRows = [['Day', 'Attempts', 'Passed', 'Failed', 'CompletionRate', 'Accuracy', 'AccuracyBar', 'AvgClearMs']];
         for (let i = 0; i < report.daily.length; i++) {
             const d = report.daily[i];
-            dailyRows.push([d.day, d.attempts, d.passed, d.failed, d.completionRate, d.accuracy, d.avgClearMs]);
+            dailyRows.push([d.day, d.attempts, d.passed, d.failed, d.completionRate, d.accuracy, this._excelBar(d.accuracy, 1, 16), d.avgClearMs]);
         }
         sheets.push({ name: 'Daily Trends', rows: dailyRows });
 
@@ -2688,11 +2773,12 @@ const IP2LiveReportManager = {
         }
         sheets.push({ name: 'Mistake Breakdown', rows: mistakeRows });
 
-        const stepRows = [['GameplayId', 'GameplayLabel', 'Competency', 'StepKey', 'StepLabel', 'TotalMistakes', 'AffectedAttempts', 'TryEvents', 'GameplayAttempts', 'MistakeRate', 'TopIssue', 'Concern', 'Examples']];
+        const stepRows = [['GameplayId', 'GameplayLabel', 'Competency', 'StepKey', 'StepLabel', 'TotalMistakes', 'MistakeBar', 'AffectedAttempts', 'TryEvents', 'GameplayAttempts', 'MistakeRate', 'TopIssue', 'Concern', 'Examples']];
         const stepAnalysis = Array.isArray(report.stepAnalysis) ? report.stepAnalysis : [];
+        const maxStepMistakes = stepAnalysis.reduce(function (max, row) { return Math.max(max, Number(row.totalMistakes || 0) || 0); }, 1);
         for (let i = 0; i < stepAnalysis.length; i++) {
             const s = stepAnalysis[i];
-            stepRows.push([s.gameplayId, s.gameplayLabel, s.competencyLabel, s.stepKey, s.stepLabel, s.totalMistakes, s.affectedAttempts, s.tryEvents, s.gameplayAttempts, s.mistakeRate, s.topIssue, s.status, s.examples]);
+            stepRows.push([s.gameplayId, s.gameplayLabel, s.competencyLabel, s.stepKey, s.stepLabel, s.totalMistakes, this._excelBar(s.totalMistakes, maxStepMistakes, 16), s.affectedAttempts, s.tryEvents, s.gameplayAttempts, s.mistakeRate, s.topIssue, s.status, s.examples]);
         }
         sheets.push({ name: 'Step Analysis', rows: stepRows });
 
@@ -2736,30 +2822,113 @@ const IP2LiveReportManager = {
         return new Blob([xml], { type: 'application/vnd.ms-excel' });
     },
 
+    _excelBar(value, max, width) {
+        const resolvedMax = Math.max(0.0001, Number(max || 1) || 1);
+        const resolvedWidth = Math.max(6, Number(width || 16) || 16);
+        const ratio = Math.max(0, Math.min(1, (Number(value || 0) || 0) / resolvedMax));
+        const filled = Math.round(ratio * resolvedWidth);
+        return '[' + '#'.repeat(filled) + '.'.repeat(Math.max(0, resolvedWidth - filled)) + ']';
+    },
+
     _spreadsheetXml(sheets) {
         const esc = this._xmlEscape;
         const header = '<?xml version="1.0"?>'
             + '<?mso-application progid="Excel.Sheet"?>'
             + '<Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet"'
-            + ' xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet">';
+            + ' xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet"'
+            + ' xmlns:x="urn:schemas-microsoft-com:office:excel">'
+            + this._excelWorkbookStyles();
         let body = '';
         for (let i = 0; i < sheets.length; i++) {
             const s = sheets[i];
             body += '<Worksheet ss:Name="' + esc(s.name || ('Sheet' + (i + 1))) + '"><Table>';
             const rows = Array.isArray(s.rows) ? s.rows : [];
+            const widths = this._excelColumnWidths(rows);
+            for (let w = 0; w < widths.length; w++) {
+                body += '<Column ss:AutoFitWidth="0" ss:Width="' + widths[w] + '"/>';
+            }
             for (let r = 0; r < rows.length; r++) {
-                body += '<Row>';
+                const rowHeight = this._excelRowHeight(rows[r], r, s.name);
+                body += '<Row' + (rowHeight ? ' ss:Height="' + rowHeight + '"' : '') + '>';
                 const cols = Array.isArray(rows[r]) ? rows[r] : [rows[r]];
                 for (let c = 0; c < cols.length; c++) {
                     const v = cols[c];
                     const isNum = typeof v === 'number' && Number.isFinite(v);
-                    body += '<Cell><Data ss:Type="' + (isNum ? 'Number' : 'String') + '">' + esc(v === null || v === undefined ? '' : v) + '</Data></Cell>';
+                    const style = this._excelStyleForCell(s.name || '', r, c, v, rows);
+                    body += '<Cell ss:StyleID="' + style + '"><Data ss:Type="' + (isNum ? 'Number' : 'String') + '">' + esc(v === null || v === undefined ? '' : v) + '</Data></Cell>';
                 }
                 body += '</Row>';
             }
-            body += '</Table></Worksheet>';
+            body += '</Table><WorksheetOptions xmlns="urn:schemas-microsoft-com:office:excel">'
+                + '<FreezePanes/><FrozenNoSplit/><SplitHorizontal>1</SplitHorizontal><TopRowBottomPane>1</TopRowBottomPane>'
+                + '<ProtectObjects>False</ProtectObjects><ProtectScenarios>False</ProtectScenarios>'
+                + '</WorksheetOptions></Worksheet>';
         }
         return header + body + '</Workbook>';
+    },
+
+    _excelWorkbookStyles() {
+        return '<Styles>'
+            + '<Style ss:ID="Default" ss:Name="Normal"><Font ss:FontName="Aptos" ss:Size="10" ss:Color="#1F2933"/><Interior ss:Color="#FFFFFF" ss:Pattern="Solid"/></Style>'
+            + '<Style ss:ID="Title"><Font ss:FontName="Aptos Display" ss:Size="18" ss:Bold="1" ss:Color="#0B1F33"/><Interior ss:Color="#DCEEFF" ss:Pattern="Solid"/><Alignment ss:Vertical="Center"/></Style>'
+            + '<Style ss:ID="Section"><Font ss:FontName="Aptos" ss:Size="11" ss:Bold="1" ss:Color="#0B1F33"/><Interior ss:Color="#EEF6FF" ss:Pattern="Solid"/><Borders><Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#1F87D0"/></Borders></Style>'
+            + '<Style ss:ID="Header"><Font ss:FontName="Aptos" ss:Size="10" ss:Bold="1" ss:Color="#FFFFFF"/><Interior ss:Color="#1F87D0" ss:Pattern="Solid"/><Alignment ss:Vertical="Center" ss:WrapText="1"/></Style>'
+            + '<Style ss:ID="Label"><Font ss:FontName="Aptos" ss:Size="10" ss:Bold="1" ss:Color="#344054"/><Interior ss:Color="#F4F8FC" ss:Pattern="Solid"/></Style>'
+            + '<Style ss:ID="Body"><Font ss:FontName="Aptos" ss:Size="10" ss:Color="#1F2933"/><Interior ss:Color="#FFFFFF" ss:Pattern="Solid"/><Alignment ss:Vertical="Top" ss:WrapText="1"/></Style>'
+            + '<Style ss:ID="Zebra"><Font ss:FontName="Aptos" ss:Size="10" ss:Color="#1F2933"/><Interior ss:Color="#F8FBFF" ss:Pattern="Solid"/><Alignment ss:Vertical="Top" ss:WrapText="1"/></Style>'
+            + '<Style ss:ID="Good"><Font ss:FontName="Aptos" ss:Size="10" ss:Color="#14532D"/><Interior ss:Color="#E6F4EA" ss:Pattern="Solid"/><Alignment ss:Vertical="Top" ss:WrapText="1"/></Style>'
+            + '<Style ss:ID="Warn"><Font ss:FontName="Aptos" ss:Size="10" ss:Color="#7A4A00"/><Interior ss:Color="#FFF4CE" ss:Pattern="Solid"/><Alignment ss:Vertical="Top" ss:WrapText="1"/></Style>'
+            + '<Style ss:ID="Bad"><Font ss:FontName="Aptos" ss:Size="10" ss:Color="#7F1D1D"/><Interior ss:Color="#FDE8E8" ss:Pattern="Solid"/><Alignment ss:Vertical="Top" ss:WrapText="1"/></Style>'
+            + '<Style ss:ID="Pct"><NumberFormat ss:Format="0.0%"/><Font ss:FontName="Aptos" ss:Size="10" ss:Color="#1F2933"/><Interior ss:Color="#FFFFFF" ss:Pattern="Solid"/></Style>'
+            + '<Style ss:ID="Note"><Font ss:FontName="Aptos" ss:Size="10" ss:Italic="1" ss:Color="#475467"/><Interior ss:Color="#FFFFFF" ss:Pattern="Solid"/><Alignment ss:Vertical="Top" ss:WrapText="1"/></Style>'
+            + '</Styles>';
+    },
+
+    _excelStyleForCell(sheetName, rowIndex, colIndex, value, rows) {
+        const sheet = String(sheetName || '');
+        const row = Array.isArray(rows && rows[rowIndex]) ? rows[rowIndex] : [];
+        const first = String(row[0] || '');
+        const headerLike = rowIndex === 0 || ['KPI', 'Insight', 'Type', 'Competency', 'GameplayId', 'StageId', 'Module', 'Day', 'Timestamp'].indexOf(first) !== -1;
+        if (sheet === 'Dashboard' && rowIndex === 0) return 'Title';
+        if (!row.length) return 'Body';
+        if (headerLike) return 'Header';
+        if (sheet === 'Dashboard' && (first === 'Performance Summary' || colIndex === 3)) return 'Note';
+        if (colIndex === 0) return 'Label';
+        const text = String(value === null || value === undefined ? '' : value);
+        if (/^(Strong|Strength|success|Low)$/i.test(text)) return 'Good';
+        if (/^(Moderate|Trend|plateau)$/i.test(text)) return 'Warn';
+        if (/^(Weak|Weakness|High|ErrorPattern|declining)$/i.test(text)) return 'Bad';
+        const header = String((rows && rows[0] && rows[0][colIndex]) || '');
+        if (/Rate|Accuracy|Completion|Confidence|Delta/.test(header) && typeof value === 'number') return 'Pct';
+        return rowIndex % 2 === 0 ? 'Zebra' : 'Body';
+    },
+
+    _excelColumnWidths(rows) {
+        const maxCols = rows.reduce(function (max, row) {
+            return Math.max(max, Array.isArray(row) ? row.length : 1);
+        }, 1);
+        const widths = [];
+        for (let c = 0; c < maxCols; c++) {
+            let maxLen = 8;
+            for (let r = 0; r < rows.length; r++) {
+                const row = Array.isArray(rows[r]) ? rows[r] : [rows[r]];
+                const text = row[c] === null || row[c] === undefined ? '' : String(row[c]);
+                maxLen = Math.max(maxLen, Math.min(42, text.length));
+            }
+            widths.push(Math.max(58, Math.min(230, maxLen * 6.5 + 18)).toFixed(0));
+        }
+        return widths;
+    },
+
+    _excelRowHeight(row, rowIndex, sheetName) {
+        if (String(sheetName || '') === 'Dashboard' && rowIndex === 0) return 30;
+        if (!Array.isArray(row) || !row.length) return 8;
+        const maxLen = row.reduce(function (max, cell) {
+            return Math.max(max, String(cell === null || cell === undefined ? '' : cell).length);
+        }, 0);
+        if (maxLen > 120) return 48;
+        if (maxLen > 70) return 34;
+        return rowIndex === 0 ? 22 : 19;
     },
 
     _downloadBlob(blob, filename) {
