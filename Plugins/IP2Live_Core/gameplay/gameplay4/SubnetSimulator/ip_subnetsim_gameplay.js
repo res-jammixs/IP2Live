@@ -566,6 +566,7 @@ class IP2LiveSubnetSimulatorGameplayScreen extends Scene.Base {
         let hasMissing = false;
         let wrongCount = 0;
         let correctCount = 0;
+        const mistakeRows = [];
         for (let i = 0; i < this.slots.length; i++) {
             const s = this.slots[i];
             const expected = this._expectedForSlot(s.key);
@@ -574,6 +575,15 @@ class IP2LiveSubnetSimulatorGameplayScreen extends Scene.Base {
                 hasMissing = true;
                 s.result = 'wrong';
                 s.resultTimer = 75;
+                mistakeRows.push({
+                    stepKey: s.key,
+                    stepLabel: s.label,
+                    issueType: 'missing_answer',
+                    expected: expected,
+                    submitted: null,
+                    tryNumber: this.validationAttempts,
+                    gameplayStep: 'subnet_calculation',
+                });
                 continue;
             }
             this.slotStatTotals.totalChecks++;
@@ -588,6 +598,15 @@ class IP2LiveSubnetSimulatorGameplayScreen extends Scene.Base {
             if (this.slotStatTotals.wrongSlotFrequency[s.key] !== undefined) {
                 this.slotStatTotals.wrongSlotFrequency[s.key]++;
             }
+            mistakeRows.push({
+                stepKey: s.key,
+                stepLabel: s.label,
+                issueType: 'wrong_answer',
+                expected: expected,
+                submitted: actual,
+                tryNumber: this.validationAttempts,
+                gameplayStep: 'subnet_calculation',
+            });
             s.result = 'wrong';
             s.resultTimer = 130;
             const wrongBall = this._ballById(s.ballId);
@@ -597,6 +616,7 @@ class IP2LiveSubnetSimulatorGameplayScreen extends Scene.Base {
         }
 
         if (hasMissing) {
+            this._reportValidationMistakes(mistakeRows);
             this.failBanner = 'FILL ALL FOUR ANSWER SLOTS.';
             this.failBannerTimer = 100;
             this.shake = 12;
@@ -615,9 +635,24 @@ class IP2LiveSubnetSimulatorGameplayScreen extends Scene.Base {
         }
 
         this.shake = 24;
+        this._reportValidationMistakes(mistakeRows);
         this.failBanner = 'ANSWER MISMATCH. WRONG SLOTS PURGED.';
         this.failBannerTimer = 120;
         this._playCancel();
+    }
+
+    _reportValidationMistakes(mistakes) {
+        if (!Array.isArray(mistakes) || !mistakes.length) return false;
+        if (!IP2Live.GameManager || typeof IP2Live.GameManager.handleGameplayMistake !== 'function') return false;
+        IP2Live.GameManager.handleGameplayMistake('ip_subnet_simulator', {
+            gameplayId: 'ip_subnet_simulator',
+            mapId: this.options.mapId || 5,
+            questId: this.options.questId,
+            objectiveId: this.options.objectiveId,
+            mistakes: mistakes,
+            attemptsRemaining: 0,
+        });
+        return true;
     }
 
     _saveState() {

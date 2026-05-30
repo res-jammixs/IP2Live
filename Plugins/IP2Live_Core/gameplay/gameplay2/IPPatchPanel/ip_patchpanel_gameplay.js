@@ -48,6 +48,13 @@ class IP2LivePatchPanelGameplayScreen extends Scene.Base {
         this.targetScore = Math.max(1, Number(this.options.targetScore) || 10);
         this.speedMultiplier = Math.max(0.2, Number(this.options.speedMultiplier) || 0.78);
         this.baseSpeed = Math.max(0.45, Number(this.options.baseSpeed) || 1.9);
+        this.guidedTutorial = !!this.options.guidedTutorial;
+        this.tutorialActive = this.guidedTutorial;
+        this.tutorialStep = this.guidedTutorial ? 'wait_packet' : 'done';
+        this.tutorialPaused = false;
+        this.tutorialHighlight = null;
+        this.tutorialDialogueOpen = false;
+        this.tutorialComplete = !this.guidedTutorial;
         this.roundNumber = 0;
         this.autoRestartCount = 0;
         this.finished = false;
@@ -238,7 +245,13 @@ class IP2LivePatchPanelGameplayScreen extends Scene.Base {
         if (this.bannerTimer > 0) this.bannerTimer--;
 
         if (this.phase === 'active') {
-            this._updatePacketMotion();
+            if (this.tutorialActive) this._updateGuidedTutorial();
+            if (this.tutorialPaused || this._isGuidedDialogueActive()) {
+                this._syncFocusPacket(this._metrics());
+            } else {
+                this._updatePacketMotion();
+                if (this.tutorialActive) this._updateGuidedTutorial();
+            }
         } else if (this.phase === 'retry') {
             this.phaseTimer--;
             if (this.phaseTimer <= 0) {
@@ -323,6 +336,135 @@ class IP2LivePatchPanelGameplayScreen extends Scene.Base {
         this.packetEnteredDecision = focus ? focus.enteredDecision : false;
     }
 
+    _updateGuidedTutorial() {
+        if (!this.tutorialActive || this.tutorialComplete || this.tutorialDialogueOpen) return;
+        const m = this._metrics();
+        const packet = this.activePackets && this.activePackets.length ? this.activePackets[0] : null;
+
+        if (this.tutorialStep === 'wait_packet') {
+            if (packet && packet.x >= m.leftWireX - 8 * m.sX) {
+                this.tutorialPaused = true;
+                this.tutorialHighlight = { type: 'packet', packetSerial: packet.serial };
+                this.tutorialStep = 'packet_dialogue';
+                this._showGuidedPacketDialogue();
+            }
+            return;
+        }
+
+        if (this.tutorialStep === 'wait_xray') {
+            const signal = this._signalPacket(m);
+            if (signal && this._packetVisibleInXray(m, signal)) {
+                this._syncFocusPacket(m);
+                this.tutorialPaused = true;
+                this.tutorialHighlight = { type: 'xray', packetSerial: signal.serial };
+                this.tutorialStep = 'xray_dialogue';
+                this._showGuidedXrayDialogue(signal);
+            }
+            return;
+        }
+
+        if (this.tutorialStep === 'controls') {
+            this.tutorialPaused = true;
+            this.tutorialHighlight = { type: 'controls' };
+            this.tutorialStep = 'controls_dialogue';
+            this._showGuidedControlsDialogue();
+        }
+    }
+
+    _setGuidedDialogueOpen(isOpen) {
+        this.tutorialDialogueOpen = !!isOpen;
+        if (Manager && Manager.Stack) Manager.Stack.requestPaintHUD = true;
+    }
+
+    _isGuidedDialogueActive() {
+        return !!(
+            this.tutorialActive &&
+            this.tutorialDialogueOpen &&
+            IP2Live.DialogueManager &&
+            typeof IP2Live.DialogueManager.isActive === 'function' &&
+            IP2Live.DialogueManager.isActive()
+        );
+    }
+
+    _showGuidedPacketDialogue() {
+        this._setGuidedDialogueOpen(true);
+        const done = () => {
+            this._setGuidedDialogueOpen(false);
+            this.tutorialPaused = false;
+            this.tutorialHighlight = null;
+            this.tutorialStep = 'wait_xray';
+        };
+        if (IP2Live.IPPatchPanelTutorial && typeof IP2Live.IPPatchPanelTutorial.showPacketGuide === 'function') {
+            IP2Live.IPPatchPanelTutorial.showPacketGuide(done);
+        } else {
+            done();
+        }
+    }
+
+    _showGuidedXrayDialogue(packet) {
+        this._setGuidedDialogueOpen(true);
+        const kind = packet && packet.kind ? packet.kind : 'IP';
+        const done = () => {
+            this._setGuidedDialogueOpen(false);
+            this.tutorialStep = 'controls';
+        };
+        if (IP2Live.IPPatchPanelTutorial && typeof IP2Live.IPPatchPanelTutorial.showXrayGuide === 'function') {
+            IP2Live.IPPatchPanelTutorial.showXrayGuide(kind, done);
+        } else {
+            done();
+        }
+    }
+
+    _showGuidedControlsDialogue() {
+        this._setGuidedDialogueOpen(true);
+        const done = () => {
+            this._setGuidedDialogueOpen(false);
+            this._ensureGuidedUpcomingPacket();
+            this.tutorialHighlight = { type: 'upcoming' };
+            this.tutorialStep = 'upcoming_dialogue';
+            this._showGuidedUpcomingDialogue();
+        };
+        if (IP2Live.IPPatchPanelTutorial && typeof IP2Live.IPPatchPanelTutorial.showControlsGuide === 'function') {
+            IP2Live.IPPatchPanelTutorial.showControlsGuide(done);
+        } else {
+            done();
+        }
+    }
+
+    _showGuidedUpcomingDialogue() {
+        this._setGuidedDialogueOpen(true);
+        const done = () => {
+            this._setGuidedDialogueOpen(false);
+            this.tutorialPaused = false;
+            this.tutorialHighlight = null;
+            this.tutorialActive = false;
+            this.tutorialComplete = true;
+            this.tutorialStep = 'done';
+        };
+        if (IP2Live.IPPatchPanelTutorial && typeof IP2Live.IPPatchPanelTutorial.showUpcomingGuide === 'function') {
+            IP2Live.IPPatchPanelTutorial.showUpcomingGuide(done);
+        } else {
+            done();
+        }
+    }
+
+    _ensureGuidedUpcomingPacket() {
+        const m = this._metrics();
+        const signal = this._signalPacket(m);
+        const upcoming = this._preTunnelQueue(m)
+            .filter((packet) => !signal || packet.serial !== signal.serial);
+        if (upcoming.length || this.packetCursor >= this.totalPackets) return;
+
+        const before = this.activePackets.length;
+        if (!this._spawnPacket() || this.activePackets.length <= before) return;
+        const staged = this.activePackets[this.activePackets.length - 1];
+        staged.x = m.leftWireX + 16 * m.sX;
+        staged.trail = [];
+        staged.speed = this._packetSpeed(m, staged);
+        this.nextSpawnTimer = this._nextSpawnDelay();
+        this._syncFocusPacket(m);
+    }
+
     _onRoundEnd() {
         const metTarget = this.score >= this.targetScore;
         this.endResult = {
@@ -385,6 +527,7 @@ class IP2LivePatchPanelGameplayScreen extends Scene.Base {
         }
 
         if (this.phase !== 'active') return true;
+        if (this.tutorialPaused) return true;
 
         const keyName = this._normalizeKeyName(key);
         if (!keyName) return true;
@@ -407,6 +550,7 @@ class IP2LivePatchPanelGameplayScreen extends Scene.Base {
     onMouseDown(x, y) {
         if (this.phase !== 'active' || !Array.isArray(this.classButtonRects)) return true;
         if (IP2Live.DialogueManager && IP2Live.DialogueManager.isActive()) return true;
+        if (this.tutorialPaused) return true;
         for (let i = 0; i < this.classButtonRects.length; i++) {
             const hit = this.classButtonRects[i];
             if (this._pointInRect(x, y, hit)) {
@@ -506,6 +650,7 @@ class IP2LivePatchPanelGameplayScreen extends Scene.Base {
             this._playConfirm();
         } else {
             this.mistakes++;
+            this._reportRouteMistake(target, selectedClass, correctClass);
             target.flashWrong = 22;
             this._emitBurst(target.x + 24, this._metrics().wireY, '#FF4B5E', 26, 2.8);
             this._emitRouteShock(target, selectedClass, correctClass);
@@ -543,6 +688,30 @@ class IP2LivePatchPanelGameplayScreen extends Scene.Base {
                 size: 1 + Math.random() * 3.3,
             });
         }
+    }
+
+    _reportRouteMistake(packet, selectedClass, correctClass) {
+        if (!IP2Live.GameManager || typeof IP2Live.GameManager.handleGameplayMistake !== 'function') return false;
+        IP2Live.GameManager.handleGameplayMistake('ip_patch_panel_classes', {
+            gameplayId: 'ip_patch_panel_classes',
+            mapId: this.options.mapId || 4,
+            questId: this.options.questId,
+            objectiveId: this.options.objectiveId,
+            mistakes: [{
+                stepKey: 'ip_classification_route',
+                stepLabel: 'IP packet class routing',
+                issueType: 'misroute',
+                expected: correctClass,
+                submitted: selectedClass,
+                sourceClass: correctClass,
+                targetClass: selectedClass,
+                packetIp: packet && packet.ip ? packet.ip : null,
+                packetSerial: packet && packet.serial ? packet.serial : null,
+                gameplayStep: 'packet_classification',
+            }],
+            attemptsRemaining: Math.max(0, this.totalPackets - this.delivered),
+        });
+        return true;
     }
 
     _emitRouteShock(packet, selectedClass, correctClass) {
@@ -588,6 +757,7 @@ class IP2LivePatchPanelGameplayScreen extends Scene.Base {
         this._drawProgressRail(ctx, m);
         this._drawBanner(ctx, m);
         this._drawPhaseOverlay(ctx, m);
+        this._drawTutorialHighlight(ctx, m);
         ctx.restore();
 
         if (IP2Live.DialogueManager && typeof IP2Live.DialogueManager.drawOverlay === 'function') {
@@ -646,6 +816,80 @@ class IP2LivePatchPanelGameplayScreen extends Scene.Base {
             xrayW,
             xrayH,
         };
+    }
+
+    _drawTutorialHighlight(ctx, m) {
+        if (!this.tutorialHighlight || (!this.tutorialPaused && !this._isGuidedDialogueActive())) return;
+        const rect = this._tutorialHighlightRect(m);
+        if (!rect) return;
+        const pulse = 0.55 + 0.45 * Math.sin((this.animTick || 0) * 0.16);
+        const cut = Math.max(4 * m.sX, 4);
+
+        ctx.save();
+        ctx.globalAlpha = 1;
+        ctx.shadowColor = '#FFE600';
+        ctx.shadowBlur = (12 + pulse * 12) * m.sX;
+        ctx.fillStyle = 'rgba(255,230,0,0.08)';
+        this._fillChamferRect(ctx, rect.x, rect.y, rect.w, rect.h, cut);
+        ctx.strokeStyle = 'rgba(255,230,0,' + (0.82 + pulse * 0.18) + ')';
+        ctx.lineWidth = 3 * m.sX;
+        this._strokeChamferRect(ctx, rect.x, rect.y, rect.w, rect.h, cut);
+        ctx.shadowColor = '#00F0FF';
+        ctx.shadowBlur = (7 + pulse * 7) * m.sX;
+        ctx.strokeStyle = 'rgba(0,240,255,0.72)';
+        ctx.lineWidth = 1.4 * m.sX;
+        this._strokeChamferRect(ctx, rect.x - 4 * m.sX, rect.y - 4 * m.sY, rect.w + 8 * m.sX, rect.h + 8 * m.sY, cut);
+        ctx.restore();
+    }
+
+    _tutorialHighlightRect(m) {
+        const highlight = this.tutorialHighlight || {};
+        if (highlight.type === 'packet') {
+            let packet = null;
+            for (let i = 0; i < this.activePackets.length; i++) {
+                if (this.activePackets[i].serial === highlight.packetSerial) {
+                    packet = this.activePackets[i];
+                    break;
+                }
+            }
+            packet = packet || this.activePacket || (this.activePackets && this.activePackets[0]);
+            if (!packet) return null;
+            return {
+                x: packet.x - 26 * m.sX,
+                y: m.wireY - 24 * m.sY,
+                w: 52 * m.sX,
+                h: 48 * m.sY,
+            };
+        }
+
+        if (highlight.type === 'xray') {
+            return {
+                x: m.xrayX + 10 * m.sX,
+                y: m.xrayY + 62 * m.sY,
+                w: m.xrayW * 0.58,
+                h: 34 * m.sY,
+            };
+        }
+
+        if (highlight.type === 'controls') {
+            return {
+                x: m.panelX + m.panelW * 0.37 - 8 * m.sX,
+                y: m.panelY + m.panelH - m.footH + 39 * m.sY,
+                w: m.panelW * 0.33 + 16 * m.sX,
+                h: m.footH - 56 * m.sY,
+            };
+        }
+
+        if (highlight.type === 'upcoming') {
+            return {
+                x: m.panelX + m.panelW * 0.792 - 8 * m.sX,
+                y: m.midY + m.midH * 0.685 - 8 * m.sY,
+                w: m.panelW * 0.165 + 16 * m.sX,
+                h: m.midH * 0.225 + 16 * m.sY,
+            };
+        }
+
+        return null;
     }
 
     _drawBackdrop(ctx, m) {
@@ -1496,7 +1740,7 @@ class IP2LivePatchPanelGameplayScreen extends Scene.Base {
 }
 
 const PatchPanelGameplayManager = {
-    VERSION: 'ip-patchpanel-gameplay-manager-20260528-02',
+    VERSION: 'ip-patchpanel-gameplay-manager-20260530-01',
     _active: false,
     _introShown: false,
     _activeAttempt: null,
@@ -1505,11 +1749,54 @@ const PatchPanelGameplayManager = {
 
     PATCH_PANEL_QUESTS: [
         {
-            id: 'stage.4.ip_patch_panel.01',
+            id: 'stage.4.ip_patch_panel.01.tutorial',
             objectiveId: 'route_ip_patch_panel_01',
             title: 'SECURE PATCH PANEL NODE',
             label: 'Patch Panel Node',
-            targetTile: { x: 16, y: 0, z: 18 },
+            targetTile: { x: 3, y: 0, z: 29 },
+            tutorial: true,
+        },
+        {
+            id: 'stage.4.ip_patch_panel.02',
+            objectiveId: 'route_ip_patch_panel_02',
+            title: 'SECURE PATCH PANEL NODE',
+            label: 'Patch Panel Node',
+            targetTile: { x: 21, y: 0, z: 31 },
+        },
+        {
+            id: 'stage.4.ip_patch_panel.03',
+            objectiveId: 'route_ip_patch_panel_03',
+            title: 'SECURE PATCH PANEL NODE',
+            label: 'Patch Panel Node',
+            targetTile: { x: 21, y: 0, z: 26 },
+        },
+        {
+            id: 'stage.4.ip_patch_panel.04',
+            objectiveId: 'route_ip_patch_panel_04',
+            title: 'SECURE PATCH PANEL NODE',
+            label: 'Patch Panel Node',
+            targetTile: { x: 21, y: 0, z: 17 },
+        },
+        {
+            id: 'stage.4.ip_patch_panel.05',
+            objectiveId: 'route_ip_patch_panel_05',
+            title: 'SECURE PATCH PANEL NODE',
+            label: 'Patch Panel Node',
+            targetTile: { x: 12, y: 0, z: 6 },
+        },
+        {
+            id: 'stage.4.ip_patch_panel.06',
+            objectiveId: 'route_ip_patch_panel_06',
+            title: 'SECURE PATCH PANEL NODE',
+            label: 'Patch Panel Node',
+            targetTile: { x: 19, y: 0, z: 6 },
+        },
+        {
+            id: 'stage.4.ip_patch_panel.07',
+            objectiveId: 'route_ip_patch_panel_07',
+            title: 'SECURE PATCH PANEL NODE',
+            label: 'Patch Panel Node',
+            targetTile: { x: 33, y: 0, z: 1 },
         },
     ],
 
@@ -1535,7 +1822,6 @@ const PatchPanelGameplayManager = {
         for (let i = 0; i < specs.length; i++) {
             const spec = specs[i];
             questIds.push(spec.id);
-            if (this._registeredQuestIds[spec.id] && qm.quests && qm.quests[spec.id]) continue;
 
             const target = Object.assign({}, spec.targetTile);
 
@@ -1570,6 +1856,16 @@ const PatchPanelGameplayManager = {
         const opts = options || {};
         const spec = opts.spec || {};
         return (opts.questId || spec.id || 'quest') + ':' + (opts.objectiveId || spec.objectiveId || 'objective');
+    },
+
+    _isTutorialSpec(spec, options) {
+        const s = spec || {};
+        const opts = options || {};
+        const questId = String(opts.questId || s.id || '');
+        const objectiveId = String(opts.objectiveId || s.objectiveId || '');
+        return !!s.tutorial ||
+            questId === 'stage.4.ip_patch_panel.01.tutorial' ||
+            objectiveId === 'route_ip_patch_panel_01';
     },
 
     _refreshTriggerLock(spec, distance, radius) {
@@ -1611,6 +1907,7 @@ const PatchPanelGameplayManager = {
             objectiveId: spec.objectiveId,
             mapId: Number(context && context.mapId) || 4,
             _fromObjective: true,
+            guidedTutorial: this._isTutorialSpec(spec),
         };
 
         if (IP2Live.GameManager && typeof IP2Live.GameManager.startGameplayNode === 'function') {
@@ -1654,6 +1951,7 @@ const PatchPanelGameplayManager = {
 
     launchPatchPanelGameplay(options) {
         const opts = options || {};
+        const guidedTutorial = !!opts.guidedTutorial || this._isTutorialSpec(opts.spec, opts);
         const attemptKey = this._resolveAttemptKey(opts);
         const isReservedAttempt = !!(opts._reservedAttempt && opts._reservedAttempt === attemptKey);
         if (this._active) return false;
@@ -1667,6 +1965,7 @@ const PatchPanelGameplayManager = {
                 targetScore: opts.targetScore,
                 speedMultiplier: opts.speedMultiplier,
                 baseSpeed: opts.baseSpeed,
+                guidedTutorial: guidedTutorial,
                 onComplete: (result) => this._onComplete(opts, result),
                 onCancel: () => this._onCancel(opts),
             });

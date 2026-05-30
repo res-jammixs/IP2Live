@@ -13,7 +13,7 @@ const MapManager = {
     stages: [
         { id: 1, name: 'Tutorial Stage', tutorial: true, questEnabled: false },
         { id: 3, name: 'Stage 1 Level 1', stage: 1, level: 1 },
-        { id: 4, name: 'Stage 1 Level 2', stage: 1, level: 2 },
+        { id: 4, name: 'Stage 1 Level 2', stage: 1, level: 2, exit: { x: 26, y: 0, z: 0 }  },
         { id: 5, name: 'Stage 1 Level 3', stage: 1, level: 3 },
         { id: 6, name: 'Stage 1 Level 4', stage: 1, level: 4 },
         { id: 7, name: 'Stage 2 Level 1', stage: 2, level: 1, exit: { x: 12, y: 0, z: 4 } },
@@ -25,6 +25,7 @@ const MapManager = {
         { id: 13, name: 'Stage 3 Level 3', stage: 3, level: 3 },
         { id: 14, name: 'Stage 3 Level 4', stage: 3, level: 4 },
     ],
+
     _registeredStageQuestIds: {},
     _registeredStageDialogueIds: {},
     _stageDiscoveryStarted: false,
@@ -419,6 +420,7 @@ const MapManager = {
             } else {
                 const gameplayQuestManagers = [
                     IP2Live.GameplayManager,
+                    IP2Live.HarderWiresGameplayManager,
                     IP2Live.PatchPanelGameplayManager,
                     IP2Live.CIDRPanelGameplayManager,
                     IP2Live.SubnetSimulatorGameplayManager,
@@ -431,14 +433,6 @@ const MapManager = {
                     const ids = gameplayManager.registerStageGameplayQuests(qm, this, stage) || [];
                     for (let j = 0; j < ids.length; j++) gameplayQuestIds.push(ids[j]);
                 }
-            }
-
-            if (gameplayQuestIds && gameplayQuestIds.length) {
-                qm.registerMapQuests(stage.id, gameplayQuestIds, {
-                    append: true,
-                    autoStart: true,
-                    showFinished: false,
-                });
             }
 
             const questId = this._stageQuestId(stage);
@@ -470,8 +464,10 @@ const MapManager = {
                 this._registeredStageQuestIds[questId] = true;
             }
 
-            qm.registerMapQuests(stage.id, [questId], {
-                append: true,
+            const orderedQuestIds = gameplayQuestIds ? gameplayQuestIds.slice() : [];
+            if (orderedQuestIds.indexOf(questId) === -1) orderedQuestIds.push(questId);
+            qm.registerMapQuests(stage.id, orderedQuestIds, {
+                append: false,
                 autoStart: true,
                 showFinished: false,
             });

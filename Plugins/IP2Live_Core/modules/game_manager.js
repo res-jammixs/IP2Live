@@ -84,7 +84,25 @@ const IP2LiveGameManager = {
                 level: 3,
                 spawn: { x: 6, y: 0, z: 17 },
                 worldTitle: true,
-                gameplayNodes: ['ip_cidr_binary_panel', 'ip_subnet_simulator'],
+                gameplayNodes: ['ip_class_wires_harder', 'ip_cidr_binary_panel', 'ip_subnet_simulator'],
+            },
+            6: {
+                id: 6,
+                name: 'Stage 1 Level 4',
+                stage: 1,
+                level: 4,
+                spawn: { x: 6, y: 0, z: 17 },
+                worldTitle: true,
+                gameplayNodes: ['ip_network_repair'],
+            },
+            15: {
+                id: 15,
+                name: 'Stage 4 Level 1',
+                stage: 4,
+                level: 1,
+                spawn: { x: 6, y: 0, z: 17 },
+                worldTitle: true,
+                gameplayNodes: ['ip_network_repair'],
             },
             11: {
                 id: 11,
@@ -141,6 +159,17 @@ const IP2LiveGameManager = {
                 mapId: 12,
                 manager: 'CIDRQuarantineMatrixGameplayManager',
                 method: 'launchCIDRQuarantineMatrixGameplay',
+            ip_class_wires_harder: {
+                id: 'ip_class_wires_harder',
+                mapId: 5,
+                manager: 'HarderWiresGameplayManager',
+                method: 'launchHarderWireGameplay',
+            },
+            ip_network_repair: {
+                id: 'ip_network_repair',
+                mapId: 15,
+                manager: 'NetworkRepairGameplayManager',
+                method: 'launchNetworkRepairGameplay',
             },
         },
     },
@@ -161,6 +190,21 @@ const IP2LiveGameManager = {
                 { id: 'stage.3.ip_wires.04', objectiveId: 'repair_ip_wires_04', title: 'REPAIR IP WIRES 04', label: 'Lever 04', targetTile: { x: 19, y: 0, z: 27 } },
             ],
         },
+        ip_class_wires_harder: {
+            gameplayId: 'ip_class_wires_harder',
+            mapId: 5,
+            label: 'IP Class Wires Harder',
+            competencyKey: 'ip_classification_advanced',
+            competencyLabel: 'Advanced IP class identification',
+            targetClearMs: 150000,
+            objectiveHandler: { manager: 'HarderWiresGameplayManager', method: '_handleWireObjective' },
+            quests: [
+                { id: 'stage.5.ip_wires_harder.01.tutorial', objectiveId: 'repair_ip_wires_harder_01_tutorial', title: 'SECURITY BRIEFING LEVER', label: 'Strict Tutorial Lever', targetTile: { x: 2, y: 0, z: 32 }, tutorial: true, wireCount: 5 },
+                { id: 'stage.5.ip_wires_harder.02', objectiveId: 'repair_ip_wires_harder_02', title: 'STRICT IP WIRES CHALLENGE', label: 'Strict Gameplay Lever', targetTile: { x: 4, y: 0, z: 32 }, wireCount: 6 },
+                { id: 'stage.5.ip_wires_harder.03', objectiveId: 'repair_ip_wires_harder_03', title: 'STRICT IP WIRES CHALLENGE', label: 'Strict Gameplay Lever', targetTile: { x: 28, y: 0, z: 25 }, wireCount: 7 },
+                { id: 'stage.5.ip_wires_harder.04', objectiveId: 'repair_ip_wires_harder_04', title: 'STRICT IP WIRES CHALLENGE', label: 'Strict Gameplay Lever', targetTile: { x: 32, y: 0, z: 25 }, wireCount: 8 },
+            ],
+        },
         ip_patch_panel_classes: {
             gameplayId: 'ip_patch_panel_classes',
             mapId: 4,
@@ -170,7 +214,13 @@ const IP2LiveGameManager = {
             targetClearMs: 140000,
             objectiveHandler: { manager: 'PatchPanelGameplayManager', method: '_handlePatchObjective' },
             quests: [
-                { id: 'stage.4.ip_patch_panel.01', objectiveId: 'route_ip_patch_panel_01', title: 'SECURE PATCH PANEL NODE', label: 'Patch Panel Node', targetTile: { x: 10, y: 0, z: 18 } },
+                { id: 'stage.4.ip_patch_panel.01.tutorial', objectiveId: 'route_ip_patch_panel_01', title: 'SECURE PATCH PANEL NODE', label: 'Patch Panel Node', targetTile: { x: 3, y: 0, z: 29 }, tutorial: true },
+                { id: 'stage.4.ip_patch_panel.02', objectiveId: 'route_ip_patch_panel_02', title: 'SECURE PATCH PANEL NODE', label: 'Patch Panel Node', targetTile: { x: 21, y: 0, z: 31 } },
+                { id: 'stage.4.ip_patch_panel.03', objectiveId: 'route_ip_patch_panel_03', title: 'SECURE PATCH PANEL NODE', label: 'Patch Panel Node', targetTile: { x: 21, y: 0, z: 26 } },
+                { id: 'stage.4.ip_patch_panel.04', objectiveId: 'route_ip_patch_panel_04', title: 'SECURE PATCH PANEL NODE', label: 'Patch Panel Node', targetTile: { x: 21, y: 0, z: 17 } },
+                { id: 'stage.4.ip_patch_panel.05', objectiveId: 'route_ip_patch_panel_05', title: 'SECURE PATCH PANEL NODE', label: 'Patch Panel Node', targetTile: { x: 12, y: 0, z: 6 } },
+                { id: 'stage.4.ip_patch_panel.06', objectiveId: 'route_ip_patch_panel_06', title: 'SECURE PATCH PANEL NODE', label: 'Patch Panel Node', targetTile: { x: 19, y: 0, z: 6 } },
+                { id: 'stage.4.ip_patch_panel.07', objectiveId: 'route_ip_patch_panel_07', title: 'SECURE PATCH PANEL NODE', label: 'Patch Panel Node', targetTile:{ x: 33, y: 0, z: 1 } },
             ],
         },
         ip_cidr_binary_panel: {
@@ -228,6 +278,21 @@ const IP2LiveGameManager = {
                 { id: 'stage.12.cidr_matrix.03', objectiveId: 'solve_cidr_matrix_03', title: 'SEAL SHARD TRIAD', label: 'Matrix Node 03', targetTile: { x: 27, y: 0, z: 17 }, profile: { index: 3, zoneCount: 3, parentPrefix: 23 } },
                 { id: 'stage.12.cidr_matrix.04', objectiveId: 'solve_cidr_matrix_04', title: 'LOCK RELAY MATRIX', label: 'Matrix Node 04', targetTile: { x: 11, y: 0, z: 25 }, profile: { index: 4, zoneCount: 3, parentPrefix: 22 } },
                 { id: 'stage.12.cidr_matrix.05', objectiveId: 'solve_cidr_matrix_05', title: 'FINALIZE AI CONTAINMENT', label: 'Matrix Node 05', targetTile: { x: 24, y: 0, z: 29 }, profile: { index: 5, zoneCount: 3, parentPrefix: 22 } },
+        ip_network_repair: {
+            gameplayId: 'ip_network_repair',
+            mapId: 15,
+            label: 'Network Repair PCs',
+            competencyKey: 'network_broadcast_usable_range',
+            competencyLabel: 'Network, broadcast, and usable IP range calculation',
+            targetClearMs: 180000,
+            pcCount: 5,
+            objectiveHandler: { manager: 'NetworkRepairGameplayManager', method: '_handleObjective' },
+            quests: [
+                { id: 'stage.15.ip_network_repair.01', objectiveId: 'repair_network_pc_01', title: 'REPAIR PC 01', label: 'PC 01', targetTile: { x: 1, y: 0, z: 30 }, tutorial: true, taskType: 'networkAddress' },
+                { id: 'stage.15.ip_network_repair.02', objectiveId: 'repair_network_pc_02', title: 'REPAIR PC 02', label: 'PC 02', targetTile: { x: 1, y: 0, z: 4 }, taskType: 'broadcastAddress' },
+                { id: 'stage.15.ip_network_repair.03', objectiveId: 'repair_network_pc_03', title: 'REPAIR PC 03', label: 'PC 03', targetTile: { x: 32, y: 3, z: 2 }, taskType: 'usableRange' },
+                { id: 'stage.15.ip_network_repair.04', objectiveId: 'repair_network_pc_04', title: 'REPAIR PC 04', label: 'PC 04', targetTile: { x: 32, y: 3, z: 5 }, taskType: 'networkAddress' },
+                { id: 'stage.15.ip_network_repair.05', objectiveId: 'repair_network_pc_05', title: 'REPAIR PC 05', label: 'PC 05', targetTile: { x: 32, y: 3, z: 8 }, taskType: 'usableRange' },
             ],
         },
     },
@@ -269,7 +334,7 @@ const IP2LiveGameManager = {
     },
 
     on(eventName, handler) {
-        if (!eventName || typeof handler !== 'function') return function () {};
+        if (!eventName || typeof handler !== 'function') return function () { };
         if (!this._listeners[eventName]) this._listeners[eventName] = [];
         this._listeners[eventName].push(handler);
         return () => this.off(eventName, handler);
@@ -396,6 +461,7 @@ const IP2LiveGameManager = {
             retries: 0,
             mistakeCount: 0,
             mistakes: [],
+            mistakeEvents: [],
         };
         this._reportActiveAttempts[gameplayId] = attempt;
         this._logTelemetryEvent('attempt_start', attempt);
@@ -408,6 +474,8 @@ const IP2LiveGameManager = {
         const endedAt = Date.now();
         const durationMs = Math.max(0, endedAt - Number(open.startedAt || endedAt));
         const metrics = this._extractGameplayMetrics(gameplayId, data.result || data.payload || {});
+        const retries = Math.max(Number(open.retries || 0) || 0, Number(metrics.retries || 0) || 0);
+        const mistakeCount = Math.max(Number(open.mistakeCount || 0) || 0, Number(metrics.mistakeCount || 0) || 0);
 
         const completion = {
             sessionId: open.sessionId,
@@ -424,8 +492,8 @@ const IP2LiveGameManager = {
             timestamp: endedAt,
             passed: !!passed,
             durationMs: durationMs,
-            retries: open.retries || 0,
-            mistakeCount: open.mistakeCount || 0,
+            retries: retries,
+            mistakeCount: mistakeCount,
             attemptsUsed: Number(metrics.attemptsUsed || 0) || 0,
             maxAttempts: Number(metrics.maxAttempts || 0) || 0,
             mistakeRate: Number(metrics.mistakeRate || 0) || 0,
@@ -433,6 +501,7 @@ const IP2LiveGameManager = {
             payload: Object.assign({}, metrics.payload || {}, {
                 result: this._clonePlain(data.result || {}),
                 mistakes: this._clonePlain(open.mistakes || []),
+                mistakeEvents: this._clonePlain(open.mistakeEvents || []),
             }),
             notes: metrics.notes || null,
         };
@@ -443,7 +512,7 @@ const IP2LiveGameManager = {
 
     _extractGameplayMetrics(gameplayId, result) {
         const r = result || {};
-        if (gameplayId === 'ip_class_wires') {
+        if (gameplayId === 'ip_class_wires' || gameplayId === 'ip_class_wires_harder') {
             const mistakes = Array.isArray(r.mistakes) ? r.mistakes : [];
             const attemptsUsed = Number(r.attemptsUsed || mistakes.length || 0) || 0;
             const maxAttempts = Number(r.maxAttempts || 3) || 3;
@@ -451,6 +520,8 @@ const IP2LiveGameManager = {
             return {
                 attemptsUsed: attemptsUsed,
                 maxAttempts: maxAttempts,
+                retries: attemptsUsed,
+                mistakeCount: mistakes.length,
                 mistakeRate: maxAttempts > 0 ? attemptsUsed / maxAttempts : 0,
                 accuracy: accuracy,
                 payload: {
@@ -469,6 +540,7 @@ const IP2LiveGameManager = {
                 attemptsUsed: delivered,
                 maxAttempts: Number(r.totalPackets || delivered || 0) || 0,
                 retries: Number(r.restarts || 0) || 0,
+                mistakeCount: mistakes,
                 mistakeRate: delivered > 0 ? mistakes / delivered : 0,
                 accuracy: accuracy,
                 payload: {
@@ -487,6 +559,7 @@ const IP2LiveGameManager = {
                 attemptsUsed: 1,
                 maxAttempts: 1,
                 retries: Number(r.retries || 0) || 0,
+                mistakeCount: Number(r.retries || 0) || 0,
                 mistakeRate: Number(r.passed) === false ? 1 : 0,
                 accuracy: Number.isFinite(errorDistance) ? (errorDistance === 0 ? 1 : 0) : (r.passed ? 1 : 0),
                 payload: {
@@ -507,6 +580,7 @@ const IP2LiveGameManager = {
                 attemptsUsed: Number(r.validationAttempts || 1) || 1,
                 maxAttempts: 0,
                 retries: Math.max(0, (Number(r.validationAttempts || 1) || 1) - 1),
+                mistakeCount: wrongChecks,
                 mistakeRate: totalChecks > 0 ? wrongChecks / totalChecks : (r.passed ? 0 : 1),
                 accuracy: accuracy,
                 payload: {
@@ -536,6 +610,21 @@ const IP2LiveGameManager = {
                     solutionCIDR: r.solutionCIDR || null,
                     solutionCIDRs: this._clonePlain(r.solutionCIDRs || []),
                     diagnosticReason: r.diagnosticReason || null,
+        if (gameplayId === 'ip_network_repair') {
+            const passed = r.passed !== false;
+            return {
+                attemptsUsed: 1,
+                maxAttempts: 1,
+                retries: passed ? 0 : 1,
+                mistakeCount: Number(r.mistakeCount || 0) || (passed ? 0 : 1),
+                mistakeRate: passed ? 0 : 1,
+                accuracy: passed ? 1 : 0,
+                payload: {
+                    taskType: r.taskType || null,
+                    expected: this._clonePlain(r.expected || null),
+                    expectedText: r.expectedText || null,
+                    submitted: this._clonePlain(r.submitted || null),
+                    scenario: this._clonePlain(r.scenario || null),
                 },
             };
         }
@@ -543,6 +632,7 @@ const IP2LiveGameManager = {
             attemptsUsed: Number(r.attemptsUsed || 0) || 0,
             maxAttempts: Number(r.maxAttempts || 0) || 0,
             retries: Number(r.retries || 0) || 0,
+            mistakeCount: Number(r.mistakeCount || 0) || 0,
             mistakeRate: Number(r.mistakeRate || 0) || 0,
             accuracy: Number(r.accuracy || 0) || 0,
             payload: this._clonePlain(r || {}),
@@ -745,10 +835,28 @@ const IP2LiveGameManager = {
                     _fromGameManager: true,
                     showIntro: opts.showIntro,
                     mode: opts.mode || 'push',
+            if (node.id === 'ip_class_wires_harder' && IP2Live.HarderWiresGameplayManager && typeof IP2Live.HarderWiresGameplayManager.launchHarderWireGameplay === 'function') {
+                return IP2Live.HarderWiresGameplayManager.launchHarderWireGameplay(Object.assign({}, opts, {
+                    _fromGameManager: true,
+                    _reservedAttempt: (questId || spec.id) + ':' + (objectiveId || spec.objectiveId),
+                    wireCount: opts.wireCount !== undefined ? opts.wireCount : spec.wireCount,
+                }));
+            }
+            if (node.id === 'ip_network_repair' && IP2Live.NetworkRepairGameplayManager && typeof IP2Live.NetworkRepairGameplayManager.launchNetworkRepairGameplay === 'function') {
+                return IP2Live.NetworkRepairGameplayManager.launchNetworkRepairGameplay(Object.assign({}, opts, {
+                    _fromGameManager: true,
+                    showIntro: opts.showIntro,
+                    mode: 'replace',
                 }));
             }
             return false;
         };
+
+        if (opts.skipBeforeDialogues) {
+            this._setState(this.STATE.DIALOGUE_BEFORE, payload);
+            openGameplay();
+            return true;
+        }
 
         this._setState(this.STATE.DIALOGUE_BEFORE, payload);
         const hadDialogue = this._runTimingDialogues(payload, 'before', openGameplay);
@@ -764,10 +872,18 @@ const IP2LiveGameManager = {
         this.emit('gameplay.mistake', data);
         const active = this._reportActiveAttempt(gameplayId) || this._openReportAttempt(gameplayId, data);
         if (active) {
+            const mistakesThisTry = Array.isArray(data.mistakes) ? data.mistakes.length : 0;
             active.mistakeCount = (active.mistakeCount || 0) + 1;
             if (Array.isArray(data.mistakes) && data.mistakes.length) {
                 for (let i = 0; i < data.mistakes.length; i++) active.mistakes.push(this._clonePlain(data.mistakes[i]));
             }
+            active.mistakeEvents.push({
+                tryNumber: active.mistakeCount,
+                timestamp: Date.now(),
+                mistakesThisTry: mistakesThisTry,
+                attemptsRemaining: Number(data.attemptsRemaining || 0) || 0,
+                mistakes: this._clonePlain(data.mistakes || []),
+            });
             this._logTelemetryEvent('attempt_mistake', {
                 attemptId: active.attemptId,
                 sessionId: active.sessionId,
@@ -777,14 +893,35 @@ const IP2LiveGameManager = {
                 objectiveId: data.objectiveId || active.objectiveId || null,
                 mistakeCount: active.mistakeCount,
                 payload: {
+                    tryNumber: active.mistakeCount,
+                    mistakesThisTry: mistakesThisTry,
                     mistakes: this._clonePlain(data.mistakes || []),
                     attemptsRemaining: Number(data.attemptsRemaining || 0) || 0,
                 },
             });
         }
 
+        if (
+            gameplayId === 'ip_network_repair' &&
+            IP2Live.IPNetworkRepairTutorial &&
+            typeof IP2Live.IPNetworkRepairTutorial.showQuestOneCorrection === 'function'
+        ) {
+            const mistakes = Array.isArray(data.mistakes) ? data.mistakes : [];
+            IP2Live.IPNetworkRepairTutorial.showQuestOneCorrection(
+                mistakes[0] || {},
+                data.scenario || {},
+                data.onComplete
+            );
+            return true;
+        }
+
         const runDynamicFeedback = () => {
             if (gameplayId === 'ip_class_wires' && IP2Live.IPWiresTutorial && typeof IP2Live.IPWiresTutorial.showMistakeAnalysis === 'function') {
+            if (gameplayId !== 'ip_class_wires') {
+                if (typeof data.onComplete === 'function') data.onComplete();
+                return false;
+            }
+            if (IP2Live.IPWiresTutorial && typeof IP2Live.IPWiresTutorial.showMistakeAnalysis === 'function') {
                 IP2Live.IPWiresTutorial.showMistakeAnalysis(
                     data.mistakes || [],
                     data.attemptsRemaining || 0,
@@ -846,8 +983,37 @@ const IP2LiveGameManager = {
             const hadDialogue = this._runTimingDialogues(data, 'after');
             if (!hadDialogue && IP2Live.IPWiresTutorial && typeof IP2Live.IPWiresTutorial.showPacketsShifted === 'function') {
                 IP2Live.IPWiresTutorial.showPacketsShifted();
+        if (gameplayId === 'ip_class_wires_harder') {
+            if (spec.tutorial) {
+                const hadDialogueHarder = this._runTimingDialogues(data, 'after');
+                if (!hadDialogueHarder && IP2Live.IPWiresHarderTutorial && typeof IP2Live.IPWiresHarderTutorial.showPacketsShifted === 'function') {
+                    IP2Live.IPWiresHarderTutorial.showPacketsShifted();
+                }
             }
             return true;
+        }
+
+        if (gameplayId === 'ip_class_wires') {
+            if (spec.tutorial) {
+                const hadDialogue = this._runTimingDialogues(data, 'after');
+                if (!hadDialogue && IP2Live.IPWiresTutorial && typeof IP2Live.IPWiresTutorial.showPacketsShifted === 'function') {
+                    IP2Live.IPWiresTutorial.showPacketsShifted();
+                }
+                return true;
+            }
+
+            if (IP2Live.GameplayManager && typeof IP2Live.GameplayManager._sendStageBackToFirstWire === 'function') {
+                IP2Live.GameplayManager._sendStageBackToFirstWire(spec);
+                return true;
+            }
+        }
+
+        if (
+            gameplayId === 'ip_network_repair' &&
+            IP2Live.NetworkRepairGameplayManager &&
+            typeof IP2Live.NetworkRepairGameplayManager._handleRollbackFailure === 'function'
+        ) {
+            return IP2Live.NetworkRepairGameplayManager._handleRollbackFailure(data);
         }
 
         if (IP2Live.GameplayManager && typeof IP2Live.GameplayManager._sendStageBackToFirstWire === 'function') {
@@ -855,6 +1021,20 @@ const IP2LiveGameManager = {
             return true;
         }
         return false;
+    },
+
+    handleGameplayCancelled(gameplayId, payload) {
+        const data = Object.assign({}, payload || {}, {
+            gameplayId,
+            trigger: 'gameplay.cancelled',
+        });
+        this._activeGameplayNode = null;
+        this.emit('gameplay.cancelled', data);
+        this._closeReportAttempt(gameplayId, Object.assign({}, data, {
+            result: Object.assign({}, data.result || {}, { cancelled: true }),
+        }), false);
+        this._setState(this.STATE.NEXT_NODE, data);
+        return true;
     },
 
     handleQuestObjectiveCompleted(result) {
@@ -1029,15 +1209,17 @@ const IP2LiveGameManager = {
         const catalog = this.getGameplayCatalog();
         for (let i = 0; i < catalog.length; i++) {
             const gameplay = catalog[i];
-            if (!gameplay || Number(gameplay.mapId) !== stageId) continue;
+            if (!gameplay) continue;
             const quests = Array.isArray(gameplay.quests) ? gameplay.quests : [];
             for (let q = 0; q < quests.length; q++) {
                 const spec = quests[q];
                 if (!spec || !spec.id || !spec.objectiveId) continue;
+                const specMapId = Number(spec.mapId || gameplay.mapId);
+                if (specMapId !== stageId) continue;
                 registeredQuestIds.push(spec.id);
-                if (this._registeredGameplayQuestIds[spec.id] && qm.quests && qm.quests[spec.id]) continue;
 
                 const target = this._cloneTile(spec.targetTile || { x: 0, y: 0, z: 0 });
+                const gameplayForSpec = Object.assign({}, gameplay, { mapId: stageId });
                 qm.registerQuest({
                     id: spec.id,
                     title: 'QUEST AREA',
@@ -1051,7 +1233,7 @@ const IP2LiveGameManager = {
                             targetTile: target,
                             completionRadiusTiles: 0.55,
                             isComplete: (context, activeQuestManager) => {
-                                return this._runGameplayObjectiveHandler(gameplay, spec, context, activeQuestManager);
+                                return this._runGameplayObjectiveHandler(gameplayForSpec, spec, context, activeQuestManager);
                             },
                         },
                     ],
@@ -1195,23 +1377,39 @@ const IP2LiveGameManager = {
         }
     },
 
+    _slotSnapshotMapKey(slot, profileName) {
+        const slotKey = String(Number(slot) || 0);
+        const name = String(profileName || '').trim();
+        return name ? ('profile:' + name + ':slot:' + slotKey) : slotKey;
+    },
+
     _persistSlotSnapshot(slot, snapshot) {
         const key = String(Number(slot) || 0);
         if (key === '0' || !snapshot) return false;
         const map = this._readSlotSnapshotMap();
-        map[key] = Object.assign({}, snapshot, {
+        const profileName = String(snapshot.profileName || '').trim();
+        const storageKey = this._slotSnapshotMapKey(slot, profileName);
+        map[storageKey] = Object.assign({}, snapshot, {
             slot: Number(slot) || 0,
             savedAt: Number(snapshot.savedAt) || Date.now(),
         });
         return this._writeSlotSnapshotMap(map);
     },
 
-    _readSlotSnapshot(slot) {
+    _readSlotSnapshot(slot, profileName) {
         const key = String(Number(slot) || 0);
         if (key === '0') return null;
         const map = this._readSlotSnapshotMap();
-        const snapshot = map[key];
-        return snapshot && typeof snapshot === 'object' ? snapshot : null;
+        const name = String(profileName || '').trim();
+        const exactKey = this._slotSnapshotMapKey(slot, name);
+        const exactSnapshot = map[exactKey];
+        if (exactSnapshot && typeof exactSnapshot === 'object') return exactSnapshot;
+
+        const legacySnapshot = map[key];
+        if (!legacySnapshot || typeof legacySnapshot !== 'object') return null;
+        const legacyProfile = String(legacySnapshot.profileName || '').trim();
+        if (name && legacyProfile && legacyProfile !== name) return null;
+        return legacySnapshot;
     },
 
     async _readProfileSlotSnapshot(profileName, slot) {
@@ -1241,15 +1439,10 @@ const IP2LiveGameManager = {
 
         let profileSnapshot = null;
         if (profileName) profileSnapshot = await this._readProfileSlotSnapshot(profileName, resolvedSlot);
-        const cachedSnapshot = this._readSlotSnapshot(resolvedSlot);
+        const cachedSnapshot = this._readSlotSnapshot(resolvedSlot, profileName);
 
-        if (!profileSnapshot && !cachedSnapshot) return null;
-        if (profileSnapshot && !cachedSnapshot) return profileSnapshot;
-        if (!profileSnapshot && cachedSnapshot) return cachedSnapshot;
-
-        const pTime = Number(profileSnapshot.savedAt) || 0;
-        const cTime = Number(cachedSnapshot.savedAt) || 0;
-        return cTime >= pTime ? cachedSnapshot : profileSnapshot;
+        if (profileSnapshot) return profileSnapshot;
+        return cachedSnapshot || null;
     },
 
     async _saveCoreGame(slot) {
@@ -1308,6 +1501,29 @@ const IP2LiveGameManager = {
         g.hero.position.x = x;
         g.hero.position.y = y;
         g.hero.position.z = z;
+        return true;
+    },
+
+    _buildSlotRestoreContext(slot, snapshot) {
+        const snap = snapshot || {};
+        const mapId = Number(snap.mapId) || 0;
+        return {
+            version: 'slot-restore-20260530-01',
+            slot: Number(slot) || 0,
+            mapId: mapId,
+            profileName: String(snap.profileName || '').trim() || null,
+            questState: this._clonePlain(snap.questState || null),
+            heroPosition: this._clonePlain(snap.heroPosition || null),
+            restoredAt: Date.now(),
+            resetBypassConsumed: false,
+        };
+    },
+
+    _attachPendingSlotRestore(game, context) {
+        if (!game || !context) return false;
+        game._ip2livePendingSlotRestore = context;
+        const scene = this._currentScene();
+        if (scene) scene._ip2livePendingSlotRestore = context;
         return true;
     },
 
@@ -1380,6 +1596,8 @@ const IP2LiveGameManager = {
 
         const qm = IP2Live.QuestManager;
         const positionApplied = this._applyHeroPosition(game, snapshot.heroPosition);
+        const restoreContext = this._buildSlotRestoreContext(slot, snapshot);
+        this._attachPendingSlotRestore(game, restoreContext);
         if (snapshot.heroPosition) {
             game._ip2livePendingHeroPosition = {
                 x: Number(snapshot.heroPosition.x),
@@ -1394,6 +1612,9 @@ const IP2LiveGameManager = {
         if (snapshot.questState && qm && typeof qm.restoreProgress === 'function') {
             qm.restoreProgress(snapshot.questState, {
                 mapId: Number(game.currentMapID) || snapshot.mapId || this._currentMapId(),
+                slot: slot,
+                restoreContext: restoreContext,
+                preserveMapEntryReset: true,
             });
             return { restored: true, slot: slot, snapshot: snapshot, positionApplied: positionApplied };
         }
@@ -1570,11 +1791,11 @@ const IP2LiveGameManager = {
     },
 
     _playCursor() {
-        try { if (Data.Systems.soundCursor) Data.Systems.soundCursor.playSound(); } catch (e) {}
+        try { if (Data.Systems.soundCursor) Data.Systems.soundCursor.playSound(); } catch (e) { }
     },
 
     _playConfirm() {
-        try { if (Data.Systems.soundConfirmation) Data.Systems.soundConfirmation.playSound(); } catch (e) {}
+        try { if (Data.Systems.soundConfirmation) Data.Systems.soundConfirmation.playSound(); } catch (e) { }
     },
 
     _sceneKey(scene, mapId) {
