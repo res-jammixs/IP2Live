@@ -50,7 +50,9 @@ class IP2LiveCIDRQuarantineGameplayScreen extends Scene.Base {
         const profile = spec && spec.profile ? spec.profile : {};
         const questIndex = Number(profile.index || 1) || 1;
         const classInfo = this._randomCIDRClass();
-        const targetAddedBits = this._randomInt(classInfo.minAddedBits, classInfo.maxAddedBits);
+        const challengeMode = questIndex > 1;
+        const minAddedBits = challengeMode ? Math.min(classInfo.maxAddedBits, Math.max(classInfo.minAddedBits, 4)) : classInfo.minAddedBits;
+        const targetAddedBits = this._randomInt(minAddedBits, classInfo.maxAddedBits);
         const targetCIDR = classInfo.originalCIDR + targetAddedBits;
         const optimizedHostBits = Math.max(0, 32 - targetCIDR);
         const optimizedCapacity = this._capacityForHostBits(optimizedHostBits);
@@ -64,19 +66,19 @@ class IP2LiveCIDRQuarantineGameplayScreen extends Scene.Base {
             { col: 3, row: 3 },
         ];
         const start = starts[(questIndex - 1) % starts.length];
-        const solutionMoves = this._movesForAddedBits(targetAddedBits);
-        const solutionPath = [this._cloneTile(start)];
-        let cursor = this._cloneTile(start);
-        for (let i = 0; i < solutionMoves.length; i++) {
-            cursor = this._moveTile(cursor, solutionMoves[i]);
-            solutionPath.push(this._cloneTile(cursor));
-        }
+        const solutionRoute = this._generateSolutionRoute(start, targetAddedBits, questIndex);
+        const solutionMoves = solutionRoute.moves;
+        const solutionPath = solutionRoute.path;
+        const cursor = this._cloneTile(solutionPath[solutionPath.length - 1]);
         const blockedKeys = {};
         for (let i = 0; i < solutionPath.length; i++) blockedKeys[this._tileKey(solutionPath[i])] = true;
         const edgeBuffer = this._virusEdgeBuffer();
         const solutionBufferKeys = this._buildSolutionBufferKeys(solutionPath);
 
         const viruses = [];
+        if (challengeMode) {
+            this._addDefaultPathDecoyViruses(viruses, blockedKeys, start, cursor, solutionPath, solutionBufferKeys, edgeBuffer, questIndex);
+        }
         const desiredVirusCount = Math.min(34, 18 + questIndex * 3);
         let seed = (questIndex * 73 + Math.floor(Math.random() * 997)) % 997;
         for (let tries = 0; viruses.length < desiredVirusCount && tries < 900; tries++) {
@@ -1153,6 +1155,117 @@ class IP2LiveCIDRQuarantineGameplayScreen extends Scene.Base {
         return tools.formatCIDR(tools.networkStart(base >>> 0, p), p);
     }
 
+    _generateSolutionRoute(start, bits, questIndex) {
+        const challengeMode = Number(questIndex || 1) > 1;
+        if (!challengeMode) {
+            return this._routeFromMoves(start, this._movesForAddedBits(bits));
+        }
+
+        const candidates = this._routeCandidatesForBits(start, bits, questIndex);
+        if (candidates.length) {
+            candidates.sort((a, b) => b.score - a.score);
+            const topCount = Math.min(4, candidates.length);
+            const chosen = candidates[this._randomInt(0, topCount - 1)];
+            return { moves: chosen.moves.slice(), path: chosen.path.map((t) => this._cloneTile(t)) };
+        }
+
+        return this._routeFromMoves(start, this._movesForAddedBits(bits));
+    }
+
+    _routeCandidatesForBits(start, bits, questIndex) {
+        const total = Math.max(1, Number(bits) || 1);
+        const candidates = [];
+        const directions = this._routeDirectionOrder(questIndex);
+        const maxMoves = Math.min(9, Math.max(3, total));
+        const startTile = this._cloneTile(start);
+        const used = {};
+        used[this._tileKey(startTile)] = true;
+
+        const visit = (tile, remaining, moves, path) => {
+            if (candidates.length >= 420) return;
+            if (remaining === 0) {
+                const score = this._scoreRouteCandidate(startTile, path, moves);
+                if (score > 0) {
+                    candidates.push({
+                        moves: moves.slice(),
+                        path: path.map((t) => this._cloneTile(t)),
+                        score,
+                    });
+                }
+                return;
+            }
+            if (moves.length >= maxMoves) return;
+            if (remaining > (maxMoves - moves.length) * 4) return;
+
+            for (let i = 0; i < directions.length; i++) {
+                const direction = directions[i];
+                const weight = this.directionWeights[direction] || 0;
+                if (weight <= 0 || weight > remaining) continue;
+                const next = this._moveTile(tile, direction);
+                const key = this._tileKey(next);
+                if (!this._inGrid(next) || used[key]) continue;
+                used[key] = true;
+                moves.push(direction);
+                path.push(next);
+                visit(next, remaining - weight, moves, path);
+                path.pop();
+                moves.pop();
+                delete used[key];
+            }
+        };
+
+        visit(startTile, total, [], [startTile]);
+        return candidates;
+    }
+
+    _routeDirectionOrder(questIndex) {
+        const orders = [
+            ['R', 'D', 'U', 'L'],
+            ['D', 'R', 'U', 'L'],
+            ['R', 'U', 'D', 'L'],
+            ['U', 'R', 'D', 'L'],
+        ];
+        return orders[Math.abs(Number(questIndex || 1)) % orders.length];
+    }
+
+    _scoreRouteCandidate(start, path, moves) {
+        if (!path || path.length < 3 || !moves || moves.length < 2) return -100;
+        const end = path[path.length - 1];
+        const distinct = {};
+        let turns = 0;
+        for (let i = 0; i < moves.length; i++) {
+            distinct[moves[i]] = true;
+            if (i > 0 && moves[i] !== moves[i - 1]) turns++;
+        }
+        const distinctCount = Object.keys(distinct).length;
+        if (distinctCount < 2 || turns < 1) return -100;
+
+        const rowDelta = Math.abs(end.row - start.row);
+        const colDelta = Math.abs(end.col - start.col);
+        let score = 0;
+        score += distinctCount * 22;
+        score += turns * 14;
+        score += Math.min(5, rowDelta) * 12;
+        score += Math.min(6, colDelta) * 4;
+        score += Math.min(8, moves.length) * 2;
+        if (end.row === start.row) score -= 55;
+        if (rowDelta === 0) score -= 25;
+        if (this._manhattan(start, end) < 3) score -= 20;
+        if (moves.length > 7) score -= (moves.length - 7) * 4;
+        return score;
+    }
+
+    _routeFromMoves(start, moves) {
+        const solutionMoves = (moves || []).slice();
+        const solutionPath = [this._cloneTile(start)];
+        let cursor = this._cloneTile(start);
+        for (let i = 0; i < solutionMoves.length; i++) {
+            cursor = this._moveTile(cursor, solutionMoves[i]);
+            solutionPath.push(this._cloneTile(cursor));
+        }
+        return { moves: solutionMoves, path: solutionPath };
+    }
+
     _movesForAddedBits(bits) {
         const total = Math.max(1, Number(bits) || 1);
         const moves = [];
@@ -1163,6 +1276,114 @@ class IP2LiveCIDRQuarantineGameplayScreen extends Scene.Base {
         for (let i = 0; i < total - 4; i++) moves.push('R');
         moves.push('D');
         return moves;
+    }
+
+    _addDefaultPathDecoyViruses(viruses, blockedKeys, start, end, solutionPath, solutionBufferKeys, edgeBuffer, questIndex) {
+        const desired = Math.min(3, Math.max(1, Number(questIndex || 2) - 1));
+        let placed = 0;
+        const passes = [
+            { respectSolutionBuffer: true, minSolutionDistance: 2 },
+            { respectSolutionBuffer: false, minSolutionDistance: 2 },
+            { respectSolutionBuffer: false, minSolutionDistance: 1 },
+        ];
+
+        for (let passIndex = 0; passIndex < passes.length && placed < desired; passIndex++) {
+            const pass = passes[passIndex];
+            const candidates = this._defaultPathDecoyCandidates(start, end, solutionPath);
+            for (let i = 0; i < candidates.length && placed < desired; i++) {
+                const tile = candidates[i].tile;
+                if (!this._canPlaceDecoyVirus(tile, blockedKeys, start, end, solutionPath, solutionBufferKeys, edgeBuffer, pass)) continue;
+                const key = this._tileKey(tile);
+                blockedKeys[key] = true;
+                viruses.push(this._cloneTile(tile));
+                placed++;
+            }
+        }
+
+        return placed;
+    }
+
+    _defaultPathDecoyCandidates(start, end, solutionPath) {
+        const directPath = this._directCorridorTiles(start, end);
+        const candidates = [];
+        const seen = {};
+        const midpoint = Math.max(0, Math.floor((directPath.length - 1) / 2));
+        for (let offset = 0; offset < directPath.length; offset++) {
+            const indexes = offset === 0 ? [midpoint] : [midpoint - offset, midpoint + offset];
+            for (let i = 0; i < indexes.length; i++) {
+                const index = indexes[i];
+                if (index < 0 || index >= directPath.length) continue;
+                const base = directPath[index];
+                this._pushDecoyCandidate(candidates, seen, base, 120 - offset * 8);
+                const neighbors = [
+                    { col: base.col + 1, row: base.row },
+                    { col: base.col - 1, row: base.row },
+                    { col: base.col, row: base.row + 1 },
+                    { col: base.col, row: base.row - 1 },
+                    { col: base.col + 2, row: base.row },
+                    { col: base.col - 2, row: base.row },
+                    { col: base.col, row: base.row + 2 },
+                    { col: base.col, row: base.row - 2 },
+                ];
+                for (let n = 0; n < neighbors.length; n++) {
+                    const distancePenalty = this._manhattan(base, neighbors[n]) * 4;
+                    const solutionDistance = this._distanceToTileList(neighbors[n], solutionPath);
+                    const solutionBonus = Math.min(3, solutionDistance) * 3;
+                    this._pushDecoyCandidate(candidates, seen, neighbors[n], 105 - offset * 8 - distancePenalty + solutionBonus);
+                }
+            }
+        }
+        candidates.sort((a, b) => b.score - a.score);
+        return candidates;
+    }
+
+    _pushDecoyCandidate(candidates, seen, tile, score) {
+        if (!this._inGrid(tile)) return false;
+        const key = this._tileKey(tile);
+        if (seen[key]) return false;
+        seen[key] = true;
+        candidates.push({ tile: this._cloneTile(tile), score });
+        return true;
+    }
+
+    _directCorridorTiles(start, end) {
+        const path = [this._cloneTile(start)];
+        const cursor = this._cloneTile(start);
+        const horizontal = end.col >= cursor.col ? 'R' : 'L';
+        while (cursor.col !== end.col) {
+            cursor.col += horizontal === 'R' ? 1 : -1;
+            path.push(this._cloneTile(cursor));
+        }
+        const vertical = end.row >= cursor.row ? 'D' : 'U';
+        while (cursor.row !== end.row) {
+            cursor.row += vertical === 'D' ? 1 : -1;
+            path.push(this._cloneTile(cursor));
+        }
+        return path;
+    }
+
+    _canPlaceDecoyVirus(tile, blockedKeys, start, end, solutionPath, solutionBufferKeys, edgeBuffer, options) {
+        const opts = options || {};
+        if (!this._inGrid(tile)) return false;
+        const key = this._tileKey(tile);
+        if (blockedKeys && blockedKeys[key]) return false;
+        if (this._sameTile(tile, start) || this._sameTile(tile, end)) return false;
+        if (edgeBuffer > 0 && this._isInEdgeBuffer(tile, edgeBuffer)) return false;
+        if (opts.respectSolutionBuffer && solutionBufferKeys && solutionBufferKeys[key]) return false;
+        if (this._distanceToTileList(tile, solutionPath) <= Math.max(0, Number(opts.minSolutionDistance) || 0)) return false;
+        if (this._manhattan(tile, start) <= 1 || this._manhattan(tile, end) <= 1) return false;
+        return true;
+    }
+
+    _distanceToTileList(tile, tiles) {
+        if (!tile || !tiles || !tiles.length) return 99;
+        let best = 99;
+        for (let i = 0; i < tiles.length; i++) {
+            const d = this._manhattan(tile, tiles[i]);
+            if (d < best) best = d;
+            if (best <= 0) return best;
+        }
+        return best;
     }
 
     _randomInt(min, max) {
