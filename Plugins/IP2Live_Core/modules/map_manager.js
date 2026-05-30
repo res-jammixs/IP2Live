@@ -424,6 +424,8 @@ const MapManager = {
                     IP2Live.PatchPanelGameplayManager,
                     IP2Live.CIDRPanelGameplayManager,
                     IP2Live.SubnetSimulatorGameplayManager,
+                    IP2Live.CIDRQuarantineGameplayManager,
+                    IP2Live.CIDRQuarantineMatrixGameplayManager,
                 ];
                 for (let g = 0; g < gameplayQuestManagers.length; g++) {
                     const gameplayManager = gameplayQuestManagers[g];
@@ -732,7 +734,7 @@ const MapManager = {
         if (!stage || !music || !music.ZONE || typeof music.play !== 'function') return false;
 
         let zone = null;
-        if (stage.stage === 1) zone = music.ZONE.STAGE_1;
+        if (stage.stage === 1 || stage.stage === 2 || stage.stage === 3) zone = music.ZONE.STAGE_1;
         if (!zone) return false;
 
         const musicKey = String(mapId) + ':' + zone;

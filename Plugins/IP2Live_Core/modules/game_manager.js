@@ -104,6 +104,24 @@ const IP2LiveGameManager = {
                 worldTitle: true,
                 gameplayNodes: ['ip_network_repair'],
             },
+            11: {
+                id: 11,
+                name: 'Stage 3 Level 1',
+                stage: 3,
+                level: 1,
+                spawn: { x: 6, y: 0, z: 17 },
+                worldTitle: true,
+                gameplayNodes: ['ip_cidr_quarantine'],
+            },
+            12: {
+                id: 12,
+                name: 'Stage 3 Level 2',
+                stage: 3,
+                level: 2,
+                spawn: { x: 6, y: 0, z: 17 },
+                worldTitle: true,
+                gameplayNodes: ['ip_cidr_quarantine_matrix'],
+            },
         },
         gameplayNodes: {
             ip_class_wires: {
@@ -130,6 +148,17 @@ const IP2LiveGameManager = {
                 manager: 'SubnetSimulatorGameplayManager',
                 method: 'launchSubnetSimulatorGameplay',
             },
+            ip_cidr_quarantine: {
+                id: 'ip_cidr_quarantine',
+                mapId: 11,
+                manager: 'CIDRQuarantineGameplayManager',
+                method: 'launchCIDRQuarantineGameplay',
+            },
+            ip_cidr_quarantine_matrix: {
+                id: 'ip_cidr_quarantine_matrix',
+                mapId: 12,
+                manager: 'CIDRQuarantineMatrixGameplayManager',
+                method: 'launchCIDRQuarantineMatrixGameplay',
             ip_class_wires_harder: {
                 id: 'ip_class_wires_harder',
                 mapId: 5,
@@ -218,6 +247,37 @@ const IP2LiveGameManager = {
                 { id: 'stage.5.ip_subnetsim.01', objectiveId: 'solve_subnet_sim_01', title: 'SOLVE SUBNET SIMULATOR', label: 'Subnet Simulator', targetTile: { x: 16, y: 0, z: 20 } },
             ],
         },
+        ip_cidr_quarantine: {
+            gameplayId: 'ip_cidr_quarantine',
+            mapId: 11,
+            label: 'CIDR Quarantine',
+            competencyKey: 'cidr_quarantine_zone',
+            competencyLabel: 'CIDR quarantine zone construction',
+            targetClearMs: 150000,
+            objectiveHandler: { manager: 'CIDRQuarantineGameplayManager', method: '_handleObjective' },
+            failureHandler: { manager: 'CIDRQuarantineGameplayManager', method: 'recoverAfterFailure' },
+            quests: [
+                { id: 'stage.11.cidr_quarantine.01.tutorial', objectiveId: 'solve_cidr_quarantine_01', title: 'CALIBRATE QUARANTINE NODE', label: 'Quarantine Node 01', tutorial: true, targetTile: { x: 13, y: 0, z: 9 }, profile: { index: 1, minHosts: 18, maxHosts: 34 } },
+                { id: 'stage.11.cidr_quarantine.02', objectiveId: 'solve_cidr_quarantine_02', title: 'TRAP ROGUE AI CLUSTER', label: 'Quarantine Node 02', targetTile: { x: 25, y: 0, z: 10 }, profile: { index: 2, minHosts: 26, maxHosts: 58 } },
+                { id: 'stage.11.cidr_quarantine.03', objectiveId: 'solve_cidr_quarantine_03', title: 'SEAL INFECTED SEGMENT', label: 'Quarantine Node 03', targetTile: { x: 8, y: 0, z: 21 }, profile: { index: 3, minHosts: 42, maxHosts: 92 } },
+                { id: 'stage.11.cidr_quarantine.04', objectiveId: 'solve_cidr_quarantine_04', title: 'LOCK APEX RELAY AI', label: 'Quarantine Node 04', targetTile: { x: 23, y: 0, z: 27 }, profile: { index: 4, minHosts: 70, maxHosts: 120 } },
+            ],
+        },
+        ip_cidr_quarantine_matrix: {
+            gameplayId: 'ip_cidr_quarantine_matrix',
+            mapId: 12,
+            label: 'CIDR Quarantine Matrix',
+            competencyKey: 'cidr_multi_zone_quarantine',
+            competencyLabel: 'Multi-zone CIDR quarantine construction',
+            targetClearMs: 180000,
+            objectiveHandler: { manager: 'CIDRQuarantineMatrixGameplayManager', method: '_handleObjective' },
+            failureHandler: { manager: 'CIDRQuarantineMatrixGameplayManager', method: 'recoverAfterFailure' },
+            quests: [
+                { id: 'stage.12.cidr_matrix.01.tutorial', objectiveId: 'solve_cidr_matrix_01', title: 'CALIBRATE MATRIX NODE', label: 'Matrix Node 01', tutorial: true, targetTile: { x: 7, y: 0, z: 7 }, profile: { index: 1, zoneCount: 2, parentPrefix: 23 } },
+                { id: 'stage.12.cidr_matrix.02', objectiveId: 'solve_cidr_matrix_02', title: 'SPLIT AI QUARANTINE', label: 'Matrix Node 02', targetTile: { x: 20, y: 0, z: 8 }, profile: { index: 2, zoneCount: 2, parentPrefix: 23 } },
+                { id: 'stage.12.cidr_matrix.03', objectiveId: 'solve_cidr_matrix_03', title: 'SEAL SHARD TRIAD', label: 'Matrix Node 03', targetTile: { x: 27, y: 0, z: 17 }, profile: { index: 3, zoneCount: 3, parentPrefix: 23 } },
+                { id: 'stage.12.cidr_matrix.04', objectiveId: 'solve_cidr_matrix_04', title: 'LOCK RELAY MATRIX', label: 'Matrix Node 04', targetTile: { x: 11, y: 0, z: 25 }, profile: { index: 4, zoneCount: 3, parentPrefix: 22 } },
+                { id: 'stage.12.cidr_matrix.05', objectiveId: 'solve_cidr_matrix_05', title: 'FINALIZE AI CONTAINMENT', label: 'Matrix Node 05', targetTile: { x: 24, y: 0, z: 29 }, profile: { index: 5, zoneCount: 3, parentPrefix: 22 } },
         ip_network_repair: {
             gameplayId: 'ip_network_repair',
             mapId: 15,
@@ -530,6 +590,26 @@ const IP2LiveGameManager = {
                 },
             };
         }
+        if (gameplayId === 'ip_cidr_quarantine' || gameplayId === 'ip_cidr_quarantine_matrix') {
+            const attemptsUsed = Number(r.attemptsUsed || 0) || 0;
+            const maxAttempts = Number(r.maxAttempts || 3) || 3;
+            const passed = r.passed !== false;
+            return {
+                attemptsUsed: attemptsUsed,
+                maxAttempts: maxAttempts,
+                retries: Number(r.retries || Math.max(0, attemptsUsed - 1)) || 0,
+                mistakeRate: maxAttempts > 0 ? Math.max(0, Math.min(1, passed ? Math.max(0, attemptsUsed - 1) / maxAttempts : attemptsUsed / maxAttempts)) : 0,
+                accuracy: passed ? Math.max(0, Math.min(1, (maxAttempts - Math.max(0, attemptsUsed - 1)) / maxAttempts)) : 0,
+                payload: {
+                    problemId: r.problemId || null,
+                    baseCIDR: r.baseCIDR || null,
+                    hostDemand: r.hostDemand || null,
+                    zoneCount: r.zoneCount || null,
+                    selectedCIDR: r.selectedCIDR || null,
+                    selectedCIDRs: this._clonePlain(r.selectedCIDRs || []),
+                    solutionCIDR: r.solutionCIDR || null,
+                    solutionCIDRs: this._clonePlain(r.solutionCIDRs || []),
+                    diagnosticReason: r.diagnosticReason || null,
         if (gameplayId === 'ip_network_repair') {
             const passed = r.passed !== false;
             return {
@@ -743,6 +823,18 @@ const IP2LiveGameManager = {
                     mode: 'replace',
                 }));
             }
+            if (node.id === 'ip_cidr_quarantine' && IP2Live.CIDRQuarantineGameplayManager && typeof IP2Live.CIDRQuarantineGameplayManager.launchCIDRQuarantineGameplay === 'function') {
+                return IP2Live.CIDRQuarantineGameplayManager.launchCIDRQuarantineGameplay(Object.assign({}, opts, {
+                    _fromGameManager: true,
+                    showIntro: opts.showIntro,
+                    mode: opts.mode || 'push',
+                }));
+            }
+            if (node.id === 'ip_cidr_quarantine_matrix' && IP2Live.CIDRQuarantineMatrixGameplayManager && typeof IP2Live.CIDRQuarantineMatrixGameplayManager.launchCIDRQuarantineMatrixGameplay === 'function') {
+                return IP2Live.CIDRQuarantineMatrixGameplayManager.launchCIDRQuarantineMatrixGameplay(Object.assign({}, opts, {
+                    _fromGameManager: true,
+                    showIntro: opts.showIntro,
+                    mode: opts.mode || 'push',
             if (node.id === 'ip_class_wires_harder' && IP2Live.HarderWiresGameplayManager && typeof IP2Live.HarderWiresGameplayManager.launchHarderWireGameplay === 'function') {
                 return IP2Live.HarderWiresGameplayManager.launchHarderWireGameplay(Object.assign({}, opts, {
                     _fromGameManager: true,
@@ -824,6 +916,7 @@ const IP2LiveGameManager = {
         }
 
         const runDynamicFeedback = () => {
+            if (gameplayId === 'ip_class_wires' && IP2Live.IPWiresTutorial && typeof IP2Live.IPWiresTutorial.showMistakeAnalysis === 'function') {
             if (gameplayId !== 'ip_class_wires') {
                 if (typeof data.onComplete === 'function') data.onComplete();
                 return false;
@@ -872,6 +965,24 @@ const IP2LiveGameManager = {
         this._closeReportAttempt(gameplayId, data, false);
         this._setState(this.STATE.DIALOGUE_AFTER, data);
 
+        const catalog = gameplayId && this.gameplayCatalog ? this.gameplayCatalog[gameplayId] : null;
+        const failureHandler = catalog && catalog.failureHandler ? catalog.failureHandler : null;
+        if (failureHandler) {
+            const owner = IP2Live && failureHandler.manager ? IP2Live[failureHandler.manager] : null;
+            const methodName = failureHandler.method;
+            if (owner && typeof owner[methodName] === 'function') {
+                const hadDialogue = this._runTimingDialogues(data, 'after', function () {
+                    owner[methodName](spec, data);
+                });
+                if (!hadDialogue) owner[methodName](spec, data);
+                return true;
+            }
+        }
+
+        if (spec.tutorial) {
+            const hadDialogue = this._runTimingDialogues(data, 'after');
+            if (!hadDialogue && IP2Live.IPWiresTutorial && typeof IP2Live.IPWiresTutorial.showPacketsShifted === 'function') {
+                IP2Live.IPWiresTutorial.showPacketsShifted();
         if (gameplayId === 'ip_class_wires_harder') {
             if (spec.tutorial) {
                 const hadDialogueHarder = this._runTimingDialogues(data, 'after');
