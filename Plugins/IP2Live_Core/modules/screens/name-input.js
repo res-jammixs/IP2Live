@@ -24,6 +24,11 @@ class IP2LiveNameInputScreen extends Scene.Base {
         this.bgFx = IP2Live.BgFx.create();
         this.cornerGlitches = [];
         this._cornerGlitchesSeeded = false;
+        this.netBgPackets = [];
+        this.netBgBits = [];
+        this.netBgNodes = [];
+        this.netBgWires = [];
+        this._netBgSeedSize = null;
     }
 
     async load() {
@@ -31,6 +36,7 @@ class IP2LiveNameInputScreen extends Scene.Base {
         const cW = Common.Platform.ctx.canvas.width;
         const cH = Common.Platform.ctx.canvas.height;
         this.bgFx.seed(cW, cH);
+        this._seedNetBackdrop(cW, cH);
         this._cornerGlitchesSeeded = false;
         this._createInputElement();
         this.loading = false;
@@ -219,7 +225,7 @@ class IP2LiveNameInputScreen extends Scene.Base {
     update() {
         this.animTick++;
         this.scanlineOffset = (this.scanlineOffset + 0.5) % 4;
-        this.bgFx.update(this.animTick);
+        this._updateNetBackdrop();
         this._updateCornerGlitches();
         if (this.fadeIn < 1) {
             this.fadeIn = Math.min(1, this.fadeIn + 1 / this.entryDuration);
@@ -267,10 +273,12 @@ class IP2LiveNameInputScreen extends Scene.Base {
 
         ctx.save();
 
-        this.bgFx.drawBg(ctx, IP2Live.Assets.bgImage, cW, cH);
-        this.bgFx.drawParticles(ctx, sX);
+        if (!this._netBgSeedSize || this._netBgSeedSize[0] !== cW || this._netBgSeedSize[1] !== cH) {
+            this._seedNetBackdrop(cW, cH);
+        }
+        this._drawNetBackdrop(ctx, cW, cH, sX, sY);
 
-        ctx.fillStyle = 'rgba(0,0,0,0.78)';
+        ctx.fillStyle = 'rgba(0,0,0,0.62)';
         ctx.fillRect(0, 0, cW, cH);
 
         const easeIn = this._easeOutCubic(Math.min(this.fadeIn, 1));
@@ -565,6 +573,200 @@ class IP2LiveNameInputScreen extends Scene.Base {
             ctx.arc(dx, dotY, (1.1 + (isHover ? pulse * 0.8 : 0)) * scaleX, 0, Math.PI * 2);
             ctx.fill();
         }
+        ctx.restore();
+    }
+
+    _seedNetBackdrop(cW, cH) {
+        this._netBgSeedSize = [cW, cH];
+        this.netBgPackets = [];
+        this.netBgBits = [];
+        this.netBgNodes = [];
+        this.netBgWires = [];
+
+        for (let i = 0; i < 24; i++) {
+            this.netBgNodes.push({
+                x: Math.random() * cW,
+                y: Math.random() * cH,
+                r: 1.8 + Math.random() * 2.2,
+                p: Math.random() * Math.PI * 2
+            });
+        }
+
+        for (let i = 0; i < 10; i++) {
+            const y = cH * (0.14 + i * 0.08 + Math.random() * 0.02);
+            const slope = -0.20 - Math.random() * 0.2;
+            this.netBgWires.push({
+                y,
+                slope,
+                speed: 0.8 + Math.random() * 2.4,
+                phase: Math.random() * cW
+            });
+        }
+
+        for (let i = 0; i < 28; i++) {
+            this.netBgPackets.push({
+                wire: i % this.netBgWires.length,
+                t: Math.random(),
+                speed: 0.0012 + Math.random() * 0.0035,
+                size: 4 + Math.random() * 7,
+                color: Math.random() > 0.72 ? '#FF2D6D' : '#00E9FF'
+            });
+        }
+
+        const chars = ['0', '1', '::', '{}', '0x', '<>', '//', '10', '01', 'FF', '&&', '!='];
+        for (let i = 0; i < 80; i++) {
+            this.netBgBits.push({
+                x: Math.random() * cW,
+                y: Math.random() * cH,
+                vy: 0.14 + Math.random() * 0.55,
+                vx: -0.07 + Math.random() * 0.14,
+                size: 6 + Math.random() * 6,
+                alpha: 0.07 + Math.random() * 0.2,
+                glyph: chars[Math.floor(Math.random() * chars.length)],
+                flip: 24 + Math.floor(Math.random() * 64)
+            });
+        }
+    }
+
+    _updateNetBackdrop() {
+        if (!this._netBgSeedSize) return;
+        const cW = this._netBgSeedSize[0];
+        const cH = this._netBgSeedSize[1];
+
+        for (let i = 0; i < this.netBgPackets.length; i++) {
+            const p = this.netBgPackets[i];
+            p.t += p.speed;
+            if (p.t > 1.08) p.t = -0.08;
+        }
+
+        for (let i = 0; i < this.netBgBits.length; i++) {
+            const b = this.netBgBits[i];
+            b.y += b.vy;
+            b.x += b.vx;
+            b.flip--;
+            if (b.flip <= 0) {
+                b.flip = 24 + Math.floor(Math.random() * 64);
+                if (Math.random() > 0.65) b.glyph = (b.glyph === '0' ? '1' : '0');
+            }
+            if (b.y > cH + 24) {
+                b.y = -20;
+                b.x = Math.random() * cW;
+            }
+            if (b.x < -24) b.x = cW + 12;
+            if (b.x > cW + 24) b.x = -12;
+        }
+    }
+
+    _drawNetBackdrop(ctx, cW, cH, sX, sY) {
+        const base = ctx.createLinearGradient(0, 0, cW, cH);
+        base.addColorStop(0, '#030816');
+        base.addColorStop(0.38, '#041126');
+        base.addColorStop(1, '#0A0620');
+        ctx.fillStyle = base;
+        ctx.fillRect(0, 0, cW, cH);
+
+        this._drawNetSlantedGrid(ctx, cW, cH, sX, sY);
+        this._drawNetWireMatrix(ctx, cW, cH, sX, sY, this.animTick || 0);
+        this._drawNetPacketFlow(ctx, cW, cH, sX, sY);
+        this._drawNetFloatingBits(ctx, sX);
+
+        const vignette = ctx.createRadialGradient(cW * 0.5, cH * 0.48, cW * 0.08, cW * 0.5, cH * 0.5, cW * 0.74);
+        vignette.addColorStop(0, 'rgba(0,0,0,0)');
+        vignette.addColorStop(1, 'rgba(0,0,0,0.5)');
+        ctx.fillStyle = vignette;
+        ctx.fillRect(0, 0, cW, cH);
+    }
+
+    _drawNetSlantedGrid(ctx, cW, cH, sX, sY) {
+        const shear = 0.24;
+        ctx.save();
+        ctx.transform(1, 0, -shear, 1, cW * 0.24, 0);
+        for (let x = -cW * 0.4; x < cW * 1.35; x += 42 * sX) {
+            ctx.strokeStyle = 'rgba(0,232,255,0.10)';
+            ctx.lineWidth = 1 * sX;
+            ctx.beginPath();
+            ctx.moveTo(x, cH * 0.04);
+            ctx.lineTo(x, cH * 0.98);
+            ctx.stroke();
+        }
+        ctx.restore();
+
+        for (let y = cH * 0.12; y < cH; y += 28 * sY) {
+            const fade = 0.06 + ((y / cH) * 0.12);
+            ctx.strokeStyle = 'rgba(0,232,255,' + fade.toFixed(3) + ')';
+            ctx.lineWidth = 1 * sY;
+            ctx.beginPath();
+            ctx.moveTo(0, y);
+            ctx.lineTo(cW, y - 36 * sY);
+            ctx.stroke();
+        }
+    }
+
+    _drawNetWireMatrix(ctx, cW, cH, sX, sY, t) {
+        ctx.save();
+        for (let i = 0; i < this.netBgWires.length; i++) {
+            const w = this.netBgWires[i];
+            const pulse = 0.08 + 0.12 * (0.5 + 0.5 * Math.sin(t * 0.03 + i * 0.9));
+            ctx.strokeStyle = (i % 3 === 0)
+                ? 'rgba(255,52,112,' + (pulse * 0.9).toFixed(3) + ')'
+                : 'rgba(0,240,255,' + pulse.toFixed(3) + ')';
+            ctx.lineWidth = (i % 4 === 0 ? 1.4 : 1.0) * sX;
+            ctx.beginPath();
+            ctx.moveTo(-60 * sX, w.y + 12 * sY);
+            ctx.lineTo(cW + 60 * sX, w.y + w.slope * cW);
+            ctx.stroke();
+
+            const laneX = (w.phase + t * w.speed) % (cW + 140 * sX) - 70 * sX;
+            const laneY = w.y + w.slope * laneX;
+            ctx.fillStyle = 'rgba(255,230,0,0.66)';
+            ctx.fillRect(laneX, laneY - 1.5 * sY, 16 * sX, 3 * sY);
+        }
+        ctx.restore();
+    }
+
+    _drawNetPacketFlow(ctx, cW, cH, sX, sY) {
+        ctx.save();
+        for (let i = 0; i < this.netBgPackets.length; i++) {
+            const p = this.netBgPackets[i];
+            const w = this.netBgWires[p.wire];
+            if (!w) continue;
+            const x = p.t * (cW + 90 * sX) - 45 * sX;
+            const y = w.y + w.slope * x;
+            const sw = p.size * sX;
+            const sh = Math.max(2 * sY, p.size * 0.42 * sY);
+
+            ctx.save();
+            ctx.translate(x, y);
+            ctx.rotate(-0.16);
+            ctx.fillStyle = p.color === '#FF2D6D' ? 'rgba(255,45,109,0.82)' : 'rgba(0,233,255,0.86)';
+            ctx.fillRect(-sw * 0.5, -sh * 0.5, sw, sh);
+            ctx.strokeStyle = 'rgba(255,255,255,0.28)';
+            ctx.lineWidth = 1 * sX;
+            ctx.strokeRect(-sw * 0.5, -sh * 0.5, sw, sh);
+            ctx.restore();
+        }
+
+        for (let i = 0; i < this.netBgNodes.length; i++) {
+            const n = this.netBgNodes[i];
+            const glow = 0.15 + 0.2 * (0.5 + 0.5 * Math.sin((this.animTick || 0) * 0.04 + n.p));
+            ctx.beginPath();
+            ctx.arc(n.x, n.y, n.r * sX, 0, Math.PI * 2);
+            ctx.fillStyle = 'rgba(90,232,255,' + glow.toFixed(3) + ')';
+            ctx.fill();
+        }
+        ctx.restore();
+    }
+
+    _drawNetFloatingBits(ctx, sX) {
+        ctx.save();
+        for (let i = 0; i < this.netBgBits.length; i++) {
+            const b = this.netBgBits[i];
+            ctx.globalAlpha = b.alpha;
+            ctx.fillStyle = (i % 9 === 0) ? '#FF4A84' : '#7CE8FF';
+            ctx.font = Math.round(b.size * sX) + 'px monospace';
+            ctx.fillText(b.glyph, b.x, b.y);
+        }
+        ctx.globalAlpha = 1;
         ctx.restore();
     }
 
