@@ -260,6 +260,9 @@ IP2Live.Assets = {
     bgImage: null,
     abnesLoaded: false,
     nebulaLoaded: false,
+    ethnocentricLoaded: false,
+    neuropolLoaded: false,
+    astronomousLoaded: false,
 
     async loadAll() {
         const root = Common.Platform.ROOT_DIRECTORY;
@@ -286,6 +289,36 @@ IP2Live.Assets = {
             console.log('[IP2Live] Nebula-Regular font loaded.');
         } catch (e) {
             console.warn('[IP2Live] Nebula-Regular font load failed, falling back.', e);
+        }
+
+        try {
+            const ethnocentricFace = new FontFace('Ethnocentric', 'url("' + root + 'Fonts/Ethnocentric-Regular.otf")');
+            const loadedEthnocentric = await ethnocentricFace.load();
+            document.fonts.add(loadedEthnocentric);
+            this.ethnocentricLoaded = true;
+            console.log('[IP2Live] Ethnocentric font loaded.');
+        } catch (e) {
+            console.warn('[IP2Live] Ethnocentric font load failed, falling back.', e);
+        }
+
+        try {
+            const neuropolFace = new FontFace('Neuropol', 'url("' + root + 'Fonts/Neuropol.otf")');
+            const loadedNeuropol = await neuropolFace.load();
+            document.fonts.add(loadedNeuropol);
+            this.neuropolLoaded = true;
+            console.log('[IP2Live] Neuropol font loaded.');
+        } catch (e) {
+            console.warn('[IP2Live] Neuropol font load failed, falling back.', e);
+        }
+
+        try {
+            const astronomousFace = new FontFace('Astronomous', 'url("' + root + 'Fonts/Astronomus.ttf")');
+            const loadedAstronomous = await astronomousFace.load();
+            document.fonts.add(loadedAstronomous);
+            this.astronomousLoaded = true;
+            console.log('[IP2Live] Astronomous font loaded.');
+        } catch (e) {
+            console.warn('[IP2Live] Astronomous font load failed, falling back.', e);
         }
     },
 
@@ -563,7 +596,8 @@ IP2Live.UI = {
             ctx, x, y, w, h, scaleX, scaleY,
             label, numberLabel,
             isActive, isDanger,
-            scrambleText, animTick
+            scrambleText, animTick,
+            showChevron = true
         } = options;
 
         const accent = isDanger ? '#FF335F' : '#00F0FF';
@@ -654,7 +688,7 @@ IP2Live.UI = {
         ctx.textAlign = 'left';
         ctx.fillText(displayLabel, x + 24 * scaleX, y + h * 0.62);
 
-        if (isActive) {
+        if (isActive && showChevron) {
             ctx.shadowBlur = 0;
             ctx.font = 'bold ' + Math.round(13 * scaleX) + 'px monospace';
             ctx.textAlign = 'right';

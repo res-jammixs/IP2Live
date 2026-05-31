@@ -11,7 +11,7 @@ class IP2LivePauseMenu extends Scene.Base {
 
     initialize() {
         this.selectedIndex = 0;
-        this.menuItems = ["RESUME", "RESTART", "SAVE GAME", "EXPORT REPORT", "DEBUG MAP JUMP", "MAIN MENU", "QUIT GAME"];
+        this.menuItems = ["RESUME", "SAVE GAME", "EXPORT REPORT", "DEBUG MAP JUMP", "MAIN MENU", "QUIT GAME"];
         this.hoverIndex = -1;
         this.animTick = 0;
         this.glitchActive = false;
@@ -176,28 +176,10 @@ class IP2LivePauseMenu extends Scene.Base {
             case 0:
                 this._resume();
                 break;
-            case 1: {
-                const ScreenClass = IP2Live.LoadingScreen2 || IP2Live.LoadingScreen;
-                if (ScreenClass && typeof ScreenClass.show === 'function') {
-                    ScreenClass.show({
-                        mode: 'replace',
-                        status: 'Reloading Current Stage',
-                        detail: 'Rebuilding current stage state',
-                        fadeMusicOnStart: true,
-                        musicFadeDurationMs: 2200,
-                        onComplete: function () {
-                            IP2Live.RestartManager.restartCurrentLevel();
-                        },
-                    });
-                } else {
-                    IP2Live.RestartManager.restartCurrentLevel();
-                }
-                break;
-            }
-            case 2:
+            case 1:
                 await this._saveGameProgress();
                 break;
-            case 3:
+            case 2:
                 if (window.IP2LiveExportReportMenu) {
                     Manager.Stack.push(new IP2LiveExportReportMenu());
                 } else if (IP2Live.GameManager && typeof IP2Live.GameManager.exportProgressReport === 'function') {
@@ -207,10 +189,10 @@ class IP2LivePauseMenu extends Scene.Base {
                     Data.Systems.soundImpossible.playSound();
                 }
                 break;
-            case 4:
+            case 3:
                 this._enterDebugMode();
                 break;
-            case 5:
+            case 4:
                 if (IP2Live.LoadingScreen && typeof IP2Live.LoadingScreen.show === 'function') {
                     IP2Live.LoadingScreen.show({
                         mode: 'replace',
@@ -226,7 +208,7 @@ class IP2LivePauseMenu extends Scene.Base {
                     Manager.Stack.push(new IP2LiveMainMenu());
                 }
                 break;
-            case 6:
+            case 5:
                 Common.Platform.quit();
                 break;
         }
@@ -557,7 +539,7 @@ class IP2LivePauseMenu extends Scene.Base {
 
     _drawButton(ctx, scaleX, scaleY, bx, by, bw, bh, label, isSelected, isHover, index) {
         const isActive = isSelected || isHover;
-        const isDanger = (index === 5 || index === 1); // 5=Quit, 1=Restart
+        const isDanger = (index === 5); // 5=Quit
         
         IP2Live.UI.drawCyberButton({
             ctx,
