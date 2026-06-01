@@ -400,7 +400,12 @@ class IP2LiveLoadGameMenu extends Scene.Base {
                 return;
             }
             const game = this.gamesData[this.selectedIndex];
-            if (game.isEmpty) {
+            const meta = this._slotMeta(this.selectedIndex);
+            const heroName = (game && game.hero && game.hero.character && game.hero.character.name)
+                ? String(game.hero.character.name)
+                : ((game && game.hero && game.hero.name) ? String(game.hero.name) : '');
+            const isEmptySlot = !game || game.isEmpty || (!meta && !heroName);
+            if (isEmptySlot) {
                 Data.Systems.soundImpossible.playSound();
             } else {
                 Data.Systems.soundConfirmation.playSound();
@@ -868,7 +873,10 @@ class IP2LiveLoadGameMenu extends Scene.Base {
         }
 
         const fName = IP2Live.Assets.nebulaLoaded ? 'Nebula-Regular' : 'monospace';
-        const empty = !game || game.isEmpty;
+        const heroName = (game && game.hero && game.hero.character && game.hero.character.name)
+            ? String(game.hero.character.name)
+            : ((game && game.hero && game.hero.name) ? String(game.hero.name) : '');
+        const empty = !game || game.isEmpty || (!meta && !heroName);
 
         if (empty) {
             ctx.font = 'bold ' + Math.round(17 * scaleX) + 'px ' + fName;
@@ -880,9 +888,6 @@ class IP2LiveLoadGameMenu extends Scene.Base {
         } else {
             ctx.font = 'bold ' + Math.round(17 * scaleX) + 'px ' + fName;
             ctx.fillStyle = isSelected ? '#111111' : '#FFFFFF';
-            let heroName = 'UNKNOWN';
-            if (game.hero && game.hero.character) heroName = game.hero.character.name;
-            else if (game.hero && game.hero.name) heroName = game.hero.name;
             const primaryName = (meta && meta.saveName) ? String(meta.saveName) : heroName;
             ctx.fillText(primaryName, x + 70 * scaleX, y + 25 * scaleY);
 
