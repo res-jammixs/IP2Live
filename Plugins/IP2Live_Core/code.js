@@ -757,7 +757,42 @@ IP2Live.LightingManagerReady = (async function () {
 }());
 
 // ================================================================
-//  Section 2.5.2  QUEST PATHFINDER ASSET LOADER
+//  Section 2.5.2  GAME STATE MANAGER LOADER
+//  Runtime ambience/gameplay state modules live in modules/game-state/.
+// ================================================================
+IP2Live.GameStateManagerReady = (async function () {
+    if (IP2Live.LightingManagerReady) await IP2Live.LightingManagerReady;
+    const root = Common.Platform.ROOT_DIRECTORY;
+    const baseDir = root + 'Plugins/IP2Live_Core/modules/game-state/';
+    const files = [
+        'game_state_manager.js',
+        'darklights_state.js',
+    ];
+    try {
+        for (let i = 0; i < files.length; i++) {
+            const src = baseDir + files[i];
+            const versionedSrc = src + '?v=20260602_game_state_01_' + Date.now();
+            let resp = await fetch(versionedSrc, { cache: 'no-store' });
+            if (!resp.ok) {
+                console.warn('[IP2Live] Versioned game-state module fetch failed, retrying plain path:', versionedSrc);
+                resp = await fetch(src, { cache: 'no-store' });
+            }
+            if (!resp.ok) throw new Error('HTTP ' + resp.status);
+            const code = await resp.text();
+            new Function(
+                'Common', 'Core', 'Data', 'Graphic',
+                'Manager', 'Scene', 'Model', 'Main', 'THREE', 'IP2Live', 'inject',
+                code
+            )(Common, Core, Data, Graphic, Manager, Scene, Model, Main, THREE, IP2Live, inject);
+            console.log('[IP2Live] Game-state module loaded from:', resp.url || src);
+        }
+    } catch (e) {
+        console.error('[IP2Live] Failed to load game-state modules:', e);
+    }
+}());
+
+// ================================================================
+//  Section 2.5.3  QUEST PATHFINDER ASSET LOADER
 //  Read-only map-grid helper used by the quest guide route renderer.
 // ================================================================
 IP2Live.QuestPathfinderReady = (async function () {
@@ -928,6 +963,7 @@ IP2Live.GameplayManagerReady = (async function () {
 // ================================================================
 IP2Live.QuestManagerReady = (async function () {
     if (IP2Live.LightingManagerReady) await IP2Live.LightingManagerReady;
+    if (IP2Live.GameStateManagerReady) await IP2Live.GameStateManagerReady;
     if (IP2Live.QuestArrowAssetReady) await IP2Live.QuestArrowAssetReady;
     if (IP2Live.GameplayManagerReady) await IP2Live.GameplayManagerReady;
     const root = Common.Platform.ROOT_DIRECTORY;
@@ -1150,6 +1186,7 @@ IP2Live.TutorialReady = (async function () {
 // ================================================================
 IP2Live.GameManagerReady = (async function () {
     if (IP2Live.DialogueManagerReady) await IP2Live.DialogueManagerReady;
+    if (IP2Live.GameStateManagerReady) await IP2Live.GameStateManagerReady;
     if (IP2Live.MapManagerReady) await IP2Live.MapManagerReady;
     if (IP2Live.QuestMinimapReady) await IP2Live.QuestMinimapReady;
     if (IP2Live.TutorialReady) await IP2Live.TutorialReady;

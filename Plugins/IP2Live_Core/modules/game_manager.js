@@ -419,6 +419,9 @@ const IP2LiveGameManager = {
     async boot() {
         this._injectMapHooks();
         this._setState(this.STATE.BOOT, { source: 'GameManager.boot' });
+        if (IP2Live.GameStateManager && typeof IP2Live.GameStateManager.bindGameManager === 'function') {
+            IP2Live.GameStateManager.bindGameManager(this);
+        }
         await this.loadDialogueLibrary();
         this._ensureReportSession();
         return true;
@@ -1220,10 +1223,6 @@ const IP2LiveGameManager = {
             return IP2Live.NetworkRepairGameplayManager._handleRollbackFailure(data);
         }
 
-        if (IP2Live.GameplayManager && typeof IP2Live.GameplayManager._sendStageBackToFirstWire === 'function') {
-            IP2Live.GameplayManager._sendStageBackToFirstWire(spec);
-            return true;
-        }
         return false;
     },
 

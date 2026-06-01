@@ -81,8 +81,10 @@
         [
           "Welcome to Stage 1 Level 1.",
           "",
-          "This subnet sector is live. The route beacon is online, but the path is locked behind unstable IP wire nodes.",
-          "Repair each lever in order, then move to the exit node."
+          "This floor has four power-control levers tied to the local lights and critical equipment.",
+          "Each lever is unstable and must be repaired through IP wire routing.",
+          "Restore all four levers to fully reactivate this sector.",
+          "When all four are stable, the next-level door will unlock."
         ]
       ]
     },
@@ -101,6 +103,10 @@
       "slides": [
         [
           "Welcome to your first live wire patch.",
+          "",
+          "This is Lever 01 of 04 for Stage 1 Level 1.",
+          "Repairing each lever restores lights and equipment in this facility.",
+          "All four levers must be fixed to open the next-level door.",
           "",
           "Match each full IP address on the left to the correct Class connector on the right.",
           "Class A: 1.0.0.0 to 126.255.255.255",
@@ -127,8 +133,10 @@
         [
           "Patch stable.",
           "",
-          "Good work. The first lever is repaired and the subnet route is opening.",
-          "Continue to the next wire node."
+          "Good work. Lever 01 of 04 is now supplying power again.",
+          "Facility lights and equipment are recovering in this sector.",
+          "Continue to the next lever until all four are stabilized.",
+          "Once all four are fixed, the next-level door will open."
         ]
       ]
     },
@@ -147,10 +155,10 @@
       "slides": [
         [
           "Oh no!",
-          "They noticed us and shifted the packets again.",
+          "APEX defense shifted the packet layout again.",
           "",
-          "Step back onto the wire node when you are ready.",
-          "The next panel will be a fresh randomized packet set."
+          "Step back onto Lever 01 when you are ready.",
+          "We need this lever online before progressing to the remaining three."
         ]
       ]
     },
@@ -175,11 +183,12 @@
           "Oh no!",
           "Too many packet errors tripped the APEX rollback circuit.",
           "",
-          "The first Level 1 lever repair is broken again and needs fixing."
+          "The rollback destabilized Lever 01 and cut power recovery progress."
         ],
         [
-          "Repair the first lever again.",
-          "After it stabilizes, I will route you back to the active wire node."
+          "Return to Lever 01 and repair it again.",
+          "After Lever 01 is stable, I will route you back to the failed lever node.",
+          "Remember: all four levers must stay stable to unlock the next-level door."
         ]
       ]
     },
@@ -260,10 +269,10 @@
         [
           "ACCESS DENIED.",
           "",
-          "The terminal is locked behind a subnet challenge."
+          "The terminal is still offline while this floor's lever network is unstable."
         ],
         [
-          "Find the assigned network tools before attempting this breach."
+          "Restore all four levers to recover full power and unlock deeper systems."
         ]
       ]
     },
@@ -280,9 +289,10 @@
       },
       "slides": [
         [
-          "A live junction box hums behind the panel.",
+          "A junction box hums behind the panel.",
           "",
-          "Routing data appears unstable. This may become an interaction point later."
+          "Its feed is linked to the four Level 1 repair levers.",
+          "Stabilizing all levers will restore full equipment output."
         ]
       ]
     },

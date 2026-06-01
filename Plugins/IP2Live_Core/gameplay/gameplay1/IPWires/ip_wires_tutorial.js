@@ -78,8 +78,9 @@
                 slides: [[
                     'Welcome to the IP wires gameplay.',
                     '',
-                    'There are core levers on this floor that need to be activated',
-                    'to unlock the door and move to the next stage.',
+                    'Stage 1 Level 1 has four repair levers tied to lights and equipment.',
+                    'Each successful wire patch restores part of this floor.',
+                    'Stabilize all four levers to unlock the door to the next level.',
                 ]],
                 onComplete: () => {
                     this._setHighlight(screen, 'left');
@@ -218,7 +219,10 @@
                 timing: 'during',
                 bindings: { mapId: 3, gameplayId: 'ip_class_wires', trigger: 'gameplay.completed' },
                 slides: [[
-                    'You are now ready for successfully connecting all the levers for it to work properly.',
+                    'You are now ready to repair all four Level 1 levers.',
+                    '',
+                    'Each fixed lever restores more power to this floor.',
+                    'When all four are stable, the next-level door will open.',
                     '',
                     'Remember again this:',
                     '',
@@ -290,7 +294,7 @@
                 'REAL-TIME PACKET ANALYSIS COMPLETE.',
                 '',
                 'I found ' + list.length + ' unstable wire' + (list.length === 1 ? '' : 's') + ' in that patch.',
-                'Correct wires are stable. The wrong wires have been disconnected.',
+                'Correct wires stay stable. Wrong wires were disconnected to protect lever integrity.',
             ]];
 
             for (let i = 0; i < list.length; i += 2) {
@@ -316,6 +320,7 @@
                 'You have ' + attemptsRemaining + ' chance' + (attemptsRemaining === 1 ? '' : 's') + ' left before the packets shift.',
                 '',
                 'The APEX defense layer keeps rearranging these packets to stop intruders.',
+                'Keep this lever stable so we can restore all four and open the next-level door.',
                 'You can do it.',
             ]);
 
@@ -346,10 +351,10 @@
                 },
                 slides: [[
                     'Oh no!',
-                    'They noticed us and shifted the packets again.',
+                    'APEX defense shifted the packets again.',
                     '',
-                    'Step back onto the wire node when you are ready.',
-                    'The next panel will be a fresh randomized packet set.',
+                    'Step back onto Lever 01 when you are ready.',
+                    'We need this lever stable before we can finish all four.',
                 ]],
                 onComplete: onComplete,
             });
@@ -370,10 +375,11 @@
                     'Oh no!',
                     'Too many packet errors tripped the APEX rollback circuit.',
                     '',
-                    'The first Level 1 lever repair is broken again and needs fixing.',
+                    'Lever 01 lost stability and power restoration progress dropped.',
                 ], [
-                    'Repair the first lever again.',
+                    'Repair Lever 01 again.',
                     'After it stabilizes, I will route you back to ' + label + '.',
+                    'All four levers must remain stable to unlock the next-level door.',
                 ]],
                 onComplete: onComplete,
             });
