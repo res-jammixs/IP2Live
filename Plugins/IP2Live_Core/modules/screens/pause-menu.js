@@ -440,20 +440,7 @@ class IP2LivePauseMenu extends Scene.Base {
         const pw = layout.panelW * scaleX;
         const ph = layout.panelH * scaleY;
 
-        ctx.fillStyle = 'rgba(0,4,20,0.94)';
-        ctx.fillRect(px, py, pw, ph);
-
-        ctx.strokeStyle = '#00FFFF';
-        ctx.lineWidth = 1.5 * scaleX;
-        ctx.shadowBlur = 0;
-        ctx.strokeRect(px, py, pw, ph);
-
-        const cs = 18 * scaleX;
-        ctx.strokeStyle = '#FFE600';
-        ctx.lineWidth = 2 * scaleX;
-        ctx.shadowBlur = 0;
-        ctx.beginPath(); ctx.moveTo(px, py + cs); ctx.lineTo(px, py); ctx.lineTo(px + cs, py); ctx.stroke();
-        ctx.beginPath(); ctx.moveTo(px + pw - cs, py + ph); ctx.lineTo(px + pw, py + ph); ctx.lineTo(px + pw, py + ph - cs); ctx.stroke();
+        this._drawPauseContainer(ctx, px, py, pw, ph, scaleX, scaleY);
 
         this._drawPausedTitle(ctx, scaleX, scaleY, SW, SH, layout.panelX, layout.panelY, layout.panelW);
 
@@ -522,6 +509,205 @@ class IP2LivePauseMenu extends Scene.Base {
             ctx.fillRect(-cW * 0.36 + travel, y - 2 * scaleY, 12 * scaleX, 3 * scaleY);
         }
 
+        ctx.restore();
+    }
+
+    _drawPauseContainer(ctx, x, y, w, h, scaleX, scaleY) {
+        const tick = this.animTick || 0;
+        const cut = 22 * scaleX;
+        const pulse = 0.5 + 0.5 * Math.sin(tick * 0.055);
+
+        ctx.save();
+
+        ctx.save();
+        ctx.translate(11 * scaleX, 10 * scaleY);
+        this._drawPausePanelPath(ctx, x, y, w, h, cut, scaleX, scaleY);
+        ctx.fillStyle = 'rgba(0,0,0,0.46)';
+        ctx.fill();
+        ctx.restore();
+
+        this._drawPausePanelPath(ctx, x, y, w, h, cut, scaleX, scaleY);
+        const panelGrad = ctx.createLinearGradient(x, y, x + w, y + h);
+        panelGrad.addColorStop(0, 'rgba(1,7,13,0.97)');
+        panelGrad.addColorStop(0.42, 'rgba(2,12,18,0.94)');
+        panelGrad.addColorStop(0.70, 'rgba(5,6,17,0.95)');
+        panelGrad.addColorStop(1, 'rgba(0,3,9,0.98)');
+        ctx.fillStyle = panelGrad;
+        ctx.fill();
+
+        ctx.save();
+        this._drawPausePanelPath(ctx, x, y, w, h, cut, scaleX, scaleY);
+        ctx.clip();
+
+        const headerGrad = ctx.createLinearGradient(x, y, x + w, y + 92 * scaleY);
+        headerGrad.addColorStop(0, 'rgba(89,15,31,0.16)');
+        headerGrad.addColorStop(0.42, 'rgba(16,93,82,0.10)');
+        headerGrad.addColorStop(1, 'rgba(0,0,0,0)');
+        ctx.fillStyle = headerGrad;
+        ctx.fillRect(x, y, w, 96 * scaleY);
+
+        for (let yy = y + ((tick * 0.45) % (7 * scaleY)); yy < y + h; yy += 7 * scaleY) {
+            ctx.fillStyle = 'rgba(108,178,151,0.035)';
+            ctx.fillRect(x, yy, w, Math.max(1, 1.1 * scaleY));
+        }
+
+        this._drawPausePanelNetwork(ctx, x, y, w, h, scaleX, scaleY, tick);
+        this._drawPausePixelFragments(ctx, x, y, w, h, scaleX, scaleY, tick);
+        ctx.restore();
+
+        ctx.shadowColor = 'rgba(32,156,145,0.34)';
+        ctx.shadowBlur = 10 * scaleX;
+        this._drawPausePanelPath(ctx, x, y, w, h, cut, scaleX, scaleY);
+        ctx.strokeStyle = 'rgba(41,189,174,0.76)';
+        ctx.lineWidth = 1.35 * scaleX;
+        ctx.stroke();
+        ctx.shadowBlur = 0;
+
+        this._drawPausePanelPath(ctx, x + 6 * scaleX, y + 6 * scaleY, w - 12 * scaleX, h - 12 * scaleY, cut * 0.75, scaleX, scaleY);
+        ctx.strokeStyle = 'rgba(93,170,135,' + (0.17 + pulse * 0.08).toFixed(3) + ')';
+        ctx.lineWidth = 1 * scaleX;
+        ctx.stroke();
+
+        this._drawPauseContainerAccents(ctx, x, y, w, h, scaleX, scaleY, tick);
+
+        ctx.restore();
+    }
+
+    _drawPausePanelPath(ctx, x, y, w, h, cut, scaleX, scaleY) {
+        ctx.beginPath();
+        ctx.moveTo(x + cut, y);
+        ctx.lineTo(x + w - 10 * scaleX, y);
+        ctx.lineTo(x + w, y + 16 * scaleY);
+        ctx.lineTo(x + w, y + h - cut * 0.55);
+        ctx.lineTo(x + w - cut * 0.75, y + h);
+        ctx.lineTo(x + 8 * scaleX, y + h);
+        ctx.lineTo(x, y + h - 12 * scaleY);
+        ctx.lineTo(x, y + cut * 0.85);
+        ctx.closePath();
+    }
+
+    _drawPauseContainerAccents(ctx, x, y, w, h, scaleX, scaleY, tick) {
+        const pulse = 0.5 + 0.5 * Math.sin(tick * 0.08);
+        const red = 'rgba(122,18,34,0.66)';
+        const green = 'rgba(79,166,107,0.72)';
+        const teal = 'rgba(42,154,141,0.64)';
+        const amber = 'rgba(111,99,48,0.84)';
+
+        ctx.save();
+
+        ctx.fillStyle = 'rgba(122,18,34,0.20)';
+        ctx.beginPath();
+        ctx.moveTo(x + w - 112 * scaleX, y - 2 * scaleY);
+        ctx.lineTo(x + w - 34 * scaleX, y - 2 * scaleY);
+        ctx.lineTo(x + w - 58 * scaleX, y + 24 * scaleY);
+        ctx.lineTo(x + w - 132 * scaleX, y + 24 * scaleY);
+        ctx.closePath();
+        ctx.fill();
+
+        ctx.strokeStyle = teal;
+        ctx.lineWidth = 1.2 * scaleX;
+        ctx.beginPath();
+        ctx.moveTo(x + 24 * scaleX, y + 66 * scaleY);
+        ctx.lineTo(x + w * 0.36, y + 66 * scaleY);
+        ctx.lineTo(x + w * 0.43, y + 78 * scaleY);
+        ctx.lineTo(x + w - 28 * scaleX, y + 78 * scaleY);
+        ctx.stroke();
+
+        ctx.strokeStyle = red;
+        ctx.beginPath();
+        ctx.moveTo(x + 18 * scaleX, y + h - 58 * scaleY);
+        ctx.lineTo(x + w * 0.30, y + h - 58 * scaleY);
+        ctx.lineTo(x + w * 0.38, y + h - 42 * scaleY);
+        ctx.lineTo(x + w - 36 * scaleX, y + h - 42 * scaleY);
+        ctx.stroke();
+
+        ctx.strokeStyle = amber;
+        ctx.lineWidth = 2 * scaleX;
+        ctx.beginPath();
+        ctx.moveTo(x, y + 18 * scaleY);
+        ctx.lineTo(x, y);
+        ctx.lineTo(x + 20 * scaleX, y);
+        ctx.moveTo(x + w - 20 * scaleX, y + h);
+        ctx.lineTo(x + w, y + h);
+        ctx.lineTo(x + w, y + h - 20 * scaleY);
+        ctx.stroke();
+
+        ctx.fillStyle = green;
+        ctx.fillRect(x + 12 * scaleX, y + 16 * scaleY, 34 * scaleX, 4 * scaleY);
+        ctx.fillStyle = red;
+        ctx.fillRect(x + w - 82 * scaleX, y + h - 28 * scaleY, 54 * scaleX, 4 * scaleY);
+
+        ctx.font = 'bold ' + Math.round(8 * scaleX) + 'px monospace';
+        ctx.textAlign = 'left';
+        ctx.fillStyle = 'rgba(175,214,202,' + (0.34 + pulse * 0.18).toFixed(3) + ')';
+        ctx.fillText('INFILTRATION_TERMINAL', x + 22 * scaleX, y + h - 24 * scaleY);
+        ctx.textAlign = 'right';
+        ctx.fillText('NET::PAUSE_LOCK', x + w - 22 * scaleX, y + 20 * scaleY);
+
+        ctx.restore();
+    }
+
+    _drawPausePanelNetwork(ctx, x, y, w, h, scaleX, scaleY, tick) {
+        const nodes = [
+            [0.18, 0.18], [0.36, 0.22], [0.68, 0.18], [0.84, 0.30],
+            [0.22, 0.48], [0.50, 0.44], [0.76, 0.52],
+            [0.30, 0.76], [0.58, 0.72], [0.86, 0.82]
+        ];
+
+        ctx.save();
+        ctx.lineWidth = 1 * scaleX;
+        for (let i = 0; i < nodes.length - 1; i++) {
+            const a = nodes[i];
+            const b = nodes[(i + 2) % nodes.length];
+            const ax = x + a[0] * w + Math.sin(tick * 0.012 + i) * 3 * scaleX;
+            const ay = y + a[1] * h + Math.cos(tick * 0.010 + i) * 3 * scaleY;
+            const bx = x + b[0] * w + Math.sin(tick * 0.013 + i) * 3 * scaleX;
+            const by = y + b[1] * h + Math.cos(tick * 0.011 + i) * 3 * scaleY;
+            ctx.strokeStyle = i % 3 === 0 ? 'rgba(122,18,34,0.13)' : 'rgba(42,154,141,0.14)';
+            ctx.beginPath();
+            ctx.moveTo(ax, ay);
+            ctx.lineTo(bx, by);
+            ctx.stroke();
+        }
+
+        for (let i = 0; i < nodes.length; i++) {
+            const n = nodes[i];
+            const pulse = 0.45 + 0.55 * Math.sin(tick * 0.075 + i * 0.7);
+            const nx = x + n[0] * w + Math.sin(tick * 0.012 + i) * 3 * scaleX;
+            const ny = y + n[1] * h + Math.cos(tick * 0.010 + i) * 3 * scaleY;
+            ctx.fillStyle = i % 4 === 0
+                ? 'rgba(122,18,34,' + (0.20 + pulse * 0.18).toFixed(3) + ')'
+                : 'rgba(67,174,119,' + (0.18 + pulse * 0.20).toFixed(3) + ')';
+            ctx.fillRect(nx - 2 * scaleX, ny - 2 * scaleY, 4 * scaleX, 4 * scaleY);
+        }
+
+        for (let i = 0; i < 4; i++) {
+            const from = nodes[i + 1];
+            const to = nodes[i + 5];
+            const p = (tick * (0.006 + i * 0.0015) + i * 0.21) % 1;
+            const px = x + (from[0] + (to[0] - from[0]) * p) * w;
+            const py = y + (from[1] + (to[1] - from[1]) * p) * h;
+            ctx.fillStyle = i % 2 === 0 ? 'rgba(76,160,104,0.46)' : 'rgba(50,142,132,0.42)';
+            ctx.fillRect(px - 5 * scaleX, py - 1.5 * scaleY, 10 * scaleX, 3 * scaleY);
+        }
+        ctx.restore();
+    }
+
+    _drawPausePixelFragments(ctx, x, y, w, h, scaleX, scaleY, tick) {
+        ctx.save();
+        for (let i = 0; i < 20; i++) {
+            const gate = (tick * (i + 5) + i * 29) % 61;
+            if (gate > 26) continue;
+
+            const px = x + (((i * 97 + tick * 7) % 1000) / 1000) * w;
+            const py = y + (((i * 151 + tick * 3) % 1000) / 1000) * h;
+            const bw = (4 + (i % 4) * 7) * scaleX;
+            const bh = (2 + (i % 3) * 2) * scaleY;
+            ctx.fillStyle = i % 6 === 0
+                ? 'rgba(122,18,34,0.20)'
+                : (i % 2 === 0 ? 'rgba(76,160,104,0.20)' : 'rgba(50,142,132,0.18)');
+            ctx.fillRect(px, py, bw, bh);
+        }
         ctx.restore();
     }
 

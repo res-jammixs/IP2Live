@@ -7,7 +7,7 @@
 
 (function () {
     const QuestMinimap = {
-        VERSION: 'quest-minimap-20260601-05',
+        VERSION: 'quest-minimap-20260602-02',
         DEBUG: false,
 
         _container: null,
@@ -26,6 +26,9 @@
         _debugTick: 0,
         _mapInfoCache: {},
         _mapInfoPending: {},
+        _lastPlayerTile: null,
+        _lastFacingVec: null,
+        _visibilityReason: 'init',
 
         create() {
             if (this.isActive()) return;
@@ -85,6 +88,9 @@
             this._t = 0;
             this._mapInfoCache = {};
             this._mapInfoPending = {};
+            this._lastPlayerTile = null;
+            this._lastFacingVec = null;
+            this._visibilityReason = 'destroyed';
         },
 
         isActive() {
@@ -364,6 +370,7 @@
             const mapSize = this._mapSize(scene, mapId);
             const hero = this._hero(qm, scene);
             const player = this._playerPosition(qm, hero, scene, mapId);
+            const playerFacing = this._playerFacing(hero, player);
             const stageInfo = this._stageInfo(mapId);
             const quests = this._buildQuestList(qm, questIds, mapId);
             const questStats = this._questStats(quests);
@@ -380,6 +387,7 @@
                 questStats,
                 activeQuestId: qm ? qm.activeQuestId : null,
                 player,
+                playerFacing,
                 spawn,
                 heroFound: !!hero,
                 queueCount: questIds.length,
@@ -398,10 +406,12 @@
                 mapH: data.mapH,
                 heroFound: data.heroFound,
                 player: data.player,
+                playerFacing: data.playerFacing,
                 spawn: { x: spawn.x, z: spawn.z },
                 questCount: (data.quests || []).length,
                 queueCount: data.queueCount,
                 activeQuestId: data.activeQuestId,
+                visibilityReason: this._visibilityReason,
             });
         },
 
@@ -727,6 +737,107 @@
             return spawn || { x: 0, z: 0 };
         },
 
+        _playerFacing(hero, player) {
+            const heroFacing = this._heroFacingVector(hero);
+            if (heroFacing) {
+                this._lastFacingVec = heroFacing;
+            } else {
+                const movementFacing = this._movementFacingVector(player);
+                if (movementFacing) this._lastFacingVec = movementFacing;
+            }
+
+            if (this._lastFacingVec) {
+                return { x: this._lastFacingVec.x, z: this._lastFacingVec.z };
+            }
+
+            // Default to north-facing when no orientation signal is available.
+            return { x: 0, z: -1 };
+        },
+
+        _heroFacingVector(hero) {
+            if (!hero) return null;
+
+            const direct = this._normalizeVec2(
+                this._vectorFromDirectionValue(
+                    hero.forward || hero.lookDirection || hero.directionVector || hero.direction
+                )
+            );
+            if (direct) return direct;
+
+            if (typeof hero.getWorldDirection === 'function' && THREE && THREE.Vector3) {
+                try {
+                    const v = new THREE.Vector3(0, 0, 1);
+                    hero.getWorldDirection(v);
+                    const worldDir = this._normalizeVec2({ x: Number(v.x), z: Number(v.z) });
+                    if (worldDir) return worldDir;
+                } catch (e) {
+                    // Fall through to rotation-based facing.
+                }
+            }
+
+            const rotY = Number(hero && hero.rotation && hero.rotation.y);
+            if (!isNaN(rotY)) {
+                return this._normalizeVec2({
+                    x: Math.sin(rotY),
+                    z: Math.cos(rotY),
+                });
+            }
+
+            return null;
+        },
+
+        _movementFacingVector(player) {
+            const current = {
+                x: Number(player && player.x) || 0,
+                z: Number(player && player.z) || 0,
+            };
+            const prev = this._lastPlayerTile;
+            this._lastPlayerTile = current;
+            if (!prev) return null;
+
+            const delta = {
+                x: current.x - prev.x,
+                z: current.z - prev.z,
+            };
+            return this._normalizeVec2(delta);
+        },
+
+        _vectorFromDirectionValue(value) {
+            if (!value) return null;
+
+            if (typeof value.x === 'number' && typeof value.z === 'number') {
+                return { x: value.x, z: value.z };
+            }
+
+            if (typeof value === 'string') {
+                const dir = value.toLowerCase();
+                if (dir === 'up' || dir === 'north') return { x: 0, z: -1 };
+                if (dir === 'down' || dir === 'south') return { x: 0, z: 1 };
+                if (dir === 'left' || dir === 'west') return { x: -1, z: 0 };
+                if (dir === 'right' || dir === 'east') return { x: 1, z: 0 };
+            }
+
+            if (typeof value === 'number') {
+                // Numeric keypad style direction IDs are common in RPG runtimes.
+                if (value === 8) return { x: 0, z: -1 };
+                if (value === 2) return { x: 0, z: 1 };
+                if (value === 4) return { x: -1, z: 0 };
+                if (value === 6) return { x: 1, z: 0 };
+            }
+
+            return null;
+        },
+
+        _normalizeVec2(vec) {
+            if (!vec) return null;
+            const x = Number(vec.x);
+            const z = Number(vec.z);
+            if (isNaN(x) || isNaN(z)) return null;
+            const len = Math.sqrt(x * x + z * z);
+            if (!(len > 0.0001)) return null;
+            return { x: x / len, z: z / len };
+        },
+
         /**
          * Find the primary objective for display on minimap.
          * Searches for objectives with targetTile, targetX/targetZ, or position properties.
@@ -794,89 +905,150 @@
             };
         },
 
-        /**
-         * BUG 3 FIX: Check visibility gating (tutorial/gameplay/pause) in addition to quest list.
-         */
         _shouldHide() {
             try {
-                const scene = Scene && Scene.Map && Scene.Map.current;
-                if (this._isLoadingScreenActive()) return true;
-                if (IP2Live.Tutorial && IP2Live.Tutorial.isFadingOut) return true;
-                if (!scene) return true;
-                if (IP2Live.GameManager) {
-                    if (IP2Live.GameManager.state === 'GAMEPLAY_ACTIVE') return true;
-                    if (IP2Live.GameManager._activeGameplayNode) return true;
+                const scene = Scene && Scene.Map ? Scene.Map.current : null;
+                if (!scene) {
+                    this._visibilityReason = 'no-map-scene';
+                    return true;
                 }
-                if (this._isPauseMenuActive()) return true;
-                if (!Scene.Map.current) return true;
-                return false;
-            } catch (e) {
-                return false;
-            }
-        },
 
-        _isLoadingScreenActive() {
-            try {
-                const stack = Manager && Manager.Stack ? Manager.Stack : null;
-                if (!stack) return false;
-
-                const stackList = stack.stack || stack._stack || [];
-                const current = stack.top || stack.current || null;
-                const toCheck = [];
-                if (current) toCheck.push(current);
-                if (Array.isArray(stackList)) {
-                    for (let i = stackList.length - 1; i >= 0; i--) {
-                        toCheck.push(stackList[i]);
+                const stackScenes = this._activeStackScenes();
+                for (let i = 0; i < stackScenes.length; i++) {
+                    if (this._isBlockedOverlayScene(stackScenes[i])) {
+                        this._visibilityReason = 'blocked-screen:' + this._sceneKey(stackScenes[i]);
+                        return true;
                     }
                 }
 
-                for (let i = 0; i < toCheck.length; i++) {
-                    const scene = toCheck[i];
-                    if (!scene) continue;
-                    const ctorName = scene.constructor && scene.constructor.name ? scene.constructor.name : '';
-                    const sceneName = String(scene.name || scene.type || ctorName || '');
-                    if (typeof IP2LiveLoadingScreen2 !== 'undefined' && scene instanceof IP2LiveLoadingScreen2) return true;
-                    if (typeof IP2LiveLoadingScreen !== 'undefined' && scene instanceof IP2LiveLoadingScreen) return true;
-                    if (sceneName.indexOf('IP2LiveLoadingScreen') !== -1) return true;
-                    if (sceneName.indexOf('LoadingScreen') !== -1) return true;
+                const worldTitle = IP2Live && IP2Live.WorldTitleOverlay ? IP2Live.WorldTitleOverlay : null;
+                if (worldTitle && typeof worldTitle.isActive === 'function' && worldTitle.isActive()) {
+                    this._visibilityReason = 'world-title-active';
+                    return true;
                 }
+
+                if (IP2Live && IP2Live.Tutorial && IP2Live.Tutorial.isFadingOut) {
+                    this._visibilityReason = 'tutorial-fading';
+                    return true;
+                }
+
+                const mapId = this._mapId(null, scene);
+                const mm = IP2Live && IP2Live.MapManager ? IP2Live.MapManager : null;
+                const stage = mm && typeof mm.stageFor === 'function' ? mm.stageFor(mapId) : null;
+                if (!stage) {
+                    this._visibilityReason = 'map-not-staged:' + mapId;
+                    return true;
+                }
+
+                const isTutorial = !!stage.tutorial;
+                const isGameplay = mm && typeof mm.isGameplayStage === 'function'
+                    ? !!mm.isGameplayStage(mapId)
+                    : !!(!stage.tutorial && stage.questEnabled !== false);
+                if (!isTutorial && !isGameplay) {
+                    this._visibilityReason = 'stage-not-allowed:' + mapId;
+                    return true;
+                }
+
+                const gm = IP2Live && IP2Live.GameManager ? IP2Live.GameManager : null;
+                if (gm && gm._activeGameplayNode) {
+                    this._visibilityReason = 'gameplay-node-active';
+                    return true;
+                }
+
+                this._visibilityReason = 'allowed';
                 return false;
             } catch (e) {
-                return false;
+                this._visibilityReason = 'error';
+                return true;
             }
         },
 
-        _isPauseMenuActive() {
-            try {
-                const stack = Manager && Manager.Stack ? Manager.Stack : null;
-                if (!stack) return false;
-                const pauseCtor = typeof IP2LivePauseMenu === 'function' ? IP2LivePauseMenu : null;
-                const stackList = stack.stack || stack._stack || [];
-                const current = stack.top || stack.current || null;
-                const toCheck = [];
-                if (current) toCheck.push(current);
-                if (Array.isArray(stackList)) {
-                    for (let i = stackList.length - 1; i >= 0; i--) {
-                        toCheck.push(stackList[i]);
-                    }
+        _activeStackScenes() {
+            const stack = Manager && Manager.Stack ? Manager.Stack : null;
+            const out = [];
+            const seen = [];
+            const add = (scene) => {
+                if (!scene) return;
+                for (let i = 0; i < seen.length; i++) {
+                    if (seen[i] === scene) return;
                 }
-                for (let i = 0; i < toCheck.length; i++) {
-                    const scene = toCheck[i];
-                    if (!scene) continue;
-                    if (pauseCtor && scene instanceof pauseCtor) return true;
-                    if (scene.constructor && scene.constructor.name === 'IP2LivePauseMenu') return true;
-                    if (scene.name === 'IP2LivePauseMenu' || scene.type === 'IP2LivePauseMenu') return true;
+                seen.push(scene);
+                out.push(scene);
+            };
+
+            if (stack) {
+                add(stack.top || null);
+                add(stack.current || null);
+                const list = stack.stack || stack._stack || [];
+                if (Array.isArray(list)) {
+                    for (let i = list.length - 1; i >= 0; i--) add(list[i]);
                 }
-                return false;
-            } catch (e) {
-                return false;
             }
+
+            add(Scene && Scene.Map ? Scene.Map.current : null);
+            return out;
+        },
+
+        _sceneKey(scene) {
+            if (!scene) return 'unknown';
+            const ctorName = scene.constructor && scene.constructor.name ? scene.constructor.name : '';
+            return String(scene.name || scene.type || ctorName || 'unknown');
+        },
+
+        _isBlockedOverlayScene(scene) {
+            if (!scene) return false;
+
+            const sceneName = this._sceneKey(scene);
+            if (!sceneName) return false;
+
+            // Map scene itself is always allowed; other screens are blocked.
+            if (sceneName === 'Map' || sceneName === 'SceneMap') return false;
+            if (sceneName === 'Scene.Map') return false;
+
+            const blockedNames = [
+                'IP2LiveMainMenu',
+                'IP2LivePauseMenu',
+                'IP2LiveExportReportMenu',
+                'IP2LiveSettingsMenu',
+                'IP2LiveLoadGameMenu',
+                'IP2LiveCreditsScene',
+                'IP2LiveEndCreditsScene',
+                'IP2LiveKeyboardMenu',
+                'IP2LiveNameInputScreen',
+                'IP2LiveLoadingScreen',
+                'IP2LiveLoadingScreen2',
+                'IP2LiveARDiagnosticRewindScreen',
+            ];
+            for (let i = 0; i < blockedNames.length; i++) {
+                if (sceneName === blockedNames[i]) return true;
+            }
+
+            // Name-based fallback for stack scenes that expose only generic labels.
+            if (sceneName.indexOf('LoadingScreen') !== -1) return true;
+            if (sceneName.indexOf('MainMenu') !== -1) return true;
+            if (sceneName.indexOf('PauseMenu') !== -1) return true;
+            if (sceneName.indexOf('ExportReport') !== -1) return true;
+            if (sceneName.indexOf('Credits') !== -1) return true;
+            if (sceneName.indexOf('Settings') !== -1) return true;
+            if (sceneName.indexOf('LoadGame') !== -1) return true;
+            if (sceneName.indexOf('NameInput') !== -1) return true;
+            if (sceneName.indexOf('Keyboard') !== -1) return true;
+            if (sceneName.indexOf('ARDiagnostic') !== -1) return true;
+
+            // Any known non-map IP2Live scene should hide the minimap by default.
+            if (sceneName.indexOf('IP2Live') === 0 && sceneName.indexOf('WorldTitle') === -1) return true;
+
+            return false;
         },
 
         _syncVisibility(data) {
             if (!this._container) return;
             const visibleQuests = data.visibleQuests || data.quests || [];
-            const shouldHide = this._shouldHide() || !visibleQuests.length;
+            let shouldHide = this._shouldHide();
+            if (!shouldHide && !visibleQuests.length) {
+                shouldHide = true;
+                this._visibilityReason = 'no-visible-quests';
+            }
             this._container.style.display = shouldHide ? 'none' : 'block';
         },
 
@@ -955,7 +1127,8 @@
                     ' hero:' + (data.heroFound ? 'Y' : 'N') +
                     ' p:' + Math.floor(data.player.x) + ',' + Math.floor(data.player.z) +
                     ' s:' + Math.floor(spawn.x) + ',' + Math.floor(spawn.z) +
-                    ' q:' + (data.quests ? data.quests.length : 0);
+                    ' q:' + (data.quests ? data.quests.length : 0) +
+                    ' vis:' + this._visibilityReason;
             }
         },
 
@@ -1032,21 +1205,53 @@
         },
 
         _drawQuestMarker(ctx, cx, cy, complete, flashT, isExit) {
-            let radius = 5;
-            let fill = isExit ? '#ffcc00' : (complete ? '#00cc66' : '#e31c3d');
-            let stroke = isExit ? '#fff066' : (complete ? '#00ff88' : '#ff6680');
+            const baseFill = isExit ? '#ffcc00' : (complete ? '#00cc66' : '#e31c3d');
+            const baseStroke = isExit ? '#fff066' : (complete ? '#00ff88' : '#ff6680');
+            const altFill = isExit ? '#ffcc00' : '#00cc66';
+            const flashMix = flashT >= 0 ? Math.sin(flashT * Math.PI) : 0;
+            const atomScale = 1 + flashMix * 0.35;
+            const coreR = 2.8 * atomScale;
+            const orbitR = 6.2 * atomScale;
 
-            if (flashT >= 0) {
-                radius = Math.floor(5 + Math.sin(flashT * Math.PI) * 5);
-                fill = isExit ? '#ffcc00' : (flashT < 0.5 ? '#e31c3d' : '#00cc66');
-                stroke = isExit ? '#fff066' : (flashT < 0.5 ? '#ff6680' : '#00ff88');
-            }
+            const orbitA = this._t * 1.65;
+            const orbitB = -this._t * 1.25;
+            const electronPulse = 0.5 + 0.5 * Math.sin(this._t * 3.2);
+            const electronR = 1.25 + electronPulse * 0.5;
+            const atomFill = (flashT >= 0 && !isExit && flashT >= 0.5) ? altFill : baseFill;
 
+            ctx.save();
+
+            // Soft outer glow so clustered quests remain readable.
+            ctx.globalAlpha = 0.22 + flashMix * 0.12;
             ctx.beginPath();
-            ctx.fillStyle = fill;
-            ctx.strokeStyle = stroke;
-            ctx.lineWidth = 1;
-            ctx.arc(cx, cy, radius, 0, Math.PI * 2);
+            ctx.fillStyle = baseStroke;
+            ctx.arc(cx, cy, orbitR + 2.3, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.globalAlpha = 1;
+
+            // Atom orbits (two tilted ellipses).
+            ctx.strokeStyle = baseStroke;
+            ctx.lineWidth = 1.05;
+            this._drawOrbit(ctx, cx, cy, orbitR, orbitA, 0.56);
+            this._drawOrbit(ctx, cx, cy, orbitR, orbitB, 0.56);
+
+            // Electrons riding each orbit.
+            const e1 = this._orbitPoint(cx, cy, orbitR, orbitA, 0.56, this._t * 1.55);
+            const e2 = this._orbitPoint(cx, cy, orbitR, orbitB, 0.56, this._t * 1.2 + Math.PI);
+            ctx.fillStyle = '#ffffff';
+            ctx.beginPath();
+            ctx.arc(e1.x, e1.y, electronR, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.beginPath();
+            ctx.arc(e2.x, e2.y, Math.max(0.85, electronR - 0.25), 0, Math.PI * 2);
+            ctx.fill();
+
+            // Nucleus.
+            ctx.beginPath();
+            ctx.fillStyle = atomFill;
+            ctx.strokeStyle = baseStroke;
+            ctx.lineWidth = 1.1;
+            ctx.arc(cx, cy, coreR, 0, Math.PI * 2);
             ctx.fill();
             ctx.stroke();
 
@@ -1054,41 +1259,91 @@
                 ctx.strokeStyle = '#3a2200';
                 ctx.lineWidth = 1.5;
                 ctx.beginPath();
-                ctx.moveTo(Math.floor(cx - 3), Math.floor(cy - 2));
-                ctx.lineTo(Math.floor(cx + 3), Math.floor(cy));
-                ctx.lineTo(Math.floor(cx - 3), Math.floor(cy + 2));
+                ctx.moveTo(cx - 2.6, cy - 1.6);
+                ctx.lineTo(cx + 2.6, cy);
+                ctx.lineTo(cx - 2.6, cy + 1.6);
                 ctx.stroke();
             } else if (complete || flashT >= 0.5) {
-                ctx.strokeStyle = '#00ff88';
-                ctx.lineWidth = 1.5;
+                ctx.strokeStyle = '#00381a';
+                ctx.lineWidth = 1.6;
                 ctx.beginPath();
-                ctx.moveTo(Math.floor(cx - 3), Math.floor(cy));
-                ctx.lineTo(Math.floor(cx - 1), Math.floor(cy + 2.5));
-                ctx.lineTo(Math.floor(cx + 3), Math.floor(cy - 2.5));
+                ctx.moveTo(cx - 2.1, cy + 0.1);
+                ctx.lineTo(cx - 0.5, cy + 1.8);
+                ctx.lineTo(cx + 2.3, cy - 1.5);
                 ctx.stroke();
             } else {
-                ctx.strokeStyle = '#ff6680';
-                ctx.lineWidth = 1;
+                ctx.strokeStyle = '#520a16';
+                ctx.lineWidth = 1.2;
                 ctx.beginPath();
-                ctx.moveTo(Math.floor(cx - 3), cy);
-                ctx.lineTo(Math.floor(cx + 3), cy);
+                ctx.moveTo(cx - 1.9, cy);
+                ctx.lineTo(cx + 1.9, cy);
                 ctx.stroke();
                 ctx.beginPath();
-                ctx.moveTo(cx, Math.floor(cy - 3));
-                ctx.lineTo(cx, Math.floor(cy + 3));
+                ctx.moveTo(cx, cy - 1.9);
+                ctx.lineTo(cx, cy + 1.9);
                 ctx.stroke();
             }
+
+            ctx.restore();
         },
 
         _drawActiveRing(ctx, cx, cy) {
             ctx.save();
-            ctx.globalAlpha = 0.6;
+            const pulse = 0.5 + 0.5 * Math.sin(this._t * 4);
+            const r1 = 9 + pulse * 2.2;
+            const r2 = 12.5 + pulse * 1.4;
+
+            ctx.globalAlpha = 0.92;
             ctx.beginPath();
-            ctx.strokeStyle = '#ffff00';
+            ctx.strokeStyle = '#fff58a';
+            ctx.lineWidth = 1.4;
+            ctx.arc(cx, cy, r1, 0, Math.PI * 2);
+            ctx.stroke();
+
+            ctx.globalAlpha = 0.5;
+            ctx.beginPath();
+            ctx.strokeStyle = '#ffe100';
             ctx.lineWidth = 1;
-            ctx.arc(cx, cy, 9, 0, Math.PI * 2);
+            ctx.arc(cx, cy, r2, 0, Math.PI * 2);
+            ctx.stroke();
+
+            // Compass-like ticks to make the active quest instantly stand out.
+            ctx.globalAlpha = 0.9;
+            ctx.strokeStyle = '#fff58a';
+            ctx.lineWidth = 1.2;
+            ctx.beginPath();
+            ctx.moveTo(cx - r2 - 2, cy);
+            ctx.lineTo(cx - r2 + 2, cy);
+            ctx.moveTo(cx + r2 - 2, cy);
+            ctx.lineTo(cx + r2 + 2, cy);
+            ctx.moveTo(cx, cy - r2 - 2);
+            ctx.lineTo(cx, cy - r2 + 2);
+            ctx.moveTo(cx, cy + r2 - 2);
+            ctx.lineTo(cx, cy + r2 + 2);
             ctx.stroke();
             ctx.restore();
+        },
+
+        _drawOrbit(ctx, cx, cy, radius, rotation, verticalScale) {
+            ctx.save();
+            ctx.translate(cx, cy);
+            ctx.rotate(rotation);
+            ctx.scale(1, verticalScale);
+            ctx.beginPath();
+            ctx.arc(0, 0, radius, 0, Math.PI * 2);
+            ctx.stroke();
+            ctx.restore();
+        },
+
+        _orbitPoint(cx, cy, radius, rotation, verticalScale, phase) {
+            const px = Math.cos(phase) * radius;
+            const py = Math.sin(phase) * radius * verticalScale;
+            const cr = Math.cos(rotation);
+            const sr = Math.sin(rotation);
+            return {
+                x: cx + px * cr - py * sr,
+                y: cy + px * sr + py * cr,
+            };
         },
 
         _drawPlayer(ctx, data) {
@@ -1101,6 +1356,33 @@
             ctx.strokeStyle = '#ffffff';
             ctx.lineWidth = 1.5;
             ctx.arc(cx, cy, radius, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.stroke();
+
+            const facing = this._normalizeVec2(data && data.playerFacing);
+            if (!facing) return;
+
+            const ux = facing.x;
+            const uz = facing.z;
+            const tipLen = 9;
+            const tailLen = 2;
+            const halfWidth = 4;
+
+            const tipX = cx + ux * tipLen;
+            const tipY = cy + uz * tipLen;
+            const leftX = cx - ux * tailLen - uz * halfWidth;
+            const leftY = cy - uz * tailLen + ux * halfWidth;
+            const rightX = cx - ux * tailLen + uz * halfWidth;
+            const rightY = cy - uz * tailLen - ux * halfWidth;
+
+            ctx.beginPath();
+            ctx.fillStyle = '#00cfff';
+            ctx.strokeStyle = '#ffffff';
+            ctx.lineWidth = 1.3;
+            ctx.moveTo(tipX, tipY);
+            ctx.lineTo(leftX, leftY);
+            ctx.lineTo(rightX, rightY);
+            ctx.closePath();
             ctx.fill();
             ctx.stroke();
         },
