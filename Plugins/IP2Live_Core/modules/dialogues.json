@@ -302,8 +302,8 @@
         [
           "Stage 4 Level 1 is a damaged office subnet.",
           "",
-          "Five PCs are broadcasting corrupted address tables across this map.",
-          "Follow the route beacon, catch the falling data octets at each PC, and rebuild the missing IP addresses."
+          "Five PCs are broadcasting corrupted address formulas across this map.",
+          "Follow the route beacon, catch the falling formula variables at each PC, and solve the missing IP addresses."
         ]
       ]
     },
@@ -320,15 +320,15 @@
       },
       "slides": [
         [
-          "This PC is leaking corrupted data packets.",
+          "This PC is leaking corrupted subnet formula packets.",
           "",
-          "Octets are falling through five data lanes. Move the receptor to catch the four octets that form the missing IP address."
+          "Formula variables are falling through five data lanes. Move the receptor to catch the variables needed by the active formula."
         ],
         [
-          "Network address clears host bits to 0.",
-          "Broadcast address sets host bits to 1.",
-          "The gateway is the first usable IP, and the reserve is the last usable IP.",
-          "After catching four correct octets, arrange them in order and submit."
+          "Network address uses the start of the block.",
+          "Broadcast address uses the end of the block.",
+          "Viable host IPs sit between network plus one and broadcast minus one.",
+          "After catching the correct variables, place them into the formula blanks and submit."
         ]
       ]
     },
@@ -351,10 +351,10 @@
           "This first PC is your calibration node. A wrong catch here means we review the subnet edge and keep the same PC active."
         ],
         [
-          "Find the block created by the CIDR.",
-          "The network address is the first address in that block.",
-          "The broadcast address is the last address in that block.",
-          "Usable hosts sit between those two edges. Catch only the matching octets."
+          "Find the block size from the CIDR mask, then identify which block contains the PC IP.",
+          "Network Address = Starting Network Address + (Block Size x (Subnet Number - 1)).",
+          "Broadcast Address = Base Network Address + (Block Size x Target Subnet) - 1.",
+          "Viable hosts run from Network Address + 1 through Broadcast Address - 1."
         ]
       ]
     },
@@ -377,12 +377,12 @@
       },
       "slides": [
         [
-          "APEX detected the corrupted octets.",
+          "APEX detected corrupted formula variables.",
           "",
           "Their rollback circuit reopened PC 01."
         ],
         [
-          "Catch and arrange the correct octets at PC 01 again to prove the route table is stable.",
+          "Catch and place the correct formula variables at PC 01 again to prove the route table is stable.",
           "After that, the beacon will return you to the PC where the failure happened."
         ]
       ]
@@ -403,7 +403,7 @@
         [
           "All five PCs are routing cleanly.",
           "",
-          "Every corrupted IP address has been rebuilt from the captured octets.",
+          "Every corrupted IP address has been solved from captured formula variables.",
           "Network address, broadcast address, and usable range traces are restored across the subnet."
         ]
       ]
