@@ -24,6 +24,9 @@ class IP2LiveLightingManager {
         this._lastRendererClear = null;
         this._overlayAlpha = 0;
         this._overlayColor = '8, 14, 26';
+        this._apertureConfig = null;
+        this._overlayCanvas = null;
+        this._overlayCtx = null;
         this._tick = 0;
 
         this._registerDefaultPresets();
@@ -125,12 +128,16 @@ class IP2LiveLightingManager {
 
         if (!preset || preset.enabled === false) {
             this._overlayAlpha = 0;
+            this._apertureConfig = null;
             return false;
         }
 
         this._sceneRef = scene || this._sceneRef;
-        this._overlayAlpha = this._clampNumber(preset.dimOverlay, 0, 0.8, 0);
+        this._overlayAlpha = this._clampNumber(preset.dimOverlay, 0, 0.95, 0);
         this._overlayColor = preset.overlayColor || '5, 9, 18';
+        this._apertureConfig = preset.visionAperture && preset.visionAperture.enabled !== false
+            ? Object.assign({}, preset.visionAperture)
+            : null;
         if (threeScene) {
             this._appliedThreeScene = threeScene;
         }
@@ -157,6 +164,7 @@ class IP2LiveLightingManager {
         this.activePreset = null;
         this._appliedThreeScene = null;
         this._overlayAlpha = 0;
+        this._apertureConfig = null;
         if (Manager && Manager.Stack) Manager.Stack.requestPaintHUD = true;
     }
 
@@ -184,18 +192,169 @@ class IP2LiveLightingManager {
     }
 
     setOverlay(alpha, color) {
-        this._overlayAlpha = this._clampNumber(alpha, 0, 0.8, this._overlayAlpha);
+        this._overlayAlpha = this._clampNumber(alpha, 0, 0.95, this._overlayAlpha);
         if (color) this._overlayColor = color;
+        if (Manager && Manager.Stack) Manager.Stack.requestPaintHUD = true;
+    }
+
+    setAperture(config) {
+        if (!config || config.enabled === false) {
+            this._apertureConfig = null;
+        } else {
+            this._apertureConfig = Object.assign({}, config);
+        }
+        if (Manager && Manager.Stack) Manager.Stack.requestPaintHUD = true;
+    }
+
+    clearAperture() {
+        this._apertureConfig = null;
         if (Manager && Manager.Stack) Manager.Stack.requestPaintHUD = true;
     }
 
     drawHUD(ctx) {
         if (!ctx || this._overlayAlpha <= 0) return;
+        const overlay = this._drawOverlayBuffer(ctx);
+        if (overlay) {
+            ctx.save();
+            ctx.globalCompositeOperation = 'source-over';
+            ctx.drawImage(overlay, 0, 0);
+            ctx.restore();
+            return;
+        }
+
         ctx.save();
         ctx.globalCompositeOperation = 'source-over';
         ctx.fillStyle = 'rgba(' + this._overlayColor + ', ' + this._overlayAlpha.toFixed(3) + ')';
         ctx.fillRect(0, 0, ctx.canvas.width, ctx.canvas.height);
         ctx.restore();
+    }
+
+    _drawOverlayBuffer(ctx) {
+        const canvas = ctx && ctx.canvas;
+        if (!canvas || !canvas.width || !canvas.height) return null;
+
+        const buffer = this._ensureOverlayBuffer(canvas.width, canvas.height);
+        const bctx = this._overlayCtx;
+        if (!buffer || !bctx) return null;
+
+        bctx.save();
+        bctx.globalCompositeOperation = 'source-over';
+        bctx.clearRect(0, 0, buffer.width, buffer.height);
+        bctx.fillStyle = 'rgba(' + this._overlayColor + ', ' + this._overlayAlpha.toFixed(3) + ')';
+        bctx.fillRect(0, 0, buffer.width, buffer.height);
+
+        if (this._apertureConfig && this._apertureConfig.enabled !== false) {
+            this._cutAperture(bctx, buffer.width, buffer.height, this._apertureConfig);
+            this._applyDistanceDarkness(bctx, buffer.width, buffer.height, this._apertureConfig);
+            this._drawApertureAccents(bctx, buffer.width, buffer.height, this._apertureConfig);
+        }
+
+        bctx.restore();
+        return buffer;
+    }
+
+    _ensureOverlayBuffer(width, height) {
+        if (!this._overlayCanvas) {
+            if (typeof document !== 'undefined' && document.createElement) {
+                this._overlayCanvas = document.createElement('canvas');
+            } else if (typeof OffscreenCanvas !== 'undefined') {
+                this._overlayCanvas = new OffscreenCanvas(width, height);
+            }
+        }
+        if (!this._overlayCanvas) return null;
+        if (this._overlayCanvas.width !== width) this._overlayCanvas.width = width;
+        if (this._overlayCanvas.height !== height) this._overlayCanvas.height = height;
+        if (!this._overlayCtx) this._overlayCtx = this._overlayCanvas.getContext('2d');
+        return this._overlayCanvas;
+    }
+
+    _cutAperture(ctx, width, height, config) {
+        const center = this._apertureCenter(width, height, config);
+        const pulse = this._clampNumber(config.pulse, 0, 40, 0);
+        const radius = this._clampNumber(config.radius, 24, Math.max(width, height), 180) +
+            (pulse ? Math.sin(this._tick * 0.055) * pulse : 0);
+        const feather = this._clampNumber(config.feather, 8, Math.max(width, height), 120);
+        const innerClear = this._clampNumber(config.innerClear, 0, 1, 0.95);
+        const midClear = this._clampNumber(config.midClear, 0, 1, 0.82);
+        const outerClear = this._clampNumber(config.outerClear, 0, 1, 0.28);
+        const innerStop = this._clampNumber(config.innerStop, 0.05, 0.85, 0.46);
+        const outerStopMin = Math.min(0.95, innerStop + 0.05);
+        const outerStop = this._clampNumber(config.outerStop, outerStopMin, 0.98, 0.74);
+        const gradient = ctx.createRadialGradient(
+            center.x, center.y, Math.max(1, radius * 0.18),
+            center.x, center.y, Math.max(radius + feather, radius + 1)
+        );
+
+        gradient.addColorStop(0, 'rgba(0, 0, 0, ' + innerClear.toFixed(3) + ')');
+        gradient.addColorStop(innerStop, 'rgba(0, 0, 0, ' + midClear.toFixed(3) + ')');
+        gradient.addColorStop(outerStop, 'rgba(0, 0, 0, ' + outerClear.toFixed(3) + ')');
+        gradient.addColorStop(1, 'rgba(0, 0, 0, 0)');
+
+        ctx.save();
+        ctx.globalCompositeOperation = 'destination-out';
+        ctx.fillStyle = gradient;
+        ctx.fillRect(0, 0, width, height);
+        ctx.restore();
+    }
+
+    _drawApertureAccents(ctx, width, height, config) {
+        const center = this._apertureCenter(width, height, config);
+        const radius = this._clampNumber(config.radius, 24, Math.max(width, height), 180);
+
+        ctx.save();
+        ctx.globalCompositeOperation = 'source-over';
+
+        if (config.centerGlow) {
+            const glow = ctx.createRadialGradient(center.x, center.y, 0, center.x, center.y, radius * 1.08);
+            glow.addColorStop(0, config.centerGlow);
+            glow.addColorStop(1, 'rgba(0, 0, 0, 0)');
+            ctx.fillStyle = glow;
+            ctx.fillRect(0, 0, width, height);
+        }
+
+        if (config.ringColor) {
+            ctx.strokeStyle = config.ringColor;
+            ctx.lineWidth = 1;
+            ctx.beginPath();
+            ctx.arc(center.x, center.y, radius + Math.sin(this._tick * 0.04) * 2, 0, Math.PI * 2);
+            ctx.stroke();
+        }
+
+        ctx.restore();
+    }
+
+    _applyDistanceDarkness(ctx, width, height, config) {
+        const amount = this._clampNumber(config.farDarkness, 0, 1, 0);
+        if (amount <= 0) return;
+
+        const center = this._apertureCenter(width, height, config);
+        const radius = this._clampNumber(config.radius, 24, Math.max(width, height), 180);
+        const startMultiplier = this._clampNumber(config.farDarknessStart, 0.8, 4, 1.2);
+        const endMultiplier = this._clampNumber(config.farDarknessEnd, startMultiplier + 0.2, 6, 2.4);
+        const inner = Math.max(1, radius * startMultiplier);
+        const outer = Math.max(inner + 1, radius * endMultiplier);
+        const gradient = ctx.createRadialGradient(center.x, center.y, inner, center.x, center.y, outer);
+
+        gradient.addColorStop(0, 'rgba(0, 0, 0, 0)');
+        gradient.addColorStop(0.68, 'rgba(0, 0, 0, ' + (amount * 0.72).toFixed(3) + ')');
+        gradient.addColorStop(1, 'rgba(0, 0, 0, ' + amount.toFixed(3) + ')');
+
+        ctx.save();
+        ctx.globalCompositeOperation = 'source-over';
+        ctx.fillStyle = gradient;
+        ctx.fillRect(0, 0, width, height);
+        ctx.restore();
+    }
+
+    _apertureCenter(width, height, config) {
+        const cfg = config || {};
+        if (cfg.anchor === 'fixed' && typeof cfg.x === 'number' && typeof cfg.y === 'number') {
+            return { x: cfg.x, y: cfg.y };
+        }
+        return {
+            x: width * this._clampNumber(cfg.screenX, 0, 1, 0.5),
+            y: height * this._clampNumber(cfg.screenY, 0, 1, 0.54),
+        };
     }
 
     _injectMapHooks() {
@@ -212,8 +371,8 @@ class IP2LiveLightingManager {
 
         const originalDrawHUD = Scene.Map.prototype.drawHUD;
         Scene.Map.prototype.drawHUD = function () {
-            originalDrawHUD.call(this);
             manager.drawHUD(Common.Platform.ctx);
+            originalDrawHUD.call(this);
         };
     }
 

@@ -593,6 +593,8 @@
                         mode: 'stage',
                         status: 'Returning to first floor',
                         detail: 'Relearning core lever wiring',
+                        darklightsReturn: true,
+                        source: 'HarderWiresGameplayManager._sendBackToFirstFloor',
                     });
                 } else if (IP2Live.MapManager && typeof IP2Live.MapManager.goTo === 'function') {
                     IP2Live.MapManager.goTo(3, { spawn: { x: 6, y: 0, z: 17 } });
