@@ -217,6 +217,9 @@ const MapManager = {
     _goToImmediate(mapId, options) {
         const opts = options || {};
         this.syncStageFoundation();
+        if (IP2Live.QuestMinimap && typeof IP2Live.QuestMinimap.destroy === 'function') {
+            IP2Live.QuestMinimap.destroy();
+        }
         if (Data.TitlescreenGameover.isTitleBackgroundVideo) Manager.Videos.stop();
         const targetMapId = Number(mapId) || this.NEXT_STAGE_MAP_ID;
         if (Core.Game.current) Core.Game.current.currentMapID = targetMapId;
@@ -725,6 +728,10 @@ const MapManager = {
         }
 
         this._ensureStageIntro(scene, mapId);
+        if (IP2Live.QuestMinimap && typeof IP2Live.QuestMinimap.create === 'function') {
+            if (!IP2Live.QuestMinimap.isActive()) IP2Live.QuestMinimap.create();
+            else IP2Live.QuestMinimap.update();
+        }
         return true;
     },
 

@@ -951,6 +951,7 @@ IP2Live.QuestManagerReady = (async function () {
 IP2Live.MapManagerReady = (async function () {
     if (IP2Live.DialogueManagerReady) await IP2Live.DialogueManagerReady;
     if (IP2Live.GameplayManagerReady) await IP2Live.GameplayManagerReady;
+    if (IP2Live.QuestManagerReady) await IP2Live.QuestManagerReady;
     const root = Common.Platform.ROOT_DIRECTORY;
     const src  = root + 'Plugins/IP2Live_Core/modules/map_manager.js';
     try {
@@ -974,6 +975,35 @@ IP2Live.MapManagerReady = (async function () {
 }());
 
 // ================================================================
+//  Section 2.5.1  QUEST MINIMAP LOADER
+//  DOM/canvas quest minimap widget for live map objective status.
+// ================================================================
+IP2Live.QuestMinimapReady = (async function () {
+    if (IP2Live.QuestManagerReady) await IP2Live.QuestManagerReady;
+    if (IP2Live.MapManagerReady) await IP2Live.MapManagerReady;
+    const root = Common.Platform.ROOT_DIRECTORY;
+    const src  = root + 'Plugins/IP2Live_Core/modules/quest_minimap.js';
+    try {
+        const versionedSrc = src + '?v=20260601_quest_minimap_01_' + Date.now();
+        let resp = await fetch(versionedSrc, { cache: 'no-store' });
+        if (!resp.ok) {
+            console.warn('[IP2Live] Versioned quest minimap fetch failed, retrying plain path:', versionedSrc);
+            resp = await fetch(src, { cache: 'no-store' });
+        }
+        if (!resp.ok) throw new Error('HTTP ' + resp.status);
+        const code = await resp.text();
+        new Function(
+            'Common', 'Core', 'Data', 'Graphic',
+            'Manager', 'Scene', 'Model', 'Main', 'THREE', 'IP2Live', 'inject',
+            code
+        )(Common, Core, Data, Graphic, Manager, Scene, Model, Main, THREE, IP2Live, inject);
+        console.log('[IP2Live] Quest minimap loaded from:', resp.url || src);
+    } catch (e) {
+        console.error('[IP2Live] Failed to load quest minimap:', src, e);
+    }
+}());
+
+// ================================================================
 //  § 2.5.1  RESTART MANAGER
 //  Safely flushes and re-initializes map states while keeping core
 //  profile data intact (like Infiltrator Name).
@@ -983,6 +1013,10 @@ IP2Live.RestartManager = {
         const mapId = (Scene.Map.current && Scene.Map.current.id)
             ? Scene.Map.current.id
             : Data.Systems.ID_MAP_START_HERO;
+
+        if (IP2Live.QuestMinimap && typeof IP2Live.QuestMinimap.destroy === 'function') {
+            IP2Live.QuestMinimap.destroy();
+        }
             
         // Cache persistent data
         const currentName = Core.Game.current ? Core.Game.current.infiltratorName : 'UNKNOWN';
@@ -1019,6 +1053,9 @@ IP2Live.RestartManager = {
             Manager.Stack.clearHUD();
             if (IP2Live.LightingManager) {
                 IP2Live.LightingManager.refresh(Scene.Map.current);
+            }
+            if (IP2Live.QuestMinimap && typeof IP2Live.QuestMinimap.create === 'function') {
+                IP2Live.QuestMinimap.create();
             }
         }
         
@@ -1106,6 +1143,7 @@ IP2Live.TutorialReady = (async function () {
 IP2Live.GameManagerReady = (async function () {
     if (IP2Live.DialogueManagerReady) await IP2Live.DialogueManagerReady;
     if (IP2Live.MapManagerReady) await IP2Live.MapManagerReady;
+    if (IP2Live.QuestMinimapReady) await IP2Live.QuestMinimapReady;
     if (IP2Live.TutorialReady) await IP2Live.TutorialReady;
     if (IP2Live.MusicManagerReady) await IP2Live.MusicManagerReady;
     const root = Common.Platform.ROOT_DIRECTORY;

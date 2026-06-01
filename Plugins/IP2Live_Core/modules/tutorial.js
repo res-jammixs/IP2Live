@@ -88,6 +88,18 @@ const Tutorial = {
             allowCompletion: true,
         });
         qm.update({ scene: this._currentMapScene(), hero: this._questHero() });
+        this._ensureQuestMinimap();
+        return true;
+    },
+
+    _ensureQuestMinimap() {
+        const minimap = IP2Live.QuestMinimap;
+        if (!minimap || typeof minimap.isActive !== 'function') return false;
+        if (!minimap.isActive()) {
+            if (typeof minimap.create === 'function') minimap.create();
+        } else if (typeof minimap.update === 'function') {
+            minimap.update();
+        }
         return true;
     },
 
@@ -204,6 +216,7 @@ const Tutorial = {
         if (opts.hideQuest !== false && IP2Live.QuestManager && typeof IP2Live.QuestManager.hideQuest === 'function') {
             IP2Live.QuestManager.hideQuest('tutorial.navigation');
         }
+        this._ensureQuestMinimap();
 
         if (Manager && Manager.Stack) Manager.Stack.requestPaintHUD = true;
         return true;

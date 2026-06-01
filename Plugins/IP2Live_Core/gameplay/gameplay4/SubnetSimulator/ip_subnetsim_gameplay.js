@@ -1426,6 +1426,10 @@ const SubnetSimulatorGameplayManager = {
 
     launchSubnetSimulatorGameplay(options) {
         const opts = options || {};
+        if (IP2Live.QuestMinimap) {
+            if (!IP2Live.QuestMinimap.isActive()) IP2Live.QuestMinimap.create();
+            else IP2Live.QuestMinimap.update();
+        }
         const attemptKey = this._resolveAttemptKey(opts);
         const isReservedAttempt = !!(opts._reservedAttempt && opts._reservedAttempt === attemptKey);
         if (this._active) return false;

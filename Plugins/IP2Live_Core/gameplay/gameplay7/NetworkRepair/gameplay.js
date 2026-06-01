@@ -1062,6 +1062,10 @@ const NetworkRepairGameplayManager = {
 
     launchNetworkRepairGameplay(options) {
         var opts = options || {};
+        if (IP2Live.QuestMinimap) {
+            if (!IP2Live.QuestMinimap.isActive()) IP2Live.QuestMinimap.create();
+            else IP2Live.QuestMinimap.update();
+        }
         var spec = opts.spec || this._defaultQuestSpec();
         if (!spec) return false;
         var attemptKey = this._resolveAttemptKey({ spec: spec, questId: opts.questId || spec.id, objectiveId: opts.objectiveId || spec.objectiveId });

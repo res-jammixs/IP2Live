@@ -924,6 +924,7 @@ const IP2LiveGameManager = {
         });
 
         const openGameplay = () => {
+            this._ensureQuestMinimap();
             this._setState(this.STATE.GAMEPLAY_ACTIVE, payload);
             this.emit(this.EVENT.GAMEPLAY_STARTED, payload);
             this._openReportAttempt(node.id, payload);
@@ -1075,6 +1076,7 @@ const IP2LiveGameManager = {
             gameplayId,
             trigger: 'gameplay.completed',
         });
+        this._ensureQuestMinimap();
         this._activeGameplayNode = null;
         this.emit(this.EVENT.GAMEPLAY_COMPLETED, data);
         this._closeReportAttempt(gameplayId, data, true);
@@ -1156,6 +1158,7 @@ const IP2LiveGameManager = {
             gameplayId,
             trigger: 'gameplay.cancelled',
         });
+        this._ensureQuestMinimap();
         this._activeGameplayNode = null;
         this.emit('gameplay.cancelled', data);
         this._closeReportAttempt(gameplayId, Object.assign({}, data, {
@@ -1166,7 +1169,19 @@ const IP2LiveGameManager = {
     },
 
     handleQuestObjectiveCompleted(result) {
+        this._ensureQuestMinimap();
         this.emit(this.EVENT.QUEST_OBJECTIVE_COMPLETED, result || {});
+        return true;
+    },
+
+    _ensureQuestMinimap() {
+        const minimap = IP2Live.QuestMinimap;
+        if (!minimap || typeof minimap.isActive !== 'function') return false;
+        if (!minimap.isActive()) {
+            if (typeof minimap.create === 'function') minimap.create();
+        } else if (typeof minimap.update === 'function') {
+            minimap.update();
+        }
         return true;
     },
 
