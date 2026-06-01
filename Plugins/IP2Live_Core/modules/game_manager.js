@@ -1634,7 +1634,27 @@ const IP2LiveGameManager = {
         if (exactSnapshot && typeof exactSnapshot === 'object') return exactSnapshot;
 
         const legacySnapshot = map[key];
-        if (!legacySnapshot || typeof legacySnapshot !== 'object') return null;
+        if (!legacySnapshot || typeof legacySnapshot !== 'object') {
+            if (!name) {
+                const suffix = ':slot:' + key;
+                let bestSnapshot = null;
+                let bestSavedAt = -1;
+                for (const mapKey in map) {
+                    if (!Object.prototype.hasOwnProperty.call(map, mapKey)) continue;
+                    if (mapKey.indexOf(suffix) === mapKey.length - suffix.length) {
+                        const snapshot = map[mapKey];
+                        if (!snapshot || typeof snapshot !== 'object') continue;
+                        const savedAt = Number(snapshot.savedAt) || 0;
+                        if (savedAt >= bestSavedAt) {
+                            bestSavedAt = savedAt;
+                            bestSnapshot = snapshot;
+                        }
+                    }
+                }
+                if (bestSnapshot) return bestSnapshot;
+            }
+            return null;
+        }
         const legacyProfile = String(legacySnapshot.profileName || '').trim();
         if (name && legacyProfile && legacyProfile !== name) return null;
         return legacySnapshot;
