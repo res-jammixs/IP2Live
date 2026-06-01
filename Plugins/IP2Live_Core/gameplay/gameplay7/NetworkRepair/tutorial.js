@@ -1,8 +1,8 @@
 /**
- * IP2Live - Network Repair Tutorial Dialogue Helpers (Octet Catcher)
+ * IP2Live - Network Repair Tutorial Dialogue Helpers (Formula Catcher)
  *
  * Gameplay Seven assistance dialogue for Stage 4 Level 1 PC repairs.
- * Updated for the octet-catching mini-game.
+ * Updated for the formula-variable catching mini-game.
  */
 
 const IPNetworkRepairTutorial = {
@@ -25,19 +25,19 @@ const IPNetworkRepairTutorial = {
                 [
                     pcLabel + ' has a corrupted address table.',
                     '',
-                    'Falling data packets contain IP octets. Use the RECEPTOR to catch',
-                    'the four octets that form the missing address.',
+                    'Falling data packets contain subnet formula variables. Use the',
+                    'RECEPTOR to catch the variables needed by the active formula.',
                 ],
                 [
                     'Move the receptor with LEFT / RIGHT arrows or A / D keys.',
                     'You can also click on a lane to move there instantly.',
                     '',
-                    'After catching four octets the system checks your set.',
-                    'Wrong octets cost one of your three chances.',
+                    'After catching the required variables the system checks your set.',
+                    'Wrong variables cost one of your three chances.',
                 ],
                 [
-                    'Once the correct four octets are captured, arrange them',
-                    'into the proper IP address order and press SUBMIT.',
+                    'Once the correct variables are captured, place them into the',
+                    'formula blanks and press SUBMIT to solve the address.',
                     '',
                     'Good luck, Infiltrator.',
                 ],
@@ -53,18 +53,18 @@ const IPNetworkRepairTutorial = {
         const submitted = m.submittedText || 'blank input';
         const mistakeType = m.mistakeType || 'unknown';
 
-        const correctionSlide = mistakeType === 'wrong_order'
+        const correctionSlide = mistakeType === 'wrong_formula'
             ? [
-                'The octets you caught are correct, but the order is wrong.',
+                'The variables you caught are correct, but the formula blanks are wrong.',
                 '',
-                'Your arrangement: ' + submitted,
-                'Expected address: ' + expected,
+                'Your formula: ' + submitted,
+                'Expected formula: ' + expected,
             ]
             : [
-                'The four octets you caught do not match the target IP.',
+                'The variables you caught do not match the target formula.',
                 '',
                 'Caught set: ' + submitted,
-                'Expected octets from: ' + expected,
+                'Expected variables: ' + expected,
             ];
 
         return this._startDynamicDialogue('stage4.ipnetworkrepair.fix.', {
@@ -80,9 +80,9 @@ const IPNetworkRepairTutorial = {
             slides: [
                 correctionSlide,
                 [
-                    s.taskHelp || 'Split the IP by the CIDR prefix, then calculate the network and broadcast edges.',
+                    s.taskHelp || 'Find the block size, then use the network, broadcast, and viable host formulas.',
                     '',
-                    'The receptor is reset. Try catching the correct octets again.',
+                    'The receptor is reset. Try catching the correct variables again.',
                 ],
             ],
             onComplete,
@@ -113,4 +113,4 @@ const IPNetworkRepairTutorial = {
 IP2Live.IPNetworkRepairTutorial = IPNetworkRepairTutorial;
 window.IP2LiveIPNetworkRepairTutorial = IPNetworkRepairTutorial;
 
-console.log('[IP2Live] gameplay7 NetworkRepair tutorial.js loaded (Octet Catcher).');
+console.log('[IP2Live] gameplay7 NetworkRepair tutorial.js loaded (Formula Catcher).');
