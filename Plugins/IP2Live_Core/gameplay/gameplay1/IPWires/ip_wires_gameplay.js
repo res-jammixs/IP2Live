@@ -1060,6 +1060,10 @@
 
         launchWireGameplay(options) {
             const opts = options || {};
+            if (IP2Live.QuestMinimap) {
+                if (!IP2Live.QuestMinimap.isActive()) IP2Live.QuestMinimap.create();
+                else IP2Live.QuestMinimap.update();
+            }
             const spec = opts.spec || this._defaultQuestSpec();
             const attemptKey = (opts.questId || spec.id) + ':' + (opts.objectiveId || spec.objectiveId);
             const isReservedAttempt = opts._fromGameManager && opts._reservedAttempt === attemptKey;

@@ -1951,6 +1951,10 @@ const PatchPanelGameplayManager = {
 
     launchPatchPanelGameplay(options) {
         const opts = options || {};
+        if (IP2Live.QuestMinimap) {
+            if (!IP2Live.QuestMinimap.isActive()) IP2Live.QuestMinimap.create();
+            else IP2Live.QuestMinimap.update();
+        }
         const guidedTutorial = !!opts.guidedTutorial || this._isTutorialSpec(opts.spec, opts);
         const attemptKey = this._resolveAttemptKey(opts);
         const isReservedAttempt = !!(opts._reservedAttempt && opts._reservedAttempt === attemptKey);
