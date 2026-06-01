@@ -20,7 +20,8 @@ class IP2LiveCIDRQuarantineGameplayScreen extends Scene.Base {
         this.animTick = 0;
         this.finished = false;
         this.phase = 'build';
-        this.maxAttempts = Math.max(1, Number(this.options.maxAttempts) || 3);
+        this.tutorialMode = !!this.options.tutorialMode;
+        this.maxAttempts = this.tutorialMode ? 999999 : Math.max(1, Number(this.options.maxAttempts) || 3);
         this.attemptsUsed = 0;
         const virusConfig = this.options.virusConfig || {};
         this.virusConfig = {
@@ -30,6 +31,7 @@ class IP2LiveCIDRQuarantineGameplayScreen extends Scene.Base {
         };
         this.directionWeights = { R: 1, L: 2, U: 3, D: 4 };
         this.problem = this.options.problem || this._generateProblem(this.options.spec || {});
+        this.directionWeights = this._normalizeDirectionWeights(this.problem.directionWeights || this.directionWeights);
         this._initVirusSpread();
         this.path = [this._cloneTile(this.problem.start)];
         this.draggingPath = false;
@@ -40,7 +42,6 @@ class IP2LiveCIDRQuarantineGameplayScreen extends Scene.Base {
         this.statusText = 'Draw a path that adds the optimized CIDR bits.';
         this.statusTone = 'idle';
         this.trace = null;
-        this.tutorialMode = !!this.options.tutorialMode;
         this.tutorialStep = this.tutorialMode ? 1 : 0;
         this.tutorialPromptActive = false;
         this.tutorialStarted = false;
@@ -49,70 +50,63 @@ class IP2LiveCIDRQuarantineGameplayScreen extends Scene.Base {
     _generateProblem(spec) {
         const profile = spec && spec.profile ? spec.profile : {};
         const questIndex = Number(profile.index || 1) || 1;
-        const classInfo = this._randomCIDRClass();
-        const challengeMode = questIndex > 1;
-        const minAddedBits = challengeMode ? Math.min(classInfo.maxAddedBits, Math.max(classInfo.minAddedBits, 4)) : classInfo.minAddedBits;
-        const targetAddedBits = this._randomInt(minAddedBits, classInfo.maxAddedBits);
-        const targetCIDR = classInfo.originalCIDR + targetAddedBits;
-        const optimizedHostBits = Math.max(0, 32 - targetCIDR);
-        const optimizedCapacity = this._capacityForHostBits(optimizedHostBits);
-        const requiredHosts = this._randomRequiredHosts(optimizedHostBits);
-        const ipAddress = this._randomIPForClass(classInfo.ipClass);
-        const ipInt = this.tools && typeof this.tools.ipToInt === 'function' ? this.tools.ipToInt(ipAddress) : null;
-        const starts = [
-            { col: 1, row: 2 },
-            { col: 2, row: 8 },
-            { col: 1, row: 6 },
-            { col: 3, row: 3 },
-        ];
-        const start = starts[(questIndex - 1) % starts.length];
-        const solutionRoute = this._generateSolutionRoute(start, targetAddedBits, questIndex);
-        const solutionMoves = solutionRoute.moves;
-        const solutionPath = solutionRoute.path;
-        const cursor = this._cloneTile(solutionPath[solutionPath.length - 1]);
-        const blockedKeys = {};
-        for (let i = 0; i < solutionPath.length; i++) blockedKeys[this._tileKey(solutionPath[i])] = true;
-        const edgeBuffer = this._virusEdgeBuffer();
-        const solutionBufferKeys = this._buildSolutionBufferKeys(solutionPath);
+        const difficulty = this._difficultyProfile(questIndex);
 
-        const viruses = [];
-        if (challengeMode) {
+        for (let attempt = 0; attempt < 80; attempt++) {
+            const directionWeights = this._randomDirectionWeights(questIndex, !!spec.tutorial);
+            this.directionWeights = directionWeights;
+            const classInfo = this._randomCIDRClass(difficulty);
+            const minAddedBits = Math.min(classInfo.maxAddedBits, Math.max(classInfo.minAddedBits, difficulty.minAddedBits));
+            const targetAddedBits = this._randomInt(minAddedBits, classInfo.maxAddedBits);
+            const targetCIDR = classInfo.originalCIDR + targetAddedBits;
+            const optimizedHostBits = Math.max(0, 32 - targetCIDR);
+            const optimizedCapacity = this._capacityForHostBits(optimizedHostBits);
+            const requiredHosts = this._randomRequiredHosts(optimizedHostBits);
+            const ipAddress = this._randomIPForClass(classInfo.ipClass);
+            const ipInt = this.tools && typeof this.tools.ipToInt === 'function' ? this.tools.ipToInt(ipAddress) : null;
+            const start = this._randomStartTile(difficulty.edgeMargin);
+            const solutionRoute = this._generateSolutionRoute(start, targetAddedBits, questIndex, difficulty);
+            if (!solutionRoute || !solutionRoute.path || solutionRoute.path.length < 3) continue;
+
+            const solutionMoves = solutionRoute.moves;
+            const solutionPath = solutionRoute.path;
+            const cursor = this._cloneTile(solutionPath[solutionPath.length - 1]);
+            if (this._sameTile(start, cursor) || this._manhattan(start, cursor) < difficulty.minEndpointDistance) continue;
+
+            const blockedKeys = {};
+            for (let i = 0; i < solutionPath.length; i++) blockedKeys[this._tileKey(solutionPath[i])] = true;
+            const edgeBuffer = this._virusEdgeBuffer();
+            const solutionBufferKeys = this._buildSolutionBufferKeys(solutionPath);
+            const viruses = [];
             this._addDefaultPathDecoyViruses(viruses, blockedKeys, start, cursor, solutionPath, solutionBufferKeys, edgeBuffer, questIndex);
-        }
-        const desiredVirusCount = Math.min(34, 18 + questIndex * 3);
-        let seed = (questIndex * 73 + Math.floor(Math.random() * 997)) % 997;
-        for (let tries = 0; viruses.length < desiredVirusCount && tries < 900; tries++) {
-            seed = (seed * 37 + 19) % 997;
-            const tile = { col: seed % 16, row: Math.floor(seed / 16) % 16 };
-            const key = this._tileKey(tile);
-            if (blockedKeys[key]) continue;
-            if (edgeBuffer > 0 && this._isInEdgeBuffer(tile, edgeBuffer)) continue;
-            if (solutionBufferKeys[this._tileKey(tile)]) continue;
-            if (this._manhattan(tile, start) <= 1 || this._manhattan(tile, cursor) <= 1) continue;
-            blockedKeys[key] = true;
-            viruses.push(tile);
+            const desiredVirusCount = Math.min(difficulty.maxViruses, difficulty.baseViruses + questIndex * difficulty.virusStep);
+            this._fillRandomViruses(viruses, blockedKeys, start, cursor, solutionBufferKeys, edgeBuffer, desiredVirusCount, 950);
+
+            return {
+                id: ['path-quarantine', questIndex, classInfo.ipClass, targetCIDR, Date.now(), Math.floor(Math.random() * 9999)].join(':'),
+                questIndex,
+                difficulty,
+                directionWeights,
+                start: this._cloneTile(start),
+                end: this._cloneTile(cursor),
+                viruses,
+                solutionPath,
+                solutionBufferKeys,
+                solutionMoves,
+                ipAddress,
+                ipInt,
+                ipClass: classInfo.ipClass,
+                originalCIDR: classInfo.originalCIDR,
+                requiredHosts,
+                targetAddedBits,
+                targetCIDR,
+                optimizedHostBits,
+                optimizedCapacity,
+                allocatedCIDR: this._allocatedCIDR(ipInt, targetCIDR),
+            };
         }
 
-        return {
-            id: ['path-quarantine', questIndex, classInfo.ipClass, targetCIDR, Date.now(), Math.floor(Math.random() * 9999)].join(':'),
-            questIndex,
-            start: this._cloneTile(start),
-            end: this._cloneTile(cursor),
-            viruses,
-            solutionPath,
-            solutionBufferKeys,
-            solutionMoves,
-            ipAddress,
-            ipInt,
-            ipClass: classInfo.ipClass,
-            originalCIDR: classInfo.originalCIDR,
-            requiredHosts,
-            targetAddedBits,
-            targetCIDR,
-            optimizedHostBits,
-            optimizedCapacity,
-            allocatedCIDR: this._allocatedCIDR(ipInt, targetCIDR),
-        };
+        return this._fallbackProblem(spec, difficulty);
     }
 
     async load() {
@@ -122,12 +116,12 @@ class IP2LiveCIDRQuarantineGameplayScreen extends Scene.Base {
 
     update() {
         this.animTick++;
-        this._updateVirusSpread();
-        if (this.trace) this._updateTrace();
         if (this.tutorialMode && !this.tutorialStarted) {
             this.tutorialStarted = true;
             this._showTutorialIntro();
         }
+        if (this.trace) this._updateTrace();
+        this._updateVirusSpread();
         if (Manager && Manager.Stack) Manager.Stack.requestPaintHUD = true;
     }
 
@@ -232,6 +226,8 @@ class IP2LiveCIDRQuarantineGameplayScreen extends Scene.Base {
             currentCapacity: this._formatHosts(stats.currentCapacity),
             startLabel: this._tileLabel(this.problem.start),
             endLabel: this._tileLabel(this.problem.end),
+            directionWeights: Object.assign({}, this.directionWeights),
+            moveWeightsLine: this._directionWeightLine(),
         };
     }
 
@@ -243,6 +239,7 @@ class IP2LiveCIDRQuarantineGameplayScreen extends Scene.Base {
         this.tutorialPromptActive = true;
         const started = helper.showStep(step, this._tutorialContext(), () => {
             this.tutorialPromptActive = false;
+            if (step === 3 && this.tutorialMode && this._pathStats().connected) this._showTutorialStep(4);
         });
         if (!started) this.tutorialPromptActive = false;
         return started;
@@ -271,13 +268,22 @@ class IP2LiveCIDRQuarantineGameplayScreen extends Scene.Base {
             return;
         }
         if (this.tutorialStep === 3 && (action === 'path' || action === 'connect')) {
-            this._showTutorialFeedback('submitReady');
+            if (this._pathStats().connected) this._showTutorialStep(4);
+            return;
+        }
+        if (this.tutorialStep === 4 && (action === 'path' || action === 'connect')) {
+            const reason = this._tutorialFeedbackReasonForCurrentPath();
+            if (reason === 'submitEarly') {
+                this.tutorialStep = 3;
+                return;
+            }
+            this._showTutorialFeedback(reason);
         }
     }
 
     _confirmPath() {
         if (this.phase !== 'build') return;
-        if (this.tutorialMode && this.tutorialStep < 3 && !this._pathStats().connected) {
+        if (this.tutorialMode && !this._pathStats().connected) {
             this._showTutorialFeedback('submitEarly');
             return;
         }
@@ -287,6 +293,21 @@ class IP2LiveCIDRQuarantineGameplayScreen extends Scene.Base {
         if (result.ok) this._playConfirm();
         else this._playCancel();
         this._startTrace(result);
+    }
+
+    _tutorialFeedbackReasonForCurrentPath() {
+        const stats = this._pathStats();
+        if (!stats.connected) return 'submitEarly';
+        if (stats.hitVirus) return 'virus';
+        if (stats.currentCapacity < this.problem.requiredHosts) return 'too_small';
+        if (stats.currentCapacity > this.problem.optimizedCapacity) return 'too_big';
+        if (stats.currentCIDR !== this.problem.targetCIDR) return 'not_optimized';
+        return 'submitReady';
+    }
+
+    _syncTutorialStepAfterPathEdit() {
+        if (!this.tutorialMode || this.tutorialStep < 4) return;
+        if (!this._pathStats().connected) this.tutorialStep = 3;
     }
 
     _evaluatePath() {
@@ -337,7 +358,7 @@ class IP2LiveCIDRQuarantineGameplayScreen extends Scene.Base {
     _showDiagnostic(result) {
         const remaining = Math.max(0, this.maxAttempts - this.attemptsUsed);
         const lines = (result.lines || ['SIMULATION FAILED.']).slice();
-        lines.push('Retries remaining: ' + remaining + '/' + this.maxAttempts + '.');
+        lines.push('Retries remaining: ' + this._retryLabel(remaining) + '/' + this._attemptLimitLabel() + '.');
         const after = () => {
             this.phase = 'build';
             this.statusText = 'Path rejected: ' + this._reasonLabel(result.reason) + '. Adjust and confirm again.';
@@ -539,7 +560,7 @@ class IP2LiveCIDRQuarantineGameplayScreen extends Scene.Base {
         ctx.font = 'bold ' + Math.round(16 * m.sY) + 'px monospace';
         ctx.fillStyle = '#FFFFFF';
         ctx.textAlign = 'left';
-        ctx.fillText(this.trace ? 'ANIMATED CIDR CALCULATION' : 'CIDR HOST PREVIEW', infoX, infoY);
+        ctx.fillText(this.trace ? 'ANIMATED CIDR CALCULATION' : 'CIDR ROUTE PREVIEW', infoX, infoY);
         ctx.font = 'bold ' + Math.round(24 * m.sY) + 'px monospace';
         ctx.fillStyle = '#FFE600';
         ctx.fillText('CIDR /' + this.problem.originalCIDR + ' +' + stats.addedBits + ' = /' + stats.currentCIDR, infoX, infoY + 42 * m.sY);
@@ -547,20 +568,21 @@ class IP2LiveCIDRQuarantineGameplayScreen extends Scene.Base {
         ctx.fillStyle = '#BDEEFF';
         ctx.fillText('Relay: ' + this.problem.ipAddress + '/' + this.problem.originalCIDR + '   Class ' + this.problem.ipClass, infoX, infoY + 76 * m.sY);
         ctx.fillText('Needed hosts: ' + this._formatHosts(this.problem.requiredHosts), infoX, infoY + 100 * m.sY);
-        ctx.fillText('Host bits: 32 - ' + stats.currentCIDR + ' = ' + stats.currentHostBits + '   Capacity: 2^' + stats.currentHostBits + ' = ' + this._formatHosts(stats.currentCapacity), infoX, infoY + 124 * m.sY);
+        ctx.fillText(this.tutorialMode ? 'Host bits: 32 - ' + stats.currentCIDR + ' = ' + stats.currentHostBits + '   Capacity: 2^' + stats.currentHostBits + ' = ' + this._formatHosts(stats.currentCapacity) : 'Compute the smallest fitting CIDR before confirming.', infoX, infoY + 124 * m.sY);
         if (this.trace) {
             ctx.fillStyle = '#FFFFFF';
             ctx.fillText(this._traceCalculationLine(), infoX, infoY + 154 * m.sY);
             ctx.fillText(this._traceCIDRLine(stats), infoX, infoY + 184 * m.sY);
             ctx.fillStyle = this.trace.result.ok ? '#79FFB6' : '#FF4D7D';
-            ctx.fillText(this.trace.finished ? this._finalTraceLine() : 'Capacity preview: ' + this._formatHosts(stats.currentCapacity) + ' / optimized ' + this._formatHosts(this.problem.optimizedCapacity), infoX, infoY + 214 * m.sY);
+            ctx.fillText(this.trace.finished ? this._finalTraceLine() : (this.tutorialMode ? 'Capacity preview: ' + this._formatHosts(stats.currentCapacity) + ' / optimized ' + this._formatHosts(this.problem.optimizedCapacity) : 'Replaying connector route.'), infoX, infoY + 214 * m.sY);
         } else {
             ctx.fillStyle = this.statusTone === 'bad' ? '#FF4D7D' : (this.statusTone === 'good' ? '#79FFB6' : '#FFFFFF');
             ctx.fillText('Path tiles: ' + this.path.length + '   Connected: ' + (this._pathStats().connected ? 'YES' : 'NO'), infoX, infoY + 154 * m.sY);
             ctx.fillText(this.statusText, infoX, infoY + 184 * m.sY);
             ctx.fillStyle = '#BDEEFF';
-            ctx.fillText('Move weights: Right +1  Left +2  Up +3  Down +4', infoX, infoY + 214 * m.sY);
+            ctx.fillText(this._directionWeightLine(), infoX, infoY + 214 * m.sY);
         }
+        this._drawVirusMeter(ctx, m, infoX, infoY + 242 * m.sY, 430 * m.sX, 18 * m.sY);
 
         for (let i = 0; i < this.buttonRects.length; i++) this._drawButton(ctx, this.buttonRects[i], m, this.buttonRects[i].label);
         ctx.font = 'bold ' + Math.round(11 * m.sY) + 'px monospace';
@@ -574,21 +596,30 @@ class IP2LiveCIDRQuarantineGameplayScreen extends Scene.Base {
         ctx.font = 'bold ' + Math.round(12 * m.sY) + 'px monospace';
         ctx.fillStyle = '#8FF8FF';
         ctx.textAlign = 'left';
-        ctx.fillText('TRIES ' + this.attemptsUsed + '/' + this.maxAttempts + '   Drag/click path   Z: undo   R: clear   ENTER: confirm', m.panelX + 30 * m.sX, m.panelY + m.panelH - 28 * m.sY);
+        ctx.fillText('TRIES ' + this.attemptsUsed + '/' + this._attemptLimitLabel() + '   Drag/click path   Z: undo   R: clear   ENTER: confirm', m.panelX + 30 * m.sX, m.panelY + m.panelH - 28 * m.sY);
     }
 
     _drawVirusAlert(ctx, m) {
         if (!this.virusState) return;
+        const density = this._virusDensity();
+        const difficulty = this.problem && this.problem.difficulty ? this.problem.difficulty : {};
+        const warning = Number(difficulty.warningDensity) || 0.30;
+        const critical = Number(difficulty.criticalDensity) || 0.50;
         let intensity = 0;
         if (this.virusState.overrun) intensity = 0.65;
         else if (this._shouldTriggerOverrun()) intensity = 0.35;
+        else if (density >= critical) intensity = 0.28;
+        else if (density >= warning) intensity = 0.14;
         if (intensity <= 0) return;
 
         const pulse = 0.5 + 0.5 * Math.sin(this.animTick * 0.3);
-        const alpha = Math.min(0.85, intensity + pulse * 0.25);
+        const alpha = Math.min(0.85, intensity + pulse * (density >= critical ? 0.30 : 0.14));
         ctx.save();
-        ctx.globalAlpha = alpha;
-        ctx.fillStyle = '#FF0B2F';
+        ctx.globalAlpha = Math.min(0.42, alpha);
+        ctx.strokeStyle = '#FF0B2F';
+        ctx.lineWidth = (density >= critical ? 10 : 6) * m.sX;
+        ctx.strokeRect(4 * m.sX, 4 * m.sY, m.cW - 8 * m.sX, m.cH - 8 * m.sY);
+        ctx.fillStyle = 'rgba(255, 11, 47, 0.12)';
         ctx.fillRect(0, 0, m.cW, m.cH);
         ctx.restore();
 
@@ -638,12 +669,16 @@ class IP2LiveCIDRQuarantineGameplayScreen extends Scene.Base {
         }
         if (!this._isAdjacent(last, tile)) {
             if (this._sameTile(tile, this.problem.start)) this._clearPath();
-            else this._setStatus('Only adjacent tiles can extend the connector.', 'bad');
+            else {
+                this._setStatus('Only adjacent tiles can extend the connector.', 'bad');
+                if (this.tutorialMode) this._showTutorialFeedback('adjacent');
+            }
             return false;
         }
         if (this._isVirus(tile)) {
             this._setStatus('Virus node blocks that route. Choose another tile.', 'bad');
             this._playCancel();
+            if (this.tutorialMode) this._showTutorialFeedback('virus');
             return false;
         }
         this.path.push(this._cloneTile(tile));
@@ -657,6 +692,7 @@ class IP2LiveCIDRQuarantineGameplayScreen extends Scene.Base {
     _undoPath() {
         if (this.phase !== 'build' || this.path.length <= 1) return false;
         this.path.pop();
+        this._syncTutorialStepAfterPathEdit();
         this._setStatus('Last tile removed.', 'idle');
         return true;
     }
@@ -664,6 +700,7 @@ class IP2LiveCIDRQuarantineGameplayScreen extends Scene.Base {
     _clearPath() {
         if (this.phase !== 'build') return false;
         this.path = [this._cloneTile(this.problem.start)];
+        this._syncTutorialStepAfterPathEdit();
         this._setStatus('Path cleared. Start from the blue node.', 'idle');
         return true;
     }
@@ -671,6 +708,7 @@ class IP2LiveCIDRQuarantineGameplayScreen extends Scene.Base {
     _rewindTo(index) {
         if (index < 0 || index >= this.path.length) return false;
         this.path = this.path.slice(0, index + 1);
+        this._syncTutorialStepAfterPathEdit();
         this._setStatus('Path rewound to tile ' + this._tileLabel(this.path[index]) + '.', 'idle');
         this._playCursor();
         return true;
@@ -714,12 +752,14 @@ class IP2LiveCIDRQuarantineGameplayScreen extends Scene.Base {
             overrunTick: 0,
             edgeBuffer,
             revealThreshold: Math.max(6, Math.round(totalSpawnableNonSolution * 0.06)),
+            initialViruses: viruses.map((v) => this._cloneTile(v)),
         };
     }
 
     _updateVirusSpread() {
         if (this.finished) return;
         if (!this.virusState) this._initVirusSpread();
+        if (this.tutorialPromptActive || this._isDialogueActive()) return;
         if (this.phase === 'tracing' || this.phase === 'diagnostic' || this.phase === 'tutorial_complete') return;
 
         if (this.virusState.overrun) {
@@ -802,12 +842,31 @@ class IP2LiveCIDRQuarantineGameplayScreen extends Scene.Base {
             'Retry before the next surge overwhelms the sector.',
         ], this._baseResult(this._pathStats()));
 
+        if (this.tutorialMode) {
+            this.lastDiagnostic = result;
+            this._resetTutorialAttemptAfterFailure();
+            this._showTutorialFeedback('virus_overrun');
+            return;
+        }
+
         this.attemptsUsed++;
         if (this.attemptsUsed >= this.maxAttempts) {
             this._failOut(result);
         } else {
             this._showDiagnostic(result);
         }
+    }
+
+    _resetTutorialAttemptAfterFailure() {
+        if (this.virusState && this.virusState.initialViruses) {
+            this.problem.viruses = this.virusState.initialViruses.map((v) => this._cloneTile(v));
+        }
+        this.path = [this._cloneTile(this.problem.start)];
+        this.phase = 'build';
+        this.trace = null;
+        this._initVirusSpread();
+        this.statusText = 'Attempt reset. Rebuild the connector with the same clues.';
+        this.statusTone = 'idle';
     }
 
     _spawnVirusBatch(count, options) {
@@ -898,6 +957,12 @@ class IP2LiveCIDRQuarantineGameplayScreen extends Scene.Base {
     _remainingSpawnableNonSolution() {
         if (!this.virusState) return 0;
         return Math.max(0, this.virusState.totalSpawnableNonSolution - this.virusState.virusNonSolutionCount);
+    }
+
+    _virusDensity() {
+        const total = this.virusState && this.virusState.totalTiles ? this.virusState.totalTiles : 256;
+        const count = this.problem && this.problem.viruses ? this.problem.viruses.length : 0;
+        return total > 0 ? count / total : 0;
     }
 
     _isInSolutionBuffer(tile) {
@@ -991,7 +1056,7 @@ class IP2LiveCIDRQuarantineGameplayScreen extends Scene.Base {
         }
         if (this.tutorialMode) {
             this.phase = 'build';
-            this._showTutorialFeedback('submitWrong');
+            this._showTutorialFeedback(result.reason || 'submitWrong');
             return;
         }
         if (this.attemptsUsed >= this.maxAttempts) {
@@ -1021,6 +1086,8 @@ class IP2LiveCIDRQuarantineGameplayScreen extends Scene.Base {
             pathLength: this.path.length,
             pathTiles: this.path.map((t) => this._cloneTile(t)),
             moveWeights: stats.moves.map((m) => ({ direction: m.direction, weight: m.weight })),
+            directionWeights: Object.assign({}, this.directionWeights),
+            difficulty: Object.assign({}, this.problem.difficulty || {}),
             attemptsUsed: this.attemptsUsed,
             maxAttempts: this.maxAttempts,
             retries: Math.max(0, this.attemptsUsed - 1),
@@ -1076,17 +1143,23 @@ class IP2LiveCIDRQuarantineGameplayScreen extends Scene.Base {
 
     _traceCIDRLine(stats) {
         const s = stats || this._traceStats();
-        return 'CIDR /' + this.problem.originalCIDR + ' +' + s.addedBits + ' = /' + s.currentCIDR + '  |  host bits 32-' + s.currentCIDR + ' = ' + s.currentHostBits;
+        if (this.tutorialMode) return 'CIDR /' + this.problem.originalCIDR + ' +' + s.addedBits + ' = /' + s.currentCIDR + '  |  host bits 32-' + s.currentCIDR + ' = ' + s.currentHostBits;
+        return 'CIDR /' + this.problem.originalCIDR + ' +' + s.addedBits + ' = /' + s.currentCIDR;
     }
 
     _finalTraceLine() {
         const stats = this._pathStats();
-        return 'Final: ' + stats.allocatedCIDR + '  ' + this._formatHosts(stats.currentCapacity) + ' hosts / needed ' + this._formatHosts(this.problem.requiredHosts);
+        if (this.tutorialMode) return 'Final: ' + stats.allocatedCIDR + '  ' + this._formatHosts(stats.currentCapacity) + ' hosts / needed ' + this._formatHosts(this.problem.requiredHosts);
+        return 'Final: ' + stats.allocatedCIDR + ' connector validated.';
     }
 
     _setStatus(text, tone) {
         this.statusText = text;
         this.statusTone = tone || 'idle';
+    }
+
+    _isDialogueActive() {
+        return !!(IP2Live.DialogueManager && IP2Live.DialogueManager.isActive && IP2Live.DialogueManager.isActive());
     }
 
     _formatHosts(value) {
@@ -1096,19 +1169,179 @@ class IP2LiveCIDRQuarantineGameplayScreen extends Scene.Base {
         return n.toLocaleString ? n.toLocaleString('en-US') : String(n);
     }
 
+    _difficultyProfile(questIndex) {
+        const q = Math.max(1, Number(questIndex) || 1);
+        return {
+            level: q,
+            minAddedBits: Math.min(13, 2 + q * 2),
+            minEndpointDistance: Math.min(7, 2 + q),
+            maxRouteMoves: Math.min(12, 5 + q * 2),
+            edgeMargin: q >= 3 ? 2 : 1,
+            baseViruses: 13 + q * 2,
+            virusStep: 3,
+            maxViruses: Math.min(48, 24 + q * 5),
+            warningDensity: Math.max(0.25, 0.32 - q * 0.02),
+            criticalDensity: Math.max(0.40, 0.52 - q * 0.02),
+        };
+    }
+
+    _attemptLimitLabel() {
+        return this.tutorialMode ? '∞' : String(this.maxAttempts);
+    }
+
+    _retryLabel(value) {
+        return this.tutorialMode ? '∞' : String(Math.max(0, Number(value) || 0));
+    }
+
+    _normalizeDirectionWeights(weights) {
+        const source = weights || {};
+        const fallback = { R: 1, L: 2, U: 3, D: 4 };
+        const out = {};
+        const used = {};
+        const dirs = ['R', 'L', 'U', 'D'];
+        for (let i = 0; i < dirs.length; i++) {
+            const d = dirs[i];
+            let value = Math.max(1, Math.min(4, Number(source[d]) || fallback[d]));
+            while (used[value]) value = value % 4 + 1;
+            out[d] = value;
+            used[value] = true;
+        }
+        return out;
+    }
+
+    _randomDirectionWeights(questIndex, tutorialMode) {
+        if (tutorialMode && Number(questIndex || 1) <= 1) {
+            return { R: 1, L: 2, U: 3, D: 4 };
+        }
+        const values = [1, 2, 3, 4];
+        for (let i = values.length - 1; i > 0; i--) {
+            const j = this._randomInt(0, i);
+            const tmp = values[i];
+            values[i] = values[j];
+            values[j] = tmp;
+        }
+        const dirs = ['R', 'L', 'U', 'D'];
+        const out = {};
+        for (let i = 0; i < dirs.length; i++) out[dirs[i]] = values[i];
+        return out;
+    }
+
+    _directionWeightLine() {
+        const w = this.directionWeights || {};
+        return 'Move bits: R +' + (w.R || 0) + '  L +' + (w.L || 0) + '  U +' + (w.U || 0) + '  D +' + (w.D || 0);
+    }
+
+    _maxDirectionWeight() {
+        const w = this.directionWeights || {};
+        return Math.max(1, Number(w.R) || 1, Number(w.L) || 1, Number(w.U) || 1, Number(w.D) || 1);
+    }
+
+    _minDirectionWeight() {
+        const w = this.directionWeights || {};
+        return Math.max(1, Math.min(Number(w.R) || 1, Number(w.L) || 1, Number(w.U) || 1, Number(w.D) || 1));
+    }
+
+    _randomStartTile(edgeMargin) {
+        const m = Math.max(0, Math.min(5, Number(edgeMargin) || 0));
+        return {
+            col: this._randomInt(m, 15 - m),
+            row: this._randomInt(m, 15 - m),
+        };
+    }
+
+    _fillRandomViruses(viruses, blockedKeys, start, end, solutionBufferKeys, edgeBuffer, desiredCount, maxTries) {
+        for (let tries = 0; viruses.length < desiredCount && tries < maxTries; tries++) {
+            const tile = { col: this._randomInt(0, 15), row: this._randomInt(0, 15) };
+            const key = this._tileKey(tile);
+            if (blockedKeys[key]) continue;
+            if (edgeBuffer > 0 && this._isInEdgeBuffer(tile, edgeBuffer)) continue;
+            if (solutionBufferKeys && solutionBufferKeys[key]) continue;
+            if (this._manhattan(tile, start) <= 1 || this._manhattan(tile, end) <= 1) continue;
+            blockedKeys[key] = true;
+            viruses.push(this._cloneTile(tile));
+        }
+    }
+
+    _drawVirusMeter(ctx, m, x, y, w, h) {
+        const density = this._virusDensity();
+        const difficulty = this.problem && this.problem.difficulty ? this.problem.difficulty : {};
+        const warning = Number(difficulty.warningDensity) || 0.30;
+        const critical = Number(difficulty.criticalDensity) || 0.50;
+        const pulse = 0.5 + 0.5 * Math.sin(this.animTick * 0.24);
+        const fillW = Math.max(0, Math.min(w, w * density));
+        const danger = density >= critical;
+        ctx.save();
+        ctx.fillStyle = 'rgba(255,255,255,0.08)';
+        ctx.fillRect(x, y, w, h);
+        ctx.fillStyle = danger ? 'rgba(255, 0, 56, ' + (0.70 + pulse * 0.25) + ')' : (density >= warning ? '#FFB000' : '#70E9FF');
+        ctx.fillRect(x, y, fillW, h);
+        ctx.strokeStyle = danger ? '#FF2D6F' : '#70E9FF';
+        ctx.lineWidth = 1.3 * m.sX;
+        ctx.strokeRect(x, y, w, h);
+        ctx.fillStyle = danger ? '#FFB7C6' : '#BDEEFF';
+        ctx.font = 'bold ' + Math.round(11 * m.sY) + 'px monospace';
+        ctx.textAlign = 'left';
+        ctx.fillText('Virus pressure ' + this.problem.viruses.length + '/256', x, y + h + 16 * m.sY);
+        ctx.restore();
+    }
+
+    _fallbackProblem(spec, difficulty) {
+        const profile = spec && spec.profile ? spec.profile : {};
+        const questIndex = Number(profile.index || 1) || 1;
+        this.directionWeights = { R: 1, L: 2, U: 3, D: 4 };
+        const classInfo = { ipClass: 'C', originalCIDR: 24, minAddedBits: 3, maxAddedBits: 6 };
+        const targetAddedBits = Math.min(classInfo.maxAddedBits, Math.max(classInfo.minAddedBits, difficulty.minAddedBits));
+        const targetCIDR = classInfo.originalCIDR + targetAddedBits;
+        const optimizedHostBits = Math.max(0, 32 - targetCIDR);
+        const ipAddress = this._randomIPForClass(classInfo.ipClass);
+        const ipInt = this.tools && typeof this.tools.ipToInt === 'function' ? this.tools.ipToInt(ipAddress) : null;
+        const start = { col: 2, row: 4 };
+        const route = this._routeFromMoves(start, this._movesForAddedBits(targetAddedBits));
+        const end = route.path[route.path.length - 1];
+        const blockedKeys = {};
+        for (let i = 0; i < route.path.length; i++) blockedKeys[this._tileKey(route.path[i])] = true;
+        const solutionBufferKeys = this._buildSolutionBufferKeys(route.path);
+        const viruses = [];
+        this._fillRandomViruses(viruses, blockedKeys, start, end, solutionBufferKeys, this._virusEdgeBuffer(), Math.min(20, difficulty.baseViruses), 400);
+        return {
+            id: ['path-quarantine-fallback', questIndex, Date.now(), Math.floor(Math.random() * 9999)].join(':'),
+            questIndex,
+            difficulty,
+            directionWeights: this._normalizeDirectionWeights(this.directionWeights),
+            start: this._cloneTile(start),
+            end: this._cloneTile(end),
+            viruses,
+            solutionPath: route.path,
+            solutionBufferKeys,
+            solutionMoves: route.moves,
+            ipAddress,
+            ipInt,
+            ipClass: classInfo.ipClass,
+            originalCIDR: classInfo.originalCIDR,
+            requiredHosts: this._randomRequiredHosts(optimizedHostBits),
+            targetAddedBits,
+            targetCIDR,
+            optimizedHostBits,
+            optimizedCapacity: this._capacityForHostBits(optimizedHostBits),
+            allocatedCIDR: this._allocatedCIDR(ipInt, targetCIDR),
+        };
+    }
+
     _pathExponent(path) {
         let out = 0;
         for (let i = 1; i < path.length; i++) out += this.directionWeights[this._directionBetween(path[i - 1], path[i])] || 0;
         return out;
     }
 
-    _randomCIDRClass() {
+    _randomCIDRClass(difficulty) {
         const classes = [
             { ipClass: 'A', originalCIDR: 8, minAddedBits: 4, maxAddedBits: 16 },
             { ipClass: 'B', originalCIDR: 16, minAddedBits: 2, maxAddedBits: 11 },
             { ipClass: 'C', originalCIDR: 24, minAddedBits: 1, maxAddedBits: 6 },
         ];
-        return classes[this._randomInt(0, classes.length - 1)];
+        const minBits = difficulty ? difficulty.minAddedBits : 1;
+        const viable = classes.filter((c) => c.maxAddedBits >= minBits);
+        return (viable.length ? viable : classes)[this._randomInt(0, (viable.length ? viable : classes).length - 1)];
     }
 
     _randomIPForClass(ipClass) {
@@ -1155,28 +1388,26 @@ class IP2LiveCIDRQuarantineGameplayScreen extends Scene.Base {
         return tools.formatCIDR(tools.networkStart(base >>> 0, p), p);
     }
 
-    _generateSolutionRoute(start, bits, questIndex) {
-        const challengeMode = Number(questIndex || 1) > 1;
-        if (!challengeMode) {
-            return this._routeFromMoves(start, this._movesForAddedBits(bits));
-        }
-
-        const candidates = this._routeCandidatesForBits(start, bits, questIndex);
+    _generateSolutionRoute(start, bits, questIndex, difficulty) {
+        const candidates = this._routeCandidatesForBits(start, bits, questIndex, difficulty);
         if (candidates.length) {
             candidates.sort((a, b) => b.score - a.score);
-            const topCount = Math.min(4, candidates.length);
+            const topCount = Math.min(Math.max(3, Number(questIndex || 1) + 2), candidates.length);
             const chosen = candidates[this._randomInt(0, topCount - 1)];
             return { moves: chosen.moves.slice(), path: chosen.path.map((t) => this._cloneTile(t)) };
         }
-
-        return this._routeFromMoves(start, this._movesForAddedBits(bits));
+        const fallback = this._routeFromMoves(start, this._movesForAddedBits(bits));
+        return fallback && fallback.path && fallback.path.length > 2 && this._inGrid(fallback.path[fallback.path.length - 1]) ? fallback : null;
     }
 
-    _routeCandidatesForBits(start, bits, questIndex) {
+    _routeCandidatesForBits(start, bits, questIndex, difficulty) {
         const total = Math.max(1, Number(bits) || 1);
         const candidates = [];
         const directions = this._routeDirectionOrder(questIndex);
-        const maxMoves = Math.min(9, Math.max(3, total));
+        const maxWeight = this._maxDirectionWeight();
+        const minWeight = this._minDirectionWeight();
+        const targetMoves = Math.ceil(total / maxWeight) + Math.max(1, Math.floor(Number(questIndex || 1) / 2));
+        const maxMoves = Math.min((difficulty && difficulty.maxRouteMoves) || 12, Math.max(3, targetMoves + 5, Math.ceil(total / minWeight)));
         const startTile = this._cloneTile(start);
         const used = {};
         used[this._tileKey(startTile)] = true;
@@ -1195,7 +1426,7 @@ class IP2LiveCIDRQuarantineGameplayScreen extends Scene.Base {
                 return;
             }
             if (moves.length >= maxMoves) return;
-            if (remaining > (maxMoves - moves.length) * 4) return;
+            if (remaining > (maxMoves - moves.length) * maxWeight) return;
 
             for (let i = 0; i < directions.length; i++) {
                 const direction = directions[i];
@@ -1224,8 +1455,13 @@ class IP2LiveCIDRQuarantineGameplayScreen extends Scene.Base {
             ['D', 'R', 'U', 'L'],
             ['R', 'U', 'D', 'L'],
             ['U', 'R', 'D', 'L'],
+            ['L', 'D', 'R', 'U'],
+            ['D', 'L', 'U', 'R'],
+            ['U', 'L', 'D', 'R'],
         ];
-        return orders[Math.abs(Number(questIndex || 1)) % orders.length];
+        const order = orders[(Math.abs(Number(questIndex || 1)) + this._randomInt(0, orders.length - 1)) % orders.length].slice();
+        if (Math.random() < 0.5) order.reverse();
+        return order;
     }
 
     _scoreRouteCandidate(start, path, moves) {
@@ -1261,20 +1497,30 @@ class IP2LiveCIDRQuarantineGameplayScreen extends Scene.Base {
         let cursor = this._cloneTile(start);
         for (let i = 0; i < solutionMoves.length; i++) {
             cursor = this._moveTile(cursor, solutionMoves[i]);
+            if (!this._inGrid(cursor)) break;
             solutionPath.push(this._cloneTile(cursor));
         }
-        return { moves: solutionMoves, path: solutionPath };
+        return { moves: solutionMoves.slice(0, Math.max(0, solutionPath.length - 1)), path: solutionPath };
     }
 
     _movesForAddedBits(bits) {
         const total = Math.max(1, Number(bits) || 1);
         const moves = [];
-        if (total <= 13) {
-            for (let i = 0; i < total; i++) moves.push('R');
-            return moves;
+        let remaining = total;
+        const dirs = ['R', 'L', 'U', 'D'].sort((a, b) => (this.directionWeights[b] || 0) - (this.directionWeights[a] || 0));
+        while (remaining > 0 && moves.length < 16) {
+            let used = false;
+            for (let i = 0; i < dirs.length; i++) {
+                const weight = this.directionWeights[dirs[i]] || 0;
+                if (weight > 0 && weight <= remaining) {
+                    moves.push(dirs[i]);
+                    remaining -= weight;
+                    used = true;
+                    break;
+                }
+            }
+            if (!used) break;
         }
-        for (let i = 0; i < total - 4; i++) moves.push('R');
-        moves.push('D');
         return moves;
     }
 
@@ -1616,10 +1862,11 @@ const CIDRQuarantineGameplayManager = {
     _recoveryLoops: {},
 
     CIDR_QUARANTINE_QUESTS: [
-        { id: 'stage.11.cidr_quarantine.01.tutorial', objectiveId: 'solve_cidr_quarantine_01', title: 'CALIBRATE QUARANTINE NODE', label: 'Quarantine Node 01', tutorial: true, targetTile: { x: 13, y: 0, z: 9 }, profile: { index: 1, minHosts: 18, maxHosts: 34 } },
-        { id: 'stage.11.cidr_quarantine.02', objectiveId: 'solve_cidr_quarantine_02', title: 'TRAP ROGUE AI CLUSTER', label: 'Quarantine Node 02', targetTile: { x: 25, y: 0, z: 10 }, profile: { index: 2, minHosts: 26, maxHosts: 58 } },
-        { id: 'stage.11.cidr_quarantine.03', objectiveId: 'solve_cidr_quarantine_03', title: 'SEAL INFECTED SEGMENT', label: 'Quarantine Node 03', targetTile: { x: 8, y: 0, z: 21 }, profile: { index: 3, minHosts: 42, maxHosts: 92 } },
-        { id: 'stage.11.cidr_quarantine.04', objectiveId: 'solve_cidr_quarantine_04', title: 'LOCK APEX RELAY AI', label: 'Quarantine Node 04', targetTile: { x: 23, y: 0, z: 27 }, profile: { index: 4, minHosts: 70, maxHosts: 120 } },
+        { id: 'stage.11.cidr_quarantine.01.tutorial', objectiveId: 'solve_cidr_quarantine_01', title: 'CALIBRATE QUARANTINE NODE', label: 'Quarantine Node 01', tutorial: true, targetTile: { x: 6, y: 0, z: 28 }, profile: { index: 1, minHosts: 18, maxHosts: 34 } },
+        { id: 'stage.11.cidr_quarantine.02', objectiveId: 'solve_cidr_quarantine_02', title: 'TRAP ROGUE AI CLUSTER', label: 'Quarantine Node 02', targetTile: { x: 34, y: 0, z: 17 }, profile: { index: 2, minHosts: 26, maxHosts: 58 } },
+        { id: 'stage.11.cidr_quarantine.03', objectiveId: 'solve_cidr_quarantine_03', title: 'SEAL INFECTED SEGMENT', label: 'Quarantine Node 03', targetTile: { x: 3, y: 0, z: 12 }, profile: { index: 3, minHosts: 42, maxHosts: 92 } },
+        { id: 'stage.11.cidr_quarantine.04', objectiveId: 'solve_cidr_quarantine_04', title: 'LOCK APEX RELAY AI', label: 'Quarantine Node 04', targetTile: { x: 10, y: 0, z: 25 }, profile: { index: 4, minHosts: 70, maxHosts: 120 } },
+        { id: 'stage.11.cidr_quarantine.05', objectiveId: 'solve_cidr_quarantine_05', title: 'FINALIZE CIDR QUARANTINE', label: 'Quarantine Node 05', targetTile: { x: 18, y: 0, z: 1 }, profile: { index: 5, minHosts: 96, maxHosts: 180 } },
     ],
 
     _questSpecs() {

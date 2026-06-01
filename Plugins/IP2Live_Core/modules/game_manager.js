@@ -341,10 +341,11 @@ const IP2LiveGameManager = {
             objectiveHandler: { manager: 'CIDRQuarantineGameplayManager', method: '_handleObjective' },
             failureHandler: { manager: 'CIDRQuarantineGameplayManager', method: 'recoverAfterFailure' },
             quests: [
-                { id: 'stage.11.cidr_quarantine.01.tutorial', objectiveId: 'solve_cidr_quarantine_01', title: 'CALIBRATE QUARANTINE NODE', label: 'Quarantine Node 01', tutorial: true, targetTile: { x: 13, y: 0, z: 9 }, profile: { index: 1, minHosts: 18, maxHosts: 34 } },
-                { id: 'stage.11.cidr_quarantine.02', objectiveId: 'solve_cidr_quarantine_02', title: 'TRAP ROGUE AI CLUSTER', label: 'Quarantine Node 02', targetTile: { x: 25, y: 0, z: 10 }, profile: { index: 2, minHosts: 26, maxHosts: 58 } },
-                { id: 'stage.11.cidr_quarantine.03', objectiveId: 'solve_cidr_quarantine_03', title: 'SEAL INFECTED SEGMENT', label: 'Quarantine Node 03', targetTile: { x: 8, y: 0, z: 21 }, profile: { index: 3, minHosts: 42, maxHosts: 92 } },
-                { id: 'stage.11.cidr_quarantine.04', objectiveId: 'solve_cidr_quarantine_04', title: 'LOCK APEX RELAY AI', label: 'Quarantine Node 04', targetTile: { x: 23, y: 0, z: 27 }, profile: { index: 4, minHosts: 70, maxHosts: 120 } },
+                { id: 'stage.11.cidr_quarantine.01.tutorial', objectiveId: 'solve_cidr_quarantine_01', title: 'CALIBRATE QUARANTINE NODE', label: 'Quarantine Node 01', tutorial: true, targetTile: { x: 6, y: 0, z: 28 }, profile: { index: 1, minHosts: 18, maxHosts: 34 } },
+                { id: 'stage.11.cidr_quarantine.02', objectiveId: 'solve_cidr_quarantine_02', title: 'TRAP ROGUE AI CLUSTER', label: 'Quarantine Node 02', targetTile: { x: 34, y: 0, z: 17 }, profile: { index: 2, minHosts: 26, maxHosts: 58 } },
+                { id: 'stage.11.cidr_quarantine.03', objectiveId: 'solve_cidr_quarantine_03', title: 'SEAL INFECTED SEGMENT', label: 'Quarantine Node 03', targetTile: { x: 3, y: 0, z: 12 }, profile: { index: 3, minHosts: 42, maxHosts: 92 } },
+                { id: 'stage.11.cidr_quarantine.04', objectiveId: 'solve_cidr_quarantine_04', title: 'LOCK APEX RELAY AI', label: 'Quarantine Node 04', targetTile: { x: 10, y: 0, z: 25 }, profile: { index: 4, minHosts: 70, maxHosts: 120 } },
+                { id: 'stage.11.cidr_quarantine.05', objectiveId: 'solve_cidr_quarantine_05', title: 'FINALIZE CIDR QUARANTINE', label: 'Quarantine Node 05', targetTile: { x: 18, y: 0, z: 1 }, profile: { index: 5, minHosts: 96, maxHosts: 180 } },
             ],
         },
         ip_cidr_quarantine_matrix: {
@@ -357,11 +358,11 @@ const IP2LiveGameManager = {
             objectiveHandler: { manager: 'CIDRQuarantineMatrixGameplayManager', method: '_handleObjective' },
             failureHandler: { manager: 'CIDRQuarantineMatrixGameplayManager', method: 'recoverAfterFailure' },
             quests: [
-                { id: 'stage.12.cidr_matrix.01.tutorial', objectiveId: 'solve_cidr_matrix_01', title: 'CALIBRATE MATRIX NODE', label: 'Matrix Node 01', tutorial: true, targetTile: { x: 7, y: 0, z: 7 }, profile: { index: 1, zoneCount: 2, parentPrefix: 23 } },
-                { id: 'stage.12.cidr_matrix.02', objectiveId: 'solve_cidr_matrix_02', title: 'SPLIT AI QUARANTINE', label: 'Matrix Node 02', targetTile: { x: 20, y: 0, z: 8 }, profile: { index: 2, zoneCount: 2, parentPrefix: 23 } },
-                { id: 'stage.12.cidr_matrix.03', objectiveId: 'solve_cidr_matrix_03', title: 'SEAL SHARD TRIAD', label: 'Matrix Node 03', targetTile: { x: 27, y: 0, z: 17 }, profile: { index: 3, zoneCount: 3, parentPrefix: 23 } },
-                { id: 'stage.12.cidr_matrix.04', objectiveId: 'solve_cidr_matrix_04', title: 'LOCK RELAY MATRIX', label: 'Matrix Node 04', targetTile: { x: 11, y: 0, z: 25 }, profile: { index: 4, zoneCount: 3, parentPrefix: 22 } },
-                { id: 'stage.12.cidr_matrix.05', objectiveId: 'solve_cidr_matrix_05', title: 'FINALIZE AI CONTAINMENT', label: 'Matrix Node 05', targetTile: { x: 24, y: 0, z: 29 }, profile: { index: 5, zoneCount: 3, parentPrefix: 22 } },
+                { id: 'stage.12.cidr_matrix.01.tutorial', objectiveId: 'solve_cidr_matrix_01', title: 'CALIBRATE MATRIX NODE', label: 'Matrix Node 01', tutorial: true, targetTile: { x: 21, y: 0, z: 28 }, profile: { index: 1, zoneCount: 2, parentPrefix: 23 } },
+                { id: 'stage.12.cidr_matrix.02', objectiveId: 'solve_cidr_matrix_02', title: 'SPLIT AI QUARANTINE', label: 'Matrix Node 02', targetTile: { x: 0, y: 0, z: 16 }, profile: { index: 2, zoneCount: 2, parentPrefix: 23 } },
+                { id: 'stage.12.cidr_matrix.03', objectiveId: 'solve_cidr_matrix_03', title: 'SEAL SHARD TRIAD', label: 'Matrix Node 03', targetTile: { x: 17, y: 0, z: 0 }, profile: { index: 3, zoneCount: 3, parentPrefix: 23 } },
+                { id: 'stage.12.cidr_matrix.04', objectiveId: 'solve_cidr_matrix_04', title: 'LOCK RELAY MATRIX', label: 'Matrix Node 04', targetTile: { x: 34, y: 0, z: 16 }, profile: { index: 4, zoneCount: 3, parentPrefix: 22 } },
+                { id: 'stage.12.cidr_matrix.05', objectiveId: 'solve_cidr_matrix_05', title: 'FINALIZE AI CONTAINMENT', label: 'Matrix Node 05', targetTile: { x: 17, y: 0, z: 19 }, profile: { index: 5, zoneCount: 3, parentPrefix: 22 } },
             ],
         },
         ip_network_repair: {
