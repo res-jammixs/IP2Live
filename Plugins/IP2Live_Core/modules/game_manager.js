@@ -122,6 +122,15 @@ const IP2LiveGameManager = {
                 worldTitle: true,
                 gameplayNodes: ['ip_network_repair'],
             },
+            17: {
+                id: 17,
+                name: 'Stage 4 Level 3',
+                stage: 4,
+                level: 3,
+                spawn: { x: 6, y: 0, z: 17 },
+                worldTitle: true,
+                gameplayNodes: ['ip_vlsm_allocator'],
+            },
             11: {
                 id: 11,
                 name: 'Stage 3 Level 1',
@@ -189,6 +198,12 @@ const IP2LiveGameManager = {
                 mapId: 15,
                 manager: 'NetworkRepairGameplayManager',
                 method: 'launchNetworkRepairGameplay',
+            },
+            ip_vlsm_allocator: {
+                id: 'ip_vlsm_allocator',
+                mapId: 17,
+                manager: 'VLSMAllocatorGameplayManager',
+                method: 'launchVLSMAllocatorGameplay',
             },
         },
     },
@@ -380,6 +395,23 @@ const IP2LiveGameManager = {
                 { id: 'stage.15.ip_network_repair.03', objectiveId: 'repair_network_pc_03', title: 'REPAIR PC 03', label: 'PC 03', targetTile: { x: 32, y: 3, z: 2 }, taskType: 'usableRange' },
                 { id: 'stage.15.ip_network_repair.04', objectiveId: 'repair_network_pc_04', title: 'REPAIR PC 04', label: 'PC 04', targetTile: { x: 32, y: 3, z: 5 }, taskType: 'networkAddress' },
                 { id: 'stage.15.ip_network_repair.05', objectiveId: 'repair_network_pc_05', title: 'REPAIR PC 05', label: 'PC 05', targetTile: { x: 32, y: 3, z: 8 }, taskType: 'usableRange' },
+            ],
+        },
+        ip_vlsm_allocator: {
+            gameplayId: 'ip_vlsm_allocator',
+            mapId: 17,
+            label: 'VLSM Infiltration Grid',
+            competencyKey: 'vlsm_subnet_allocation',
+            competencyLabel: 'VLSM subnet allocation and route planning',
+            targetClearMs: 240000,
+            objectiveHandler: { manager: 'VLSMAllocatorGameplayManager', method: '_handleObjective' },
+            quests: [
+                { id: 'stage.17.vlsm.hq', objectiveId: 'configure_vlsm_hq', title: 'CONFIGURE HQ SUBNET', label: 'HQ Terminal', mapId: 17, targetTile: { x: 5, y: 0, z: 28 }, terminalType: 'branch', branchId: 'hq', tutorial: true },
+                { id: 'stage.17.vlsm.eugene', objectiveId: 'configure_vlsm_eugene', title: 'CONFIGURE EUGENE SUBNET', label: 'Eugene Terminal', mapId: 17, targetTile: { x: 28, y: 0, z: 26 }, terminalType: 'branch', branchId: 'eugene' },
+                { id: 'stage.17.vlsm.branch_a', objectiveId: 'configure_vlsm_branch_a', title: 'CONFIGURE BRANCH A SUBNET', label: 'Branch A Terminal', mapId: 17, targetTile: { x: 30, y: 0, z: 10 }, terminalType: 'branch', branchId: 'branch_a' },
+                { id: 'stage.17.vlsm.san_jose', objectiveId: 'configure_vlsm_san_jose', title: 'CONFIGURE SAN JOSE SUBNET', label: 'San Jose Terminal', mapId: 17, targetTile: { x: 16, y: 0, z: 6 }, terminalType: 'branch', branchId: 'san_jose' },
+                { id: 'stage.17.vlsm.seattle', objectiveId: 'configure_vlsm_seattle', title: 'CONFIGURE SEATTLE SUBNET', label: 'Seattle Terminal', mapId: 17, targetTile: { x: 4, y: 0, z: 10 }, terminalType: 'branch', branchId: 'seattle' },
+                { id: 'stage.17.vlsm.core', objectiveId: 'commit_vlsm_core', title: 'COMMIT VLSM CORE GATEWAY', label: 'Core Gateway', mapId: 17, targetTile: { x: 17, y: 0, z: 18 }, terminalType: 'core' },
             ],
         },
     },
@@ -760,6 +792,27 @@ const IP2LiveGameManager = {
                 },
             };
         }
+        if (gameplayId === 'ip_vlsm_allocator') {
+            const passed = r.passed !== false;
+            return {
+                attemptsUsed: 1,
+                maxAttempts: 1,
+                retries: 0,
+                mistakeCount: Number(r.mistakeCount || 0) || 0,
+                mistakeRate: Number(r.mistakeCount || 0) > 0 ? 1 : 0,
+                accuracy: passed ? (Number(r.mistakeCount || 0) > 0 ? 0.85 : 1) : 0,
+                payload: {
+                    terminalType: r.terminalType || null,
+                    parentCIDR: r.parentCIDR || null,
+                    branchId: r.branchId || null,
+                    allocation: this._clonePlain(r.allocation || null),
+                    allocations: this._clonePlain(r.allocations || null),
+                    awards: this._clonePlain(r.awards || []),
+                    allocatedAddresses: Number(r.allocatedAddresses || 0) || 0,
+                    waste: Number(r.waste || 0) || 0,
+                },
+            };
+        }
         return {
             attemptsUsed: Number(r.attemptsUsed || 0) || 0,
             maxAttempts: Number(r.maxAttempts || 0) || 0,
@@ -984,6 +1037,13 @@ const IP2LiveGameManager = {
                     mode: 'replace',
                 }));
             }
+            if (node.id === 'ip_vlsm_allocator' && IP2Live.VLSMAllocatorGameplayManager && typeof IP2Live.VLSMAllocatorGameplayManager.launchVLSMAllocatorGameplay === 'function') {
+                return IP2Live.VLSMAllocatorGameplayManager.launchVLSMAllocatorGameplay(Object.assign({}, opts, {
+                    _fromGameManager: true,
+                    showIntro: opts.showIntro,
+                    mode: 'replace',
+                }));
+            }
             return false;
         };
 
@@ -1045,6 +1105,19 @@ const IP2LiveGameManager = {
             IP2Live.IPNetworkRepairTutorial.showQuestOneCorrection(
                 mistakes[0] || {},
                 data.scenario || {},
+                data.onComplete
+            );
+            return true;
+        }
+
+        if (
+            gameplayId === 'ip_vlsm_allocator' &&
+            IP2Live.IPVLSMAllocatorTutorial &&
+            typeof IP2Live.IPVLSMAllocatorTutorial.showCorrection === 'function'
+        ) {
+            const mistakes = Array.isArray(data.mistakes) ? data.mistakes : [];
+            IP2Live.IPVLSMAllocatorTutorial.showCorrection(
+                mistakes[0] || {},
                 data.onComplete
             );
             return true;

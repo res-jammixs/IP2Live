@@ -50,6 +50,10 @@ const MapManager = {
         },
         { id: 13, name: 'Stage 3 Level 3', stage: 3, level: 3 },
         { id: 14, name: 'Stage 3 Level 4', stage: 3, level: 4 },
+        { id: 15, name: 'Stage 4 Level 1', stage: 4, level: 1 },
+        { id: 16, name: 'Stage 4 Level 2', stage: 4, level: 2 },
+        { id: 17, name: 'Stage 4 Level 3', stage: 4, level: 3 },
+        { id: 18, name: 'Stage 4 Level 4', stage: 4, level: 4 },
     ],
 
     _registeredStageQuestIds: {},

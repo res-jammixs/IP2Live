@@ -571,6 +571,7 @@ const IP2LiveReportManager = {
             ip_cidr_binary_panel: 'CIDR Binary Panel',
             ip_subnet_simulator: 'Subnet Simulator',
             ip_network_repair: 'Network Repair PCs',
+            ip_vlsm_allocator: 'VLSM Infiltration Grid',
         };
         return map[key] || key;
     },
@@ -687,6 +688,7 @@ const IP2LiveReportManager = {
         const id = String(gameplayId || '');
         const taskType = mistake && mistake.taskType ? String(mistake.taskType) : '';
         if (id === 'ip_network_repair') return taskType || 'network_range_calculation';
+        if (id === 'ip_vlsm_allocator') return mistake && mistake.stepKey ? String(mistake.stepKey) : 'vlsm_allocation';
         if (id === 'ip_cidr_binary_panel') return 'cidr_prefix';
         if (id === 'ip_subnet_simulator') return 'subnet_calculation';
         if (id === 'ip_patch_panel_classes') return 'ip_classification_route';
@@ -721,6 +723,12 @@ const IP2LiveReportManager = {
             reserveAddress: 'Last usable address',
             lastUsable: 'Last usable address',
             network_range_calculation: 'Network range calculation',
+            vlsm_host_to_prefix: 'VLSM host-to-prefix sizing',
+            vlsm_block_alignment: 'VLSM block alignment',
+            vlsm_overlap_check: 'VLSM overlap analysis',
+            vlsm_parent_containment: 'VLSM parent block containment',
+            vlsm_final_validation: 'VLSM final route validation',
+            vlsm_allocation: 'VLSM subnet allocation',
             subnet_calculation: 'Subnet calculation',
             mask_to_binary: 'Mask to binary',
             binary_to_cidr: 'Binary to CIDR',

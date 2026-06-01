@@ -864,6 +864,14 @@ IP2Live.GameplayManagerReady = (async function () {
             ],
         },
         {
+            baseDir: root + 'Plugins/IP2Live_Core/gameplay/gameplay8/VLSMAllocator/',
+            version: '20260602_ip_vlsm_allocator_01_',
+            files: [
+                'ip_vlsm_allocator_tutorial.js',
+                'ip_vlsm_allocator_gameplay.js',
+            ],
+        },
+        {
             baseDir: root + 'Plugins/IP2Live_Core/gameplay/gameplay5/CIDRQuarantine/',
             version: '20260530_ip_cidr_quarantine_01_',
             files: [
