@@ -25,7 +25,11 @@ var MUSIC_TRACKS = {
     MAIN_MENU: { src: 'Songs/Musics/Main Menu.mp3', volume: 0.95 },
     TUTORIAL: { src: 'Songs/Musics/Tutorial.mp3', volume: 0.65 },
     STAGE_1: { src: 'Songs/Musics/Stage 1 Music.mp3', volume: 0.72 },
+    STAGE_2: { src: 'Songs/Musics/Stage 2 Music.mp3', volume: 0.72 },
+    STAGE_3: { src: 'Songs/Musics/Stage 3 Music.mp3', volume: 0.72 },
+    STAGE_4: { src: 'Songs/Musics/Stage 4 Music.mp3', volume: 0.72 },
     GAMEPLAY_1: { src: 'Songs/Musics/Gameplay 1.mp3', volume: 0.58 },
+    GAMEPLAY_56: { src: 'Songs/Musics/Gameplay 5 & 6.mp3', volume: 0.58 },
 };
 
 // ── SHARED AudioContext ──────────────────────────────────────────
@@ -60,13 +64,18 @@ var MusicManager = {
         MAIN_MENU: 'MAIN_MENU',
         TUTORIAL: 'TUTORIAL',
         STAGE_1: 'STAGE_1',
+        STAGE_2: 'STAGE_2',
+        STAGE_3: 'STAGE_3',
+        STAGE_4: 'STAGE_4',
         GAMEPLAY_1: 'GAMEPLAY_1',
+        GAMEPLAY_56: 'GAMEPLAY_56',
     },
 
     // ────────────────────────────────────────────────────────────
     //  play(zone)
     // ────────────────────────────────────────────────────────────
     play: function (zone) {
+        zone = this._resolveDynamicZone(zone);
         if (!MUSIC_TRACKS[zone]) {
             console.warn('[MusicManager] Unknown zone: ' + zone);
             return;
@@ -290,6 +299,48 @@ var MusicManager = {
                 if (typeof onDone === 'function') onDone();
             }
         }, interval);
+    },
+
+    _resolveDynamicZone: function (zone) {
+        var key = String(zone || '');
+        if (key === this.ZONE.STAGE_1) return this._resolveStageZoneFromMap() || key;
+        if (key === this.ZONE.GAMEPLAY_1) return this._resolveGameplayZoneFromMap() || key;
+        return key;
+    },
+
+    _resolveStageZoneFromMap: function () {
+        var mapId = this._currentMapId();
+        var stage = this._stageForMap(mapId);
+        if (!stage) return this.ZONE.STAGE_1;
+        if (stage.stage === 1) return this.ZONE.STAGE_1;
+        if (stage.stage === 2) return this.ZONE.STAGE_2 || this.ZONE.STAGE_1;
+        if (stage.stage === 3) return this.ZONE.STAGE_3 || this.ZONE.STAGE_1;
+        if (stage.stage === 4) return this.ZONE.STAGE_4 || this.ZONE.STAGE_1;
+        return this.ZONE.STAGE_1;
+    },
+
+    _resolveGameplayZoneFromMap: function () {
+        var mapId = this._currentMapId();
+        if (mapId === 11 || mapId === 12) return this.ZONE.GAMEPLAY_56 || this.ZONE.GAMEPLAY_1;
+        return this.ZONE.GAMEPLAY_1;
+    },
+
+    _currentMapId: function () {
+        var scene = (typeof Scene !== 'undefined' && Scene.Map) ? Scene.Map.current : null;
+        var mapId = scene && (
+            scene.id ||
+            scene.mapID ||
+            (scene.currentMap && scene.currentMap.id) ||
+            (typeof Core !== 'undefined' && Core.Game && Core.Game.current && Core.Game.current.currentMapID)
+        );
+        return Number(mapId) || (typeof Core !== 'undefined' && Core.Game && Core.Game.current ? Number(Core.Game.current.currentMapID) : 0) || 0;
+    },
+
+    _stageForMap: function (mapId) {
+        if (!mapId || typeof IP2Live === 'undefined' || !IP2Live.MapManager || typeof IP2Live.MapManager.stageFor !== 'function') {
+            return null;
+        }
+        return IP2Live.MapManager.stageFor(Number(mapId)) || null;
     },
 };
 

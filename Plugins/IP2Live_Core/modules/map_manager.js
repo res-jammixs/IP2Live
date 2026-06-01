@@ -771,7 +771,10 @@ const MapManager = {
         if (!stage || !music || !music.ZONE || typeof music.play !== 'function') return false;
 
         let zone = null;
-        if (stage.stage === 1 || stage.stage === 2 || stage.stage === 3) zone = music.ZONE.STAGE_1;
+        if (stage.stage === 1) zone = music.ZONE.STAGE_1;
+        else if (stage.stage === 2) zone = music.ZONE.STAGE_2 || music.ZONE.STAGE_1;
+        else if (stage.stage === 3) zone = music.ZONE.STAGE_3 || music.ZONE.STAGE_1;
+        else if (stage.stage === 4) zone = music.ZONE.STAGE_4 || music.ZONE.STAGE_1;
         if (!zone) return false;
 
         const musicKey = String(mapId) + ':' + zone;
