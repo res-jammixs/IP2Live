@@ -1,9 +1,9 @@
 /**
- * IP2Live - Stage 3 Level 2 dual-pair connector tutorial dialogue helpers.
+ * IP2Live - Stage 3 Level 2 multi-pair connector tutorial dialogue helpers.
  */
 
 const IPCIDRQuarantineMatrixTutorial = {
-    VERSION: 'ip-cidr-quarantine-matrix-tutorial-20260530-dual-connector-01',
+    VERSION: 'ip-cidr-quarantine-matrix-tutorial-20260601-01',
     _dialogueSerial: 0,
 
     showIntro(context, onComplete) {
@@ -14,32 +14,44 @@ const IPCIDRQuarantineMatrixTutorial = {
             timing: 'before',
             slides: [
                 [
-                    'CIDR QUARANTINE MATRIX - Your Mission',
-                    'APEX split the relay into two unstable node pairs.',
-                    'Draw two clean connector paths:',
-                    '  Pair 1: A1 to B1.',
-                    '  Pair 2: A2 to B2.',
-                    'Each route must match its CIDR movement-bit target.',
-                    'Red virus nodes are traps. Do not route through them.',
-                ],
-                [
-                    'THE INTERFACE',
-                    'GRID: blue nodes are endpoints, red nodes are viruses.',
-                    'YELLOW route = Pair 1. CYAN route = Pair 2.',
+                    'STAGE 3 LEVEL 2 - CIDR Quarantine Matrix',
+                    'Welcome to the second Stage 3 quarantine sector.',
+                    'This sector expands quarantine routing into a multi-connector matrix.',
                     '',
-                    'Click a pair card or press TAB to switch active pair.',
-                    'Drag or click adjacent tiles to extend the active route.',
-                    'UNDO removes one tile. CLEAR resets the active pair.',
-                    'SUBMIT validates both connectors together.',
+                    'You must connect every A node to its matching B node.',
+                    'Each pair has its own IP, host requirement, and live CIDR calculation.',
+                    'Red virus nodes are blocked and may mutate while you work.',
+                    '',
+                    'Retries are unlimited at this calibration node.',
                 ],
                 [
-                    'YOUR GOAL - Two routes, one matrix',
+                    'READ THE RIGHT PANEL',
+                    'Each pair card shows whether that connector is open or linked.',
+                    'The active-pair detail shows:',
+                    '',
+                    '1. Movement values for Right, Left, Up, and Down.',
+                    '2. Active IP, class, original CIDR, and required hosts.',
+                    '3. Live path bits, current CIDR, and current capacity.',
+                    '',
+                    'The movement values are randomized per quest. Read them every time.',
+                ],
+                [
+                    'HOW TO CONTROL THE MATRIX',
+                    'Click a pair card or press TAB to switch the active pair.',
+                    'Drag, click adjacent tiles, or use arrow/WASD keys to build the active route.',
+                    'Use Z to undo and R to clear the active pair.',
+                    '',
+                    'Routes cannot touch viruses, endpoints from other pairs, or each other.',
+                ],
+                [
+                    'FIRST PAIR GIVEN',
                     (c.pairLabel || 'Pair 1') + ': ' + (c.ipAddress || '?') + '/' + (c.originalCIDR || '?'),
+                    'Class ' + (c.ipClass || '?') + '   Required hosts: ' + (c.requiredHosts || '?'),
                     '',
-                    'Move weights: R=+1, L=+2, U=+3, D=+4.',
-                    'Target CIDR for the active pair: /' + (c.targetCIDR || '?'),
-                    'Connect both pairs, avoid viruses, then confirm.',
-                    'Press ENTER or click to begin Pair 1.',
+                    c.moveWeightsLine || 'Read movement values on the right panel.',
+                    'Target: /' + (c.originalCIDR || '?') + ' +' + (c.targetAddedBits || '?') + ' = /' + (c.targetCIDR || '?') + '.',
+                    '',
+                    'Begin with Pair 1. I will guide the next pair after it links.',
                 ],
             ],
             onComplete,
@@ -51,12 +63,12 @@ const IPCIDRQuarantineMatrixTutorial = {
         const pair = Number(c.pairIndex || 0) + 1;
         const total = Number(c.totalPairs || 2);
         const slides = step === 'submit' ? [[
-            'BOTH PAIRS LINKED - Submit now',
+            'ALL PAIRS LINKED - Submit now',
             'Final check:',
-            '  Pair 1 reaches B1.',
-            '  Pair 2 reaches B2.',
-            '  No route touches a virus.',
-            '  Both routes match their CIDR targets.',
+            '1. Every A node reaches its matching B node.',
+            '2. No route touches a red virus.',
+            '3. Routes do not overlap each other.',
+            '4. Every pair matches its optimized CIDR.',
             '',
             'Press SUBMIT or ENTER to run the matrix simulation.',
         ]] : [[
@@ -65,9 +77,11 @@ const IPCIDRQuarantineMatrixTutorial = {
             '',
             'Start at ' + (c.startLabel || 'A') + ' and reach ' + (c.endLabel || 'B') + '.',
             'Target: /' + (c.originalCIDR || '?') + ' +' + (c.targetAddedBits || '?') + ' = /' + (c.targetCIDR || '?') + '.',
-            'Use turns to route around red virus nodes.',
+            'Required hosts: ' + (c.requiredHosts || '?') + '.',
+            'Current CIDR: /' + (c.currentCIDR || c.originalCIDR || '?') + ' with ' + (c.currentCapacity || '?') + ' hosts.',
+            c.moveWeightsLine || 'Use the movement values shown on the right panel.',
             '',
-            'I will advance after this pair is linked.',
+            'I will advance after Pair ' + pair + ' is linked.',
         ]];
 
         return this._startDynamicDialogue('stage3.cidrmatrix.step.', {
@@ -92,7 +106,7 @@ const IPCIDRQuarantineMatrixTutorial = {
             prefix: [
                 'Pair ' + pair + ' has the wrong movement-bit total.',
                 'Adjust the connector route until it reaches /' + (c.targetCIDR || '?') + '.',
-                'Remember: R=+1, L=+2, U=+3, D=+4.',
+                c.moveWeightsLine || 'Use the movement values shown on the right panel.',
             ],
             offset: [
                 'Pair ' + pair + ' has not reached the correct endpoint.',
@@ -101,18 +115,57 @@ const IPCIDRQuarantineMatrixTutorial = {
             ],
             submitEarly: [
                 'Not ready to submit yet.',
-                'Both node pairs must be linked first.',
+                'All node pairs must be linked first.',
                 'Finish Pair ' + pair + ', then the matrix can validate.',
             ],
             submitWrong: [
-                'Simulation rejected the dual connector layout.',
+                'Simulation rejected the connector layout.',
                 'Check for a virus hit, wrong endpoint, path overlap, or wrong CIDR bits.',
                 'Pair ' + pair + ' target: /' + (c.targetCIDR || '?'),
             ],
             submitReady: [
-                'Both pairs are linked - press SUBMIT now.',
-                'Do not adjust the routes further.',
+                'Connector matrix is ready to validate.',
+                'All pairs are linked and each route matches its optimized CIDR.',
                 'Press SUBMIT or ENTER to validate.',
+            ],
+            adjacent: [
+                'Connector move rejected.',
+                'Move one tile at a time: up, down, left, or right.',
+                'Diagonal movement and jumps are not allowed.',
+            ],
+            virus: [
+                'Virus tile blocked.',
+                'Route around red nodes. They corrupt the active connector.',
+            ],
+            overlap: [
+                'Tile reserved.',
+                'A connector cannot pass through another pair endpoint or route.',
+                'Use a separate lane for Pair ' + pair + '.',
+            ],
+            disconnected: [
+                'A pair is not connected yet.',
+                'Finish the active pair before submitting the whole matrix.',
+            ],
+            not_optimized: [
+                'A pair has the wrong CIDR total.',
+                'Current CIDR: /' + (c.currentCIDR || '?') + '.',
+                'Target CIDR: /' + (c.targetCIDR || '?') + '.',
+                c.moveWeightsLine || 'Use the movement values to change the path-bit total.',
+            ],
+            too_small: [
+                'Host capacity is too small.',
+                'This pair needs ' + (c.requiredHosts || '?') + ' hosts.',
+                'Add movement bits until the active CIDR can hold the requirement.',
+            ],
+            too_big: [
+                'Host capacity is too large.',
+                'Undo or clear the active pair and use fewer movement bits.',
+            ],
+            virus_overrun: [
+                'The virus pressure filled the matrix.',
+                'Attempt reset automatically.',
+                'Unlimited retries remain available at this calibration node.',
+                'Work one pair at a time and submit once all pair cards say LINKED.',
             ],
         };
 
@@ -134,11 +187,10 @@ const IPCIDRQuarantineMatrixTutorial = {
             bindings: { mapId: 12, gameplayId: 'ip_cidr_quarantine_matrix', trigger: 'tutorial.completed' },
             slides: [[
                 'Matrix quarantine successful.',
-                'Pair 1 linked.',
-                'Pair 2 linked.',
+                'All node pairs linked.',
                 'Virus nodes avoided.',
                 '',
-                'Future nodes randomize formations, routes, and virus blockers.',
+                'Future nodes randomize pair count, movement values, formations, and virus blockers.',
                 'TAB=pair  Z=undo  R=clear  ENTER=submit.',
                 'Proceeding to next objective.',
             ]],
@@ -154,12 +206,12 @@ const IPCIDRQuarantineMatrixTutorial = {
             bindings: { mapId: 12, gameplayId: 'ip_cidr_quarantine_matrix', trigger: 'gameplay.failed' },
             slides: [[
                 'Matrix collapsed. All attempts used.',
-                'Routing back to tutorial node.',
+                'Routing back to the calibration node.',
                 '',
                 'Common mistakes:',
                 '  One pair unfinished, wrong movement bits,',
                 '  paths overlapping, or a virus node touched.',
-                'Work one pair at a time. Link both before submitting.',
+                'Work one pair at a time. Link every pair before submitting.',
             ]],
             onComplete,
         });
