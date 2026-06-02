@@ -1,32 +1,48 @@
 /**
  * IP2Live - Darklights Game State
  *
- * Stage 1 Level 1 ambience pressure: dark room, soft player vision, and
- * dimming after recovery returns.
+ * Stage 1 ambience pressure: dark room, soft player vision, and sequential
+ * light restoration after IPWires-family objectives.
  * Loaded by code.js via fetch() + new Function(). Do not use import/export.
  */
 
 (function () {
-    const MAP_ID = 3;
+    const DEFAULT_MAP_ID = 3;
+
+    function mapIdFrom(options, manager) {
+        const opts = options || {};
+        const scene = opts.scene || (Scene && Scene.Map && Scene.Map.current) || null;
+        return Number(
+            opts.mapId ||
+            (scene && (scene.id || scene.mapID)) ||
+            (manager && typeof manager._currentMapId === 'function' && manager._currentMapId()) ||
+            DEFAULT_MAP_ID
+        ) || DEFAULT_MAP_ID;
+    }
 
     const DarklightsState = {
         name: 'darklights',
 
         activate(manager, options) {
             const gsm = manager || IP2Live.GameStateManager;
+            const mapId = mapIdFrom(options, gsm);
             const store = gsm && typeof gsm._darklightsStore === 'function'
-                ? gsm._darklightsStore()
-                : { dimLevel: 0 };
-            const step = Math.max(0, Math.min(5, Number(store.brightnessStep !== undefined ? store.brightnessStep : (5 - Number(store.dimLevel || 0))) || 0));
-            const visibility = step / 5;
+                ? gsm._darklightsStore(mapId)
+                : { dimLevel: 0, maxBrightnessStep: 5 };
+            const maxStep = Math.max(1, Number(store.maxBrightnessStep) || 5);
+            const rawStep = store.brightnessStep !== undefined
+                ? store.brightnessStep
+                : (maxStep - Number(store.dimLevel || 0));
+            const step = Math.max(0, Math.min(maxStep, Number(rawStep) || 0));
+            const visibility = step / maxStep;
             const darkness = 1 - visibility;
             const scene = (options && options.scene) || (Scene && Scene.Map && Scene.Map.current) || null;
             const lighting = IP2Live.LightingManager;
             if (!lighting || typeof lighting.setPreset !== 'function') return false;
 
-            if (step >= 5) {
-                lighting.setPreset(MAP_ID, { name: 'Stage 1 Level 1 - Clear', enabled: false });
-                if (typeof lighting.applyPreset === 'function') lighting.applyPreset(MAP_ID, scene);
+            if (step >= maxStep) {
+                lighting.setPreset(mapId, { name: 'Darklights - Clear', enabled: false });
+                if (typeof lighting.applyPreset === 'function') lighting.applyPreset(mapId, scene);
                 return true;
             }
 
@@ -34,8 +50,8 @@
             const radius = 110 + visibility * 70;
             const feather = 24 + visibility * 22;
 
-            lighting.setPreset(MAP_ID, {
-                name: 'Stage 1 Level 1 - Darklights',
+            lighting.setPreset(mapId, {
+                name: 'Darklights - Map ' + mapId,
                 enabled: true,
                 dimOverlay: overlayAlpha,
                 overlayColor: '2, 7, 12',
@@ -91,7 +107,7 @@
             });
 
             if (typeof lighting.applyPreset === 'function') {
-                lighting.applyPreset(MAP_ID, scene);
+                lighting.applyPreset(mapId, scene);
             }
             return true;
         },
@@ -99,9 +115,14 @@
         clear(manager, options) {
             const lighting = IP2Live.LightingManager;
             if (!lighting) return false;
+            const mapId = Number(
+                (options && options.mapId) ||
+                (lighting && lighting.activeMapId) ||
+                DEFAULT_MAP_ID
+            ) || DEFAULT_MAP_ID;
             if (typeof lighting.clearAperture === 'function') lighting.clearAperture();
             if (typeof lighting.clearPreset === 'function') {
-                lighting.clearPreset(MAP_ID);
+                lighting.clearPreset(mapId);
             } else if (typeof lighting.clearLighting === 'function') {
                 lighting.clearLighting();
             }
