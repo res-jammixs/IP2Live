@@ -2,7 +2,9 @@
  * MainMenuScreen.js — Reference / Documentation Copy
  * @author James Michael Restauro Siton  @version 1.0.0
  *
- * RUNTIME: This file documents the custom cyberpunk main menu.
+ * RUNTIME: This file documents the custom cyberpunk title menu. The runtime
+ * methods are installed directly into Scene.TitleScreen, while Paper Maker's
+ * Manager.Stack.pushTitleScreen entry point is intentionally kept.
  * Actual runtime code → Plugins/IP2Live_Core/code.js § 3
  *
  * DESIGN SPEC
@@ -27,8 +29,9 @@
  *
  * MENU ITEMS
  * ──────────
- *   START     → new game → Scene.Map
- *   SETTINGS  → Scene.TitleSettings
+ *   NEW GAME  → IP2LiveNameInputScreen → Scene.Map
+ *   LOAD GAME → IP2LiveLoadGameMenu
+ *   SETTINGS  → IP2LiveSettingsMenu
  *   CREDITS   → IP2LiveCreditsScene
  *   QUIT GAME → Platform.quit()
  *

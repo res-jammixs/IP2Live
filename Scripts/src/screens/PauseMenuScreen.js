@@ -18,7 +18,7 @@
  *   01  RESUME          — yellow  — Manager.Stack.pop()
  *   02  RESTART         — orange  — new Scene.Map(currentMapId) with fresh Core.Game
  *   03  EXPORT REPORT   — yellow  — IP2Live telemetry export (stub → ReportExporter)
- *   04  MAIN MENU       — yellow  — Manager.Stack.popAll() + new IP2LiveMainMenu()
+ *   04  MAIN MENU       — yellow  — Manager.Stack.popAll() + pushTitleScreen(true)
  *   05  QUIT GAME       — red     — Common.Platform.quit()
  *
  * BUTTON STATES
@@ -32,7 +32,8 @@
  *   • ESC while paused → Resume (same as pressing RESUME button)
  *   • Confirm glitch   → 6-frame pixel-slice + cyan flash before action executes
  *   • Restart keeps current map ID: `Scene.Map.current?.id || ID_MAP_START_HERO`
- *   • Main Menu routes to IP2LiveMainMenu (custom), NOT Scene.TitleScreen
+ *   • Main Menu routes through Manager.Stack.pushTitleScreen(true), using the
+ *     IP2Live methods installed on Paper Maker's default Scene.TitleScreen
  *
  * ESC HOOK (§ 8 in code.js)
  * ─────────────────────────

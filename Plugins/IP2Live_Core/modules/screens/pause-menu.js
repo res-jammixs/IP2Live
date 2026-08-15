@@ -200,12 +200,12 @@ class IP2LivePauseMenu extends Scene.Base {
                         detail: 'Closing active field session',
                         onComplete: function () {
                             Manager.Stack.popAll();
-                            Manager.Stack.push(new IP2LiveMainMenu());
+                            Manager.Stack.pushTitleScreen(true);
                         },
                     });
                 } else {
                     Manager.Stack.popAll();
-                    Manager.Stack.push(new IP2LiveMainMenu());
+                    Manager.Stack.pushTitleScreen(true);
                 }
                 break;
             case 5:
@@ -373,7 +373,7 @@ class IP2LivePauseMenu extends Scene.Base {
             saveMode: true,
             onSaved: function () {
                 Manager.Stack.popAll();
-                Manager.Stack.push(new IP2LiveMainMenu());
+                Manager.Stack.pushTitleScreen(true);
             },
         });
         // Safety: enforce save mode even if scene init order differs.

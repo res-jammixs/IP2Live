@@ -8,12 +8,19 @@
  * NOTE: This file must be loaded LAST among screen modules because it
  * references IP2LiveNameInputScreen, IP2LiveLoadGameMenu,
  * IP2LiveSettingsMenu, and IP2LiveCreditsScene.
+ *
+ * Paper Maker 3.2+ always enters the title through Scene.TitleScreen. The
+ * implementation below is therefore installed into that engine-owned scene
+ * instead of replacing Manager.Stack.pushTitleScreen with a separate scene.
+ * Keeping the default entry point also preserves startAtLoop and any future
+ * stack lifecycle changes made by the engine.
  */
 
-class IP2LiveMainMenu extends Scene.Base {
-    constructor() { super(true); }
-
-    initialize() {
+class IP2LiveTitleScreenImplementation extends Scene.Base {
+    initialize(startAtLoop = false) {
+        // Retain the current Scene.TitleScreen constructor contract.
+        this.startAtLoop = startAtLoop;
+        this._ip2LiveTitleInitialized = true;
         this.selectedIndex = 0;
         this.menuItems = ["NEW GAME", "LOAD GAME", "SETTINGS", "CREDITS", "QUIT GAME"];
         this.scanlineOffset = 0;
@@ -48,6 +55,21 @@ class IP2LiveMainMenu extends Scene.Base {
     }
 
     async load() {
+        // Mirror the current default title-scene cleanup before drawing the
+        // IP2Live deck. This is especially important when returning from a map
+        // or when upgrading a default title scene that was already on screen.
+        if (Core && Core.Game) Core.Game.current = null;
+        if (Manager.Videos && typeof Manager.Videos.stop === 'function') {
+            Manager.Videos.stop();
+        }
+        if (Manager.Songs && typeof Manager.Songs.stopAll === 'function') {
+            Manager.Songs.stopAll();
+        }
+        if (Manager.GL && Manager.GL.screenTone) {
+            Manager.GL.screenTone.set(0, 0, 0, 1);
+        }
+        Manager.Stack.displayedPictures = [];
+
         await IP2Live.Assets.loadAll();
         this._seedParticles(80);
         this._seedDeckNodes(28);
@@ -59,6 +81,13 @@ class IP2LiveMainMenu extends Scene.Base {
             IP2Live.MusicManager.play(IP2Live.MusicManager.ZONE.MAIN_MENU);
         }
         this._musicStarted = true;
+    }
+
+    // The cyberpunk labels are canvas-rendered rather than WindowChoices
+    // contents, so the default title translation hook must not access the
+    // engine window that this implementation intentionally does not create.
+    translate() {
+        Manager.Stack.requestPaintHUD = true;
     }
 
     // Ensures music starts on the very first user key interaction if
@@ -963,14 +992,49 @@ class IP2LiveMainMenu extends Scene.Base {
         return result;
     }
 }
-window.IP2LiveMainMenu = IP2LiveMainMenu;
 
-// Override the engine's title screen entry point so our menu loads on boot
-Manager.Stack.pushTitleScreen = function () {
-    const scene = new IP2LiveMainMenu();
-    Manager.Stack.push(scene);
-    return scene;
-};
+/**
+ * Install the IP2Live title behavior directly on Paper Maker's default title
+ * scene. Copying every method also upgrades an existing Scene.TitleScreen
+ * instance because its prototype remains the same object.
+ */
+function installIP2LiveTitleScreen() {
+    const target = Scene.TitleScreen && Scene.TitleScreen.prototype;
+    const source = IP2LiveTitleScreenImplementation.prototype;
+    if (!target) {
+        throw new Error('Scene.TitleScreen is unavailable.');
+    }
 
-console.log('[IP2Live] main-menu.js loaded.');
+    for (const name of Object.getOwnPropertyNames(source)) {
+        if (name === 'constructor') continue;
+        Object.defineProperty(target, name, Object.getOwnPropertyDescriptor(source, name));
+    }
+    Object.defineProperty(target, '_ip2LiveTitleInstalled', {
+        value: true,
+        configurable: true,
+        writable: true,
+    });
+
+    // Backward-compatible alias for older IP2Live modules and saved routes.
+    // It now resolves to the engine class rather than a parallel menu class.
+    window.IP2LiveMainMenu = Scene.TitleScreen;
+
+    const activeScene = Manager.Stack.top;
+    if (activeScene instanceof Scene.TitleScreen && !activeScene._ip2LiveTitleInitialized) {
+        const startAtLoop = Boolean(activeScene.startAtLoop);
+        activeScene.loading = true;
+        activeScene.initialize(startAtLoop);
+        Promise.resolve(activeScene.load()).catch((error) => {
+            activeScene.loading = false;
+            Manager.Stack.requestPaintHUD = true;
+            console.error('[IP2Live] Failed to activate the default title scene:', error);
+        });
+    }
+
+    Manager.Stack.requestPaintHUD = true;
+}
+
+installIP2LiveTitleScreen();
+
+console.log('[IP2Live] main-menu.js loaded into Scene.TitleScreen.');
 

@@ -519,25 +519,22 @@ class IP2LiveEndCreditsScene extends Scene.Base {
 
     _goMainMenu() {
         if (IP2Live.MapManager) IP2Live.MapManager._stageRouteLocked = false;
-        const MainMenuScene = (typeof window !== 'undefined' && window.IP2LiveMainMenu) || null;
-        if (IP2Live.LoadingScreen && typeof MainMenuScene === 'function') {
+        if (IP2Live.LoadingScreen) {
             IP2Live.LoadingScreen.show({
                 mode: 'reset',
                 status: 'Loading Main Menu',
                 detail: 'Closing final route session',
                 onComplete: function () {
                     Manager.Stack.popAll();
-                    Manager.Stack.push(new MainMenuScene());
+                    Manager.Stack.pushTitleScreen(true);
                     if (IP2Live.MusicManager) IP2Live.MusicManager.play(IP2Live.MusicManager.ZONE.MAIN_MENU);
                 },
             });
             return;
         }
 
-        if (typeof MainMenuScene === 'function') {
-            Manager.Stack.popAll();
-            Manager.Stack.push(new MainMenuScene());
-        }
+        Manager.Stack.popAll();
+        Manager.Stack.pushTitleScreen(true);
     }
 
     _resetGameState() {

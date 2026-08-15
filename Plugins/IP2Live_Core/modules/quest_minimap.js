@@ -1006,6 +1006,7 @@
             if (sceneName === 'Scene.Map') return false;
 
             const blockedNames = [
+                'TitleScreen',
                 'IP2LiveMainMenu',
                 'IP2LivePauseMenu',
                 'IP2LiveExportReportMenu',

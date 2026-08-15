@@ -624,15 +624,14 @@ const MapManager = {
 
         const EndCreditsScene = (typeof window !== 'undefined' && window.IP2LiveEndCreditsScene) || null;
         const CreditsScene = (typeof window !== 'undefined' && window.IP2LiveCreditsScene) || null;
-        const MainMenuScene = (typeof window !== 'undefined' && window.IP2LiveMainMenu) || null;
 
         if (typeof EndCreditsScene === 'function') {
             Manager.Stack.replace(new EndCreditsScene(payload));
         } else if (typeof CreditsScene === 'function') {
             Manager.Stack.replace(new CreditsScene());
-        } else if (typeof MainMenuScene === 'function') {
+        } else {
             Manager.Stack.popAll();
-            Manager.Stack.push(new MainMenuScene());
+            Manager.Stack.pushTitleScreen(true);
         }
 
         if (Manager && Manager.Stack) Manager.Stack.requestPaintHUD = true;

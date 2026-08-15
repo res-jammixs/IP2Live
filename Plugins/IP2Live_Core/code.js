@@ -125,6 +125,41 @@ IP2Live.DBManager = {
 window.IP2Live = IP2Live;
 
 // ================================================================
+//  Section 1.1 DEFAULT TITLE-SCENE BOOT BRIDGE
+//  Paper Maker 3.2 creates Scene.TitleScreen as soon as plugin loading
+//  returns. Screen modules are loaded asynchronously below, so keep that
+//  engine-owned scene in its loading state until main-menu.js has installed
+//  the IP2Live implementation. If the screen module cannot load, fall back to
+//  Paper Maker's original title loader instead of leaving a blank scene.
+// ================================================================
+(function installDefaultTitleSceneBootBridge() {
+    if (!Scene.TitleScreen || !Scene.TitleScreen.prototype) return;
+
+    const titlePrototype = Scene.TitleScreen.prototype;
+    const defaultTitleLoad = titlePrototype.load;
+
+    async function loadIP2LiveTitleScreen(...args) {
+        try {
+            if (IP2Live.ScreenModulesReady) {
+                await IP2Live.ScreenModulesReady;
+            }
+
+            // main-menu.js upgrades this same scene instance and starts the
+            // custom loader while ScreenModulesReady is resolving.
+            if (this._ip2LiveTitleInitialized && titlePrototype.load !== loadIP2LiveTitleScreen) {
+                return;
+            }
+        } catch (error) {
+            console.error('[IP2Live] Title screen modules failed to initialize:', error);
+        }
+
+        return defaultTitleLoad.apply(this, args);
+    }
+
+    titlePrototype.load = loadIP2LiveTitleScreen;
+}());
+
+// ================================================================
 //  § 1.5 DISABLE CLICK-TO-MOVE ON MAP
 //  Prevents the character from moving toward the mouse when clicking.
 // ================================================================
