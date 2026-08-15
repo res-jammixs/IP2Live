@@ -62,21 +62,33 @@ class IP2LiveLoadGameMenu extends Scene.Base {
     async load() {
         // Re-apply in case Scene.Base initialization happened before constructor options were attached.
         this._applyModeOptions();
+
+        // Paper Maker 3.2 makes the title available before the remaining game
+        // database is ready. Core.Game construction below requires modelHero
+        // and battle-system data, so every caller must cross this readiness
+        // boundary before save slots are enumerated.
+        if (Main && typeof Main.waitForGameData === 'function') {
+            await Main.waitForGameData();
+        }
+
         if (!IP2Live.Assets.bgImage) await IP2Live.Assets.loadAll();
 
         const currentGame = Core.Game.current;
-        let currentName = currentGame && currentGame.infiltratorName ? currentGame.infiltratorName : null;
-        for (let i = 1; i <= Data.Systems.saveSlots; i++) {
-            this.gamesData.push(null);
-            const newGame = new Core.Game(i);
-            Core.Game.current = newGame;
-            await newGame.load();
-            newGame._ip2liveSaveSlot = i;
-            if (!currentName && newGame && newGame.infiltratorName) currentName = newGame.infiltratorName;
-            this.gamesData[i - 1] = newGame;
+        try {
+            let currentName = currentGame && currentGame.infiltratorName ? currentGame.infiltratorName : null;
+            for (let i = 1; i <= Data.Systems.saveSlots; i++) {
+                this.gamesData.push(null);
+                const newGame = new Core.Game(i);
+                Core.Game.current = newGame;
+                await newGame.load();
+                newGame._ip2liveSaveSlot = i;
+                if (!currentName && newGame && newGame.infiltratorName) currentName = newGame.infiltratorName;
+                this.gamesData[i - 1] = newGame;
+            }
+            await this._loadSlotMetadata(currentName);
+        } finally {
+            Core.Game.current = currentGame;
         }
-        await this._loadSlotMetadata(currentName);
-        Core.Game.current = currentGame;
 
         const cW = Common.Platform.ctx.canvas.width;
         const cH = Common.Platform.ctx.canvas.height;
@@ -426,7 +438,7 @@ class IP2LiveLoadGameMenu extends Scene.Base {
         return -1;
     }
 
-    async _confirmSelection() {
+    _confirmSelection() {
         if (this.selectedIndex < this.gamesData.length) {
             if (this.saveMode) {
                 this._openSaveNameDialog(this.selectedIndex + 1);
@@ -448,36 +460,48 @@ class IP2LiveLoadGameMenu extends Scene.Base {
                 Data.Systems.soundConfirmation.playSound();
                 const slotLabel = 'S' + String(this.selectedIndex + 1).padStart(2, '0');
                 const selectedSlot = this.selectedIndex + 1;
+                const saveName = (meta && meta.saveName)
+                    ? String(meta.saveName)
+                    : ((meta && meta.profileName)
+                        ? String(meta.profileName)
+                        : (game.infiltratorName || heroName || 'UNNAMED ARCHIVE'));
+                const mapId = (meta && Number(meta.mapId)) || game.currentMapID || 1;
+                const detail = 'NODE ' + String(mapId).padStart(4, '0') +
+                    ' // SESSION ' + this._getPlayTimeStr(game.playTime);
 
-                if (IP2Live.LoadingScreen && typeof IP2Live.LoadingScreen.show === 'function') {
-                    IP2Live.LoadingScreen.show({
-                        mode: 'replace',
-                        status: 'Loading Next Level',
-                        detail: 'Restoring save slot ' + slotLabel,
-                        fadeMusicOnStart: true,
-                        musicFadeDurationMs: 2200,
-                        onComplete: async function () {
-                            Core.Game.current = game;
-                            if (IP2Live.GameManager && typeof IP2Live.GameManager.setActiveSaveSlot === 'function') {
-                                IP2Live.GameManager.setActiveSaveSlot(selectedSlot);
-                            }
-                            if (Data.TitlescreenGameover.isTitleBackgroundVideo) Manager.Videos.stop();
-                            await Core.Game.current.loadPositions();
-                            Core.Game.current.hero.initializeProperties();
-                            if (IP2Live.GameManager && typeof IP2Live.GameManager.restoreProgressFromSlot === 'function') {
-                                await IP2Live.GameManager.restoreProgressFromSlot(selectedSlot, Core.Game.current);
-                            }
-
-                            Manager.Stack.popAll();
-                            Manager.Stack.push(new Scene.Map(Core.Game.current.currentMapID));
-                            Manager.Stack.clearHUD();
-                            if (Manager.Stack) Manager.Stack.requestPaintHUD = true;
-                        },
+                if (IP2Live.confirPopup && typeof IP2Live.confirPopup.show === 'function') {
+                    IP2Live.confirPopup.show({
+                        title: 'RESTORE SAVE DATA?',
+                        message: 'Load this archive and replace the current session state?',
+                        detail,
+                        value: slotLabel + ' // ' + saveName,
+                        valueLabel: 'SELECTED SAVE ARCHIVE',
+                        confirmLabel: 'LOAD DATA',
+                        cancelLabel: 'RETURN',
+                        systemLabel: 'SYS::ARCHIVE_RESTORE',
+                        onConfirm: () => this._loadSelectedGame(game, selectedSlot, slotLabel),
                     });
                 } else {
-                    this.loading = true;
-                    Manager.Stack.requestPaintHUD = true;
+                    this._loadSelectedGame(game, selectedSlot, slotLabel).catch((error) => {
+                        console.error('[IP2Live] Load Game failed:', error);
+                    });
+                }
+            }
+        } else if (this.selectedIndex === this.gamesData.length) {
+            Data.Systems.soundCancel.playSound();
+            Manager.Stack.pop();
+        }
+    }
 
+    async _loadSelectedGame(game, selectedSlot, slotLabel) {
+        if (IP2Live.LoadingScreen && typeof IP2Live.LoadingScreen.show === 'function') {
+            IP2Live.LoadingScreen.show({
+                mode: 'replace',
+                status: 'Loading Next Level',
+                detail: 'Restoring save slot ' + slotLabel,
+                fadeMusicOnStart: true,
+                musicFadeDurationMs: 2200,
+                onComplete: async function () {
                     Core.Game.current = game;
                     if (IP2Live.GameManager && typeof IP2Live.GameManager.setActiveSaveSlot === 'function') {
                         IP2Live.GameManager.setActiveSaveSlot(selectedSlot);
@@ -489,15 +513,35 @@ class IP2LiveLoadGameMenu extends Scene.Base {
                         await IP2Live.GameManager.restoreProgressFromSlot(selectedSlot, Core.Game.current);
                     }
 
-                    Manager.Stack.pop();
-                    Manager.Stack.replace(new Scene.Map(Core.Game.current.currentMapID));
+                    Manager.Stack.popAll();
+                    Manager.Stack.push(new Scene.Map(Core.Game.current.currentMapID));
                     Manager.Stack.clearHUD();
-                    this.loading = false;
-                }
+                    if (Manager.Stack) Manager.Stack.requestPaintHUD = true;
+                },
+            });
+            return;
+        }
+
+        this.loading = true;
+        Manager.Stack.requestPaintHUD = true;
+        try {
+            Core.Game.current = game;
+            if (IP2Live.GameManager && typeof IP2Live.GameManager.setActiveSaveSlot === 'function') {
+                IP2Live.GameManager.setActiveSaveSlot(selectedSlot);
             }
-        } else if (this.selectedIndex === this.gamesData.length) {
-            Data.Systems.soundCancel.playSound();
+            if (Data.TitlescreenGameover.isTitleBackgroundVideo) Manager.Videos.stop();
+            await Core.Game.current.loadPositions();
+            Core.Game.current.hero.initializeProperties();
+            if (IP2Live.GameManager && typeof IP2Live.GameManager.restoreProgressFromSlot === 'function') {
+                await IP2Live.GameManager.restoreProgressFromSlot(selectedSlot, Core.Game.current);
+            }
+
             Manager.Stack.pop();
+            Manager.Stack.replace(new Scene.Map(Core.Game.current.currentMapID));
+            Manager.Stack.clearHUD();
+        } finally {
+            this.loading = false;
+            Manager.Stack.requestPaintHUD = true;
         }
     }
 

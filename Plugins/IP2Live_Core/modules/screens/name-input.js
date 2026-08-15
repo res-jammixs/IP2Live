@@ -16,6 +16,7 @@ class IP2LiveNameInputScreen extends Scene.Base {
         this.errorMsg = '';
         this.errorTimer = 0;
         this.confirmed = false;
+        this.awaitingNameConfirmation = false;
         this.hoverConfirm = false;
         this.hoverBack = false;
         this.fadeIn = 0;       // 0..1, fades the interface in on load
@@ -118,7 +119,7 @@ class IP2LiveNameInputScreen extends Scene.Base {
 
     // â”€â”€ Actions â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
-    async _tryConfirm() {
+    _tryConfirm() {
         const rawName = this.inputEl ? this.inputEl.value.trim() : '';
         if (!rawName) {
             Data.Systems.soundImpossible.playSound();
@@ -128,42 +129,84 @@ class IP2LiveNameInputScreen extends Scene.Base {
             return;
         }
 
-        this.confirmed = true;
+        if (this.awaitingNameConfirmation) return;
+        this.awaitingNameConfirmation = true;
         Data.Systems.soundConfirmation.playSound();
+        if (this.inputEl) this.inputEl.blur();
 
-        await IP2Live.DBManager.saveRecord('profiles', {
-            infiltratorName: rawName,
-            createdAt:       Date.now(),
-            playTime:        0,
-            currentMapId:    1,
-        });
-
-        Core.Game.current = new Core.Game();
-        Core.Game.current.initializeDefault();
-        Core.Game.current.infiltratorName = rawName;
-
-        this._removeInputElement();
-
-        const startTutorial = function () {
-            if (IP2Live.GameManager && typeof IP2Live.GameManager.startNewGameFlow === 'function') {
-                IP2Live.GameManager.startNewGameFlow(rawName);
-            } else {
-                IP2Live.MapManager.goToTutorial({ useLoading: false });
-            }
-        };
-
-        const ScreenClass = IP2Live.LoadingScreen2 || IP2Live.LoadingScreen;
-        if (ScreenClass && typeof ScreenClass.show === 'function') {
-            ScreenClass.show({
-                mode: 'replace',
-                status: 'Saving Progress',
-                detail: 'Loading Tutorial Stage',
-                fadeMusicOnStart: true,
-                musicFadeDurationMs: 2200,
-                onComplete: startTutorial,
+        if (IP2Live.confirPopup && typeof IP2Live.confirPopup.show === 'function') {
+            IP2Live.confirPopup.show({
+                title: 'CONFIRM DESIGNATION',
+                message: 'Register this name as your persistent infiltrator identity?',
+                detail: 'THIS NAME WILL IDENTIFY YOUR SAVE DATA AND REPORTS.',
+                value: rawName,
+                valueLabel: 'INFILTRATOR NAME',
+                confirmLabel: 'LOCK IDENTITY',
+                cancelLabel: 'EDIT NAME',
+                systemLabel: 'SYS::IDENTITY_COMMIT',
+                onConfirm: () => this._commitName(rawName),
+                onCancel: () => {
+                    this.awaitingNameConfirmation = false;
+                    if (this.inputEl) this.inputEl.focus();
+                },
             });
-        } else {
-            setTimeout(startTutorial, 300);
+            return;
+        }
+
+        this._commitName(rawName).catch((error) => {
+            console.error('[IP2Live] Name confirmation failed:', error);
+        });
+    }
+
+    async _commitName(rawName) {
+        this.awaitingNameConfirmation = false;
+        this.confirmed = true;
+        try {
+            await IP2Live.DBManager.saveRecord('profiles', {
+                infiltratorName: rawName,
+                createdAt:       Date.now(),
+                playTime:        0,
+                currentMapId:    1,
+            });
+
+            if (Main && typeof Main.waitForGameData === 'function') {
+                await Main.waitForGameData();
+            }
+
+            Core.Game.current = new Core.Game();
+            Core.Game.current.initializeDefault();
+            Core.Game.current.infiltratorName = rawName;
+
+            this._removeInputElement();
+
+            const startTutorial = function () {
+                if (IP2Live.GameManager && typeof IP2Live.GameManager.startNewGameFlow === 'function') {
+                    IP2Live.GameManager.startNewGameFlow(rawName);
+                } else {
+                    IP2Live.MapManager.goToTutorial({ useLoading: false });
+                }
+            };
+
+            const ScreenClass = IP2Live.LoadingScreen2 || IP2Live.LoadingScreen;
+            if (ScreenClass && typeof ScreenClass.show === 'function') {
+                ScreenClass.show({
+                    mode: 'replace',
+                    status: 'Saving Progress',
+                    detail: 'Loading Tutorial Stage',
+                    fadeMusicOnStart: true,
+                    musicFadeDurationMs: 2200,
+                    onComplete: startTutorial,
+                });
+            } else {
+                setTimeout(startTutorial, 300);
+            }
+        } catch (error) {
+            this.confirmed = false;
+            this.errorMsg = 'IDENTITY COMMIT FAILED - TRY AGAIN';
+            this.errorTimer = 180;
+            if (this.inputEl) this.inputEl.focus();
+            Manager.Stack.requestPaintHUD = true;
+            throw error;
         }
     }
 

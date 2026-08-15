@@ -46,6 +46,7 @@ class IP2LiveTitleScreenImplementation extends Scene.Base {
         // Fade-out transition (for New Game)
         this.fadeOut       = 0;   // 0..1, opacity of black overlay
         this.fadeTarget    = null; // null or 0 (New Game case index)
+        this._waitingForGameData = false;
 
         // Music guard — ensure we only call play() once per session
         this._musicStarted = false;
@@ -235,16 +236,73 @@ class IP2LiveTitleScreenImplementation extends Scene.Base {
             Manager.Stack.requestPaintHUD = true;
             setTimeout(() => {
                 switch (idx) {
-                    case 1: Manager.Stack.push(new IP2LiveLoadGameMenu());    break;
+                    case 1: this._openLoadGame();                            break;
                     case 2: Manager.Stack.push(new IP2LiveSettingsMenu());    break;
                     case 3: Manager.Stack.push(new IP2LiveCreditsScene());    break;
-                    case 4: Common.Platform.quit();                           break;
+                    case 4: this._openQuitConfirmation();                    break;
                 }
             }, 120);
         }
     }
 
     // â”€â”€ Update â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+
+    _openLoadGame() {
+        if (this._waitingForGameData) return;
+        this._waitingForGameData = true;
+
+        // Paper Maker 3.2 displays the title before modelHero, battle data,
+        // and the remaining game database have finished loading. Match the
+        // engine's default TitleCommand behavior and keep this title scene in
+        // its loading state until those dependencies are ready.
+        this.loading = true;
+        Manager.Stack.requestPaintHUD = true;
+
+        const gameDataReady = Main && typeof Main.waitForGameData === 'function'
+            ? Main.waitForGameData()
+            : Promise.resolve();
+
+        Promise.resolve(gameDataReady)
+            .then(() => {
+                // Ignore a stale completion if another scene replaced this
+                // title while the engine data was still loading.
+                if (Manager.Stack.top === this) {
+                    Manager.Stack.push(new IP2LiveLoadGameMenu());
+                }
+            })
+            .catch((error) => {
+                console.error('[IP2Live] Unable to open Load Game:', error);
+                if (Data.Systems.soundImpossible) {
+                    Data.Systems.soundImpossible.playSound();
+                }
+            })
+            .finally(() => {
+                this.loading = false;
+                this._waitingForGameData = false;
+                Manager.Stack.requestPaintHUD = true;
+            });
+    }
+
+    _openQuitConfirmation() {
+        if (IP2Live.confirPopup && typeof IP2Live.confirPopup.show === 'function') {
+            IP2Live.confirPopup.show({
+                title: 'TERMINATE SESSION?',
+                message: 'Close IP2Live and disconnect from the infiltration protocol?',
+                detail: 'UNSAVED FIELD PROGRESS WILL BE LOST.',
+                value: 'SYS::IP2LIVE / ACTIVE CLIENT',
+                valueLabel: 'PROCESS TARGET',
+                confirmLabel: 'QUIT GAME',
+                cancelLabel: 'STAY CONNECTED',
+                systemLabel: 'SYS::TERMINATION_REQUEST',
+                danger: true,
+                onConfirm: function () {
+                    Common.Platform.quit();
+                },
+            });
+            return;
+        }
+        Common.Platform.quit();
+    }
 
     update() {
         this.animTick++;

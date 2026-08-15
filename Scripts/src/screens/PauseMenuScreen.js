@@ -19,7 +19,7 @@
  *   02  RESTART         — orange  — new Scene.Map(currentMapId) with fresh Core.Game
  *   03  EXPORT REPORT   — yellow  — IP2Live telemetry export (stub → ReportExporter)
  *   04  MAIN MENU       — yellow  — Manager.Stack.popAll() + pushTitleScreen(true)
- *   05  QUIT GAME       — red     — Common.Platform.quit()
+ *   05  QUIT GAME       — red     — confirPopup → Common.Platform.quit()
  *
  * BUTTON STATES
  * ─────────────

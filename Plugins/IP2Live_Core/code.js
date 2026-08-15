@@ -1305,6 +1305,7 @@ IP2Live.ScreenModulesReady = (async function () {
         'ar-diagnostic-rewind.js',
         'world-title.js',
         'background-screen.js',
+        'confir-popup.js',
         'credits.js',
         'keyboard-menu.js',
         'load-game.js',
