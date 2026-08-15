@@ -78,8 +78,9 @@
         const classNames = CLASS_SPECS.map(function (spec) { return spec.className; });
         const counts = {};
         for (let i = 0; i < classNames.length; i++) counts[classNames[i]] = 0;
-        const maxDistinct = Math.min(classNames.length, clamped - 1);
-        const distinctCount = rand(2, Math.max(2, maxDistinct));
+        const minDistinct = Math.min(3, classNames.length, clamped);
+        const maxDistinct = Math.min(5, classNames.length, clamped);
+        const distinctCount = rand(minDistinct, Math.max(minDistinct, maxDistinct));
         const chosen = shuffle(classNames).slice(0, distinctCount);
         let used = 0;
         for (let i = 0; i < chosen.length; i++) {
@@ -87,12 +88,8 @@
             used++;
         }
 
-        // Always force at least one duplicate class in harder mode.
-        const duplicatedClass = chosen[rand(0, chosen.length - 1)];
-        counts[duplicatedClass] += 1;
-        used++;
-
-        // Fill the rest from already chosen classes so some classes can stay empty.
+        // Fill remaining leads from the selected pool. Depending on the roll,
+        // strict boards can use three, four, or all five Class inputs.
         while (used < clamped) {
             const className = chosen[rand(0, chosen.length - 1)];
             counts[className] += 1;
@@ -115,7 +112,7 @@
     }
 
     const Core = {
-        VERSION: 'ip-wires-core-20260530-04',
+        VERSION: 'ip-wires-core-20260815-05',
         CLASS_SPECS: CLASS_SPECS,
         cloneClassSpecs: cloneClassSpecs,
         clampWireCount: clampWireCount,

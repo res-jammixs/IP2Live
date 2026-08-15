@@ -241,7 +241,7 @@ const IP2LiveGameManager = {
             targetClearMs: 150000,
             objectiveHandler: { manager: 'HarderWiresGameplayManager', method: '_handleWireObjective' },
             quests: [
-                { id: 'stage.5.ip_wires_harder.01.tutorial', objectiveId: 'repair_ip_wires_harder_01_tutorial', title: 'SECURITY BRIEFING LEVER', label: 'Strict Tutorial Lever', targetTile: { x: 2, y: 0, z: 32 }, tutorial: true, wireCount: 5 },
+                { id: 'stage.5.ip_wires_harder.01.tutorial', objectiveId: 'repair_ip_wires_harder_01_tutorial', title: 'ADAPTIVE RE-KEY BRIEFING', label: 'Adaptive Wires Tutorial', targetTile: { x: 2, y: 0, z: 32 }, tutorial: true, wireCount: 5 },
                 { id: 'stage.5.ip_wires_harder.02', objectiveId: 'repair_ip_wires_harder_02', title: 'STRICT IP WIRES CHALLENGE', label: 'Strict Gameplay Lever', targetTile: { x: 4, y: 0, z: 32 }, wireCount: 6 },
                 { id: 'stage.5.ip_wires_harder.03', objectiveId: 'repair_ip_wires_harder_03', title: 'STRICT IP WIRES CHALLENGE', label: 'Strict Gameplay Lever', targetTile: { x: 28, y: 0, z: 25 }, wireCount: 7 },
                 { id: 'stage.5.ip_wires_harder.04', objectiveId: 'repair_ip_wires_harder_04', title: 'STRICT IP WIRES CHALLENGE', label: 'Strict Gameplay Lever', targetTile: { x: 32, y: 0, z: 25 }, wireCount: 8 },

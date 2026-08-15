@@ -25,7 +25,7 @@
     }
 
     const IPWiresTutorial = {
-        VERSION: 'ip-wires-tutorial-20260530-01',
+        VERSION: 'ip-wires-tutorial-20260815-03',
         _dialogueSerial: 0,
 
         classRanges: {
@@ -105,7 +105,12 @@
                                     'You will match each IP address to its correct Class.',
                                 ]],
                                 onComplete: () => {
-                                    this._clearHighlight(screen);
+                                    const firstItem = screen.leftItems && screen.leftItems.length ? screen.leftItems[0] : null;
+                                    this._setHighlight(screen, 'route', firstItem ? {
+                                        sourceId: firstItem.id,
+                                        className: firstItem.className,
+                                        label: 'HOLD + DRAG ROUTE',
+                                    } : null);
                                     this._startDynamicDialogue('stage1.ipwires.guided.howto.', {
                                         title: 'WIRE PATCH',
                                         speaker: 'SYSTEM',
@@ -140,6 +145,11 @@
             const item = guide.sequence[guide.stepIndex];
             guide.expectedSourceId = item.id;
             guide.expectedClassName = item.className;
+            this._setHighlight(screen, 'route', {
+                sourceId: item.id,
+                className: item.className,
+                label: 'PATCH ROUTE // CLASS ' + item.className,
+            });
             const spec = classSpec(item.className);
             const rangeText = spec ? spec.rangeText : ('Class ' + item.className + ' range');
             const lead = guide.stepIndex === 0 ? 'The first IP address' : ('The ' + ordinal(guide.stepIndex) + ' IP address');
@@ -182,6 +192,7 @@
             guide.stepIndex++;
             guide.expectedSourceId = null;
             guide.expectedClassName = null;
+            this._clearHighlight(screen);
 
             const motivational = [
                 'You are doing great. Keep it up.',
@@ -237,25 +248,197 @@
 
         drawGuidedHighlight(ctx, layout, screen) {
             if (!screen || !screen._ipGuideHighlight || !ctx || !layout || !layout.panel) return;
-            const side = screen._ipGuideHighlight.side;
+            const highlight = screen._ipGuideHighlight;
+            const side = highlight.side || 'left';
             const p = layout.panel;
-            const pad = 18 * layout.sX;
-            const mid = p.x + p.w / 2;
-            const rect = side === 'right'
-                ? { x: mid + 8 * layout.sX, y: p.y + 95 * layout.sY, w: p.w * 0.46 - pad, h: p.h - 150 * layout.sY }
-                : { x: p.x + pad, y: p.y + 95 * layout.sY, w: p.w * 0.46 - pad, h: p.h - 150 * layout.sY };
+            const focusRects = [];
+            const padX = 8 * layout.sX;
+            const padY = 8 * layout.sY;
+
+            if (side === 'reroll') {
+                const sourceIds = Array.isArray(highlight.sourceIds) ? highlight.sourceIds : [];
+                for (let i = 0; i < sourceIds.length; i++) {
+                    const sourcePoint = layout.leftPoints ? layout.leftPoints[sourceIds[i]] : null;
+                    if (sourcePoint && typeof screen._terminalBounds === 'function') {
+                        focusRects.push(this._padRect(screen._terminalBounds(sourcePoint, false, true), padX, padY));
+                    }
+                }
+                if (!focusRects.length && layout.leftBank) {
+                    focusRects.push(this._bankFocusRect(layout.leftBank, layout));
+                }
+            } else if (side === 'route') {
+                const sourcePoint = highlight.sourceId && layout.leftPoints ? layout.leftPoints[highlight.sourceId] : null;
+                const targetPoint = highlight.className && layout.rightPoints ? layout.rightPoints[highlight.className] : null;
+                if (sourcePoint && typeof screen._terminalBounds === 'function') {
+                    focusRects.push(this._padRect(screen._terminalBounds(sourcePoint, false, true), padX, padY));
+                }
+                if (targetPoint && typeof screen._terminalBounds === 'function') {
+                    focusRects.push(this._padRect(screen._terminalBounds(targetPoint, true, false), padX, padY));
+                }
+                if (!focusRects.length) {
+                    if (layout.leftBank) focusRects.push(this._bankFocusRect(layout.leftBank, layout));
+                    if (layout.rightBank) focusRects.push(this._bankFocusRect(layout.rightBank, layout));
+                }
+            } else if (side === 'right' && layout.rightBank) {
+                focusRects.push(this._bankFocusRect(layout.rightBank, layout));
+            } else if (side === 'panel') {
+                focusRects.push({
+                    x: p.x + 12 * layout.sX,
+                    y: p.y + 72 * layout.sY,
+                    w: p.w - 24 * layout.sX,
+                    h: p.h - 132 * layout.sY,
+                });
+            } else if (layout.leftBank) {
+                focusRects.push(this._bankFocusRect(layout.leftBank, layout));
+            }
+
+            if (!focusRects.length) return;
+            for (let i = 0; i < focusRects.length; i++) focusRects[i] = this._clampRect(focusRects[i], p);
 
             ctx.save();
             const pulse = 0.55 + 0.45 * Math.sin((screen.animTick || 0) * 0.14);
-            ctx.fillStyle = 'rgba(0,240,255,0.08)';
-            ctx.strokeStyle = 'rgba(0,255,255,' + (0.65 + pulse * 0.25) + ')';
-            ctx.lineWidth = 2 * layout.sX;
-            ctx.shadowColor = '#00F0FF';
-            ctx.shadowBlur = (10 + pulse * 10) * layout.sX;
-            this._roundedRect(ctx, rect.x, rect.y, rect.w, rect.h, 14 * layout.sX);
+            const accent = side === 'reroll' ? '#FF315F' : (side === 'route' ? '#FFE600' : '#00F0FF');
+            const accentRgb = side === 'reroll' ? '255,49,95' : (side === 'route' ? '255,230,0' : '0,240,255');
+            ctx.beginPath();
+            ctx.rect(p.x, p.y, p.w, p.h);
+            for (let i = 0; i < focusRects.length; i++) {
+                const rect = focusRects[i];
+                this._appendAngularRect(ctx, rect.x, rect.y, rect.w, rect.h, 12 * layout.sX);
+            }
+            ctx.fillStyle = 'rgba(0,2,8,0.66)';
+            try {
+                ctx.fill('evenodd');
+            } catch (e) {
+                ctx.fill();
+            }
+
+            if (side === 'route' && focusRects.length >= 2) {
+                const from = focusRects[0];
+                const to = focusRects[1];
+                ctx.save();
+                ctx.setLineDash([9 * layout.sX, 8 * layout.sX]);
+                ctx.lineDashOffset = -((screen.animTick || 0) * 0.9 * layout.sX);
+                ctx.strokeStyle = 'rgba(255,230,0,' + (0.54 + pulse * 0.34) + ')';
+                ctx.lineWidth = 2 * layout.sX;
+                ctx.shadowColor = '#FFE600';
+                ctx.shadowBlur = 8 * layout.sX;
+                ctx.beginPath();
+                ctx.moveTo(from.x + from.w, from.y + from.h / 2);
+                ctx.bezierCurveTo(
+                    p.x + p.w * 0.42,
+                    from.y + from.h / 2,
+                    p.x + p.w * 0.58,
+                    to.y + to.h / 2,
+                    to.x,
+                    to.y + to.h / 2
+                );
+                ctx.stroke();
+                ctx.restore();
+            }
+
+            for (let i = 0; i < focusRects.length; i++) {
+                const rect = focusRects[i];
+                ctx.save();
+                this._angularRect(ctx, rect.x, rect.y, rect.w, rect.h, 12 * layout.sX);
+                ctx.fillStyle = 'rgba(' + accentRgb + ',' + (0.035 + pulse * 0.035) + ')';
+                ctx.fill();
+                ctx.strokeStyle = 'rgba(' + accentRgb + ',' + (0.68 + pulse * 0.28) + ')';
+                ctx.lineWidth = 2 * layout.sX;
+                ctx.shadowColor = accent;
+                ctx.shadowBlur = (10 + pulse * 9) * layout.sX;
+                ctx.stroke();
+
+                ctx.clip();
+                const sweepY = rect.y + ((screen.animTick || 0) * 1.15 * layout.sY % Math.max(1, rect.h));
+                const sweep = ctx.createLinearGradient(0, sweepY - 14 * layout.sY, 0, sweepY + 14 * layout.sY);
+                sweep.addColorStop(0, 'rgba(' + accentRgb + ',0)');
+                sweep.addColorStop(0.5, 'rgba(' + accentRgb + ',0.18)');
+                sweep.addColorStop(1, 'rgba(' + accentRgb + ',0)');
+                ctx.fillStyle = sweep;
+                ctx.fillRect(rect.x, sweepY - 14 * layout.sY, rect.w, 28 * layout.sY);
+                ctx.restore();
+            }
+
+            const label = highlight.label || (side === 'right'
+                ? 'FOCUS // CLASS TARGET BANK'
+                : (side === 'route'
+                    ? 'FOCUS // PATCH ROUTE'
+                    : (side === 'reroll'
+                        ? 'ALERT // REJECTED LEADS RE-KEYED'
+                        : (side === 'panel' ? 'FOCUS // PATCH CHASSIS' : 'FOCUS // IP SOURCE BANK'))));
+            const first = focusRects[0];
+            let labelW = Math.min(first.w, Math.max(126 * layout.sX, label.length * 6.3 * layout.sX));
+            let labelX = first.x + 8 * layout.sX;
+            let labelY = side === 'panel' ? first.y + 8 * layout.sY : first.y + 37 * layout.sY;
+            if (side === 'route' && focusRects.length >= 2) {
+                const corridorLeft = first.x + first.w + 12 * layout.sX;
+                const corridorRight = focusRects[1].x - 12 * layout.sX;
+                labelW = Math.min(Math.max(1, corridorRight - corridorLeft), Math.max(126 * layout.sX, label.length * 6.3 * layout.sX));
+                labelX = corridorLeft;
+                labelY = first.y + 7 * layout.sY;
+            } else if (side === 'reroll') {
+                const corridorLeft = first.x + first.w + 12 * layout.sX;
+                const corridorRight = layout.rightBank ? layout.rightBank.x - 12 * layout.sX : p.x + p.w - 12 * layout.sX;
+                labelW = Math.min(Math.max(1, corridorRight - corridorLeft), Math.max(142 * layout.sX, label.length * 6.3 * layout.sX));
+                labelX = corridorLeft;
+                labelY = first.y + 7 * layout.sY;
+            }
+            ctx.fillStyle = accent;
+            this._angularRect(ctx, labelX, labelY, labelW, 20 * layout.sY, 5 * layout.sX);
             ctx.fill();
-            ctx.stroke();
+            ctx.font = 'bold ' + Math.round(7.5 * layout.sX) + 'px monospace';
+            ctx.fillStyle = '#020508';
+            ctx.textAlign = 'left';
+            ctx.textBaseline = 'middle';
+            ctx.fillText(label, labelX + 9 * layout.sX, labelY + 10 * layout.sY);
             ctx.restore();
+        },
+
+        _padRect(rect, padX, padY) {
+            return {
+                x: rect.x - padX,
+                y: rect.y - padY,
+                w: rect.w + padX * 2,
+                h: rect.h + padY * 2,
+            };
+        },
+
+        _bankFocusRect(bank, layout) {
+            const padX = 8 * layout.sX;
+            const topPad = 36 * layout.sY;
+            const bottomPad = 8 * layout.sY;
+            return {
+                x: bank.x - padX,
+                y: bank.y - topPad,
+                w: bank.w + padX * 2,
+                h: bank.h + topPad + bottomPad,
+            };
+        },
+
+        _clampRect(rect, panel) {
+            const x = Math.max(panel.x + 4, rect.x);
+            const y = Math.max(panel.y + 4, rect.y);
+            const right = Math.min(panel.x + panel.w - 4, rect.x + rect.w);
+            const bottom = Math.min(panel.y + panel.h - 4, rect.y + rect.h);
+            return { x: x, y: y, w: Math.max(1, right - x), h: Math.max(1, bottom - y) };
+        },
+
+        _appendAngularRect(ctx, x, y, w, h, cut) {
+            const c = Math.max(2, Math.min(cut, Math.min(w, h) * 0.35));
+            ctx.moveTo(x + c, y);
+            ctx.lineTo(x + w - c, y);
+            ctx.lineTo(x + w, y + c);
+            ctx.lineTo(x + w, y + h - c);
+            ctx.lineTo(x + w - c, y + h);
+            ctx.lineTo(x + c, y + h);
+            ctx.lineTo(x, y + h - c);
+            ctx.lineTo(x, y + c);
+            ctx.closePath();
+        },
+
+        _angularRect(ctx, x, y, w, h, cut) {
+            ctx.beginPath();
+            this._appendAngularRect(ctx, x, y, w, h, cut);
         },
 
         _roundedRect(ctx, x, y, w, h, r) {
@@ -273,13 +456,22 @@
             ctx.closePath();
         },
 
-        _setHighlight(screen, side) {
+        _setHighlight(screen, side, details) {
             if (!screen) return;
-            screen._ipGuideHighlight = { side: side === 'right' ? 'right' : 'left' };
+            const valid = side === 'right' || side === 'route' || side === 'panel' || side === 'reroll' ? side : 'left';
+            screen._ipGuideHighlight = Object.assign({ side: valid }, details || {});
         },
 
         _clearHighlight(screen) {
             if (screen) screen._ipGuideHighlight = null;
+        },
+
+        setGuidedHighlight(screen, side, details) {
+            this._setHighlight(screen, side, details);
+        },
+
+        clearGuidedHighlight(screen) {
+            this._clearHighlight(screen);
         },
 
         showMistakeAnalysis(mistakes, attemptsRemaining, onComplete) {
