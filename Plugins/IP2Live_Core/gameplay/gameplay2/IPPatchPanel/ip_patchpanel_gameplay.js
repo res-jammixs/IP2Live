@@ -28,24 +28,23 @@ class IP2LivePatchPanelGameplayScreen extends Scene.Base {
     }
 
     _ensureCoreState() {
-        if (!Array.isArray(this.classOrder) || this.classOrder.length !== 4) {
-            this.classOrder = ['A', 'B', 'C', 'D'];
+        if (!Array.isArray(this.classOrder) || this.classOrder.length !== 5) {
+            this.classOrder = ['A', 'B', 'C', 'D', 'E'];
         }
-        if (!this.classColors) {
-            this.classColors = {
-                A: '#F5D40A',
-                B: '#2EE6FF',
-                C: '#7DFF7A',
-                D: '#FF4B5E',
-            };
-        }
+        this.classColors = Object.assign({
+            A: '#FFE600',
+            B: '#296CFF',
+            C: '#00D9C7',
+            D: '#FF315F',
+            E: '#E347FF',
+        }, this.classColors || {});
         if (!this.keyFlash || typeof this.keyFlash !== 'object') this.keyFlash = {};
     }
 
     _configure() {
         this._ensureCoreState();
         this.totalPackets = Math.max(1, Number(this.options.totalPackets) || 15);
-        this.targetScore = Math.max(1, Number(this.options.targetScore) || 10);
+        this.targetScore = Math.min(this.totalPackets, Math.max(1, Number(this.options.targetScore) || 10));
         this.speedMultiplier = Math.max(0.2, Number(this.options.speedMultiplier) || 0.78);
         this.baseSpeed = Math.max(0.45, Number(this.options.baseSpeed) || 1.9);
         this.guidedTutorial = !!this.options.guidedTutorial;
@@ -55,6 +54,10 @@ class IP2LivePatchPanelGameplayScreen extends Scene.Base {
         this.tutorialHighlight = null;
         this.tutorialDialogueOpen = false;
         this.tutorialComplete = !this.guidedTutorial;
+        this.tutorialSpotlightTimer = 0;
+        this.tutorialSpotlightComplete = null;
+        this.tutorialLessonSeen = {};
+        this.tutorialFreePlayAnnounced = false;
         this.roundNumber = 0;
         this.autoRestartCount = 0;
         this.finished = false;
@@ -70,7 +73,9 @@ class IP2LivePatchPanelGameplayScreen extends Scene.Base {
         this.selectedClassIndex = 0;
         this.wheelAngle = this._classIndexToAngle(this.selectedClassIndex);
         this.targetWheelAngle = this.wheelAngle;
-        this.roundPackets = this._generateRoundPackets(this.totalPackets);
+        this.roundPackets = this.guidedTutorial && this.roundNumber === 1
+            ? this._generateTutorialRoundPackets(this.totalPackets)
+            : this._generateRoundPackets(this.totalPackets);
         this.packetCursor = 0;
         this.delivered = 0;
         this.score = 0;
@@ -116,6 +121,10 @@ class IP2LivePatchPanelGameplayScreen extends Scene.Base {
             { text: '230.18.7.200', className: 'D', kind: 'IP' },
             { text: '235.90.1.44', className: 'D', kind: 'IP' },
             { text: '239.255.12.8', className: 'D', kind: 'IP' },
+            { text: '240.18.7.42', className: 'E', kind: 'IP' },
+            { text: '246.90.14.201', className: 'E', kind: 'IP' },
+            { text: '251.44.8.99', className: 'E', kind: 'IP' },
+            { text: '255.201.17.6', className: 'E', kind: 'IP' },
         ];
 
         this.maskPool = [
@@ -125,16 +134,20 @@ class IP2LivePatchPanelGameplayScreen extends Scene.Base {
             { text: '255.255.192.0', className: 'B', kind: 'MASK' },
             { text: '255.255.255.0', className: 'C', kind: 'MASK' },
             { text: '255.255.255.224', className: 'C', kind: 'MASK' },
-            { text: '240.0.0.0', className: 'D', kind: 'MASK' },
             { text: '239.0.0.0', className: 'D', kind: 'MASK' },
+            { text: '224.0.0.0', className: 'D', kind: 'MASK' },
+            { text: '240.0.0.0', className: 'E', kind: 'MASK' },
+            { text: '248.0.0.0', className: 'E', kind: 'MASK' },
         ];
     }
 
     _generateRoundPackets(count) {
         this._ensureCoreState();
         const packets = [];
-        const desiredPerClass = Math.max(1, Math.floor(count / 4));
-        const classBuckets = { A: [], B: [], C: [], D: [] };
+        const classes = Array.isArray(this.classOrder) ? this.classOrder : ['A', 'B', 'C', 'D', 'E'];
+        const desiredPerClass = Math.max(1, Math.floor(count / Math.max(1, classes.length)));
+        const classBuckets = {};
+        for (let i = 0; i < classes.length; i++) classBuckets[classes[i]] = [];
         const ipPool = Array.isArray(this.ipPool) ? this.ipPool : [];
         const maskPool = Array.isArray(this.maskPool) ? this.maskPool : [];
         const sourcePool = ipPool.concat(maskPool);
@@ -146,16 +159,17 @@ class IP2LivePatchPanelGameplayScreen extends Scene.Base {
 
         for (let i = 0; i < source.length; i++) {
             const entry = source[i];
-            if (classBuckets[entry.className].length < desiredPerClass) classBuckets[entry.className].push(entry);
+            if (classBuckets[entry.className] && classBuckets[entry.className].length < desiredPerClass) {
+                classBuckets[entry.className].push(entry);
+            }
         }
 
         const leftovers = [];
         for (let i = 0; i < source.length; i++) {
             const entry = source[i];
-            if (classBuckets[entry.className].indexOf(entry) === -1) leftovers.push(entry);
+            if (!classBuckets[entry.className] || classBuckets[entry.className].indexOf(entry) === -1) leftovers.push(entry);
         }
 
-        const classes = Array.isArray(this.classOrder) ? this.classOrder : ['A', 'B', 'C', 'D'];
         classes.forEach((name) => {
             for (let i = 0; i < classBuckets[name].length; i++) packets.push(classBuckets[name][i]);
         });
@@ -170,6 +184,61 @@ class IP2LivePatchPanelGameplayScreen extends Scene.Base {
         }
 
         return this._shuffle(packets).slice(0, count);
+    }
+
+    _generateTutorialRoundPackets(count) {
+        const findPacket = (pool, className, preferredText) => {
+            const list = Array.isArray(pool) ? pool : [];
+            for (let i = 0; i < list.length; i++) {
+                if (list[i].className === className && (!preferredText || list[i].text === preferredText)) {
+                    return Object.assign({}, list[i]);
+                }
+            }
+            for (let i = 0; i < list.length; i++) {
+                if (list[i].className === className) return Object.assign({}, list[i]);
+            }
+            return null;
+        };
+
+        const guided = [];
+        const maskExamples = [
+            ['A', '255.0.0.0'],
+            ['B', '255.255.0.0'],
+            ['C', '255.255.255.0'],
+            ['D', '224.0.0.0'],
+        ];
+        for (let i = 0; i < maskExamples.length; i++) {
+            const entry = findPacket(this.maskPool, maskExamples[i][0], maskExamples[i][1]);
+            if (entry) {
+                entry.tutorialLesson = { phase: 'mask', order: i + 1, className: entry.className };
+                guided.push(entry);
+            }
+        }
+
+        const ipExamples = [
+            ['A', '25.31.88.201'],
+            ['B', '172.21.8.254'],
+            ['C', '203.11.77.9'],
+            ['D', '230.18.7.200'],
+            ['E', '240.18.7.42'],
+        ];
+        for (let i = 0; i < ipExamples.length; i++) {
+            const entry = findPacket(this.ipPool, ipExamples[i][0], ipExamples[i][1]);
+            if (entry) {
+                entry.tutorialLesson = { phase: 'ip', order: i + 1, className: entry.className };
+                guided.push(entry);
+            }
+        }
+
+        const used = {};
+        for (let i = 0; i < guided.length; i++) used[guided[i].kind + ':' + guided[i].text] = true;
+        const remainderPool = this._shuffle(this.ipPool.concat(this.maskPool).filter((entry) => !used[entry.kind + ':' + entry.text]));
+        while (guided.length < count && remainderPool.length) guided.push(Object.assign({}, remainderPool.shift()));
+        while (guided.length < count) {
+            const fallback = this.ipPool[Math.floor(Math.random() * this.ipPool.length)];
+            guided.push(Object.assign({}, fallback));
+        }
+        return guided.slice(0, count);
     }
 
     _spawnPacket() {
@@ -189,6 +258,8 @@ class IP2LivePatchPanelGameplayScreen extends Scene.Base {
             blinkTick: Math.random() * Math.PI * 2,
             flashWrong: 0,
             flashPass: 0,
+            reverting: false,
+            tutorialRetries: 0,
         });
         packet.speed = this._packetSpeed(m, packet);
         this.activePackets.push(packet);
@@ -199,7 +270,7 @@ class IP2LivePatchPanelGameplayScreen extends Scene.Base {
     }
 
     _nextSpawnDelay() {
-        return 240;
+        return 110;
     }
 
     _packetSpeed(m, packet) {
@@ -253,12 +324,22 @@ class IP2LivePatchPanelGameplayScreen extends Scene.Base {
                 if (this.tutorialActive) this._updateGuidedTutorial();
             }
         } else if (this.phase === 'retry') {
-            this.phaseTimer--;
+            const resetDialogueActive = !!(
+                IP2Live.DialogueManager &&
+                typeof IP2Live.DialogueManager.isActive === 'function' &&
+                IP2Live.DialogueManager.isActive()
+            );
+            if (!resetDialogueActive) this.phaseTimer--;
             if (this.phaseTimer <= 0) {
                 this._resetRound();
             }
         } else if (this.phase === 'success') {
-            this.phaseTimer--;
+            const victoryDialogueActive = !!(
+                IP2Live.DialogueManager &&
+                typeof IP2Live.DialogueManager.isActive === 'function' &&
+                IP2Live.DialogueManager.isActive()
+            );
+            if (!victoryDialogueActive) this.phaseTimer--;
             if (this.phaseTimer <= 0) {
                 this._finishSuccess();
             }
@@ -270,17 +351,23 @@ class IP2LivePatchPanelGameplayScreen extends Scene.Base {
     _updatePacketMotion() {
         const m = this._metrics();
         const maxTrail = 22;
+        const hasReturningPacket = (this.activePackets || []).some((packet) => packet.reverting);
 
         if (this.packetCursor < this.totalPackets) {
             this.nextSpawnTimer--;
-            if (this.nextSpawnTimer <= 0) {
+            // Keep one unresolved lead in the inspection lane. A resolved
+            // packet may leave on the output side while the next one enters,
+            // but players never have to read several live signals at once.
+            if (this.nextSpawnTimer <= 0 && !hasReturningPacket && !this._signalPacket(m)) {
                 this._spawnPacket();
             }
         }
 
         for (let i = this.activePackets.length - 1; i >= 0; i--) {
             const packet = this.activePackets[i];
-            packet.x += packet.speed;
+            const reverting = !!packet.reverting;
+            const returnSpeed = Math.max(packet.speed * 2.15, 3.8 * m.sX);
+            packet.x += reverting ? -returnSpeed : packet.speed;
             packet.blinkTick += 0.13;
             if (packet.flashWrong > 0) packet.flashWrong--;
             if (packet.flashPass > 0) packet.flashPass--;
@@ -289,8 +376,26 @@ class IP2LivePatchPanelGameplayScreen extends Scene.Base {
                 y: m.wireY,
                 correct: packet.correct,
                 resolved: packet.resolved,
+                reverting,
             });
             if (packet.trail.length > maxTrail) packet.trail.shift();
+
+            if (reverting) {
+                if (packet.x <= m.leftWireX - 8 * m.sX) {
+                    packet.x = m.leftWireX - 8 * m.sX;
+                    packet.reverting = false;
+                    packet.resolved = false;
+                    packet.correct = false;
+                    packet.enteredDecision = false;
+                    packet.flashWrong = 0;
+                    packet.trail = [];
+                    this._setBanner('TRAINING RETRY: SELECT CLASS ' + packet.className, 'info', 90);
+                    this.lastRouteNote = 'SIGNAL RESTORED: TRY CLASS ' + packet.className;
+                    this.lastRouteTone = 'info';
+                    this._emitBurst(packet.x, m.wireY, '#FFE600', 18, 2.1);
+                }
+                continue;
+            }
 
             if (!packet.enteredDecision && packet.x >= m.wheelX - m.wheelRadius * 0.16) {
                 packet.enteredDecision = true;
@@ -322,6 +427,20 @@ class IP2LivePatchPanelGameplayScreen extends Scene.Base {
         return queue.length ? queue[0] : null;
     }
 
+    _queuePreview(m, limit) {
+        const metrics = m || this._metrics();
+        const maxItems = Math.max(1, Number(limit) || 3);
+        const signal = this._signalPacket(metrics);
+        const preview = this._preTunnelQueue(metrics)
+            .filter((packet) => !signal || packet.serial !== signal.serial)
+            .map((packet) => Object.assign({ queueState: 'LIVE' }, packet));
+
+        for (let i = this.packetCursor; i < this.roundPackets.length && preview.length < maxItems; i++) {
+            preview.push(Object.assign({ queueState: 'NEXT' }, this.roundPackets[i]));
+        }
+        return preview.slice(0, maxItems);
+    }
+
     _syncFocusPacket(m) {
         const metrics = m || this._metrics();
         let focus = this._signalPacket(metrics);
@@ -337,38 +456,95 @@ class IP2LivePatchPanelGameplayScreen extends Scene.Base {
     }
 
     _updateGuidedTutorial() {
-        if (!this.tutorialActive || this.tutorialComplete || this.tutorialDialogueOpen) return;
+        if (!this.tutorialActive || this.tutorialComplete) return;
+
+        if (this.tutorialSpotlightTimer > 0) {
+            this.tutorialSpotlightTimer--;
+            if (this.tutorialSpotlightTimer <= 0) {
+                const complete = this.tutorialSpotlightComplete;
+                this.tutorialSpotlightComplete = null;
+                this.tutorialHighlight = null;
+                if (typeof complete === 'function') complete();
+            }
+            return;
+        }
+
+        if (this.tutorialDialogueOpen || this._isGuidedDialogueActive()) return;
         const m = this._metrics();
-        const packet = this.activePackets && this.activePackets.length ? this.activePackets[0] : null;
+        const packet = this._signalPacket(m) || (this.activePackets && this.activePackets[0]) || null;
 
         if (this.tutorialStep === 'wait_packet') {
             if (packet && packet.x >= m.leftWireX - 8 * m.sX) {
                 this.tutorialPaused = true;
-                this.tutorialHighlight = { type: 'packet', packetSerial: packet.serial };
+                this.tutorialHighlight = null;
                 this.tutorialStep = 'packet_dialogue';
-                this._showGuidedPacketDialogue();
+                this._showGuidedPacketDialogue(packet);
             }
             return;
         }
 
-        if (this.tutorialStep === 'wait_xray') {
-            const signal = this._signalPacket(m);
-            if (signal && this._packetVisibleInXray(m, signal)) {
-                this._syncFocusPacket(m);
-                this.tutorialPaused = true;
-                this.tutorialHighlight = { type: 'xray', packetSerial: signal.serial };
-                this.tutorialStep = 'xray_dialogue';
-                this._showGuidedXrayDialogue(signal);
-            }
-            return;
-        }
-
-        if (this.tutorialStep === 'controls') {
+        if (this.tutorialStep === 'xray_intro') {
             this.tutorialPaused = true;
-            this.tutorialHighlight = { type: 'controls' };
+            this.tutorialStep = 'xray_dialogue';
+            this._showGuidedXrayDialogue(packet);
+            return;
+        }
+
+        if (this.tutorialStep === 'goal_intro') {
+            this.tutorialPaused = true;
+            this.tutorialStep = 'goal_dialogue';
+            this._showGuidedGoalDialogue();
+            return;
+        }
+
+        if (this.tutorialStep === 'controls_intro') {
+            this.tutorialPaused = true;
             this.tutorialStep = 'controls_dialogue';
             this._showGuidedControlsDialogue();
+            return;
         }
+
+        if (this.tutorialStep === 'upcoming_intro') {
+            this.tutorialPaused = true;
+            this.tutorialStep = 'upcoming_dialogue';
+            this._showGuidedUpcomingDialogue();
+            return;
+        }
+
+        if (this.tutorialStep === 'current_intro') {
+            this.tutorialPaused = true;
+            this.tutorialStep = 'current_dialogue';
+            this._showGuidedCurrentDialogue();
+            return;
+        }
+
+        if (this.tutorialStep === 'training_wait' && packet && packet.x >= m.leftWireX - 8 * m.sX) {
+            const lesson = packet.tutorialLesson || null;
+            if (lesson && !this.tutorialLessonSeen[packet.spawnIndex]) {
+                this.tutorialLessonSeen[packet.spawnIndex] = true;
+                this.tutorialPaused = true;
+                this.tutorialHighlight = null;
+                this.tutorialStep = 'training_dialogue';
+                this._showGuidedTrainingDialogue(packet);
+                return;
+            }
+
+            if (!lesson && !this.tutorialFreePlayAnnounced) {
+                this.tutorialFreePlayAnnounced = true;
+                this.tutorialPaused = true;
+                this.tutorialHighlight = null;
+                this.tutorialStep = 'independent_dialogue';
+                this._showGuidedIndependentDialogue(packet);
+            }
+        }
+    }
+
+    _showTutorialSpotlight(highlight, duration, onComplete) {
+        this.tutorialPaused = true;
+        this.tutorialHighlight = Object.assign({}, highlight || {});
+        this.tutorialSpotlightTimer = Math.max(45, Number(duration) || 105);
+        this.tutorialSpotlightComplete = typeof onComplete === 'function' ? onComplete : null;
+        if (Manager && Manager.Stack) Manager.Stack.requestPaintHUD = true;
     }
 
     _setGuidedDialogueOpen(isOpen) {
@@ -386,13 +562,17 @@ class IP2LivePatchPanelGameplayScreen extends Scene.Base {
         );
     }
 
-    _showGuidedPacketDialogue() {
+    _showGuidedPacketDialogue(packet) {
         this._setGuidedDialogueOpen(true);
         const done = () => {
             this._setGuidedDialogueOpen(false);
-            this.tutorialPaused = false;
-            this.tutorialHighlight = null;
-            this.tutorialStep = 'wait_xray';
+            this._showTutorialSpotlight({
+                type: 'packet',
+                packetSerial: packet && packet.serial,
+                label: '01 // LIVE PACKET',
+            }, 105, () => {
+                this.tutorialStep = 'xray_intro';
+            });
         };
         if (IP2Live.IPPatchPanelTutorial && typeof IP2Live.IPPatchPanelTutorial.showPacketGuide === 'function') {
             IP2Live.IPPatchPanelTutorial.showPacketGuide(done);
@@ -406,10 +586,33 @@ class IP2LivePatchPanelGameplayScreen extends Scene.Base {
         const kind = packet && packet.kind ? packet.kind : 'IP';
         const done = () => {
             this._setGuidedDialogueOpen(false);
-            this.tutorialStep = 'controls';
+            this._showTutorialSpotlight({
+                type: 'xray',
+                label: '02 // CONDUIT XRAY',
+            }, 120, () => {
+                this.tutorialStep = 'goal_intro';
+            });
         };
         if (IP2Live.IPPatchPanelTutorial && typeof IP2Live.IPPatchPanelTutorial.showXrayGuide === 'function') {
             IP2Live.IPPatchPanelTutorial.showXrayGuide(kind, done);
+        } else {
+            done();
+        }
+    }
+
+    _showGuidedGoalDialogue() {
+        this._setGuidedDialogueOpen(true);
+        const done = () => {
+            this._setGuidedDialogueOpen(false);
+            this._showTutorialSpotlight({
+                type: 'goal',
+                label: '03 // PACKET FLOW: 15 TOTAL // TARGET 10',
+            }, 120, () => {
+                this.tutorialStep = 'controls_intro';
+            });
+        };
+        if (IP2Live.IPPatchPanelTutorial && typeof IP2Live.IPPatchPanelTutorial.showGoalGuide === 'function') {
+            IP2Live.IPPatchPanelTutorial.showGoalGuide(done);
         } else {
             done();
         }
@@ -419,10 +622,12 @@ class IP2LivePatchPanelGameplayScreen extends Scene.Base {
         this._setGuidedDialogueOpen(true);
         const done = () => {
             this._setGuidedDialogueOpen(false);
-            this._ensureGuidedUpcomingPacket();
-            this.tutorialHighlight = { type: 'upcoming' };
-            this.tutorialStep = 'upcoming_dialogue';
-            this._showGuidedUpcomingDialogue();
+            this._showTutorialSpotlight({
+                type: 'controls',
+                label: '04 // ARROW KEYS: ROTATE ACTIVE TUNNEL',
+            }, 125, () => {
+                this.tutorialStep = 'upcoming_intro';
+            });
         };
         if (IP2Live.IPPatchPanelTutorial && typeof IP2Live.IPPatchPanelTutorial.showControlsGuide === 'function') {
             IP2Live.IPPatchPanelTutorial.showControlsGuide(done);
@@ -435,11 +640,12 @@ class IP2LivePatchPanelGameplayScreen extends Scene.Base {
         this._setGuidedDialogueOpen(true);
         const done = () => {
             this._setGuidedDialogueOpen(false);
-            this.tutorialPaused = false;
-            this.tutorialHighlight = null;
-            this.tutorialActive = false;
-            this.tutorialComplete = true;
-            this.tutorialStep = 'done';
+            this._showTutorialSpotlight({
+                type: 'upcoming',
+                label: '05 // UPCOMING PACKETS',
+            }, 110, () => {
+                this.tutorialStep = 'current_intro';
+            });
         };
         if (IP2Live.IPPatchPanelTutorial && typeof IP2Live.IPPatchPanelTutorial.showUpcomingGuide === 'function') {
             IP2Live.IPPatchPanelTutorial.showUpcomingGuide(done);
@@ -448,21 +654,70 @@ class IP2LivePatchPanelGameplayScreen extends Scene.Base {
         }
     }
 
-    _ensureGuidedUpcomingPacket() {
-        const m = this._metrics();
-        const signal = this._signalPacket(m);
-        const upcoming = this._preTunnelQueue(m)
-            .filter((packet) => !signal || packet.serial !== signal.serial);
-        if (upcoming.length || this.packetCursor >= this.totalPackets) return;
+    _showGuidedCurrentDialogue() {
+        this._setGuidedDialogueOpen(true);
+        const done = () => {
+            this._setGuidedDialogueOpen(false);
+            this._showTutorialSpotlight({
+                type: 'current_card',
+                label: '06 // CURRENT PACKET // ROUTE THIS SIGNAL',
+            }, 110, () => {
+                this.tutorialStep = 'training_wait';
+                // Keep the stream locked for one more update so the first
+                // guided packet lesson opens before motion resumes.
+                this.tutorialPaused = true;
+            });
+        };
+        if (IP2Live.IPPatchPanelTutorial && typeof IP2Live.IPPatchPanelTutorial.showCurrentGuide === 'function') {
+            IP2Live.IPPatchPanelTutorial.showCurrentGuide(done);
+        } else {
+            done();
+        }
+    }
 
-        const before = this.activePackets.length;
-        if (!this._spawnPacket() || this.activePackets.length <= before) return;
-        const staged = this.activePackets[this.activePackets.length - 1];
-        staged.x = m.leftWireX + 16 * m.sX;
-        staged.trail = [];
-        staged.speed = this._packetSpeed(m, staged);
-        this.nextSpawnTimer = this._nextSpawnDelay();
-        this._syncFocusPacket(m);
+    _showGuidedTrainingDialogue(packet) {
+        this._setGuidedDialogueOpen(true);
+        const done = () => {
+            this._setGuidedDialogueOpen(false);
+            const lesson = packet && packet.tutorialLesson ? packet.tutorialLesson : {};
+            const phaseLabel = lesson.phase === 'mask' ? 'SUBNET MASK' : 'IP ADDRESS';
+            this._showTutorialSpotlight({
+                type: 'training',
+                packetSerial: packet && packet.serial,
+                className: packet && packet.className,
+                label: phaseLabel + ' // ROUTE TO CLASS ' + (packet && packet.className ? packet.className : '?'),
+            }, 95, () => {
+                this.tutorialStep = 'training_wait';
+                this.tutorialPaused = false;
+            });
+        };
+        if (IP2Live.IPPatchPanelTutorial && typeof IP2Live.IPPatchPanelTutorial.showTrainingPacketGuide === 'function') {
+            IP2Live.IPPatchPanelTutorial.showTrainingPacketGuide(packet, done);
+        } else {
+            done();
+        }
+    }
+
+    _showGuidedIndependentDialogue(packet) {
+        this._setGuidedDialogueOpen(true);
+        const done = () => {
+            this._setGuidedDialogueOpen(false);
+            this._showTutorialSpotlight({
+                type: 'independent',
+                packetSerial: packet && packet.serial,
+                label: '07 // INDEPENDENT ROUTING BEGINS',
+            }, 105, () => {
+                this.tutorialActive = false;
+                this.tutorialComplete = true;
+                this.tutorialStep = 'done';
+                this.tutorialPaused = false;
+            });
+        };
+        if (IP2Live.IPPatchPanelTutorial && typeof IP2Live.IPPatchPanelTutorial.showIndependentGuide === 'function') {
+            IP2Live.IPPatchPanelTutorial.showIndependentGuide(done);
+        } else {
+            done();
+        }
     }
 
     _onRoundEnd() {
@@ -532,7 +787,7 @@ class IP2LivePatchPanelGameplayScreen extends Scene.Base {
         const keyName = this._normalizeKeyName(key);
         if (!keyName) return true;
 
-        if (keyName === 'A' || keyName === 'B' || keyName === 'C' || keyName === 'D') {
+        if (keyName === 'A' || keyName === 'B' || keyName === 'C' || keyName === 'D' || keyName === 'E') {
             this._switchClassByName(keyName);
             return true;
         }
@@ -579,11 +834,12 @@ class IP2LivePatchPanelGameplayScreen extends Scene.Base {
         if (!text) return null;
 
         const upper = text.toUpperCase();
-        if (upper.length === 1 && ['A', 'B', 'C', 'D'].includes(upper)) return upper;
+        if (upper.length === 1 && ['A', 'B', 'C', 'D', 'E'].includes(upper)) return upper;
         if (upper === 'KEYA') return 'A';
         if (upper === 'KEYB') return 'B';
         if (upper === 'KEYC') return 'C';
         if (upper === 'KEYD') return 'D';
+        if (upper === 'KEYE') return 'E';
         if (upper === 'ARROWLEFT' || upper === 'LEFT') return 'ARROWLEFT';
         if (upper === 'ARROWRIGHT' || upper === 'RIGHT') return 'ARROWRIGHT';
         if (upper === 'ARROWUP' || upper === 'UP') return 'ARROWUP';
@@ -609,14 +865,12 @@ class IP2LivePatchPanelGameplayScreen extends Scene.Base {
     }
 
     _classIndexToAngle(index) {
-        if (index === 0) return -Math.PI * 0.5;
-        if (index === 1) return Math.PI;
-        if (index === 2) return Math.PI * 0.5;
-        return 0;
+        const total = Math.max(1, this.classOrder.length);
+        return Math.PI + (Math.PI * 2 * index / total);
     }
 
     _classAtDirection(directionIndex) {
-        const idx = (this.selectedClassIndex + directionIndex + 1) % this.classOrder.length;
+        const idx = (this.selectedClassIndex + directionIndex) % this.classOrder.length;
         return this.classOrder[idx];
     }
 
@@ -629,11 +883,35 @@ class IP2LivePatchPanelGameplayScreen extends Scene.Base {
 
     _evaluateCurrentPacket(packet) {
         const target = packet || this.activePacket;
-        if (!target || target.resolved) return;
-        this.delivered = Math.min(this.totalPackets, this.delivered + 1);
+        if (!target || target.resolved || target.reverting) return;
         const selectedClass = this.classOrder[this.selectedClassIndex];
         const correctClass = target.className;
         const correct = selectedClass === correctClass;
+        const protectedTutorialPacket = !!(
+            this.guidedTutorial &&
+            this.tutorialActive &&
+            target.tutorialLesson
+        );
+
+        if (!correct && protectedTutorialPacket) {
+            target.reverting = true;
+            target.resolved = false;
+            target.correct = false;
+            target.enteredDecision = true;
+            target.tutorialRetries = (Number(target.tutorialRetries) || 0) + 1;
+            target.flashWrong = 32;
+            target.trail = [];
+            this._syncFocusPacket(this._metrics());
+            this._emitBurst(target.x + 24, this._metrics().wireY, '#FFE600', 28, 3);
+            this._emitRouteShock(target, selectedClass, correctClass);
+            this._setBanner('TRAINING MISROUTE: RETURNING SIGNAL', 'danger', 90);
+            this.lastRouteNote = 'REVERTING: CLASS ' + selectedClass + ' -> RETRY ' + correctClass;
+            this.lastRouteTone = 'danger';
+            this._playCancel();
+            return;
+        }
+
+        this.delivered = Math.min(this.totalPackets, this.delivered + 1);
 
         target.resolved = true;
         target.correct = correct;
@@ -705,7 +983,7 @@ class IP2LivePatchPanelGameplayScreen extends Scene.Base {
                 submitted: selectedClass,
                 sourceClass: correctClass,
                 targetClass: selectedClass,
-                packetIp: packet && packet.ip ? packet.ip : null,
+                packetIp: packet && packet.text ? packet.text : null,
                 packetSerial: packet && packet.serial ? packet.serial : null,
                 gameplayStep: 'packet_classification',
             }],
@@ -744,18 +1022,14 @@ class IP2LivePatchPanelGameplayScreen extends Scene.Base {
         this._drawBackdrop(ctx, m);
         this._drawPatchPanel(ctx, m);
         this._drawPersonaPanels(ctx, m);
-        this._drawTrafficWire(ctx, m);
         this._drawXray(ctx, m);
+        this._drawTrafficWire(ctx, m);
         this._drawPacketTrail(ctx, m);
         this._drawActivePacket(ctx, m);
         this._drawWheelCore(ctx, m);
-        this._drawRightClassifierBox(ctx, m);
-        this._drawUpcomingPacketBox(ctx, m);
         this._drawParticles(ctx, m);
-        this._drawHudStats(ctx, m);
-        this._drawControlHints(ctx, m);
         this._drawProgressRail(ctx, m);
-        this._drawBanner(ctx, m);
+        this._drawPacketDeck(ctx, m);
         this._drawPhaseOverlay(ctx, m);
         this._drawTutorialHighlight(ctx, m);
         ctx.restore();
@@ -772,26 +1046,29 @@ class IP2LivePatchPanelGameplayScreen extends Scene.Base {
         const sX = cW / 1280;
         const sY = cH / 720;
 
-        const panelX = 30 * sX;
-        const panelY = 46 * sY;
+        const panelX = 48 * sX;
+        const panelY = 42 * sY;
         const panelW = cW - panelX * 2;
         const panelH = cH - panelY * 2;
 
-        const headH = 68 * sY;
-        const footH = 128 * sY;
+        const headH = 82 * sY;
+        const footH = 154 * sY;
         const midY = panelY + headH;
         const midH = panelH - headH - footH;
 
-        const wireY = midY + midH * 0.56;
-        const leftWireX = panelX + panelW * 0.065;
-        const rightWireX = panelX + panelW * 0.935;
-        const wheelX = panelX + panelW * 0.52;
-        const wheelRadius = Math.min(panelW, panelH) * 0.132;
+        const xrayW = panelW * 0.78;
+        const xrayH = Math.min(362 * sY, panelH * 0.57);
+        const xrayX = panelX + (panelW - xrayW) * 0.5;
+        const xrayY = panelY + 94 * sY;
+        const wireY = xrayY + xrayH * 0.54;
+        const leftWireX = panelX + 24 * sX;
+        const rightWireX = panelX + panelW - 24 * sX;
+        const wheelX = panelX + panelW * 0.5;
+        const wheelRadius = Math.min(panelW, panelH) * 0.142;
 
-        const xrayW = panelW * 0.52;
-        const xrayH = midH * 0.9;
-        const xrayX = wheelX - xrayW * 0.5;
-        const xrayY = midY + midH * 0.05;
+        const packetFlowY = xrayY + xrayH + 17 * sY;
+        const packetCardsY = packetFlowY + 38 * sY;
+        const packetCardsH = 70 * sY;
 
         return {
             cW,
@@ -815,35 +1092,89 @@ class IP2LivePatchPanelGameplayScreen extends Scene.Base {
             xrayY,
             xrayW,
             xrayH,
+            packetFlowY,
+            packetCardsY,
+            packetCardsH,
         };
     }
 
     _drawTutorialHighlight(ctx, m) {
         if (!this.tutorialHighlight || (!this.tutorialPaused && !this._isGuidedDialogueActive())) return;
-        const rect = this._tutorialHighlightRect(m);
-        if (!rect) return;
+        const focus = this._tutorialHighlightRects(m);
+        if (!focus || !focus.rects || !focus.rects.length) return;
         const pulse = 0.55 + 0.45 * Math.sin((this.animTick || 0) * 0.16);
         const cut = Math.max(4 * m.sX, 4);
+        const rects = focus.rects;
 
         ctx.save();
         ctx.globalAlpha = 1;
+        ctx.beginPath();
+        ctx.rect(m.panelX, m.panelY, m.panelW, m.panelH);
+        for (let i = 0; i < rects.length; i++) {
+            const rect = rects[i];
+            this._appendChamferPath(ctx, rect.x, rect.y, rect.w, rect.h, cut);
+        }
+        ctx.fillStyle = 'rgba(0, 3, 9, 0.74)';
+        ctx.fill('evenodd');
+
+        for (let i = 0; i < rects.length; i++) {
+            const rect = rects[i];
+            const accent = i === 0 ? '#FFE600' : '#00F0FF';
+            ctx.shadowColor = accent;
+            ctx.shadowBlur = (12 + pulse * 12) * m.sX;
+            ctx.fillStyle = i === 0 ? 'rgba(255,230,0,0.09)' : 'rgba(0,240,255,0.08)';
+            this._fillChamferRect(ctx, rect.x, rect.y, rect.w, rect.h, cut);
+            ctx.strokeStyle = accent;
+            ctx.globalAlpha = 0.78 + pulse * 0.22;
+            ctx.lineWidth = (i === 0 ? 3 : 2.2) * m.sX;
+            this._strokeChamferRect(ctx, rect.x, rect.y, rect.w, rect.h, cut);
+            ctx.globalAlpha = 1;
+
+            const sweepH = Math.max(2 * m.sY, rect.h * 0.045);
+            const sweepRange = Math.max(1, rect.h - sweepH);
+            const sweepY = rect.y + ((this.animTick * 2.4 + i * 19) % sweepRange);
+            ctx.shadowBlur = 8 * m.sX;
+            ctx.fillStyle = i === 0 ? 'rgba(255,230,0,0.32)' : 'rgba(0,240,255,0.26)';
+            ctx.fillRect(rect.x + cut, sweepY, Math.max(0, rect.w - cut * 2), sweepH);
+        }
+
+        const anchor = rects[0];
+        const label = String(focus.label || this.tutorialHighlight.label || 'SYSTEM FOCUS');
+        const labelH = 18 * m.sY;
+        const labelY = Math.max(m.panelY + 75 * m.sY, anchor.y - labelH - 7 * m.sY);
+        const labelW = Math.min(anchor.w, Math.max(190 * m.sX, label.length * 7.2 * m.sX));
         ctx.shadowColor = '#FFE600';
-        ctx.shadowBlur = (12 + pulse * 12) * m.sX;
-        ctx.fillStyle = 'rgba(255,230,0,0.08)';
-        this._fillChamferRect(ctx, rect.x, rect.y, rect.w, rect.h, cut);
-        ctx.strokeStyle = 'rgba(255,230,0,' + (0.82 + pulse * 0.18) + ')';
-        ctx.lineWidth = 3 * m.sX;
-        this._strokeChamferRect(ctx, rect.x, rect.y, rect.w, rect.h, cut);
-        ctx.shadowColor = '#00F0FF';
-        ctx.shadowBlur = (7 + pulse * 7) * m.sX;
-        ctx.strokeStyle = 'rgba(0,240,255,0.72)';
-        ctx.lineWidth = 1.4 * m.sX;
-        this._strokeChamferRect(ctx, rect.x - 4 * m.sX, rect.y - 4 * m.sY, rect.w + 8 * m.sX, rect.h + 8 * m.sY, cut);
+        ctx.shadowBlur = 9 * m.sX;
+        this._fillChamferRect(ctx, anchor.x, labelY, labelW, labelH, 5 * m.sX, '#FFE600');
+        ctx.shadowBlur = 0;
+        ctx.fillStyle = '#05070A';
+        ctx.font = 'bold ' + (7.4 * m.sY).toFixed(1) + 'px ' + this._uiMonoFont();
+        ctx.textAlign = 'left';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(label, anchor.x + 10 * m.sX, labelY + labelH * 0.55);
         ctx.restore();
     }
 
-    _tutorialHighlightRect(m) {
+    _tutorialHighlightRects(m) {
         const highlight = this.tutorialHighlight || {};
+        const clampRect = (rect) => {
+            const padX = 8 * m.sX;
+            const padY = 8 * m.sY;
+            const minX = m.panelX + padX;
+            const minY = m.panelY + 68 * m.sY;
+            const maxX = m.panelX + m.panelW - padX;
+            const maxY = m.panelY + m.panelH - padY;
+            const x = Math.max(minX, rect.x);
+            const y = Math.max(minY, rect.y);
+            return {
+                x,
+                y,
+                w: Math.max(18 * m.sX, Math.min(rect.x + rect.w, maxX) - x),
+                h: Math.max(18 * m.sY, Math.min(rect.y + rect.h, maxY) - y),
+            };
+        };
+        const result = { rects: [], label: highlight.label || '' };
+
         if (highlight.type === 'packet') {
             let packet = null;
             for (let i = 0; i < this.activePackets.length; i++) {
@@ -854,39 +1185,86 @@ class IP2LivePatchPanelGameplayScreen extends Scene.Base {
             }
             packet = packet || this.activePacket || (this.activePackets && this.activePackets[0]);
             if (!packet) return null;
-            return {
+            result.rects.push(clampRect({
                 x: packet.x - 26 * m.sX,
                 y: m.wireY - 24 * m.sY,
                 w: 52 * m.sX,
                 h: 48 * m.sY,
-            };
+            }));
+            return result;
         }
 
         if (highlight.type === 'xray') {
-            return {
-                x: m.xrayX + 10 * m.sX,
-                y: m.xrayY + 62 * m.sY,
-                w: m.xrayW * 0.58,
-                h: 34 * m.sY,
-            };
+            result.rects.push(clampRect({
+                x: m.xrayX + 8 * m.sX,
+                y: m.xrayY + 36 * m.sY,
+                w: m.xrayW - 16 * m.sX,
+                h: m.xrayH - 46 * m.sY,
+            }));
+            return result;
+        }
+
+        if (highlight.type === 'goal') {
+            result.rects.push(clampRect({
+                x: m.xrayX - 8 * m.sX,
+                y: m.packetFlowY - 15 * m.sY,
+                w: m.xrayW + 16 * m.sX,
+                h: 42 * m.sY,
+            }));
+            return result;
         }
 
         if (highlight.type === 'controls') {
-            return {
-                x: m.panelX + m.panelW * 0.37 - 8 * m.sX,
-                y: m.panelY + m.panelH - m.footH + 39 * m.sY,
-                w: m.panelW * 0.33 + 16 * m.sX,
-                h: m.footH - 56 * m.sY,
-            };
+            result.rects.push(clampRect({
+                x: m.wheelX - m.wheelRadius * 1.55,
+                y: m.wireY - m.wheelRadius * 1.55,
+                w: m.wheelRadius * 3.1,
+                h: m.wheelRadius * 3.1,
+            }));
+            return result;
         }
 
-        if (highlight.type === 'upcoming') {
-            return {
-                x: m.panelX + m.panelW * 0.792 - 8 * m.sX,
-                y: m.midY + m.midH * 0.685 - 8 * m.sY,
-                w: m.panelW * 0.165 + 16 * m.sX,
-                h: m.midH * 0.225 + 16 * m.sY,
-            };
+        const gap = 12 * m.sX;
+        const cardW = (m.xrayW - gap * 2) / 3;
+        if (highlight.type === 'upcoming' || highlight.type === 'independent') {
+            result.rects.push(clampRect({
+                x: m.xrayX - 5 * m.sX,
+                y: m.packetCardsY - 8 * m.sY,
+                w: highlight.type === 'upcoming' ? cardW * 2 + gap + 10 * m.sX : m.xrayW + 10 * m.sX,
+                h: m.packetCardsH + 16 * m.sY,
+            }));
+            return result;
+        }
+
+        const currentCardRect = {
+            x: m.xrayX + 2 * (cardW + gap) - 5 * m.sX,
+            y: m.packetCardsY - 8 * m.sY,
+            w: cardW + 10 * m.sX,
+            h: m.packetCardsH + 16 * m.sY,
+        };
+        if (highlight.type === 'current_card') {
+            result.rects.push(clampRect(currentCardRect));
+            return result;
+        }
+
+        if (highlight.type === 'training') {
+            result.rects.push(clampRect(currentCardRect));
+            let port = null;
+            for (let i = 0; i < (this.classButtonRects || []).length; i++) {
+                if (this.classButtonRects[i].key === highlight.className) {
+                    port = this.classButtonRects[i];
+                    break;
+                }
+            }
+            if (port) {
+                result.rects.push(clampRect({
+                    x: port.x - 8 * m.sX,
+                    y: port.y - 8 * m.sY,
+                    w: port.w + 16 * m.sX,
+                    h: port.h + 16 * m.sY,
+                }));
+            }
+            return result;
         }
 
         return null;
@@ -894,150 +1272,203 @@ class IP2LivePatchPanelGameplayScreen extends Scene.Base {
 
     _drawBackdrop(ctx, m) {
         const grad = ctx.createLinearGradient(0, 0, m.cW, m.cH);
-        grad.addColorStop(0, '#060A12');
-        grad.addColorStop(0.42, '#0C1624');
-        grad.addColorStop(1, '#070C14');
+        grad.addColorStop(0, '#02050B');
+        grad.addColorStop(0.5, '#07101C');
+        grad.addColorStop(1, '#03060C');
         ctx.fillStyle = grad;
         ctx.fillRect(0, 0, m.cW, m.cH);
 
-        ctx.globalAlpha = 0.14;
-        ctx.strokeStyle = '#1E3652';
-        ctx.lineWidth = Math.max(1, m.sX);
-        const spacing = 46 * m.sX;
-        for (let x = -spacing + ((this.animTick * 0.8) % spacing); x < m.cW + spacing; x += spacing) {
+        ctx.save();
+        ctx.globalAlpha = 0.18;
+        ctx.strokeStyle = '#00B9CF';
+        ctx.lineWidth = Math.max(0.7, m.sX * 0.7);
+        const spacing = 54 * m.sX;
+        const drift = (this.animTick * 0.22) % spacing;
+        for (let x = -m.cH; x < m.cW + m.cH; x += spacing) {
             ctx.beginPath();
-            ctx.moveTo(x, 0);
-            ctx.lineTo(x + m.cH * 0.22, m.cH);
+            ctx.moveTo(x + drift, 0);
+            ctx.lineTo(x + m.cH * 0.3 + drift, m.cH);
             ctx.stroke();
         }
-        ctx.globalAlpha = 1;
-
-        ctx.globalAlpha = 0.27;
-        this._drawCable(ctx, -80 * m.sX, m.cH * 0.16, m.cW * 0.2, m.cH * 0.23, m.cW * 0.78, m.cH * 0.11, m.cW + 80 * m.sX, m.cH * 0.22, '#1D222A', 10 * m.sX);
-        this._drawCable(ctx, -90 * m.sX, m.cH * 0.76, m.cW * 0.22, m.cH * 0.84, m.cW * 0.86, m.cH * 0.69, m.cW + 90 * m.sX, m.cH * 0.78, '#181C24', 12 * m.sX);
-        ctx.globalAlpha = 1;
-
-        ctx.globalAlpha = 0.08;
-        for (let i = 0; i < 80; i++) {
-            const px = (i * 193 + this.animTick * 4) % m.cW;
-            const py = (i * 91 + this.animTick * 1.5) % m.cH;
-            ctx.fillStyle = i % 2 ? '#8AEFFF' : '#4C8DE8';
-            ctx.fillRect(px, py, 2 * m.sX, 2 * m.sY);
+        for (let y = m.cH * 0.15; y < m.cH; y += 42 * m.sY) {
+            ctx.globalAlpha = Math.min(0.17, 0.035 + y / m.cH * 0.12);
+            ctx.beginPath();
+            ctx.moveTo(0, y);
+            ctx.lineTo(m.cW, y);
+            ctx.stroke();
         }
+        ctx.restore();
+
+        ctx.globalAlpha = 0.28;
+        this._drawCable(ctx, -90 * m.sX, m.cH * 0.19, m.cW * 0.2, m.cH * 0.28, m.cW * 0.78, m.cH * 0.09, m.cW + 90 * m.sX, m.cH * 0.21, '#151C27', 11 * m.sX);
+        this._drawCable(ctx, -90 * m.sX, m.cH * 0.8, m.cW * 0.22, m.cH * 0.88, m.cW * 0.86, m.cH * 0.7, m.cW + 90 * m.sX, m.cH * 0.81, '#121822', 14 * m.sX);
         ctx.globalAlpha = 1;
 
-        const motifY = m.panelY + m.panelH * 0.14;
-        for (let i = 0; i < 6; i++) {
-            const mx = m.panelX + m.panelW * (0.08 + i * 0.16);
-            const pulse = 0.22 + 0.1 * Math.sin(this.animTick * 0.04 + i);
-            ctx.strokeStyle = 'rgba(86, 214, 255, ' + pulse + ')';
-            ctx.lineWidth = 1.2 * m.sX;
-            this._strokeChamferRect(ctx, mx, motifY, 28 * m.sX, 18 * m.sY, 4 * m.sX);
+        for (let i = 0; i < 34; i++) {
+            const px = (i * 173 + this.animTick * (i % 3 + 1) * 0.7) % m.cW;
+            const py = (i * 79 + 37) % m.cH;
+            ctx.fillStyle = i % 5 === 0 ? 'rgba(255,49,95,0.2)' : 'rgba(0,240,255,0.14)';
+            ctx.fillRect(px, py, (i % 4 + 1) * 3 * m.sX, Math.max(1, m.sY));
         }
     }
 
     _drawPatchPanel(ctx, m) {
-        const frame = ctx.createLinearGradient(m.panelX, m.panelY, m.panelX, m.panelY + m.panelH);
-        frame.addColorStop(0, '#121B29');
-        frame.addColorStop(0.55, '#0B1420');
-        frame.addColorStop(1, '#09101A');
-        ctx.fillStyle = frame;
-        this._fillChamferRect(ctx, m.panelX, m.panelY, m.panelW, m.panelH, 18 * m.sX);
+        ctx.save();
+        ctx.shadowColor = 'rgba(0,0,0,0.9)';
+        ctx.shadowBlur = 28 * m.sX;
+        ctx.shadowOffsetY = 10 * m.sY;
+        this._fillChamferRect(ctx, m.panelX, m.panelY, m.panelW, m.panelH, 20 * m.sX, '#060A10');
+        ctx.restore();
 
-        ctx.strokeStyle = '#2E4765';
-        ctx.lineWidth = 2.2 * m.sX;
-        this._strokeChamferRect(ctx, m.panelX, m.panelY, m.panelW, m.panelH, 18 * m.sX);
+        const outer = ctx.createLinearGradient(m.panelX, m.panelY, m.panelX, m.panelY + m.panelH);
+        outer.addColorStop(0, '#4B5762');
+        outer.addColorStop(0.035, '#151D26');
+        outer.addColorStop(0.5, '#070C12');
+        outer.addColorStop(0.965, '#202A33');
+        outer.addColorStop(1, '#59636B');
+        this._fillChamferRect(ctx, m.panelX, m.panelY, m.panelW, m.panelH, 20 * m.sX, outer);
+        this._strokeChamferRect(ctx, m.panelX, m.panelY, m.panelW, m.panelH, 20 * m.sX, '#354554', 2.2 * m.sX);
 
-        ctx.strokeStyle = '#B3152A';
-        ctx.lineWidth = 3.8 * m.sX;
-        this._strokeChamferRect(ctx, m.panelX + 10 * m.sX, m.panelY + 10 * m.sY, m.panelW - 20 * m.sX, m.panelH - 20 * m.sY, 14 * m.sX);
+        const innerX = m.panelX + 9 * m.sX;
+        const innerY = m.panelY + 9 * m.sY;
+        const innerW = m.panelW - 18 * m.sX;
+        const innerH = m.panelH - 18 * m.sY;
+        const deck = ctx.createLinearGradient(innerX, innerY, innerX + innerW, innerY + innerH);
+        deck.addColorStop(0, '#0D151F');
+        deck.addColorStop(0.46, '#05090E');
+        deck.addColorStop(1, '#10131C');
+        this._fillChamferRect(ctx, innerX, innerY, innerW, innerH, 15 * m.sX, deck);
+        this._strokeChamferRect(ctx, innerX, innerY, innerW, innerH, 15 * m.sX, '#121F2A', 1.5 * m.sX);
 
-        const texture = ctx.createLinearGradient(m.panelX, m.panelY, m.panelX + m.panelW, m.panelY);
-        texture.addColorStop(0, 'rgba(74, 219, 255, 0.05)');
-        texture.addColorStop(0.45, 'rgba(9, 22, 38, 0.0)');
-        texture.addColorStop(1, 'rgba(255, 78, 105, 0.05)');
-        ctx.fillStyle = texture;
-        this._fillChamferRect(ctx, m.panelX + 14 * m.sX, m.panelY + 14 * m.sY, m.panelW - 28 * m.sX, m.panelH - 28 * m.sY, 12 * m.sX);
+        ctx.save();
+        ctx.globalAlpha = 0.15;
+        for (let y = innerY + 4 * m.sY; y < innerY + innerH - 4 * m.sY; y += 3 * m.sY) {
+            ctx.strokeStyle = ((Math.round(y / m.sY) % 2) ? '#8CA0AB' : '#05070A');
+            ctx.lineWidth = Math.max(0.6, 0.7 * m.sY);
+            ctx.beginPath();
+            ctx.moveTo(innerX + 13 * m.sX, y);
+            ctx.lineTo(innerX + innerW - 13 * m.sX, y);
+            ctx.stroke();
+        }
+        ctx.restore();
 
-        const slotRows = 5;
-        const slotCols = 16;
-        const slotW = (m.panelW * 0.78) / slotCols;
-        const slotH = m.panelH * 0.052;
-        const startX = m.panelX + m.panelW * 0.08;
-        const startY = m.panelY + m.panelH * 0.145;
-        for (let r = 0; r < slotRows; r++) {
-            for (let c = 0; c < slotCols; c++) {
-                const x = startX + c * slotW;
-                const y = startY + r * (slotH + 14 * m.sY);
-                ctx.fillStyle = (r + c) % 2 === 0 ? '#10151E' : '#0E131B';
-                ctx.fillRect(x, y, slotW - 4 * m.sX, slotH);
-                ctx.strokeStyle = '#273140';
-                ctx.lineWidth = 1 * m.sX;
-                ctx.strokeRect(x, y, slotW - 4 * m.sX, slotH);
+        const railTop = m.panelY + 76 * m.sY;
+        const railBottom = m.panelY + m.panelH - 23 * m.sY;
+        const railXs = [m.panelX + 13 * m.sX, m.panelX + m.panelW - 13 * m.sX];
+        for (let i = 0; i < railXs.length; i++) {
+            const rx = railXs[i];
+            const rail = ctx.createLinearGradient(rx - 5 * m.sX, 0, rx + 5 * m.sX, 0);
+            rail.addColorStop(0, '#05080B');
+            rail.addColorStop(0.45, '#5B6971');
+            rail.addColorStop(0.62, '#182129');
+            rail.addColorStop(1, '#020406');
+            ctx.fillStyle = rail;
+            ctx.fillRect(rx - 5 * m.sX, railTop, 10 * m.sX, railBottom - railTop);
+            for (let n = 0; n < 4; n++) {
+                this._drawFastener(ctx, rx, railTop + (railBottom - railTop) * (n / 3), 5.2 * m.sX, m);
             }
         }
+
+        ctx.strokeStyle = 'rgba(0,240,255,0.25)';
+        ctx.lineWidth = 1.2 * m.sX;
+        ctx.beginPath();
+        ctx.moveTo(m.panelX + 24 * m.sX, m.midY - 5 * m.sY);
+        ctx.lineTo(m.panelX + m.panelW - 24 * m.sX, m.midY - 5 * m.sY);
+        ctx.moveTo(m.panelX + 24 * m.sX, m.panelY + m.panelH - m.footH - 4 * m.sY);
+        ctx.lineTo(m.panelX + m.panelW - 24 * m.sX, m.panelY + m.panelH - m.footH - 4 * m.sY);
+        ctx.stroke();
+
+        for (let i = 0; i < 12; i++) {
+            const color = i % 3 === 0 ? '#FFE600' : '#00D6E6';
+            ctx.fillStyle = color;
+            ctx.globalAlpha = 0.32 + 0.18 * Math.sin(this.animTick * 0.08 + i);
+            ctx.fillRect(m.panelX + 45 * m.sX + i * 13 * m.sX, m.panelY + m.panelH - 17 * m.sY, 7 * m.sX, 2 * m.sY);
+        }
+        ctx.globalAlpha = 1;
     }
 
     _drawPersonaPanels(ctx, m) {
         const titleFont = this._uiTitleFont();
-        const primaryFont = this._uiPrimaryFont();
-        const leftX = m.panelX + 18 * m.sX;
-        const leftY = m.panelY + 16 * m.sY;
-        const leftW = m.panelW * 0.56;
-        const leftH = 44 * m.sY;
+        const x = m.panelX + 22 * m.sX;
+        const y = m.panelY + 12 * m.sY;
+        const w = 408 * m.sX;
+        const h = 54 * m.sY;
 
-        const lg = ctx.createLinearGradient(leftX, leftY, leftX + leftW, leftY);
-        lg.addColorStop(0, '#BE1B33');
-        lg.addColorStop(1, '#F44763');
-        ctx.fillStyle = lg;
-        this._fillChamferRect(ctx, leftX, leftY, leftW, leftH, 10 * m.sX);
-        ctx.strokeStyle = '#FFC7D1';
-        ctx.lineWidth = 1.6 * m.sX;
-        this._strokeChamferRect(ctx, leftX, leftY, leftW, leftH, 10 * m.sX);
+        ctx.save();
+        ctx.shadowColor = 'rgba(0,0,0,0.82)';
+        ctx.shadowBlur = 12 * m.sX;
+        ctx.shadowOffsetY = 5 * m.sY;
+        const plate = ctx.createLinearGradient(x, y, x + w, y + h);
+        plate.addColorStop(0, '#202A34');
+        plate.addColorStop(0.18, '#090D13');
+        plate.addColorStop(0.74, '#111821');
+        plate.addColorStop(1, '#030508');
+        this._fillChamferRect(ctx, x, y, w, h, 11 * m.sX, plate);
+        ctx.shadowColor = 'transparent';
+        this._strokeChamferRect(ctx, x, y, w, h, 11 * m.sX, 'rgba(180,205,217,0.24)', 1 * m.sX);
+
+        ctx.beginPath();
+        ctx.moveTo(x, y + 8 * m.sY);
+        ctx.lineTo(x + 70 * m.sX, y);
+        ctx.lineTo(x + 62 * m.sX, y + h);
+        ctx.lineTo(x, y + h - 8 * m.sY);
+        ctx.closePath();
+        const badge = ctx.createLinearGradient(x, y, x + 70 * m.sX, y + h);
+        badge.addColorStop(0, '#FF315F');
+        badge.addColorStop(0.62, '#B50032');
+        badge.addColorStop(1, '#4A071C');
+        ctx.fillStyle = badge;
+        ctx.fill();
+
         ctx.fillStyle = '#FFFFFF';
-        ctx.font = 'bold ' + (15 * m.sY).toFixed(1) + 'px ' + titleFont;
-        ctx.textAlign = 'left';
-        ctx.fillText('PATCH PANEL :: CLASSIFIER TWO', leftX + 14 * m.sX, leftY + leftH * 0.63);
-
-        const rightX = m.panelX + m.panelW * 0.74;
-        const rightY = leftY;
-        const rightW = m.panelW * 0.23;
-        const rightH = leftH;
-        const rg = ctx.createLinearGradient(rightX, rightY, rightX + rightW, rightY);
-        rg.addColorStop(0, '#07111D');
-        rg.addColorStop(1, '#0D2236');
-        ctx.fillStyle = rg;
-        this._fillChamferRect(ctx, rightX, rightY, rightW, rightH, 10 * m.sX);
-        ctx.strokeStyle = '#58D3FF';
-        ctx.lineWidth = 2.4 * m.sX;
-        this._strokeChamferRect(ctx, rightX, rightY, rightW, rightH, 10 * m.sX);
-
-        ctx.fillStyle = '#F2F7FF';
-        ctx.font = 'bold ' + (14.5 * m.sY).toFixed(1) + 'px ' + primaryFont;
-        ctx.fillText('ROUND ' + this.roundNumber, rightX + 14 * m.sX, rightY + rightH * 0.63);
-
-        const secX = m.panelX + m.panelW * 0.31;
-        const secY = leftY + leftH + 10 * m.sY;
-        const secW = m.panelW * 0.38;
-        const secH = 30 * m.sY;
-        const secG = ctx.createLinearGradient(secX, secY, secX + secW, secY);
-        if (this.lastRouteTone === 'success') {
-            secG.addColorStop(0, '#14552E');
-            secG.addColorStop(1, '#2A9654');
-        } else if (this.lastRouteTone === 'danger') {
-            secG.addColorStop(0, '#5F1A2A');
-            secG.addColorStop(1, '#A5334E');
-        } else {
-            secG.addColorStop(0, '#20445E');
-            secG.addColorStop(1, '#2C678B');
-        }
-        ctx.fillStyle = secG;
-        this._fillChamferRect(ctx, secX, secY, secW, secH, 7 * m.sX);
-        this._strokeChamferRect(ctx, secX, secY, secW, secH, 7 * m.sX, '#E4F6FF', 1.4 * m.sX);
-        ctx.fillStyle = '#F3FDFF';
-        ctx.font = 'bold ' + (12 * m.sY).toFixed(1) + 'px ' + primaryFont;
+        ctx.font = 'bold ' + Math.round(7 * m.sX) + 'px monospace';
         ctx.textAlign = 'center';
-        ctx.fillText(this.lastRouteNote, secX + secW * 0.5, secY + secH * 0.68);
+        ctx.textBaseline = 'middle';
+        ctx.fillText('IP2', x + 28 * m.sX, y + 19 * m.sY);
+        ctx.fillStyle = '#FFE600';
+        ctx.fillText('P-02', x + 28 * m.sX, y + 34 * m.sY);
+
+        const titleX = x + 82 * m.sX;
+        const titleY = y + 31 * m.sY;
+        ctx.font = 'bold ' + Math.round(21 * m.sX) + 'px ' + titleFont;
+        ctx.textAlign = 'left';
+        ctx.textBaseline = 'alphabetic';
+        ctx.fillStyle = '#F7FCFF';
+        ctx.shadowColor = 'rgba(0,240,255,0.22)';
+        ctx.shadowBlur = 5 * m.sX;
+        ctx.fillText('NETWORK', titleX, titleY);
+        const networkW = ctx.measureText('NETWORK').width;
+        ctx.shadowColor = 'transparent';
+        ctx.fillStyle = '#00F0FF';
+        ctx.fillText('PATCH', titleX + networkW + 13 * m.sX, titleY);
+
+        ctx.font = 'bold ' + Math.round(6.3 * m.sX) + 'px monospace';
+        ctx.fillStyle = 'rgba(190,211,222,0.68)';
+        ctx.fillText('PHYSICAL ROUTING // CONDUIT CLASSIFIER', titleX, y + 46 * m.sY);
+        ctx.fillStyle = '#FF315F';
+        ctx.fillRect(x + 75 * m.sX, y + 6 * m.sY, 28 * m.sX, 2 * m.sY);
+        ctx.fillStyle = '#00F0FF';
+        ctx.fillRect(x + 106 * m.sX, y + 6 * m.sY, 72 * m.sX, 2 * m.sY);
+        ctx.fillStyle = 'rgba(210,228,237,0.26)';
+        for (let i = 0; i < 5; i++) ctx.fillRect(x + w - (48 - i * 8) * m.sX, y + 8 * m.sY, 5 * m.sX, 2 * m.sY);
+        ctx.restore();
+
+        const statusX = m.panelX + m.panelW - 26 * m.sX;
+        ctx.textAlign = 'right';
+        ctx.fillStyle = 'rgba(0,240,255,0.78)';
+        ctx.font = Math.round(8 * m.sX) + 'px monospace';
+        ctx.fillText('SYS::IP_CLASS_ROUTER // LIVE', statusX, m.panelY + 28 * m.sY);
+        ctx.fillStyle = '#D6E8EE';
+        ctx.fillText(
+            'ROUND ' + String(this.roundNumber).padStart(2, '0') +
+            '  //  SCORE ' + this.score + '/' + this.targetScore +
+            '  //  FLOW ' + this.delivered + '/' + this.totalPackets,
+            statusX,
+            m.panelY + 46 * m.sY
+        );
+        ctx.fillStyle = this.lastRouteTone === 'danger' ? '#FF315F' : (this.lastRouteTone === 'success' ? '#76FF93' : '#7E98A4');
+        ctx.font = Math.round(6.5 * m.sX) + 'px monospace';
+        ctx.fillText(this.lastRouteNote, statusX, m.panelY + 62 * m.sY);
     }
 
     _drawTrafficWire(ctx, m) {
@@ -1107,6 +1538,38 @@ class IP2LivePatchPanelGameplayScreen extends Scene.Base {
             ctx.stroke();
             ctx.setLineDash([]);
         }
+
+        const collars = [xrayLeft, xrayRight];
+        for (let i = 0; i < collars.length; i++) {
+            const cx = collars[i];
+            const metal = ctx.createLinearGradient(cx - 8 * m.sX, 0, cx + 8 * m.sX, 0);
+            metal.addColorStop(0, '#05080B');
+            metal.addColorStop(0.38, '#9AABB3');
+            metal.addColorStop(0.55, '#2A3740');
+            metal.addColorStop(1, '#070A0E');
+            ctx.fillStyle = metal;
+            ctx.fillRect(cx - 7 * m.sX, m.wireY - 17 * m.sY, 14 * m.sX, 34 * m.sY);
+            ctx.strokeStyle = '#080C10';
+            ctx.lineWidth = 2 * m.sX;
+            ctx.strokeRect(cx - 7 * m.sX, m.wireY - 17 * m.sY, 14 * m.sX, 34 * m.sY);
+        }
+
+        ctx.font = 'bold ' + (7.2 * m.sY).toFixed(1) + 'px monospace';
+        ctx.textAlign = 'center';
+        ctx.fillStyle = '#00D7E5';
+        ctx.fillText('INGRESS', m.leftWireX + 54 * m.sX, m.wireY - 19 * m.sY);
+        ctx.fillText('EGRESS', m.rightWireX - 54 * m.sX, m.wireY - 19 * m.sY);
+        for (let i = 0; i < 4; i++) {
+            const ax = m.leftWireX + (82 + i * 29) * m.sX;
+            const pulse = 0.25 + 0.55 * ((Math.sin(this.animTick * 0.16 - i) + 1) * 0.5);
+            ctx.strokeStyle = 'rgba(0,240,255,' + pulse + ')';
+            ctx.lineWidth = 2 * m.sX;
+            ctx.beginPath();
+            ctx.moveTo(ax - 7 * m.sX, m.wireY - 5 * m.sY);
+            ctx.lineTo(ax, m.wireY);
+            ctx.lineTo(ax - 7 * m.sX, m.wireY + 5 * m.sY);
+            ctx.stroke();
+        }
     }
 
     _drawWheelCore(ctx, m) {
@@ -1116,162 +1579,266 @@ class IP2LivePatchPanelGameplayScreen extends Scene.Base {
         const primaryFont = this._uiPrimaryFont();
         const activeClass = this.classOrder[this.selectedClassIndex];
         const activeColor = this.classColors[activeClass] || '#7DFF7A';
+        this.classButtonRects = [];
 
         ctx.save();
         ctx.translate(x, y);
 
-        const baseRing = ctx.createRadialGradient(0, 0, r * 0.28, 0, 0, r * 1.23);
-        baseRing.addColorStop(0, '#1A2432');
-        baseRing.addColorStop(1, '#0A1018');
+        const baseRing = ctx.createRadialGradient(-r * 0.18, -r * 0.2, r * 0.15, 0, 0, r * 1.25);
+        baseRing.addColorStop(0, '#79868D');
+        baseRing.addColorStop(0.18, '#27323A');
+        baseRing.addColorStop(0.46, '#090D12');
+        baseRing.addColorStop(0.82, '#171F27');
+        baseRing.addColorStop(1, '#030507');
         ctx.fillStyle = baseRing;
         ctx.beginPath();
-        ctx.arc(0, 0, r * 1.18, 0, Math.PI * 2);
+        ctx.arc(0, 0, r * 1.2, 0, Math.PI * 2);
         ctx.fill();
 
-        ctx.globalAlpha = 0.34;
-        ctx.fillStyle = activeColor;
+        ctx.strokeStyle = '#020407';
+        ctx.lineWidth = 9 * m.sX;
         ctx.beginPath();
-        ctx.arc(0, 0, r * 0.97, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.globalAlpha = 1;
+        ctx.arc(0, 0, r * 1.12, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.strokeStyle = 'rgba(169,193,204,0.65)';
+        ctx.lineWidth = 2.2 * m.sX;
+        ctx.stroke();
 
         ctx.save();
         ctx.rotate(this.wheelAngle);
-        ctx.strokeStyle = 'rgba(255,255,255,0.36)';
-        ctx.lineWidth = 2.2 * m.sX;
-        ctx.setLineDash([10 * m.sX, 12 * m.sX]);
+        ctx.strokeStyle = activeColor;
+        ctx.globalAlpha = 0.32;
+        ctx.lineWidth = 2 * m.sX;
+        ctx.setLineDash([7 * m.sX, 12 * m.sX]);
         ctx.beginPath();
-        ctx.arc(0, 0, r * 0.74, 0, Math.PI * 2);
+        ctx.arc(0, 0, r * 0.93, 0, Math.PI * 2);
         ctx.stroke();
         ctx.setLineDash([]);
         ctx.restore();
+        ctx.globalAlpha = 1;
 
-        ctx.strokeStyle = '#EAF6FF';
-        ctx.lineWidth = 3 * m.sX;
+        const selectedAngle = -Math.PI * 0.5 + this.selectedClassIndex * (Math.PI * 2 / this.classOrder.length);
+        const selectedX = Math.cos(selectedAngle) * r * 0.79;
+        const selectedY = Math.sin(selectedAngle) * r * 0.79;
+        ctx.lineCap = 'round';
+        ctx.strokeStyle = '#020407';
+        ctx.lineWidth = 25 * m.sY;
         ctx.beginPath();
-        ctx.arc(0, 0, r * 0.98, 0, Math.PI * 2);
+        ctx.moveTo(-r * 1.04, 0);
+        ctx.bezierCurveTo(-r * 0.45, 0, selectedX * 0.28, selectedY * 0.28, selectedX, selectedY);
         ctx.stroke();
+        const channelMetal = ctx.createLinearGradient(-r, -r, selectedX, selectedY);
+        channelMetal.addColorStop(0, '#35444D');
+        channelMetal.addColorStop(0.5, '#A8B8BE');
+        channelMetal.addColorStop(1, '#303B42');
+        ctx.strokeStyle = channelMetal;
+        ctx.lineWidth = 18 * m.sY;
+        ctx.stroke();
+        ctx.strokeStyle = '#05080B';
+        ctx.lineWidth = 10 * m.sY;
+        ctx.stroke();
+        ctx.strokeStyle = activeColor;
+        ctx.lineWidth = 2.2 * m.sY;
+        ctx.setLineDash([8 * m.sX, 8 * m.sX]);
+        ctx.lineDashOffset = -this.animTick * 1.6;
+        ctx.stroke();
+        ctx.setLineDash([]);
 
-        const dirs = [
-            { angle: -Math.PI * 0.5, idx: 0 },
-            { angle: 0, idx: 1 },
-            { angle: Math.PI * 0.5, idx: 2 },
-            { angle: Math.PI, idx: 3 },
-        ];
+        const dirs = [];
+        for (let i = 0; i < this.classOrder.length; i++) {
+            dirs.push({ angle: -Math.PI * 0.5 + i * (Math.PI * 2 / this.classOrder.length), idx: i });
+        }
         for (let i = 0; i < dirs.length; i++) {
             const dir = dirs[i];
-            const cls = this._classAtDirection(dir.idx);
+            const cls = this.classOrder[dir.idx];
             const color = this.classColors[cls] || '#8AC9FF';
-            const active = dir.idx === 3;
+            const active = dir.idx === this.selectedClassIndex;
             const ux = Math.cos(dir.angle);
             const uy = Math.sin(dir.angle);
-            const innerX = ux * (r * 0.84);
-            const innerY = uy * (r * 0.84);
-            const outerX = ux * (r * 1.48);
-            const outerY = uy * (r * 1.48);
+            const innerX = ux * (r * 0.6);
+            const innerY = uy * (r * 0.6);
+            const outerX = ux * (r * 1.03);
+            const outerY = uy * (r * 1.03);
 
-            ctx.strokeStyle = active ? color : '#2A3B4F';
-            ctx.lineWidth = active ? 10 * m.sY : 8 * m.sY;
+            ctx.strokeStyle = '#020407';
+            ctx.lineWidth = 22 * m.sY;
+            ctx.beginPath();
+            ctx.moveTo(innerX, innerY);
+            ctx.lineTo(outerX, outerY);
+            ctx.stroke();
+            ctx.strokeStyle = active ? '#AEBFC6' : '#35434C';
+            ctx.lineWidth = 16 * m.sY;
+            ctx.stroke();
+            ctx.strokeStyle = '#05080B';
+            ctx.lineWidth = 9 * m.sY;
+            ctx.stroke();
+            ctx.strokeStyle = active ? color : 'rgba(85,109,120,0.55)';
+            ctx.lineWidth = active ? 2.4 * m.sY : 1.2 * m.sY;
             ctx.beginPath();
             ctx.moveTo(innerX, innerY);
             ctx.lineTo(outerX, outerY);
             ctx.stroke();
 
-            ctx.strokeStyle = active ? '#FFFFFF' : 'rgba(198,225,247,0.3)';
-            ctx.lineWidth = 1.8 * m.sY;
+            const socketX = ux * (r * 1.04);
+            const socketY = uy * (r * 1.04);
+            ctx.fillStyle = '#05080B';
             ctx.beginPath();
-            ctx.moveTo(innerX, innerY);
-            ctx.lineTo(outerX, outerY);
+            ctx.arc(socketX, socketY, 12 * m.sY, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.strokeStyle = active ? color : '#50616B';
+            ctx.lineWidth = active ? 3 * m.sX : 1.5 * m.sX;
             ctx.stroke();
+            ctx.fillStyle = active ? color : '#0B1117';
+            ctx.globalAlpha = active ? 0.72 : 1;
+            ctx.beginPath();
+            ctx.arc(socketX, socketY, 5.5 * m.sY, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.globalAlpha = 1;
 
-            const boxW = 26 * m.sX;
+            const labelX = ux * (r * 1.34);
+            const labelY = uy * (r * 1.34);
+            const boxW = 30 * m.sX;
             const boxH = 18 * m.sY;
-            const boxX = outerX - boxW * 0.5;
-            const boxY = outerY - boxH * 0.5;
-            ctx.fillStyle = active ? color : '#132232';
-            this._fillChamferRect(ctx, boxX, boxY, boxW, boxH, 4 * m.sX);
-            this._strokeChamferRect(ctx, boxX, boxY, boxW, boxH, 4 * m.sX, active ? '#FFFFFF' : '#4D6A86', 1.4 * m.sX);
-            ctx.fillStyle = active ? '#05080E' : '#D4E7F8';
-            ctx.font = 'bold ' + (12.5 * m.sY).toFixed(1) + 'px ' + primaryFont;
+            const boxX = labelX - boxW * 0.5;
+            const boxY = labelY - boxH * 0.5;
+            this._fillChamferRect(ctx, boxX, boxY, boxW, boxH, 4 * m.sX, active ? color : '#101820');
+            this._strokeChamferRect(ctx, boxX, boxY, boxW, boxH, 4 * m.sX, active ? '#FFFFFF' : '#4D626E', 1.3 * m.sX);
+            ctx.fillStyle = active ? '#020407' : '#BCD0D8';
+            ctx.font = 'bold ' + (11 * m.sY).toFixed(1) + 'px ' + primaryFont;
             ctx.textAlign = 'center';
             ctx.textBaseline = 'middle';
             ctx.fillText(cls, boxX + boxW * 0.5, boxY + boxH * 0.56);
+            this.classButtonRects.push({
+                key: cls,
+                x: x + Math.min(socketX - 15 * m.sX, boxX - 5 * m.sX),
+                y: y + Math.min(socketY - 15 * m.sY, boxY - 5 * m.sY),
+                w: Math.max(socketX + 15 * m.sX, boxX + boxW + 5 * m.sX) - Math.min(socketX - 15 * m.sX, boxX - 5 * m.sX),
+                h: Math.max(socketY + 15 * m.sY, boxY + boxH + 5 * m.sY) - Math.min(socketY - 15 * m.sY, boxY - 5 * m.sY),
+            });
         }
 
-        ctx.fillStyle = '#0A0D12';
+        const hub = ctx.createRadialGradient(-r * 0.08, -r * 0.1, 2, 0, 0, r * 0.48);
+        hub.addColorStop(0, '#26343D');
+        hub.addColorStop(0.45, '#070B10');
+        hub.addColorStop(1, '#010305');
+        ctx.fillStyle = hub;
         ctx.beginPath();
-        ctx.arc(0, 0, r * 0.43, 0, Math.PI * 2);
+        ctx.arc(0, 0, r * 0.46, 0, Math.PI * 2);
         ctx.fill();
-        ctx.strokeStyle = '#EB3147';
-        ctx.lineWidth = 2.6 * m.sX;
+        ctx.strokeStyle = activeColor;
+        ctx.lineWidth = 3 * m.sX;
+        ctx.stroke();
+        ctx.strokeStyle = 'rgba(255,255,255,0.24)';
+        ctx.lineWidth = 1 * m.sX;
+        ctx.beginPath();
+        ctx.arc(0, 0, r * 0.35, 0, Math.PI * 2);
         ctx.stroke();
 
         ctx.fillStyle = '#FFFFFF';
-        ctx.font = 'bold ' + (30 * m.sY).toFixed(1) + 'px ' + primaryFont;
+        ctx.font = 'bold ' + (27 * m.sY).toFixed(1) + 'px ' + primaryFont;
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
         ctx.fillText(activeClass, 0, 1 * m.sY);
+        ctx.fillStyle = activeColor;
+        ctx.font = 'bold ' + (6.5 * m.sY).toFixed(1) + 'px monospace';
+        ctx.fillText('ROUTE', 0, 20 * m.sY);
 
         ctx.restore();
     }
 
     _drawXray(ctx, m) {
         const primaryFont = this._uiPrimaryFont();
-        const monoFont = this._uiMonoFont();
         const signalPacket = this._signalPacket(m);
-        const g = ctx.createLinearGradient(m.xrayX, m.xrayY, m.xrayX + m.xrayW, m.xrayY + m.xrayH);
-        g.addColorStop(0, 'rgba(5,16,22,0.74)');
-        g.addColorStop(1, 'rgba(9,31,39,0.72)');
-        ctx.fillStyle = g;
-        this._fillChamferRect(ctx, m.xrayX, m.xrayY, m.xrayW, m.xrayH, 8 * m.sX);
+        const returningPacket = (this.activePackets || []).find((packet) => packet.reverting) || null;
+        const bezel = ctx.createLinearGradient(m.xrayX, m.xrayY, m.xrayX, m.xrayY + m.xrayH);
+        bezel.addColorStop(0, '#53626B');
+        bezel.addColorStop(0.035, '#121A20');
+        bezel.addColorStop(0.5, '#05080B');
+        bezel.addColorStop(0.965, '#27333A');
+        bezel.addColorStop(1, '#66757C');
+        this._fillChamferRect(ctx, m.xrayX, m.xrayY, m.xrayW, m.xrayH, 13 * m.sX, bezel);
+        this._strokeChamferRect(ctx, m.xrayX, m.xrayY, m.xrayW, m.xrayH, 13 * m.sX, '#0A0E12', 3 * m.sX);
 
-        ctx.strokeStyle = '#38D6FF';
-        ctx.lineWidth = 2 * m.sX;
-        this._strokeChamferRect(ctx, m.xrayX, m.xrayY, m.xrayW, m.xrayH, 8 * m.sX);
+        const sx = m.xrayX + 9 * m.sX;
+        const sy = m.xrayY + 9 * m.sY;
+        const sw = m.xrayW - 18 * m.sX;
+        const sh = m.xrayH - 18 * m.sY;
+        const screen = ctx.createLinearGradient(sx, sy, sx + sw, sy + sh);
+        screen.addColorStop(0, 'rgba(1,15,21,0.96)');
+        screen.addColorStop(0.54, 'rgba(4,23,29,0.95)');
+        screen.addColorStop(1, 'rgba(2,10,15,0.97)');
+        this._fillChamferRect(ctx, sx, sy, sw, sh, 8 * m.sX, screen);
+        this._strokeChamferRect(ctx, sx, sy, sw, sh, 8 * m.sX, '#00D8E8', 1.4 * m.sX);
 
-        ctx.globalAlpha = 0.19;
-        ctx.fillStyle = '#8CF2FF';
-        for (let i = 0; i < 30; i++) {
-            const y = m.xrayY + ((i * 12 + this.scanTick) % m.xrayH);
-            ctx.fillRect(m.xrayX + 6 * m.sX, y, m.xrayW - 12 * m.sX, 2 * m.sY);
+        ctx.save();
+        ctx.globalAlpha = 0.16;
+        ctx.strokeStyle = '#54DDEC';
+        ctx.lineWidth = Math.max(0.6, 0.7 * m.sX);
+        const grid = 34 * m.sX;
+        for (let gx = sx + grid; gx < sx + sw; gx += grid) {
+            ctx.beginPath();
+            ctx.moveTo(gx, sy + 34 * m.sY);
+            ctx.lineTo(gx, sy + sh - 8 * m.sY);
+            ctx.stroke();
+        }
+        for (let gy = sy + 44 * m.sY; gy < sy + sh; gy += 26 * m.sY) {
+            ctx.beginPath();
+            ctx.moveTo(sx + 7 * m.sX, gy);
+            ctx.lineTo(sx + sw - 7 * m.sX, gy);
+            ctx.stroke();
+        }
+        ctx.restore();
+
+        ctx.globalAlpha = 0.12;
+        ctx.fillStyle = '#92F7FF';
+        for (let i = 0; i < 28; i++) {
+            const scanY = sy + ((i * 13 + this.scanTick) % sh);
+            ctx.fillRect(sx + 5 * m.sX, scanY, sw - 10 * m.sX, Math.max(1, 1.2 * m.sY));
         }
         ctx.globalAlpha = 1;
 
-        const headerH = 34 * m.sY;
-        ctx.fillStyle = 'rgba(0,0,0,0.44)';
-        this._fillChamferRect(ctx, m.xrayX + 2 * m.sX, m.xrayY + 2 * m.sY, m.xrayW - 4 * m.sX, headerH, 6 * m.sX);
-        ctx.fillStyle = '#D8F8FF';
-        ctx.font = 'bold ' + (14 * m.sY).toFixed(1) + 'px ' + primaryFont;
-        ctx.textAlign = 'left';
-        ctx.fillText('XRAY INSPECTOR', m.xrayX + 12 * m.sX, m.xrayY + 22 * m.sY);
+        const sweepX = sx + ((this.animTick * 2.1 * m.sX) % Math.max(1, sw));
+        const sweep = ctx.createLinearGradient(sweepX - 28 * m.sX, 0, sweepX + 28 * m.sX, 0);
+        sweep.addColorStop(0, 'rgba(0,240,255,0)');
+        sweep.addColorStop(0.5, 'rgba(0,240,255,0.09)');
+        sweep.addColorStop(1, 'rgba(0,240,255,0)');
+        ctx.fillStyle = sweep;
+        ctx.fillRect(sweepX - 28 * m.sX, sy + 34 * m.sY, 56 * m.sX, sh - 42 * m.sY);
 
-        const kind = signalPacket ? signalPacket.kind : null;
-        const isMask = kind === 'MASK';
-        const kindLabel = !signalPacket ? 'QUEUE STANDBY' : (isMask ? 'SUBNET MASK' : 'IP ADDRESS');
-        const kindColor = !signalPacket ? '#7AA4C8' : (isMask ? '#FFE066' : '#5AE3FF');
-        const pillW = 166 * m.sX;
-        const pillH = 26 * m.sY;
-        const pillX = m.xrayX + m.xrayW - pillW - 10 * m.sX;
-        const pillY = m.xrayY + 5 * m.sY;
-        ctx.fillStyle = 'rgba(1,10,14,0.92)';
-        this._fillChamferRect(ctx, pillX, pillY, pillW, pillH, 5 * m.sX);
-        ctx.strokeStyle = kindColor;
-        ctx.lineWidth = 1.4 * m.sX;
-        this._strokeChamferRect(ctx, pillX, pillY, pillW, pillH, 5 * m.sX);
-        ctx.fillStyle = kindColor;
-        ctx.font = 'bold ' + (11.5 * m.sY).toFixed(1) + 'px ' + monoFont;
-        ctx.textAlign = 'center';
-        ctx.fillText(kindLabel, pillX + pillW * 0.5, pillY + pillH * 0.7);
+        const headerH = 32 * m.sY;
+        const header = ctx.createLinearGradient(sx, sy, sx + sw, sy);
+        header.addColorStop(0, '#101D23');
+        header.addColorStop(0.65, '#060B0F');
+        header.addColorStop(1, '#11141A');
+        this._fillChamferRect(ctx, sx + 2 * m.sX, sy + 2 * m.sY, sw - 4 * m.sX, headerH, 6 * m.sX, header);
+        ctx.fillStyle = '#ECFCFF';
+        ctx.font = 'bold ' + (12 * m.sY).toFixed(1) + 'px ' + primaryFont;
+        ctx.textAlign = 'left';
+        ctx.fillText('CONDUIT XRAY // INTERNAL ROUTE', sx + 13 * m.sX, sy + 21 * m.sY);
+        ctx.fillStyle = '#00E5F4';
+        ctx.font = 'bold ' + (7 * m.sY).toFixed(1) + 'px monospace';
+        ctx.textAlign = 'right';
+        ctx.fillText('SCOPE::LIVE  CH-02', sx + sw - 13 * m.sX, sy + 20 * m.sY);
 
         ctx.textAlign = 'left';
-        ctx.fillStyle = '#A6DCE9';
-        ctx.font = 'bold ' + (13.5 * m.sY).toFixed(1) + 'px ' + monoFont;
-        ctx.fillText('LIVE SIGNAL', m.xrayX + 14 * m.sX, m.xrayY + 56 * m.sY);
+        ctx.fillStyle = '#66828D';
+        ctx.font = 'bold ' + (7 * m.sY).toFixed(1) + 'px monospace';
+        ctx.fillText('FIVE-CHANNEL HOLLOW CONDUIT // ROUTE CORE', sx + 14 * m.sX, sy + sh - 14 * m.sY);
+        ctx.textAlign = 'right';
+        ctx.fillStyle = returningPacket ? '#FFE600' : (signalPacket ? '#FFE600' : '#546A73');
+        ctx.fillText(
+            returningPacket ? 'SIGNAL REVERSING // RETRY' : (signalPacket ? 'PACKET INSIDE CONDUIT' : 'CONDUIT CLEAR'),
+            sx + sw - 14 * m.sX,
+            sy + sh - 14 * m.sY
+        );
 
-        ctx.fillStyle = kindColor;
-        ctx.font = 'bold ' + (22 * m.sY).toFixed(1) + 'px ' + monoFont;
-        const label = signalPacket ? signalPacket.text : 'NO SIGNAL';
-        ctx.fillText(label, m.xrayX + 14 * m.sX, m.xrayY + 84 * m.sY);
+        const corners = [
+            [m.xrayX + 6 * m.sX, m.xrayY + 6 * m.sY],
+            [m.xrayX + m.xrayW - 6 * m.sX, m.xrayY + 6 * m.sY],
+            [m.xrayX + 6 * m.sX, m.xrayY + m.xrayH - 6 * m.sY],
+            [m.xrayX + m.xrayW - 6 * m.sX, m.xrayY + m.xrayH - 6 * m.sY],
+        ];
+        for (let i = 0; i < corners.length; i++) this._drawFastener(ctx, corners[i][0], corners[i][1], 3.6 * m.sX, m);
     }
 
     _packetVisibleInXray(m, packet) {
@@ -1289,7 +1856,9 @@ class IP2LivePatchPanelGameplayScreen extends Scene.Base {
                 const p = trail[i];
                 const alpha = (i + 1) / trail.length * 0.28;
                 ctx.globalAlpha = alpha;
-                ctx.fillStyle = p.resolved
+                ctx.fillStyle = p.reverting
+                    ? '#FFE600'
+                    : p.resolved
                     ? (p.correct ? '#76FF93' : '#FF6271')
                     : '#57E7FF';
                 ctx.beginPath();
@@ -1308,7 +1877,9 @@ class IP2LivePatchPanelGameplayScreen extends Scene.Base {
         const r = 8 * m.sY;
         for (let i = 0; i < packets.length; i++) {
             const packet = packets[i];
-            const color = packet.resolved
+            const color = packet.reverting
+                ? '#FFE600'
+                : packet.resolved
                 ? (packet.correct ? '#7BFF8A' : '#FF5267')
                 : '#4BE3FF';
             const inXray = this._packetVisibleInXray(m, packet);
@@ -1322,6 +1893,31 @@ class IP2LivePatchPanelGameplayScreen extends Scene.Base {
             ctx.beginPath();
             ctx.arc(packet.x, m.wireY, r * 3.1, 0, Math.PI * 2);
             ctx.fill();
+
+            if (packet.reverting) {
+                const pulse = 0.45 + 0.55 * Math.sin(this.animTick * 0.42);
+                ctx.save();
+                ctx.globalAlpha = 0.55 + pulse * 0.4;
+                ctx.strokeStyle = '#FFE600';
+                ctx.lineWidth = 2.2 * m.sX;
+                ctx.shadowColor = '#FFE600';
+                ctx.shadowBlur = (7 + pulse * 8) * m.sX;
+                for (let arrow = 0; arrow < 3; arrow++) {
+                    const ax = packet.x + (25 + arrow * 15) * m.sX;
+                    ctx.beginPath();
+                    ctx.moveTo(ax + 6 * m.sX, m.wireY - 6 * m.sY);
+                    ctx.lineTo(ax - 2 * m.sX, m.wireY);
+                    ctx.lineTo(ax + 6 * m.sX, m.wireY + 6 * m.sY);
+                    ctx.stroke();
+                }
+                ctx.setLineDash([5 * m.sX, 5 * m.sX]);
+                ctx.lineDashOffset = this.animTick * 2.5;
+                ctx.beginPath();
+                ctx.arc(packet.x, m.wireY, r * (1.45 + pulse * 0.25), 0, Math.PI * 2);
+                ctx.stroke();
+                ctx.setLineDash([]);
+                ctx.restore();
+            }
 
             if (!inXray) {
                 ctx.fillStyle = color;
@@ -1370,86 +1966,65 @@ class IP2LivePatchPanelGameplayScreen extends Scene.Base {
         }
     }
 
-    _drawRightClassifierBox(ctx, m) {
+    _drawPacketDeck(ctx, m) {
         const primaryFont = this._uiPrimaryFont();
         const monoFont = this._uiMonoFont();
-        const signalPacket = this._signalPacket(m);
-        const bx = m.panelX + m.panelW * 0.792;
-        const by = m.midY + m.midH * 0.185;
-        const bw = m.panelW * 0.165;
-        const bh = m.midH * 0.245;
-        const bg = ctx.createLinearGradient(bx, by, bx + bw, by + bh);
-        bg.addColorStop(0, '#0D1723');
-        bg.addColorStop(1, '#09111B');
-        ctx.fillStyle = bg;
-        this._fillChamferRect(ctx, bx, by, bw, bh, 9 * m.sX);
-        ctx.strokeStyle = '#3B5F83';
-        ctx.lineWidth = 2 * m.sX;
-        this._strokeChamferRect(ctx, bx, by, bw, bh, 9 * m.sX);
+        const unresolved = (this.activePackets || [])
+            .filter((packet) => !packet.enteredDecision)
+            .sort((a, b) => b.x - a.x);
+        const current = this._signalPacket(m) || unresolved[0] || this.activePacket || null;
+        const upcoming = this._queuePreview(m, 2);
+        const cards = [upcoming[1] || null, upcoming[0] || null, current];
+        const labels = ['NEXT +2', 'NEXT +1', 'CURRENT'];
+        const opacities = [0.28, 0.48, 1];
+        const gap = 12 * m.sX;
+        const cardW = (m.xrayW - gap * 2) / 3;
+        const cardH = m.packetCardsH;
 
-        const activeClass = this.classOrder[this.selectedClassIndex];
-        ctx.fillStyle = '#DAE9FF';
-        ctx.font = 'bold ' + (12 * m.sY).toFixed(1) + 'px ' + primaryFont;
-        ctx.textAlign = 'left';
-        ctx.fillText('ACTIVE TUNNEL', bx + 12 * m.sX, by + 22 * m.sY);
+        for (let i = 0; i < cards.length; i++) {
+            const packet = cards[i];
+            const x = m.xrayX + i * (cardW + gap);
+            const y = m.packetCardsY;
+            const currentCard = i === 2;
+            const kindColor = packet && packet.reverting
+                ? '#FFE600'
+                : packet && packet.kind === 'MASK' ? '#FFE066' : '#63EDFF';
 
-        ctx.fillStyle = this.classColors[activeClass];
-        ctx.font = 'bold ' + (30 * m.sY).toFixed(1) + 'px ' + primaryFont;
-        ctx.fillText('CLASS ' + activeClass, bx + 12 * m.sX, by + 56 * m.sY);
+            ctx.save();
+            ctx.globalAlpha = opacities[i];
+            const shell = ctx.createLinearGradient(x, y, x + cardW, y + cardH);
+            shell.addColorStop(0, currentCard ? '#1B2930' : '#131B21');
+            shell.addColorStop(0.12, '#070B0F');
+            shell.addColorStop(1, '#030609');
+            this._fillChamferRect(ctx, x, y, cardW, cardH, 9 * m.sX, shell);
+            this._strokeChamferRect(ctx, x, y, cardW, cardH, 9 * m.sX, currentCard ? kindColor : '#4A5B63', currentCard ? 2 * m.sX : 1.2 * m.sX);
 
-        if (signalPacket) {
-            const expected = signalPacket.className;
-            const kind = signalPacket.kind === 'MASK' ? 'SUBNET MASK' : 'IP ADDRESS';
-            ctx.fillStyle = '#98B8D8';
-            ctx.font = 'bold ' + (10.8 * m.sY).toFixed(1) + 'px ' + monoFont;
-            ctx.fillText('EXPECTED: ' + expected, bx + 12 * m.sX, by + 78 * m.sY);
-            ctx.fillStyle = signalPacket.kind === 'MASK' ? '#FFE066' : '#63EDFF';
-            ctx.fillText(kind, bx + 12 * m.sX, by + 94 * m.sY);
-        }
-    }
+            ctx.fillStyle = currentCard ? '#FFE600' : '#6D838C';
+            ctx.font = 'bold ' + (7 * m.sY).toFixed(1) + 'px monospace';
+            ctx.textAlign = 'left';
+            ctx.fillText(labels[i], x + 13 * m.sX, y + 17 * m.sY);
+            ctx.textAlign = 'right';
+            ctx.fillText(currentCard ? 'NOW' : 'STAGED', x + cardW - 13 * m.sX, y + 17 * m.sY);
 
-    _drawUpcomingPacketBox(ctx, m) {
-        const primaryFont = this._uiPrimaryFont();
-        const monoFont = this._uiMonoFont();
-        const bx = m.panelX + m.panelW * 0.792;
-        const by = m.midY + m.midH * 0.685;
-        const bw = m.panelW * 0.165;
-        const bh = m.midH * 0.225;
-        const g = ctx.createLinearGradient(bx, by, bx + bw, by + bh);
-        g.addColorStop(0, '#101D2D');
-        g.addColorStop(1, '#0A1320');
-        ctx.fillStyle = g;
-        this._fillChamferRect(ctx, bx, by, bw, bh, 9 * m.sX);
-        this._strokeChamferRect(ctx, bx, by, bw, bh, 9 * m.sX, '#3F658A', 2 * m.sX);
+            ctx.fillStyle = packet ? kindColor : '#52666E';
+            ctx.font = 'bold ' + (16 * m.sY).toFixed(1) + 'px ' + monoFont;
+            ctx.textAlign = 'left';
+            ctx.fillText(packet ? packet.text : 'BUFFER EMPTY', x + 13 * m.sX, y + 45 * m.sY);
+            ctx.fillStyle = currentCard ? '#A8BDC5' : '#657982';
+            ctx.font = 'bold ' + (6.5 * m.sY).toFixed(1) + 'px ' + primaryFont;
+            ctx.fillText(
+                packet
+                    ? (packet.reverting
+                        ? 'REVERSING TO INGRESS // TRY AGAIN'
+                        : (packet.kind === 'MASK' ? 'SUBNET MASK PACKET' : 'IP ADDRESS PACKET'))
+                    : 'NO PENDING SIGNAL',
+                x + 13 * m.sX,
+                y + 61 * m.sY
+            );
 
-        ctx.fillStyle = '#DDF0FF';
-        ctx.font = 'bold ' + (11.4 * m.sY).toFixed(1) + 'px ' + primaryFont;
-        ctx.textAlign = 'left';
-        ctx.fillText('UPCOMING PACKETS', bx + 11 * m.sX, by + 20 * m.sY);
-
-        const signalPacket = this._signalPacket(m);
-        const upcoming = this._preTunnelQueue(m)
-            .filter((packet) => !signalPacket || packet.serial !== signalPacket.serial)
-            .slice(0, 3);
-        const rowH = 24 * m.sY;
-        for (let i = 0; i < 3; i++) {
-            const y = by + 28 * m.sY + i * rowH;
-            const row = upcoming[i] || null;
-            ctx.fillStyle = i % 2 === 0 ? 'rgba(24, 38, 54, 0.5)' : 'rgba(15, 24, 35, 0.55)';
-            this._fillChamferRect(ctx, bx + 8 * m.sX, y, bw - 16 * m.sX, 20 * m.sY, 4 * m.sX);
-
-            if (!row) {
-                ctx.fillStyle = '#5F7897';
-                ctx.font = 'bold ' + (11.6 * m.sY).toFixed(1) + 'px ' + monoFont;
-                ctx.fillText('QUEUE EMPTY', bx + 14 * m.sX, y + 13.5 * m.sY);
-                continue;
-            }
-
-            const color = row.kind === 'MASK' ? '#FFE066' : '#63EDFF';
-            ctx.fillStyle = color;
-            ctx.font = 'bold ' + (11.8 * m.sY).toFixed(1) + 'px ' + monoFont;
-            const type = row.kind === 'MASK' ? 'MASK' : 'IP';
-            ctx.fillText(type + '  ' + row.text, bx + 14 * m.sX, y + 13.5 * m.sY);
+            ctx.fillStyle = currentCard ? kindColor : '#334149';
+            ctx.fillRect(x + cardW - 42 * m.sX, y + cardH - 7 * m.sY, 29 * m.sX, 2 * m.sY);
+            ctx.restore();
         }
     }
 
@@ -1487,146 +2062,37 @@ class IP2LivePatchPanelGameplayScreen extends Scene.Base {
         ctx.globalAlpha = 1;
     }
 
-    _drawHudStats(ctx, m) {
-        const primaryFont = this._uiPrimaryFont();
-        const monoFont = this._uiMonoFont();
-        const x = m.panelX + 24 * m.sX;
-        const y = m.panelY + m.panelH - m.footH - 4 * m.sY;
-        const w = m.panelW * 0.25;
-        const h = m.footH - 28 * m.sY;
-        const g = ctx.createLinearGradient(x, y, x, y + h);
-        g.addColorStop(0, '#0D1927');
-        g.addColorStop(1, '#08111B');
-        ctx.fillStyle = g;
-        this._fillChamferRect(ctx, x, y, w, h, 8 * m.sX);
-        this._strokeChamferRect(ctx, x, y, w, h, 8 * m.sX, '#385678', 2 * m.sX);
-
-        ctx.fillStyle = '#FFFFFF';
-        ctx.font = 'bold ' + (13.5 * m.sY).toFixed(1) + 'px ' + primaryFont;
-        ctx.textAlign = 'left';
-        ctx.fillText('ROUTING STATUS', x + 14 * m.sX, y + 22 * m.sY);
-
-        ctx.fillStyle = '#AFC3D9';
-        ctx.font = 'bold ' + (11.5 * m.sY).toFixed(1) + 'px ' + monoFont;
-        ctx.fillText('SCORE      : ' + this.score + ' / ' + this.targetScore, x + 14 * m.sX, y + 45 * m.sY);
-        ctx.fillText('DELIVERED  : ' + this.delivered + ' / ' + this.totalPackets, x + 14 * m.sX, y + 63 * m.sY);
-        ctx.fillText('MISROUTES  : ' + this.mistakes, x + 14 * m.sX, y + 81 * m.sY);
-        ctx.fillText('AUTO RETRY : ' + this.autoRestartCount, x + 14 * m.sX, y + 99 * m.sY);
-    }
-
-    _drawControlHints(ctx, m) {
-        const primaryFont = this._uiPrimaryFont();
-        const monoFont = this._uiMonoFont();
-        const x = m.panelX + m.panelW * 0.37;
-        const y = m.panelY + m.panelH - m.footH + 44 * m.sY;
-        const w = m.panelW * 0.33;
-        const h = m.footH - 66 * m.sY;
-        const g = ctx.createLinearGradient(x, y, x + w, y + h);
-        g.addColorStop(0, '#0F1B2A');
-        g.addColorStop(1, '#0A1320');
-        ctx.fillStyle = g;
-        this._fillChamferRect(ctx, x, y, w, h, 8 * m.sX);
-        this._strokeChamferRect(ctx, x, y, w, h, 8 * m.sX, '#3B5E84', 2 * m.sX);
-
-        ctx.fillStyle = '#DDE8F7';
-        ctx.font = 'bold ' + (11.5 * m.sY).toFixed(1) + 'px ' + primaryFont;
-        ctx.textAlign = 'center';
-        ctx.fillText('KEYBOARD / CLICK CLASS CONTROL', x + w * 0.5, y + 18 * m.sY);
-        ctx.fillStyle = '#88A9C9';
-        ctx.font = 'bold ' + (8.8 * m.sY).toFixed(1) + 'px ' + monoFont;
-        ctx.fillText('A-B-C-D OR ARROW KEYS', x + w * 0.5, y + 28 * m.sY);
-
-        this.classButtonRects = [];
-        const keys = ['A', 'B', 'C', 'D'];
-        const keyW = 52 * m.sX;
-        const keyH = 30 * m.sY;
-        const gap = 14 * m.sX;
-        const totalKeysW = keyW * keys.length + gap * (keys.length - 1);
-        const rowX = x + (w - totalKeysW) * 0.5;
-        const rowY = y + 31 * m.sY;
-        for (let i = 0; i < keys.length; i++) {
-            const key = keys[i];
-            const keyX = rowX + i * (keyW + gap);
-            const keyY = rowY;
-            const active = this.classOrder[this.selectedClassIndex] === key;
-            const flash = this.keyFlash[key] || 0;
-            ctx.fillStyle = active ? this.classColors[key] : '#16202B';
-            if (flash > 0) ctx.fillStyle = '#FFFFFF';
-            this._fillChamferRect(ctx, keyX, keyY, keyW, keyH, 6 * m.sX);
-            ctx.strokeStyle = active ? '#FFFFFF' : '#45556D';
-            ctx.lineWidth = 1.6 * m.sX;
-            this._strokeChamferRect(ctx, keyX, keyY, keyW, keyH, 6 * m.sX);
-
-            ctx.fillStyle = active ? '#0D1016' : '#D2E0F0';
-            ctx.font = 'bold ' + (15 * m.sY).toFixed(1) + 'px ' + primaryFont;
-            ctx.fillText(key, keyX + keyW * 0.5, keyY + 21 * m.sY);
-
-            this.classButtonRects.push({
-                key,
-                x: keyX,
-                y: keyY,
-                w: keyW,
-                h: keyH,
-            });
-        }
-    }
-
     _drawProgressRail(ctx, m) {
         const primaryFont = this._uiPrimaryFont();
-        const w = m.panelW * 0.33;
-        const x = m.panelX + (m.panelW - w) * 0.5;
-        const y = m.panelY + m.panelH - m.footH + 10 * m.sY;
-        const h = 20 * m.sY;
+        const monoFont = this._uiMonoFont();
+        const w = m.xrayW;
+        const x = m.xrayX;
+        const y = m.packetFlowY;
+        const h = 23 * m.sY;
 
-        ctx.fillStyle = '#0E1825';
-        this._fillChamferRect(ctx, x, y, w, h, 6 * m.sX);
-        ctx.strokeStyle = '#3A5679';
-        ctx.lineWidth = 1.6 * m.sX;
-        this._strokeChamferRect(ctx, x, y, w, h, 6 * m.sX);
+        this._fillChamferRect(ctx, x, y, w, h, 6 * m.sX, '#070C11');
+        this._strokeChamferRect(ctx, x, y, w, h, 6 * m.sX, '#40515B', 1.4 * m.sX);
 
-        const done = Math.min(1, this.delivered / this.totalPackets);
-        if (done > 0) {
-            const fillW = (w - 12 * m.sX) * done;
-            const g = ctx.createLinearGradient(x, y, x + w, y);
-            g.addColorStop(0, '#FF374E');
-            g.addColorStop(0.55, '#9967FF');
-            g.addColorStop(1, '#13C4FF');
-            ctx.fillStyle = g;
-            this._fillChamferRect(ctx, x + 6 * m.sX, y + 4 * m.sY, fillW, h - 8 * m.sY, 4 * m.sX);
+        const segments = Math.max(1, this.totalPackets);
+        const innerX = x + 7 * m.sX;
+        const innerW = w - 14 * m.sX;
+        const gap = 3 * m.sX;
+        const segmentW = (innerW - gap * (segments - 1)) / segments;
+        for (let i = 0; i < segments; i++) {
+            let color = '#1E2A30';
+            if (i < this.delivered) color = i < this.score ? '#00D9C7' : '#FF315F';
+            ctx.fillStyle = color;
+            ctx.fillRect(innerX + i * (segmentW + gap), y + 6 * m.sY, segmentW, h - 12 * m.sY);
         }
 
         ctx.fillStyle = '#F4F8FF';
-        ctx.font = 'bold ' + (11 * m.sY).toFixed(1) + 'px ' + primaryFont;
-        ctx.fillText('PACKET FLOW PROGRESS', x + 12 * m.sX, y - 7 * m.sY);
-    }
-
-    _drawBanner(ctx, m) {
-        const primaryFont = this._uiPrimaryFont();
-        if (this.bannerTimer <= 0 || !this.bannerText) return;
-        const x = m.panelX + m.panelW * 0.29;
-        const y = m.panelY + 62 * m.sY;
-        const w = m.panelW * 0.4;
-        const h = 34 * m.sY;
-
-        const bg = ctx.createLinearGradient(x, y, x + w, y);
-        if (this.bannerTone === 'success') {
-            bg.addColorStop(0, '#0C4B2C');
-            bg.addColorStop(1, '#1B8B49');
-        } else if (this.bannerTone === 'danger') {
-            bg.addColorStop(0, '#5A1220');
-            bg.addColorStop(1, '#8D1D32');
-        } else {
-            bg.addColorStop(0, '#1A2634');
-            bg.addColorStop(1, '#223D57');
-        }
-        ctx.fillStyle = bg;
-        this._fillChamferRect(ctx, x, y, w, h, 8 * m.sX);
-        this._strokeChamferRect(ctx, x, y, w, h, 8 * m.sX, '#FFFFFF', 1.8 * m.sX);
-
-        ctx.fillStyle = '#F7FCFF';
-        ctx.font = 'bold ' + (14.5 * m.sY).toFixed(1) + 'px ' + primaryFont;
-        ctx.textAlign = 'center';
-        ctx.fillText(this.bannerText, x + w * 0.5, y + h * 0.67);
+        ctx.font = 'bold ' + (8 * m.sY).toFixed(1) + 'px ' + primaryFont;
+        ctx.textAlign = 'left';
+        ctx.fillText('PACKET FLOW', x + 8 * m.sX, y - 6 * m.sY);
+        ctx.fillStyle = '#7C949E';
+        ctx.font = 'bold ' + (6.8 * m.sY).toFixed(1) + 'px ' + monoFont;
+        ctx.textAlign = 'right';
+        ctx.fillText('DELIVERED ' + String(this.delivered).padStart(2, '0') + '/' + this.totalPackets + ' // TARGET ' + this.targetScore, x + w - 8 * m.sX, y - 6 * m.sY);
     }
 
     _drawPhaseOverlay(ctx, m) {
@@ -1634,28 +2100,112 @@ class IP2LivePatchPanelGameplayScreen extends Scene.Base {
         const monoFont = this._uiMonoFont();
         if (this.phase !== 'retry' && this.phase !== 'success') return;
 
-        const alpha = this.phase === 'success' ? 0.2 : 0.26;
-        ctx.fillStyle = this.phase === 'success'
-            ? 'rgba(45, 255, 138, ' + alpha + ')'
-            : 'rgba(255, 51, 82, ' + alpha + ')';
+        const success = this.phase === 'success';
+        const accent = success ? '#59FF8A' : '#FF315F';
+        const secondary = success ? '#00F0FF' : '#FFE600';
+        const title = success ? 'SECURITY TUNNEL LOCKED' : 'ROUTE THRESHOLD MISSED';
+        const boxW = Math.min(620 * m.sX, m.panelW * 0.56);
+        const boxH = 214 * m.sY;
+        const boxX = (m.cW - boxW) * 0.5;
+        const boxY = (m.cH - boxH) * 0.5;
+
+        ctx.save();
+        try {
+            if (ctx.canvas && typeof ctx.drawImage === 'function') {
+                ctx.filter = 'blur(' + Math.max(2, 3.5 * m.sX).toFixed(1) + 'px)';
+                ctx.globalAlpha = 0.42;
+                ctx.drawImage(ctx.canvas, -3 * m.sX, -3 * m.sY, m.cW + 6 * m.sX, m.cH + 6 * m.sY);
+                ctx.filter = 'none';
+            }
+        } catch (e) {
+            ctx.filter = 'none';
+        }
+        ctx.globalAlpha = 1;
+        ctx.fillStyle = 'rgba(0, 2, 8, 0.79)';
         ctx.fillRect(0, 0, m.cW, m.cH);
 
-        const text = this.phase === 'success'
-            ? 'SECURITY TUNNEL LOCKED'
-            : 'RESTARTING PACKET STREAM';
-        ctx.fillStyle = '#FFFFFF';
-        ctx.font = 'bold ' + (32 * m.sY).toFixed(1) + 'px ' + primaryFont;
-        ctx.textAlign = 'center';
-        ctx.fillText(text, m.cW * 0.5, m.cH * 0.5);
+        ctx.shadowColor = accent;
+        ctx.shadowBlur = 24 * m.sX;
+        const shell = ctx.createLinearGradient(boxX, boxY, boxX + boxW, boxY + boxH);
+        shell.addColorStop(0, '#121C24');
+        shell.addColorStop(0.16, '#05080D');
+        shell.addColorStop(0.78, '#090A10');
+        shell.addColorStop(1, success ? '#092018' : '#230711');
+        this._fillChamferRect(ctx, boxX, boxY, boxW, boxH, 18 * m.sX, shell);
+        this._strokeChamferRect(ctx, boxX, boxY, boxW, boxH, 18 * m.sX, accent, 2.6 * m.sX);
+        ctx.shadowBlur = 0;
+        this._strokeChamferRect(ctx, boxX + 8 * m.sX, boxY + 8 * m.sY, boxW - 16 * m.sX, boxH - 16 * m.sY, 12 * m.sX, '#31434D', 1.1 * m.sX);
 
-        if (this.phase === 'retry') {
-            ctx.font = 'bold ' + (16 * m.sY).toFixed(1) + 'px ' + monoFont;
-            ctx.fillText(
-                'SCORE ' + this.score + ' / ' + this.targetScore + '  ::  ROUND ' + this.roundNumber + ' RETRY',
-                m.cW * 0.5,
-                m.cH * 0.56
-            );
-        }
+        ctx.fillStyle = accent;
+        this._fillChamferRect(ctx, boxX, boxY, 92 * m.sX, 23 * m.sY, 6 * m.sX);
+        ctx.fillStyle = '#020407';
+        ctx.font = 'bold ' + (7.5 * m.sY).toFixed(1) + 'px ' + monoFont;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(success ? 'ROUTE PASS' : 'ROUTE FAIL', boxX + 46 * m.sX, boxY + 12 * m.sY);
+
+        ctx.fillStyle = '#F5FAFF';
+        ctx.font = 'bold ' + (27 * m.sY).toFixed(1) + 'px ' + primaryFont;
+        ctx.fillText(title, m.cW * 0.5, boxY + 66 * m.sY);
+        ctx.fillStyle = secondary;
+        ctx.font = 'bold ' + (12 * m.sY).toFixed(1) + 'px ' + monoFont;
+        ctx.fillText(
+            'SECURED ' + this.score + ' / ' + this.totalPackets + '  //  REQUIRED ' + this.targetScore,
+            m.cW * 0.5,
+            boxY + 98 * m.sY
+        );
+
+        ctx.fillStyle = '#B7C7CF';
+        ctx.font = 'bold ' + (9 * m.sY).toFixed(1) + 'px ' + monoFont;
+        ctx.fillText(
+            success
+                ? 'THRESHOLD CONFIRMED // PROCEEDING TO NEXT NODE'
+                : 'A PASSING SCORE IS REQUIRED TO PROCEED',
+            m.cW * 0.5,
+            boxY + 127 * m.sY
+        );
+        ctx.fillStyle = success ? '#80FFA2' : '#FF9CAD';
+        ctx.fillText(
+            success
+                ? 'FINALIZING SECURE ROUTE'
+                : 'RESTARTING THE FULL 15-PACKET ROUND // TRY AGAIN',
+            m.cW * 0.5,
+            boxY + 149 * m.sY
+        );
+
+        const railX = boxX + 45 * m.sX;
+        const railY = boxY + 174 * m.sY;
+        const railW = boxW - 90 * m.sX;
+        const railH = 12 * m.sY;
+        const timerMax = success ? 120 : 130;
+        const progress = Math.max(0, Math.min(1, 1 - this.phaseTimer / timerMax));
+        this._fillChamferRect(ctx, railX, railY, railW, railH, 4 * m.sX, '#141E25');
+        this._fillChamferRect(ctx, railX, railY, Math.max(6 * m.sX, railW * progress), railH, 4 * m.sX, accent);
+        ctx.restore();
+    }
+
+    _drawFastener(ctx, x, y, radius, m) {
+        const r = Math.max(2, radius || 4);
+        const metal = ctx.createRadialGradient(x - r * 0.32, y - r * 0.32, r * 0.08, x, y, r);
+        metal.addColorStop(0, '#D6E1E5');
+        metal.addColorStop(0.32, '#69777E');
+        metal.addColorStop(0.72, '#1A2227');
+        metal.addColorStop(1, '#020406');
+        ctx.save();
+        ctx.fillStyle = metal;
+        ctx.beginPath();
+        ctx.arc(x, y, r, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.strokeStyle = '#020305';
+        ctx.lineWidth = Math.max(1, m.sX);
+        ctx.stroke();
+        ctx.strokeStyle = 'rgba(0,0,0,0.82)';
+        ctx.lineWidth = Math.max(1, 1.1 * m.sX);
+        ctx.beginPath();
+        ctx.moveTo(x - r * 0.55, y);
+        ctx.lineTo(x + r * 0.55, y);
+        ctx.stroke();
+        ctx.restore();
     }
 
     _uiPrimaryFont() {
@@ -1680,9 +2230,8 @@ class IP2LivePatchPanelGameplayScreen extends Scene.Base {
         ctx.stroke();
     }
 
-    _traceChamferPath(ctx, x, y, w, h, cut) {
+    _appendChamferPath(ctx, x, y, w, h, cut) {
         const inset = Math.max(0, Math.min(Math.abs(cut || 0), w * 0.22, h * 0.22));
-        ctx.beginPath();
         ctx.moveTo(x + inset, y);
         ctx.lineTo(x + w - inset, y);
         ctx.lineTo(x + w, y + inset);
@@ -1692,6 +2241,11 @@ class IP2LivePatchPanelGameplayScreen extends Scene.Base {
         ctx.lineTo(x, y + h - inset);
         ctx.lineTo(x, y + inset);
         ctx.closePath();
+    }
+
+    _traceChamferPath(ctx, x, y, w, h, cut) {
+        ctx.beginPath();
+        this._appendChamferPath(ctx, x, y, w, h, cut);
     }
 
     _fillChamferRect(ctx, x, y, w, h, cut, fill) {
@@ -1740,7 +2294,7 @@ class IP2LivePatchPanelGameplayScreen extends Scene.Base {
 }
 
 const PatchPanelGameplayManager = {
-    VERSION: 'ip-patchpanel-gameplay-manager-20260530-01',
+    VERSION: 'ip-patchpanel-gameplay-manager-20260815-05',
     _active: false,
     _introShown: false,
     _activeAttempt: null,
