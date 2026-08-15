@@ -33,7 +33,7 @@
  *   LOAD GAME → IP2LiveLoadGameMenu
  *   SETTINGS  → IP2LiveSettingsMenu
  *   CREDITS   → IP2LiveCreditsScene
- *   QUIT GAME → Platform.quit()
+ *   QUIT GAME → confirPopup → Platform.quit()
  *
  * EFFECTS
  * ───────

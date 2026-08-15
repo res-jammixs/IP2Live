@@ -1007,6 +1007,7 @@
 
             const blockedNames = [
                 'TitleScreen',
+                'confirPopup',
                 'IP2LiveMainMenu',
                 'IP2LivePauseMenu',
                 'IP2LiveExportReportMenu',
