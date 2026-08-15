@@ -195,7 +195,7 @@
     {
       "id": "stage1.ipwires.harder.tutorial.opening",
       "name": "IP Wires Harder Tutorial Opening",
-      "title": "STRICT SECURITY",
+      "title": "ADAPTIVE SECURITY",
       "speaker": "SYSTEM",
       "timing": "before",
       "bindings": {
@@ -206,18 +206,18 @@
       },
       "slides": [
         [
-          "The security of this floor has been more strict to avoid access from outsiders.",
+          "Congratulations, Hacker. Reaching this level means you have mastered the fundamentals of IP classification.",
           "",
-          "You must be smart, critical, and apply all your IP address class knowledge.",
-          "There might be trick Class connectors that do not receive any wires.",
-          "It is also possible that one Class connector receives multiple wires."
+          "But the deeper we explore, the more aggressively APEX protects its network.",
+          "This patch chassis activates a random three to five IP Classes on every board.",
+          "A mismatch makes the rejected IP leads re-key themselves, while verified connections remain locked and unchanged."
         ]
       ]
     },
     {
       "id": "stage1.ipwires.harder.tutorial.success",
       "name": "IP Wires Harder Tutorial Success",
-      "title": "STRICT SECURITY",
+      "title": "ADAPTIVE SECURITY",
       "speaker": "SYSTEM",
       "timing": "after",
       "bindings": {
@@ -228,9 +228,9 @@
       },
       "slides": [
         [
-          "Briefing complete.",
+          "Adaptive re-key briefing complete.",
           "",
-          "Proceed to the strict challenge lever and apply your class range mastery."
+          "Proceed to the strict challenge lever. Classify each changed lead again whenever APEX rejects a patch."
         ]
       ]
     },

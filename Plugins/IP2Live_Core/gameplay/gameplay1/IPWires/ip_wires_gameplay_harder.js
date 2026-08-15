@@ -6,7 +6,7 @@
 
 (function () {
     const HarderWiresGameplayManager = {
-        VERSION: 'ip-wires-harder-gameplay-manager-20260530-05',
+        VERSION: 'ip-wires-harder-gameplay-manager-20260815-06',
         _activeAttempt: null,
         _registeredQuestIds: {},
         _triggerLocks: {},
@@ -17,8 +17,8 @@
             {
                 id: 'stage.5.ip_wires_harder.01.tutorial',
                 objectiveId: 'repair_ip_wires_harder_01_tutorial',
-                title: 'SECURITY BRIEFING LEVER',
-                label: 'Strict Tutorial Lever',
+                title: 'ADAPTIVE RE-KEY BRIEFING',
+                label: 'Adaptive Wires Tutorial',
                 targetTile: { x: 2, y: 0, z: 32 },
                 tutorial: true,
                 wireCount: 5,
@@ -257,13 +257,14 @@
             const desiredCount = this._resolveWireCount({ tutorial: false }, wireCount);
             const classNames = this._classNames();
             const selectedClasses = this._shuffle(classNames);
-            const maxDistinct = Math.max(2, Math.min(classNames.length - 1, desiredCount - 1));
-            const distinctCount = this._randomInt(2, maxDistinct);
+            const minDistinct = Math.min(3, classNames.length, desiredCount);
+            const maxDistinct = Math.min(5, classNames.length, desiredCount);
+            const distinctCount = this._randomInt(minDistinct, Math.max(minDistinct, maxDistinct));
             const chosen = selectedClasses.slice(0, distinctCount);
             const plan = chosen.slice();
 
-            // Fill only from already chosen classes so at least one visible class has duplicates
-            // and at least one right-side class can be a trick connector.
+            // Every selected Class receives one lead first; remaining leads are
+            // distributed randomly so duplicate counts and decoy ports vary.
             while (plan.length < desiredCount) {
                 plan.push(chosen[this._randomInt(0, chosen.length - 1)]);
             }
@@ -293,9 +294,31 @@
                 list.push(this._fallbackGeneratedForClass(resolveClass()));
             }
 
-            if (!this._hasDuplicateClass(list) && list.length >= 2) {
-                const pivotClass = list[0] && list[0].className ? String(list[0].className) : resolveClass();
-                list[list.length - 1] = this._fallbackGeneratedForClass(pivotClass);
+            const counts = {};
+            for (let i = 0; i < list.length; i++) {
+                const className = list[i] && list[i].className ? String(list[i].className) : '';
+                if (className) counts[className] = (counts[className] || 0) + 1;
+            }
+            const minimumDistinct = Math.min(3, desiredCount, classes.length);
+            let distinctCount = Object.keys(counts).length;
+            if (distinctCount < minimumDistinct) {
+                const missing = this._shuffle(classes.filter((className) => !counts[className]));
+                while (distinctCount < minimumDistinct && missing.length) {
+                    const replacementClass = missing.shift();
+                    let replaceIndex = -1;
+                    for (let i = list.length - 1; i >= 0; i--) {
+                        const currentClass = list[i] && list[i].className ? String(list[i].className) : '';
+                        if ((counts[currentClass] || 0) > 1) {
+                            replaceIndex = i;
+                            counts[currentClass]--;
+                            break;
+                        }
+                    }
+                    if (replaceIndex < 0) break;
+                    list[replaceIndex] = this._fallbackGeneratedForClass(replacementClass);
+                    counts[replacementClass] = 1;
+                    distinctCount++;
+                }
             }
             return list;
         },
@@ -360,6 +383,8 @@
                         allowDuplicateTargets: true,
                         tutorialFeedback: false,
                         guidedTutorial: false,
+                        adaptiveReroll: true,
+                        strictTutorial: !!(options && options.strictTutorial),
                     }));
                 }
 
@@ -444,6 +469,8 @@
                 allowDuplicateTargets: true,
                 tutorialFeedback: false,
                 guidedTutorial: false,
+                adaptiveReroll: true,
+                strictTutorial: !!spec.tutorial,
                 wireCount: wireCount,
                 resolvedWireCount: wireCount,
                 harderPuzzleEntries: harderPuzzleEntries.map((entry) => Object.assign({}, entry)),
@@ -477,7 +504,7 @@
                 Manager.Stack.replace(screen);
                 if (spec.tutorial && IP2Live.IPWiresHarderTutorial && typeof IP2Live.IPWiresHarderTutorial.showIntro === 'function') {
                     setTimeout(() => {
-                        IP2Live.IPWiresHarderTutorial.showIntro();
+                        IP2Live.IPWiresHarderTutorial.showIntro(screen);
                     }, 0);
                 }
             };
