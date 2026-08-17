@@ -8,7 +8,7 @@
  */
 
 const IP2LiveGameManager = {
-    VERSION: 'game-manager-20260817-06',
+    VERSION: 'game-manager-20260817-07',
 
     STATE: {
         BOOT: 'BOOT',
@@ -545,23 +545,40 @@ const IP2LiveGameManager = {
         const catalogEntry = data.gameplayId && this.gameplayCatalog[data.gameplayId]
             ? this.gameplayCatalog[data.gameplayId]
             : null;
+        const mapId = Number(data.mapId || 0) || 0;
+        const stageMeta = this._stageFor(mapId) || {};
+        const stageId = data.stageId !== undefined && data.stageId !== null
+            ? Number(data.stageId || 0) || 0
+            : Number(stageMeta.stage || 0) || 0;
+        const levelId = data.levelId !== undefined && data.levelId !== null
+            ? Number(data.levelId || 0) || 0
+            : Number(stageMeta.level || 0) || 0;
         const record = {
-            telemetryVersion: 'telemetry-20260529-01',
+            telemetryVersion: 'telemetry-20260817-02',
             sequence: this._nextTelemetrySeq(),
             sessionId: data.sessionId || this._ensureReportSession(),
             eventType: String(eventType || 'unknown'),
             timestamp: Number(data.timestamp) || Date.now(),
+            startedAt: Number(data.startedAt || 0) || 0,
+            endedAt: Number(data.endedAt || data.timestamp || 0) || 0,
             infiltratorName: this._deriveTelemetryProfileName(data),
             gameplayId: data.gameplayId || null,
             gameplayLabel: data.gameplayLabel || (catalogEntry && catalogEntry.label) || null,
             competencyKey: data.competencyKey || (catalogEntry && catalogEntry.competencyKey) || null,
             competencyLabel: data.competencyLabel || (catalogEntry && catalogEntry.competencyLabel) || null,
-            stageId: Number(data.stageId || data.mapId || 0) || 0,
-            levelId: Number(data.levelId || 0) || 0,
-            mapId: Number(data.mapId || 0) || 0,
+            stageId: stageId,
+            levelId: levelId,
+            stageName: data.stageName || stageMeta.name || null,
+            mapId: mapId,
             attemptId: data.attemptId || null,
             questId: data.questId || null,
+            questLabel: data.questLabel || null,
+            questSequence: Number(data.questSequence || 0) || 0,
             objectiveId: data.objectiveId || null,
+            tutorial: !!data.tutorial,
+            outcome: data.outcome || null,
+            cancelled: !!data.cancelled,
+            failureReason: data.failureReason || null,
             passed: data.passed === undefined ? null : !!data.passed,
             durationMs: Number(data.durationMs || 0) || 0,
             attemptsUsed: Number(data.attemptsUsed || 0) || 0,
@@ -570,6 +587,12 @@ const IP2LiveGameManager = {
             mistakeCount: Number(data.mistakeCount || 0) || 0,
             mistakeRate: Number(data.mistakeRate || 0) || 0,
             accuracy: Number(data.accuracy || 0) || 0,
+            securityStrikeCount: Number(data.securityStrikeCount || 0) || 0,
+            securityTriggered: !!data.securityTriggered,
+            rollbackQuestId: data.rollbackQuestId || null,
+            rollbackObjectiveId: data.rollbackObjectiveId || null,
+            darklightsDimmed: !!data.darklightsDimmed,
+            recoveryAction: data.recoveryAction || null,
             payload: this._clonePlain(data.payload || null),
             notes: data.notes || null,
         };
@@ -593,6 +616,9 @@ const IP2LiveGameManager = {
     _openReportAttempt(gameplayId, payload) {
         const data = payload || {};
         const catalog = gameplayId ? this.gameplayCatalog[gameplayId] : null;
+        const spec = data.spec || {};
+        const mapId = Number(data.mapId || spec.mapId || this._currentMapId() || 0) || 0;
+        const stage = this._stageFor(mapId) || {};
         const attempt = {
             attemptId: 'attempt-' + gameplayId + '-' + Date.now() + '-' + Math.floor(Math.random() * 99999),
             startedAt: Date.now(),
@@ -601,11 +627,15 @@ const IP2LiveGameManager = {
             gameplayLabel: catalog && catalog.label ? catalog.label : gameplayId,
             competencyKey: catalog && catalog.competencyKey ? catalog.competencyKey : null,
             competencyLabel: catalog && catalog.competencyLabel ? catalog.competencyLabel : null,
-            mapId: Number(data.mapId || this._currentMapId() || 0) || 0,
-            stageId: Number(data.mapId || this._currentMapId() || 0) || 0,
-            levelId: Number((this._stageFor(data.mapId || this._currentMapId()) || {}).level || 0) || 0,
+            mapId: mapId,
+            stageId: Number(stage.stage || 0) || 0,
+            levelId: Number(stage.level || 0) || 0,
+            stageName: stage.name || null,
             questId: data.questId || null,
+            questLabel: data.questLabel || spec.label || spec.title || null,
+            questSequence: Number(data.questSequence || spec.sequence || 0) || 0,
             objectiveId: data.objectiveId || null,
+            tutorial: !!(data.tutorial || spec.tutorial),
             retries: 0,
             mistakeCount: 0,
             mistakes: [],
@@ -621,13 +651,22 @@ const IP2LiveGameManager = {
         const open = this._reportActiveAttempt(gameplayId) || this._openReportAttempt(gameplayId, data);
         const endedAt = Date.now();
         const durationMs = Math.max(0, endedAt - Number(open.startedAt || endedAt));
-        const metrics = this._extractGameplayMetrics(gameplayId, data.result || data.payload || {});
+        const rawResult = data.result || data.payload || {};
+        const cancelled = !!(data.cancelled || rawResult.cancelled);
+        const metrics = this._extractGameplayMetrics(gameplayId, rawResult, !!passed);
         const retries = Math.max(Number(open.retries || 0) || 0, Number(metrics.retries || 0) || 0);
         const mistakeCount = Math.max(Number(open.mistakeCount || 0) || 0, Number(metrics.mistakeCount || 0) || 0);
+        const failureReason = cancelled ? 'cancelled' : (!passed ? (rawResult.reason || data.reason || 'failed') : null);
+        let recoveryAction = data.recoveryAction || null;
+        if (!recoveryAction && data.securityTriggered) recoveryAction = 'security_alert_return_to_stage_1_level_1';
+        else if (!recoveryAction && !passed && open.mapId === 4 && gameplayId === 'ip_class_wires') recoveryAction = 'reactivate_previous_solved_wire';
+        else if (!recoveryAction && !passed && open.mapId === 4 && gameplayId === 'ip_patch_panel_classes') recoveryAction = 'return_to_patch_panel_tutorial';
 
         const completion = {
             sessionId: open.sessionId,
             attemptId: open.attemptId,
+            startedAt: open.startedAt,
+            endedAt: endedAt,
             gameplayId: open.gameplayId,
             gameplayLabel: open.gameplayLabel,
             competencyKey: open.competencyKey,
@@ -635,10 +674,17 @@ const IP2LiveGameManager = {
             mapId: open.mapId,
             stageId: open.stageId,
             levelId: open.levelId,
+            stageName: open.stageName,
             questId: open.questId,
+            questLabel: open.questLabel,
+            questSequence: open.questSequence,
             objectiveId: open.objectiveId,
+            tutorial: !!open.tutorial,
             timestamp: endedAt,
-            passed: !!passed,
+            outcome: cancelled ? 'cancelled' : (passed ? 'passed' : 'failed'),
+            cancelled: cancelled,
+            failureReason: failureReason,
+            passed: !!passed && !cancelled,
             durationMs: durationMs,
             retries: retries,
             mistakeCount: mistakeCount,
@@ -646,8 +692,14 @@ const IP2LiveGameManager = {
             maxAttempts: Number(metrics.maxAttempts || 0) || 0,
             mistakeRate: Number(metrics.mistakeRate || 0) || 0,
             accuracy: Number(metrics.accuracy || 0) || 0,
+            securityStrikeCount: Number(data.securityStrikeCount || 0) || 0,
+            securityTriggered: !!data.securityTriggered,
+            rollbackQuestId: data.rollbackQuestId || null,
+            rollbackObjectiveId: data.rollbackObjectiveId || null,
+            darklightsDimmed: !!data.darklightsDimmed,
+            recoveryAction: recoveryAction,
             payload: Object.assign({}, metrics.payload || {}, {
-                result: this._clonePlain(data.result || {}),
+                result: this._clonePlain(rawResult || {}),
                 mistakes: this._clonePlain(open.mistakes || []),
                 mistakeEvents: this._clonePlain(open.mistakeEvents || []),
             }),
@@ -658,21 +710,23 @@ const IP2LiveGameManager = {
         return completion;
     },
 
-    _extractGameplayMetrics(gameplayId, result) {
+    _extractGameplayMetrics(gameplayId, result, passed) {
         const r = result || {};
         if (gameplayId === 'ip_class_wires' || gameplayId === 'ip_class_wires_harder') {
             const mistakes = Array.isArray(r.mistakes) ? r.mistakes : [];
-            const attemptsUsed = Number(r.attemptsUsed || mistakes.length || 0) || 0;
+            const failedSubmissions = Number(r.attemptsUsed || mistakes.length || 0) || 0;
             const maxAttempts = Number(r.maxAttempts || 3) || 3;
-            const accuracy = maxAttempts > 0 ? Math.max(0, Math.min(1, (maxAttempts - attemptsUsed) / maxAttempts)) : 0;
+            const attemptsUsed = Math.min(maxAttempts, failedSubmissions + (passed ? 1 : 0));
+            const accuracy = maxAttempts > 0 ? Math.max(0, Math.min(1, (maxAttempts - failedSubmissions) / maxAttempts)) : 0;
             return {
                 attemptsUsed: attemptsUsed,
                 maxAttempts: maxAttempts,
-                retries: attemptsUsed,
+                retries: Math.max(0, attemptsUsed - 1),
                 mistakeCount: mistakes.length,
-                mistakeRate: maxAttempts > 0 ? attemptsUsed / maxAttempts : 0,
+                mistakeRate: maxAttempts > 0 ? failedSubmissions / maxAttempts : 0,
                 accuracy: accuracy,
                 payload: {
+                    failedSubmissions: failedSubmissions,
                     wrongMappings: mistakes.map(function (m) {
                         return { sourceClass: m && m.sourceClass, targetClass: m && m.targetClass };
                     }),
