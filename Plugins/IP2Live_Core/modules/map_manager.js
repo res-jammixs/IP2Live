@@ -13,7 +13,20 @@ const MapManager = {
     stages: [
         { id: 1, name: 'Tutorial Stage', tutorial: true, questEnabled: false },
         { id: 3, name: 'Stage 1 Level 1', stage: 1, level: 1 },
-        { id: 4, name: 'Stage 1 Level 2', stage: 1, level: 2, exit: { x: 26, y: 0, z: 0 }  },
+        {
+            id: 4,
+            name: 'Stage 1 Level 2',
+            stage: 1,
+            level: 2,
+            exit: { x: 26, y: 0, z: 0 },
+            introLines: [
+                'Congratulations, Hacker. You reached Stage 1 Level 2.',
+                '',
+                'Keep doing what you do best: hack your way deeper into the APEX facilities.',
+                'The first two nodes use the familiar IP wire-routing system. Stabilize them before moving deeper into this floor.',
+                'The third node introduces a new Patch Panel defense. I will guide you through it before you face that system on your own.',
+            ],
+        },
         { id: 5, name: 'Stage 1 Level 3', stage: 1, level: 3 },
         { id: 6, name: 'Stage 1 Level 4', stage: 1, level: 4 },
         {

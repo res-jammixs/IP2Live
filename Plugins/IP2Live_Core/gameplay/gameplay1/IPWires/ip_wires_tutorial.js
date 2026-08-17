@@ -25,7 +25,7 @@
     }
 
     const IPWiresTutorial = {
-        VERSION: 'ip-wires-tutorial-20260815-03',
+        VERSION: 'ip-wires-tutorial-20260817-05',
         _dialogueSerial: 0,
 
         classRanges: {
@@ -572,6 +572,38 @@
                     'Repair Lever 01 again.',
                     'After it stabilizes, I will route you back to ' + label + '.',
                     'All four levers must remain stable to unlock the next-level door.',
+                ]],
+                onComplete: onComplete,
+            });
+        },
+
+        showLevelTwoRepairReset(failedLabel, rollbackLabel, lightsDimmed, onComplete) {
+            const failed = failedLabel || 'the active wire node';
+            const rollback = rollbackLabel || failed;
+            const didDim = !!lightsDimmed;
+            return this._startDynamicDialogue('stage1.level2.ipwires.recovery.reset.', {
+                title: didDim ? 'FACILITY LIGHTS DIMMED' : 'WIRE REPAIR RETRY',
+                speaker: 'SYSTEM',
+                timing: 'after',
+                bindings: {
+                    mapId: 4,
+                    gameplayId: 'ip_class_wires',
+                    trigger: 'gameplay.failed',
+                },
+                slides: didDim ? [[
+                    'Too many routing errors destabilized ' + rollback + ' and dimmed the facility lights by one step.',
+                    '',
+                    'APEX security is watching our mistakes. Return to ' + rollback + ' and repair it again.',
+                ], [
+                    'Once ' + rollback + ' is stable, the route will continue toward ' + failed + '.',
+                    'Another failed repair will roll back the next earlier stabilized wire node.',
+                ]] : [[
+                    'The repair attempt was exhausted, but no earlier Gameplay 1 wire remains stabilized.',
+                    '',
+                    'The facility lights will stay at their current level. Retry ' + failed + '.',
+                ], [
+                    'This failure still increases the APEX security trace.',
+                    'Stay precise. Repeated failed repairs will expose our location.',
                 ]],
                 onComplete: onComplete,
             });

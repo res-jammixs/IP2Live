@@ -1894,7 +1894,7 @@
     }
 
     const GameplayManager = {
-        VERSION: 'ip-wires-gameplay-manager-20260815-04',
+        VERSION: 'ip-wires-gameplay-manager-20260817-07',
         WIRE_QUEST_ID: 'stage.3.ip_wires.01.tutorial',
         WIRE_OBJECTIVE_ID: 'repair_ip_wires_01',
     _activeAttempt: null,
@@ -1947,6 +1947,26 @@
             return specs[0] || this.WIRE_QUESTS[0];
         },
 
+        _questSpecsForMap(mapId) {
+            const resolvedMapId = Number(mapId) || 3;
+            const specs = this._questSpecs();
+            return specs.filter(function (spec) {
+                const specMapId = Number(spec && spec.mapId) || 3;
+                return specMapId === resolvedMapId;
+            }).sort(function (a, b) {
+                const aSequence = Number(a && a.sequence);
+                const bSequence = Number(b && b.sequence);
+                const resolvedA = Number.isFinite(aSequence) ? aSequence : Number.MAX_SAFE_INTEGER;
+                const resolvedB = Number.isFinite(bSequence) ? bSequence : Number.MAX_SAFE_INTEGER;
+                return resolvedA - resolvedB;
+            });
+        },
+
+        _firstQuestSpecForMap(mapId) {
+            const specs = this._questSpecsForMap(mapId);
+            return specs[0] || (Number(mapId) === 3 ? this._defaultQuestSpec() : null);
+        },
+
         registerStageGameplayQuests(questManager, mapManager, stage) {
             const qm = questManager || IP2Live.QuestManager;
             if (!qm || !stage || Number(stage.id) !== 3) return [];
@@ -1993,6 +2013,7 @@
 
             const attemptKey = spec.id + ':' + spec.objectiveId;
             if (this._activeAttempt === attemptKey) return false;
+            const mapId = Number((context && context.mapId) || spec.mapId) || 3;
 
             if (IP2Live.GameManager && typeof IP2Live.GameManager.startGameplayNode === 'function') {
                 this._activeAttempt = attemptKey;
@@ -2000,7 +2021,7 @@
                     spec: spec,
                     questId: spec.id,
                     objectiveId: spec.objectiveId,
-                    mapId: context && context.mapId,
+                    mapId: mapId,
                     tutorialFeedback: !!spec.tutorial,
                     skipBeforeDialogues: !!spec.tutorial,
                 });
@@ -2011,7 +2032,7 @@
                 spec: spec,
                 questId: spec.id,
                 objectiveId: spec.objectiveId,
-                mapId: context && context.mapId,
+                mapId: mapId,
                 tutorialFeedback: !!spec.tutorial,
                 skipBeforeDialogues: !!spec.tutorial,
             });
@@ -2056,6 +2077,7 @@
                 else IP2Live.QuestMinimap.update();
             }
             const spec = opts.spec || this._defaultQuestSpec();
+            const mapId = Number(opts.mapId || spec.mapId) || 3;
             const attemptKey = (opts.questId || spec.id) + ':' + (opts.objectiveId || spec.objectiveId);
             const isReservedAttempt = opts._fromGameManager && opts._reservedAttempt === attemptKey;
             if (this._activeAttempt === attemptKey && !isReservedAttempt) return false;
@@ -2071,7 +2093,7 @@
                 questLabel: spec.label,
                 questId: opts.questId || spec.id,
                 objectiveId: opts.objectiveId || spec.objectiveId,
-                mapId: opts.mapId || 3,
+                mapId: mapId,
                 onComplete: (result) => this._completeWireGameplay(opts, result),
                 onFailed: (result) => this._failWireGameplay(opts, result),
                 onCancel: () => {
@@ -2082,7 +2104,7 @@
                             spec: spec,
                             questId: opts.questId || spec.id,
                             objectiveId: opts.objectiveId || spec.objectiveId,
-                            mapId: opts.mapId || 3,
+                            mapId: mapId,
                             result: { cancelled: true },
                         });
                     }
@@ -2121,6 +2143,7 @@
         _completeWireGameplay(options, result) {
             const opts = options || {};
             const spec = opts.spec || this._defaultQuestSpec();
+            const mapId = Number(opts.mapId || spec.mapId) || 3;
             this._activeAttempt = null;
             delete this._triggerLocks[spec.objectiveId];
             Manager.Stack.pop();
@@ -2140,7 +2163,7 @@
                     spec: spec,
                     questId: opts.questId || spec.id,
                     objectiveId: opts.objectiveId || spec.objectiveId,
-                    mapId: opts.mapId || 3,
+                    mapId: mapId,
                     result: result,
                 });
             }
@@ -2150,6 +2173,7 @@
         _failWireGameplay(options, result) {
             const opts = options || {};
             const spec = opts.spec || this._defaultQuestSpec();
+            const mapId = Number(opts.mapId || spec.mapId) || 3;
             this._activeAttempt = null;
             this._lockUntilStepOff(spec);
             Manager.Stack.pop();
@@ -2160,7 +2184,7 @@
                     spec: spec,
                     questId: opts.questId || spec.id,
                     objectiveId: opts.objectiveId || spec.objectiveId,
-                    mapId: opts.mapId || 3,
+                    mapId: mapId,
                     result: result,
                 });
                 if (Manager && Manager.Stack) Manager.Stack.requestPaintHUD = true;
@@ -2179,15 +2203,27 @@
             return result;
         },
 
-        _sendStageBackToFirstWire(failedSpec) {
+        _sendStageBackToFirstWire(failedSpec, failureData) {
             const qm = IP2Live.QuestManager;
-            const first = this._defaultQuestSpec();
+            const data = failureData || {};
+            const mapId = Number(data.mapId || (failedSpec && failedSpec.mapId)) || 3;
+            const first = this._firstQuestSpecForMap(mapId);
+            const mapSpecs = this._questSpecsForMap(mapId);
+            const requestedRollbackId = String(data.rollbackQuestId || '');
+            const requestedRollback = mapSpecs.find(function (spec) {
+                return spec && spec.id === requestedRollbackId;
+            });
+            const rollbackSpec = mapId === 4
+                ? (requestedRollback || failedSpec || first)
+                : first;
+            if (!rollbackSpec) return false;
+
             if (qm) {
-                if (!qm.completedObjectives[first.id]) qm.completedObjectives[first.id] = {};
-                qm.completedObjectives[first.id] = {};
+                if (!qm.completedObjectives[rollbackSpec.id]) qm.completedObjectives[rollbackSpec.id] = {};
+                qm.completedObjectives[rollbackSpec.id] = {};
                 if (failedSpec && failedSpec.id) qm.completedObjectives[failedSpec.id] = {};
-                qm.startQuest(first.id, {
-                    mapId: 3,
+                qm.startQuest(rollbackSpec.id, {
+                    mapId: mapId,
                     mapQuestMode: true,
                     keepLastCompletion: true,
                     visible: true,
@@ -2197,9 +2233,16 @@
                 });
             }
 
-            if (IP2Live.IPWiresTutorial && typeof IP2Live.IPWiresTutorial.showStageRepairReset === 'function') {
+            if (mapId === 4 && IP2Live.IPWiresTutorial && typeof IP2Live.IPWiresTutorial.showLevelTwoRepairReset === 'function') {
+                setTimeout(() => IP2Live.IPWiresTutorial.showLevelTwoRepairReset(
+                    failedSpec && failedSpec.label,
+                    data.rollbackQuestLabel || rollbackSpec.label,
+                    !!data.darklightsDimmed
+                ), 220);
+            } else if (IP2Live.IPWiresTutorial && typeof IP2Live.IPWiresTutorial.showStageRepairReset === 'function') {
                 setTimeout(() => IP2Live.IPWiresTutorial.showStageRepairReset(failedSpec && failedSpec.label), 220);
             }
+            return true;
         },
     };
 

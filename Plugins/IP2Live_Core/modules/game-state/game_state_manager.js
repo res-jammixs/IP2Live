@@ -8,7 +8,10 @@
 
 (function () {
     const STAGE_ONE_LEVEL_ONE_MAP_ID = 3;
+    const STAGE_ONE_LEVEL_TWO_MAP_ID = 4;
     const DARKLIGHTS_KEY = 'darklights';
+    const SECURITY_LIGHT_KEY = 'securityLight';
+    const SECURITY_FAILURE_LIMIT = 5;
 
     const DARKLIGHTS_CONFIGS = {
         3: {
@@ -31,6 +34,29 @@
             entryReason: 'stage-one-entry',
             successReason: 'stage-one-wire-success',
             clearReason: 'stage-one-levers-cleared',
+        },
+        4: {
+            mapId: 4,
+            name: 'Stage 1 Level 2',
+            baselineBrightnessStep: 1,
+            gameplayIds: ['ip_class_wires'],
+            objectives: [
+                'repair_stage4_ip_wires_01',
+                'repair_stage4_ip_wires_02',
+                'repair_stage4_ip_wires_04',
+                'repair_stage4_ip_wires_05',
+                'repair_stage4_ip_wires_07',
+            ],
+            quests: [
+                { questId: 'stage.4.mixed.01.ip_wires', objectiveId: 'repair_stage4_ip_wires_01' },
+                { questId: 'stage.4.mixed.02.ip_wires', objectiveId: 'repair_stage4_ip_wires_02' },
+                { questId: 'stage.4.mixed.04.ip_wires', objectiveId: 'repair_stage4_ip_wires_04' },
+                { questId: 'stage.4.mixed.05.ip_wires', objectiveId: 'repair_stage4_ip_wires_05' },
+                { questId: 'stage.4.mixed.07.ip_wires', objectiveId: 'repair_stage4_ip_wires_07' },
+            ],
+            entryReason: 'stage-one-level-two-entry',
+            successReason: 'stage-one-level-two-wire-success',
+            clearReason: 'stage-one-level-two-wires-cleared',
         },
         5: {
             mapId: 5,
@@ -56,12 +82,13 @@
     };
 
     const GameStateManager = {
-        VERSION: 'game-state-manager-20260602-02',
+        VERSION: 'game-state-manager-20260817-04',
         states: {},
         activeStates: {},
         _boundGameManager: null,
         _unsubscribers: [],
         _fallbackStore: {},
+        _sceneHooksInstalled: false,
 
         registerState(name, definition) {
             const key = String(name || '').trim();
@@ -100,23 +127,116 @@
             return true;
         },
 
+        update(scene) {
+            const keys = Object.keys(this.activeStates || {});
+            for (let i = 0; i < keys.length; i++) {
+                const state = this.states[keys[i]];
+                if (!state || typeof state.update !== 'function') continue;
+                state.update(this, scene || this._currentScene());
+            }
+        },
+
+        drawHUD(ctx, scene) {
+            const keys = Object.keys(this.activeStates || {});
+            for (let i = 0; i < keys.length; i++) {
+                const state = this.states[keys[i]];
+                if (!state || typeof state.drawHUD !== 'function') continue;
+                state.drawHUD(ctx, this, scene || this._currentScene());
+            }
+        },
+
+        installSceneHooks() {
+            if (this._sceneHooksInstalled || !Scene || !Scene.Map || !Scene.Map.prototype) return false;
+            this._sceneHooksInstalled = true;
+            const manager = this;
+            const originalUpdate = Scene.Map.prototype.update;
+            Scene.Map.prototype.update = function () {
+                if (typeof originalUpdate === 'function') originalUpdate.call(this);
+                manager.update(this);
+            };
+
+            const originalDrawHUD = Scene.Map.prototype.drawHUD;
+            Scene.Map.prototype.drawHUD = function () {
+                if (typeof originalDrawHUD === 'function') originalDrawHUD.call(this);
+                manager.drawHUD(Common && Common.Platform ? Common.Platform.ctx : null, this);
+            };
+            return true;
+        },
+
         recordTutorialReturn(reason, mapId) {
             const config = this._darklightsConfigForMap(mapId || STAGE_ONE_LEVEL_ONE_MAP_ID);
             if (!config) return null;
+            return this.recordDarklightsRollback(
+                reason || 'tutorial-return',
+                config.mapId,
+                config.objectives && config.objectives[0]
+            );
+        },
+
+        recordDarklightsRollback(reason, mapId, objectiveId) {
+            const config = this._darklightsConfigForMap(mapId || this._currentMapId() || STAGE_ONE_LEVEL_ONE_MAP_ID);
+            if (!config) return null;
 
             const store = this._darklightsStore(config.mapId);
-            if (store.cleared) return store;
-            this._setBrightnessStep(store, store.brightnessStep - 1, reason || 'tutorial-return', config);
-            store.lastReason = reason || 'tutorial-return';
-            store.completedObjectives = {};
+            store.cleared = false;
+            store.progressInitialized = true;
+            this._setBrightnessStep(store, store.brightnessStep - 1, reason || 'gameplay-rollback', config);
+            if (objectiveId && store.completedObjectives) delete store.completedObjectives[String(objectiveId)];
+            store.lastReason = reason || 'gameplay-rollback';
             this._syncStore();
             if (this._currentMapId() === config.mapId) {
                 this._activateDarklights(config, {
                     scene: this._currentScene(),
-                    reason: reason || 'tutorial-return',
+                    reason: store.lastReason,
                 });
             }
             return store;
+        },
+
+        resetDarklightsProgress(mapId, reason) {
+            const config = this._darklightsConfigForMap(mapId || this._currentMapId() || STAGE_ONE_LEVEL_ONE_MAP_ID);
+            if (!config) return null;
+
+            const root = this._darklightsRoot();
+            const store = this._newDarklightsStore(config.mapId);
+            store.lastReason = reason || 'darklights-progress-reset';
+            root.maps[String(config.mapId)] = store;
+            if (config.mapId === STAGE_ONE_LEVEL_ONE_MAP_ID) this._mirrorLegacyDarklightsRoot(root, store);
+            this._syncStore();
+            if (this._currentMapId() === config.mapId) {
+                this._setBrightnessStep(store, config.baselineBrightnessStep, config.entryReason, config);
+                store.progressInitialized = true;
+                this._activateDarklights(config, {
+                    scene: this._currentScene(),
+                    reason: store.lastReason,
+                });
+            }
+            return store;
+        },
+
+        recordSecurityFailure(mapId, payload) {
+            const resolvedMapId = Number(mapId) || STAGE_ONE_LEVEL_TWO_MAP_ID;
+            const store = this._securityStore(resolvedMapId);
+            store.strikes = Math.max(0, Number(store.strikes) || 0) + 1;
+            store.lastFailureAt = Date.now();
+            store.lastQuestId = payload && payload.questId ? payload.questId : null;
+            store.triggered = store.strikes >= SECURITY_FAILURE_LIMIT;
+            this._syncStore();
+            return store;
+        },
+
+        resetSecurityState(mapId) {
+            const resolvedMapId = Number(mapId) || STAGE_ONE_LEVEL_TWO_MAP_ID;
+            const root = this._securityRoot();
+            root.maps[String(resolvedMapId)] = {
+                mapId: resolvedMapId,
+                strikes: 0,
+                triggered: false,
+                lastFailureAt: null,
+                lastQuestId: null,
+            };
+            this._syncStore();
+            return root.maps[String(resolvedMapId)];
         },
 
         resetDarklights(mapId) {
@@ -168,6 +288,10 @@
             const context = data.context || {};
             const config = this._darklightsConfigForMap(mapId);
 
+            if (mapId !== STAGE_ONE_LEVEL_TWO_MAP_ID) {
+                this.resetSecurityState(STAGE_ONE_LEVEL_TWO_MAP_ID);
+            }
+
             if (config && context.darklightsReturn) {
                 this.recordTutorialReturn(context.source || 'map-flow-return', config.mapId);
                 return;
@@ -203,9 +327,42 @@
 
             const spec = data.spec || {};
             const mapId = Number(data.mapId || spec.mapId || this._currentMapId());
-            if (mapId !== STAGE_ONE_LEVEL_ONE_MAP_ID || spec.tutorial) return;
             const result = data.result || {};
             if (String(result.reason || '') !== 'attempts_exhausted') return;
+
+            if (mapId === STAGE_ONE_LEVEL_TWO_MAP_ID) {
+                const rollbackTarget = this._latestCompletedDarklightsQuestBefore(
+                    mapId,
+                    data.questId || spec.id
+                );
+                data.rollbackQuestId = rollbackTarget
+                    ? rollbackTarget.questId
+                    : (data.questId || spec.id || null);
+                data.rollbackObjectiveId = rollbackTarget
+                    ? rollbackTarget.objectiveId
+                    : (data.objectiveId || spec.objectiveId || null);
+                data.rollbackQuestLabel = rollbackTarget ? rollbackTarget.label : (spec.label || null);
+                data.darklightsDimmed = !!rollbackTarget;
+                if (rollbackTarget) {
+                    this.recordDarklightsRollback(
+                        'stage-one-level-two-wire-failure',
+                        mapId,
+                        rollbackTarget.objectiveId
+                    );
+                }
+                const security = this.recordSecurityFailure(mapId, data);
+                data.securityStrikeCount = Number(security.strikes) || 0;
+                if (security.triggered) {
+                    data.securityTriggered = this.activate(SECURITY_LIGHT_KEY, {
+                        mapId,
+                        strikeCount: data.securityStrikeCount,
+                        failedQuestId: data.questId || spec.id || null,
+                    });
+                }
+                return;
+            }
+
+            if (mapId !== STAGE_ONE_LEVEL_ONE_MAP_ID || spec.tutorial) return;
             this.recordTutorialReturn('stage-one-wire-failure', STAGE_ONE_LEVEL_ONE_MAP_ID);
         },
 
@@ -278,6 +435,55 @@
                 if (!completed[item.questId] || !completed[item.questId][item.objectiveId]) return false;
             }
             return true;
+        },
+
+        _latestCompletedDarklightsQuestBefore(mapId, failedQuestId) {
+            const config = this._darklightsConfigForMap(mapId);
+            if (!config || !Array.isArray(config.quests) || !config.quests.length) return null;
+
+            const failedId = String(failedQuestId || '');
+            let failedIndex = config.quests.findIndex(function (item) {
+                return item && item.questId === failedId;
+            });
+            if (failedIndex < 0) failedIndex = config.quests.length;
+
+            const store = this._darklightsStore(config.mapId);
+            const stateDone = store.completedObjectives || {};
+            const qm = IP2Live.QuestManager;
+            const questDone = qm && qm.completedObjectives ? qm.completedObjectives : {};
+
+            for (let i = failedIndex - 1; i >= 0; i--) {
+                const item = config.quests[i];
+                if (!item || !item.questId || !item.objectiveId) continue;
+                const completedInState = !!stateDone[item.objectiveId];
+                const completedInQuest = !!(
+                    questDone[item.questId] &&
+                    questDone[item.questId][item.objectiveId]
+                );
+                if (completedInState || completedInQuest) {
+                    return {
+                        questId: item.questId,
+                        objectiveId: item.objectiveId,
+                        label: this._darklightsQuestLabel(item.questId),
+                    };
+                }
+            }
+            return null;
+        },
+
+        _darklightsQuestLabel(questId) {
+            const gm = IP2Live.GameManager;
+            const catalog = gm && gm.gameplayCatalog ? gm.gameplayCatalog : {};
+            const keys = Object.keys(catalog);
+            for (let i = 0; i < keys.length; i++) {
+                const quests = Array.isArray(catalog[keys[i]] && catalog[keys[i]].quests)
+                    ? catalog[keys[i]].quests
+                    : [];
+                for (let q = 0; q < quests.length; q++) {
+                    if (quests[q] && quests[q].id === questId) return quests[q].label || quests[q].title || questId;
+                }
+            }
+            return questId;
         },
 
         _activateDarklights(config, options) {
@@ -383,6 +589,32 @@
             const darklights = root[DARKLIGHTS_KEY];
             if (!darklights.maps || typeof darklights.maps !== 'object') darklights.maps = {};
             return darklights;
+        },
+
+        _securityRoot() {
+            const root = this._rootStore();
+            if (!root[SECURITY_LIGHT_KEY] || typeof root[SECURITY_LIGHT_KEY] !== 'object') {
+                root[SECURITY_LIGHT_KEY] = {};
+            }
+            const security = root[SECURITY_LIGHT_KEY];
+            if (!security.maps || typeof security.maps !== 'object') security.maps = {};
+            return security;
+        },
+
+        _securityStore(mapId) {
+            const resolvedMapId = Number(mapId) || STAGE_ONE_LEVEL_TWO_MAP_ID;
+            const root = this._securityRoot();
+            const key = String(resolvedMapId);
+            if (!root.maps[key]) {
+                root.maps[key] = {
+                    mapId: resolvedMapId,
+                    strikes: 0,
+                    triggered: false,
+                    lastFailureAt: null,
+                    lastQuestId: null,
+                };
+            }
+            return root.maps[key];
         },
 
         _darklightsStore(mapId) {
@@ -553,6 +785,7 @@
 
     IP2Live.GameStateManager = GameStateManager;
     window.IP2LiveGameStateManager = GameStateManager;
+    GameStateManager.installSceneHooks();
 
     console.log('[IP2Live] game_state_manager.js module loaded.');
 }());
