@@ -89,6 +89,45 @@
       ]
     },
     {
+      "id": "stage1.level2.security.breached",
+      "name": "Stage 1 Level 2 Security Breach",
+      "title": "SECURITY BREACH",
+      "speaker": "SYSTEM",
+      "lockMovement": true,
+      "hideQuestPanel": true,
+      "slides": [
+        [
+          "LOCATION BREACHED. APEX security has detected our position.",
+          "",
+          "Five exhausted wire repairs created a traceable pattern in the facility network."
+        ],
+        [
+          "We cannot continue from this location.",
+          "Falling back to Stage 1 Level 1. Rebuild the breach route and try again."
+        ]
+      ]
+    },
+    {
+      "id": "stage1.level1.security.return",
+      "name": "Stage 1 Level 1 Security Retreat",
+      "title": "GO DARK",
+      "speaker": "SYSTEM",
+      "lockMovement": true,
+      "hideQuestPanel": true,
+      "slides": [
+        [
+          "APEX noticed our location and its response teams are closing in.",
+          "",
+          "We have to hide in the previous sector until their trace loses our signal."
+        ],
+        [
+          "They now know the route we used to reach Level 2.",
+          "We have to go through Stage 1 Level 1 again and rebuild the breach from the beginning.",
+          "Move carefully. We cannot let them reacquire us."
+        ]
+      ]
+    },
+    {
       "id": "stage1.ipwires.tutorial.opening",
       "name": "IP Wires Tutorial Opening",
       "title": "WIRE PATCH",

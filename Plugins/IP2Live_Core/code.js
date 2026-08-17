@@ -802,6 +802,7 @@ IP2Live.GameStateManagerReady = (async function () {
     const files = [
         'game_state_manager.js',
         'darklights_state.js',
+        'security_light_state.js',
     ];
     try {
         for (let i = 0; i < files.length; i++) {

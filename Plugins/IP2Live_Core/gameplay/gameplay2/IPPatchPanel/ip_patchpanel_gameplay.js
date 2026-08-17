@@ -4,6 +4,7 @@
  * Gameplay Two:
  * - 15 packets per round
  * - Secure at least 10 correct classifications
+ * - End regular rounds immediately when the target score is reached
  * - Auto-restart round if score is below target at delivery end
  *
  * Loaded from gameplay/gameplay2/IPPatchPanel by code.js.
@@ -45,7 +46,8 @@ class IP2LivePatchPanelGameplayScreen extends Scene.Base {
         this._ensureCoreState();
         this.totalPackets = Math.max(1, Number(this.options.totalPackets) || 15);
         this.targetScore = Math.min(this.totalPackets, Math.max(1, Number(this.options.targetScore) || 10));
-        this.speedMultiplier = Math.max(0.2, Number(this.options.speedMultiplier) || 0.78);
+        this.maxAttempts = Math.max(1, Number(this.options.maxAttempts) || 2);
+        this.speedMultiplier = Math.max(0.2, Number(this.options.speedMultiplier) || 0.88);
         this.baseSpeed = Math.max(0.45, Number(this.options.baseSpeed) || 1.9);
         this.guidedTutorial = !!this.options.guidedTutorial;
         this.tutorialActive = this.guidedTutorial;
@@ -91,6 +93,7 @@ class IP2LivePatchPanelGameplayScreen extends Scene.Base {
         this.activePacket = null;
         this.fxBursts = [];
         this.routeShocks = [];
+        this.correctTunnelFeedback = null;
         this.lastRouteNote = 'SECURED: WAITING FOR PACKETS';
         this.lastRouteTone = 'info';
         this.bannerText = 'ROUTE PACKETS BY CLASS';
@@ -134,10 +137,6 @@ class IP2LivePatchPanelGameplayScreen extends Scene.Base {
             { text: '255.255.192.0', className: 'B', kind: 'MASK' },
             { text: '255.255.255.0', className: 'C', kind: 'MASK' },
             { text: '255.255.255.224', className: 'C', kind: 'MASK' },
-            { text: '239.0.0.0', className: 'D', kind: 'MASK' },
-            { text: '224.0.0.0', className: 'D', kind: 'MASK' },
-            { text: '240.0.0.0', className: 'E', kind: 'MASK' },
-            { text: '248.0.0.0', className: 'E', kind: 'MASK' },
         ];
     }
 
@@ -205,7 +204,6 @@ class IP2LivePatchPanelGameplayScreen extends Scene.Base {
             ['A', '255.0.0.0'],
             ['B', '255.255.0.0'],
             ['C', '255.255.255.0'],
-            ['D', '224.0.0.0'],
         ];
         for (let i = 0; i < maskExamples.length; i++) {
             const entry = findPacket(this.maskPool, maskExamples[i][0], maskExamples[i][1]);
@@ -232,7 +230,10 @@ class IP2LivePatchPanelGameplayScreen extends Scene.Base {
 
         const used = {};
         for (let i = 0; i < guided.length; i++) used[guided[i].kind + ':' + guided[i].text] = true;
-        const remainderPool = this._shuffle(this.ipPool.concat(this.maskPool).filter((entry) => !used[entry.kind + ':' + entry.text]));
+        // The guided floor teaches only the three standard classful masks.
+        // The remaining practice packets are IP addresses so no custom mask
+        // can be mistaken for a Class D/E subnet-mask lesson.
+        const remainderPool = this._shuffle(this.ipPool.filter((entry) => !used[entry.kind + ':' + entry.text]));
         while (guided.length < count && remainderPool.length) guided.push(Object.assign({}, remainderPool.shift()));
         while (guided.length < count) {
             const fallback = this.ipPool[Math.floor(Math.random() * this.ipPool.length)];
@@ -343,6 +344,16 @@ class IP2LivePatchPanelGameplayScreen extends Scene.Base {
             if (this.phaseTimer <= 0) {
                 this._finishSuccess();
             }
+        } else if (this.phase === 'failure') {
+            this.phaseTimer--;
+            if (this.phaseTimer <= 0) {
+                this._finishFailure();
+            }
+        }
+
+        if (this.correctTunnelFeedback) {
+            this.correctTunnelFeedback.life--;
+            if (this.correctTunnelFeedback.life <= 0) this.correctTunnelFeedback = null;
         }
 
         if (Manager && Manager.Stack) Manager.Stack.requestPaintHUD = true;
@@ -400,6 +411,7 @@ class IP2LivePatchPanelGameplayScreen extends Scene.Base {
             if (!packet.enteredDecision && packet.x >= m.wheelX - m.wheelRadius * 0.16) {
                 packet.enteredDecision = true;
                 this._evaluateCurrentPacket(packet);
+                if (this.phase !== 'active') return;
             }
 
             if (packet.x > m.rightWireX + 34 * m.sX) {
@@ -724,6 +736,9 @@ class IP2LivePatchPanelGameplayScreen extends Scene.Base {
         const metTarget = this.score >= this.targetScore;
         this.endResult = {
             gameplayId: 'ip_patch_panel_classes',
+            questId: this.options.questId || null,
+            objectiveId: this.options.objectiveId || null,
+            mapId: Number(this.options.mapId) || 4,
             score: this.score,
             mistakes: this.mistakes,
             delivered: this.delivered,
@@ -731,7 +746,10 @@ class IP2LivePatchPanelGameplayScreen extends Scene.Base {
             targetScore: this.targetScore,
             round: this.roundNumber,
             restarts: this.autoRestartCount,
+            attemptsUsed: this.roundNumber,
+            maxAttempts: this.maxAttempts,
             passed: metTarget,
+            reason: metTarget ? 'completed' : 'score_below_threshold',
         };
 
         if (metTarget) {
@@ -747,6 +765,17 @@ class IP2LivePatchPanelGameplayScreen extends Scene.Base {
             return;
         }
 
+        if (this.roundNumber >= this.maxAttempts) {
+            this.endResult.reason = 'attempts_exhausted';
+            this.phase = 'failure';
+            this.phaseTimer = 110;
+            this.bannerText = 'ATTEMPT LIMIT REACHED. RETURNING TO TRAINING.';
+            this.bannerTone = 'danger';
+            this.bannerTimer = 9999;
+            this._emitBurst(this._metrics().wheelX, this._metrics().wireY, '#FF1744', 58, 3.8);
+            return;
+        }
+
         this.autoRestartCount++;
         this.phase = 'retry';
         this.phaseTimer = 130;
@@ -754,7 +783,12 @@ class IP2LivePatchPanelGameplayScreen extends Scene.Base {
         this.bannerTone = 'danger';
         this.bannerTimer = 9999;
         if (IP2Live.IPPatchPanelTutorial && typeof IP2Live.IPPatchPanelTutorial.showRoundReset === 'function') {
-            IP2Live.IPPatchPanelTutorial.showRoundReset(this.score, this.targetScore, this.totalPackets);
+            IP2Live.IPPatchPanelTutorial.showRoundReset(
+                this.score,
+                this.targetScore,
+                this.totalPackets,
+                this.maxAttempts - this.roundNumber
+            );
         }
         this._emitBurst(this._metrics().wheelX, this._metrics().wireY, '#FF4B5E', 44, 3.4);
     }
@@ -764,6 +798,24 @@ class IP2LivePatchPanelGameplayScreen extends Scene.Base {
         this.finished = true;
         if (typeof this.options.onComplete === 'function') {
             this.options.onComplete(Object.assign({}, this.endResult || {}));
+            return;
+        }
+        if (Manager && Manager.Stack) Manager.Stack.pop();
+    }
+
+    _finishFailure() {
+        if (this.finished) return;
+        this.finished = true;
+        const result = Object.assign({}, this.endResult || {}, {
+            gameplayId: 'ip_patch_panel_classes',
+            reason: 'attempts_exhausted',
+            passed: false,
+            attemptsUsed: this.roundNumber,
+            maxAttempts: this.maxAttempts,
+            restarts: this.autoRestartCount,
+        });
+        if (typeof this.options.onFailed === 'function') {
+            this.options.onFailed(result);
             return;
         }
         if (Manager && Manager.Stack) Manager.Stack.pop();
@@ -926,6 +978,10 @@ class IP2LivePatchPanelGameplayScreen extends Scene.Base {
             this.lastRouteNote = 'SECURED: CLASS ' + correctClass;
             this.lastRouteTone = 'success';
             this._playConfirm();
+            if (!this.guidedTutorial && this.score >= this.targetScore) {
+                this._onRoundEnd();
+                return;
+            }
         } else {
             this.mistakes++;
             this._reportRouteMistake(target, selectedClass, correctClass);
@@ -1004,6 +1060,11 @@ class IP2LivePatchPanelGameplayScreen extends Scene.Base {
             wrongColor,
             expectedColor,
         });
+        this.correctTunnelFeedback = {
+            className: correctClass,
+            life: 72,
+            maxLife: 72,
+        };
     }
 
     _emitTransitExit(packet, m) {
@@ -1460,7 +1521,7 @@ class IP2LivePatchPanelGameplayScreen extends Scene.Base {
         ctx.fillText('SYS::IP_CLASS_ROUTER // LIVE', statusX, m.panelY + 28 * m.sY);
         ctx.fillStyle = '#D6E8EE';
         ctx.fillText(
-            'ROUND ' + String(this.roundNumber).padStart(2, '0') +
+            'ATTEMPT ' + String(this.roundNumber).padStart(2, '0') + '/' + String(this.maxAttempts).padStart(2, '0') +
             '  //  SCORE ' + this.score + '/' + this.targetScore +
             '  //  FLOW ' + this.delivered + '/' + this.totalPackets,
             statusX,
@@ -1653,6 +1714,14 @@ class IP2LivePatchPanelGameplayScreen extends Scene.Base {
             const cls = this.classOrder[dir.idx];
             const color = this.classColors[cls] || '#8AC9FF';
             const active = dir.idx === this.selectedClassIndex;
+            const correctHint = !!(
+                this.correctTunnelFeedback &&
+                this.correctTunnelFeedback.className === cls &&
+                this.correctTunnelFeedback.life > 0
+            );
+            const hintPulse = correctHint
+                ? 0.58 + 0.42 * Math.sin(this.animTick * 0.42)
+                : 0;
             const ux = Math.cos(dir.angle);
             const uy = Math.sin(dir.angle);
             const innerX = ux * (r * 0.6);
@@ -1660,20 +1729,26 @@ class IP2LivePatchPanelGameplayScreen extends Scene.Base {
             const outerX = ux * (r * 1.03);
             const outerY = uy * (r * 1.03);
 
+            ctx.save();
+            if (correctHint) {
+                ctx.shadowColor = '#59FF8A';
+                ctx.shadowBlur = (13 + hintPulse * 12) * m.sX;
+            }
+
             ctx.strokeStyle = '#020407';
             ctx.lineWidth = 22 * m.sY;
             ctx.beginPath();
             ctx.moveTo(innerX, innerY);
             ctx.lineTo(outerX, outerY);
             ctx.stroke();
-            ctx.strokeStyle = active ? '#AEBFC6' : '#35434C';
+            ctx.strokeStyle = correctHint ? '#B8FFC8' : (active ? '#AEBFC6' : '#35434C');
             ctx.lineWidth = 16 * m.sY;
             ctx.stroke();
             ctx.strokeStyle = '#05080B';
             ctx.lineWidth = 9 * m.sY;
             ctx.stroke();
-            ctx.strokeStyle = active ? color : 'rgba(85,109,120,0.55)';
-            ctx.lineWidth = active ? 2.4 * m.sY : 1.2 * m.sY;
+            ctx.strokeStyle = correctHint ? '#59FF8A' : (active ? color : 'rgba(85,109,120,0.55)');
+            ctx.lineWidth = correctHint ? 4.2 * m.sY : (active ? 2.4 * m.sY : 1.2 * m.sY);
             ctx.beginPath();
             ctx.moveTo(innerX, innerY);
             ctx.lineTo(outerX, outerY);
@@ -1685,11 +1760,11 @@ class IP2LivePatchPanelGameplayScreen extends Scene.Base {
             ctx.beginPath();
             ctx.arc(socketX, socketY, 12 * m.sY, 0, Math.PI * 2);
             ctx.fill();
-            ctx.strokeStyle = active ? color : '#50616B';
-            ctx.lineWidth = active ? 3 * m.sX : 1.5 * m.sX;
+            ctx.strokeStyle = correctHint ? '#59FF8A' : (active ? color : '#50616B');
+            ctx.lineWidth = correctHint ? 4 * m.sX : (active ? 3 * m.sX : 1.5 * m.sX);
             ctx.stroke();
-            ctx.fillStyle = active ? color : '#0B1117';
-            ctx.globalAlpha = active ? 0.72 : 1;
+            ctx.fillStyle = correctHint ? '#59FF8A' : (active ? color : '#0B1117');
+            ctx.globalAlpha = correctHint ? 0.82 + hintPulse * 0.18 : (active ? 0.72 : 1);
             ctx.beginPath();
             ctx.arc(socketX, socketY, 5.5 * m.sY, 0, Math.PI * 2);
             ctx.fill();
@@ -1701,13 +1776,14 @@ class IP2LivePatchPanelGameplayScreen extends Scene.Base {
             const boxH = 18 * m.sY;
             const boxX = labelX - boxW * 0.5;
             const boxY = labelY - boxH * 0.5;
-            this._fillChamferRect(ctx, boxX, boxY, boxW, boxH, 4 * m.sX, active ? color : '#101820');
-            this._strokeChamferRect(ctx, boxX, boxY, boxW, boxH, 4 * m.sX, active ? '#FFFFFF' : '#4D626E', 1.3 * m.sX);
-            ctx.fillStyle = active ? '#020407' : '#BCD0D8';
+            this._fillChamferRect(ctx, boxX, boxY, boxW, boxH, 4 * m.sX, correctHint ? '#59FF8A' : (active ? color : '#101820'));
+            this._strokeChamferRect(ctx, boxX, boxY, boxW, boxH, 4 * m.sX, (correctHint || active) ? '#FFFFFF' : '#4D626E', correctHint ? 2.1 * m.sX : 1.3 * m.sX);
+            ctx.fillStyle = (correctHint || active) ? '#020407' : '#BCD0D8';
             ctx.font = 'bold ' + (11 * m.sY).toFixed(1) + 'px ' + primaryFont;
             ctx.textAlign = 'center';
             ctx.textBaseline = 'middle';
             ctx.fillText(cls, boxX + boxW * 0.5, boxY + boxH * 0.56);
+            ctx.restore();
             this.classButtonRects.push({
                 key: cls,
                 x: x + Math.min(socketX - 15 * m.sX, boxX - 5 * m.sX),
@@ -2098,12 +2174,15 @@ class IP2LivePatchPanelGameplayScreen extends Scene.Base {
     _drawPhaseOverlay(ctx, m) {
         const primaryFont = this._uiPrimaryFont();
         const monoFont = this._uiMonoFont();
-        if (this.phase !== 'retry' && this.phase !== 'success') return;
+        if (this.phase !== 'retry' && this.phase !== 'success' && this.phase !== 'failure') return;
 
         const success = this.phase === 'success';
+        const terminalFailure = this.phase === 'failure';
         const accent = success ? '#59FF8A' : '#FF315F';
         const secondary = success ? '#00F0FF' : '#FFE600';
-        const title = success ? 'SECURITY TUNNEL LOCKED' : 'ROUTE THRESHOLD MISSED';
+        const title = success
+            ? 'SECURITY TUNNEL LOCKED'
+            : (terminalFailure ? 'ATTEMPT LIMIT REACHED' : 'ROUTE THRESHOLD MISSED');
         const boxW = Math.min(620 * m.sX, m.panelW * 0.56);
         const boxH = 214 * m.sY;
         const boxX = (m.cW - boxW) * 0.5;
@@ -2160,7 +2239,7 @@ class IP2LivePatchPanelGameplayScreen extends Scene.Base {
         ctx.fillText(
             success
                 ? 'THRESHOLD CONFIRMED // PROCEEDING TO NEXT NODE'
-                : 'A PASSING SCORE IS REQUIRED TO PROCEED',
+                : (terminalFailure ? 'TWO UNSUCCESSFUL ROUNDS RECORDED' : 'A PASSING SCORE IS REQUIRED TO PROCEED'),
             m.cW * 0.5,
             boxY + 127 * m.sY
         );
@@ -2168,7 +2247,9 @@ class IP2LivePatchPanelGameplayScreen extends Scene.Base {
         ctx.fillText(
             success
                 ? 'FINALIZING SECURE ROUTE'
-                : 'RESTARTING THE FULL 15-PACKET ROUND // TRY AGAIN',
+                : (terminalFailure
+                    ? 'RETURNING TO THE PATCH PANEL TUTORIAL'
+                    : 'RESTARTING THE FULL 15-PACKET ROUND // ONE ATTEMPT REMAINS'),
             m.cW * 0.5,
             boxY + 149 * m.sY
         );
@@ -2177,7 +2258,7 @@ class IP2LivePatchPanelGameplayScreen extends Scene.Base {
         const railY = boxY + 174 * m.sY;
         const railW = boxW - 90 * m.sX;
         const railH = 12 * m.sY;
-        const timerMax = success ? 120 : 130;
+        const timerMax = success ? 120 : (terminalFailure ? 110 : 130);
         const progress = Math.max(0, Math.min(1, 1 - this.phaseTimer / timerMax));
         this._fillChamferRect(ctx, railX, railY, railW, railH, 4 * m.sX, '#141E25');
         this._fillChamferRect(ctx, railX, railY, Math.max(6 * m.sX, railW * progress), railH, 4 * m.sX, accent);
@@ -2294,7 +2375,7 @@ class IP2LivePatchPanelGameplayScreen extends Scene.Base {
 }
 
 const PatchPanelGameplayManager = {
-    VERSION: 'ip-patchpanel-gameplay-manager-20260815-05',
+    VERSION: 'ip-patchpanel-gameplay-manager-20260817-08',
     _active: false,
     _introShown: false,
     _activeAttempt: null,
@@ -2303,54 +2384,23 @@ const PatchPanelGameplayManager = {
 
     PATCH_PANEL_QUESTS: [
         {
-            id: 'stage.4.ip_patch_panel.01.tutorial',
-            objectiveId: 'route_ip_patch_panel_01',
-            title: 'SECURE PATCH PANEL NODE',
-            label: 'Patch Panel Node',
-            targetTile: { x: 3, y: 0, z: 29 },
+            id: 'stage.4.mixed.03.ip_patch_panel.tutorial',
+            objectiveId: 'route_stage4_ip_patch_panel_03',
+            title: 'LEARN PATCH PANEL ROUTING',
+            label: 'Patch Panel Tutorial',
+            mapId: 4,
+            sequence: 3,
+            targetTile: { x: 21, y: 0, z: 26 },
             tutorial: true,
         },
         {
-            id: 'stage.4.ip_patch_panel.02',
-            objectiveId: 'route_ip_patch_panel_02',
-            title: 'SECURE PATCH PANEL NODE',
-            label: 'Patch Panel Node',
-            targetTile: { x: 21, y: 0, z: 31 },
-        },
-        {
-            id: 'stage.4.ip_patch_panel.03',
-            objectiveId: 'route_ip_patch_panel_03',
-            title: 'SECURE PATCH PANEL NODE',
-            label: 'Patch Panel Node',
-            targetTile: { x: 21, y: 0, z: 26 },
-        },
-        {
-            id: 'stage.4.ip_patch_panel.04',
-            objectiveId: 'route_ip_patch_panel_04',
-            title: 'SECURE PATCH PANEL NODE',
-            label: 'Patch Panel Node',
-            targetTile: { x: 21, y: 0, z: 17 },
-        },
-        {
-            id: 'stage.4.ip_patch_panel.05',
-            objectiveId: 'route_ip_patch_panel_05',
-            title: 'SECURE PATCH PANEL NODE',
-            label: 'Patch Panel Node',
-            targetTile: { x: 12, y: 0, z: 6 },
-        },
-        {
-            id: 'stage.4.ip_patch_panel.06',
-            objectiveId: 'route_ip_patch_panel_06',
-            title: 'SECURE PATCH PANEL NODE',
-            label: 'Patch Panel Node',
+            id: 'stage.4.mixed.06.ip_patch_panel',
+            objectiveId: 'route_stage4_ip_patch_panel_06',
+            title: 'SECURE PATCH PANEL NODE 06',
+            label: 'Patch Panel Node 06',
+            mapId: 4,
+            sequence: 6,
             targetTile: { x: 19, y: 0, z: 6 },
-        },
-        {
-            id: 'stage.4.ip_patch_panel.07',
-            objectiveId: 'route_ip_patch_panel_07',
-            title: 'SECURE PATCH PANEL NODE',
-            label: 'Patch Panel Node',
-            targetTile: { x: 33, y: 0, z: 1 },
         },
     ],
 
@@ -2414,12 +2464,7 @@ const PatchPanelGameplayManager = {
 
     _isTutorialSpec(spec, options) {
         const s = spec || {};
-        const opts = options || {};
-        const questId = String(opts.questId || s.id || '');
-        const objectiveId = String(opts.objectiveId || s.objectiveId || '');
-        return !!s.tutorial ||
-            questId === 'stage.4.ip_patch_panel.01.tutorial' ||
-            objectiveId === 'route_ip_patch_panel_01';
+        return !!s.tutorial;
     },
 
     _refreshTriggerLock(spec, distance, radius) {
@@ -2521,10 +2566,15 @@ const PatchPanelGameplayManager = {
             const screen = new IP2LivePatchPanelGameplayScreen({
                 totalPackets: opts.totalPackets,
                 targetScore: opts.targetScore,
+                maxAttempts: opts.maxAttempts || 2,
                 speedMultiplier: opts.speedMultiplier,
                 baseSpeed: opts.baseSpeed,
                 guidedTutorial: guidedTutorial,
+                mapId: opts.mapId || (opts.spec && opts.spec.mapId) || 4,
+                questId: opts.questId || (opts.spec && opts.spec.id),
+                objectiveId: opts.objectiveId || (opts.spec && opts.spec.objectiveId),
                 onComplete: (result) => this._onComplete(opts, result),
+                onFailed: (result) => this._onFailed(opts, result),
                 onCancel: () => this._onCancel(opts),
             });
 
@@ -2574,6 +2624,17 @@ const PatchPanelGameplayManager = {
     _onComplete(options, result) {
         const opts = options || {};
         const spec = opts.spec || this._defaultQuestSpec();
+        const completionResult = Object.assign({}, result || {}, {
+            gameplayId: 'ip_patch_panel_classes',
+            questId: opts.questId || spec.id,
+            objectiveId: opts.objectiveId || spec.objectiveId,
+            mapId: Number(opts.mapId || spec.mapId) || 4,
+            attemptsUsed: Number(result && result.attemptsUsed) || 1,
+            maxAttempts: Number(result && result.maxAttempts) || 2,
+            restarts: Number(result && result.restarts) || 0,
+            reason: (result && result.reason) || 'completed',
+            passed: true,
+        });
         this._active = false;
         this._activeAttempt = null;
         if (spec && spec.objectiveId) delete this._triggerLocks[spec.objectiveId];
@@ -2592,13 +2653,17 @@ const PatchPanelGameplayManager = {
             }
 
             if (typeof opts.onComplete === 'function') {
-                opts.onComplete(result);
+                opts.onComplete(completionResult);
             }
 
             if (IP2Live.GameManager && typeof IP2Live.GameManager.handleGameplayCompleted === 'function') {
                 IP2Live.GameManager.handleGameplayCompleted('ip_patch_panel_classes', {
                     gameplayId: 'ip_patch_panel_classes',
-                    result,
+                    spec,
+                    questId: opts.questId || spec.id,
+                    objectiveId: opts.objectiveId || spec.objectiveId,
+                    mapId: Number(opts.mapId || spec.mapId) || 4,
+                    result: completionResult,
                 });
             }
 
@@ -2608,11 +2673,96 @@ const PatchPanelGameplayManager = {
         if (!this._showLoadingScreen2({
             mode: 'replace',
             status: 'Loading Stage',
-            detail: 'Returning to Stage 1 Level 2',
+            detail: Number(opts.mapId || spec.mapId) === 4
+                ? 'Returning to Stage 1 Level 2'
+                : 'Returning to Stage',
             onComplete: finalizeExit,
         })) {
             finalizeExit();
         }
+    },
+
+    _onFailed(options, result) {
+        const opts = options || {};
+        const spec = opts.spec || this._defaultQuestSpec();
+        const failureResult = Object.assign({}, result || {}, {
+            gameplayId: 'ip_patch_panel_classes',
+            questId: opts.questId || spec.id,
+            objectiveId: opts.objectiveId || spec.objectiveId,
+            mapId: Number(opts.mapId || spec.mapId) || 4,
+            reason: 'attempts_exhausted',
+            attemptsUsed: Number(result && result.attemptsUsed) || 2,
+            maxAttempts: Number(result && result.maxAttempts) || 2,
+            restarts: Number(result && result.restarts) || 1,
+            passed: false,
+        });
+        this._active = false;
+        this._activeAttempt = null;
+        this._lockUntilStepOff(spec);
+
+        const finalizeExit = () => {
+            if (Manager && Manager.Stack && typeof Manager.Stack.pop === 'function') Manager.Stack.pop();
+            this._restoreStageMusic();
+
+            if (typeof opts.onFailed === 'function') opts.onFailed(failureResult);
+            if (IP2Live.GameManager && typeof IP2Live.GameManager.handleGameplayFailed === 'function') {
+                IP2Live.GameManager.handleGameplayFailed('ip_patch_panel_classes', {
+                    gameplayId: 'ip_patch_panel_classes',
+                    spec,
+                    questId: opts.questId || spec.id,
+                    objectiveId: opts.objectiveId || spec.objectiveId,
+                    mapId: Number(opts.mapId || spec.mapId) || 4,
+                    result: failureResult,
+                });
+            }
+
+            if (Manager && Manager.Stack) Manager.Stack.requestPaintHUD = true;
+        };
+
+        if (!this._showLoadingScreen2({
+            mode: 'replace',
+            status: 'Loading Stage',
+            detail: Number(opts.mapId || spec.mapId) === 4
+                ? 'Returning to Patch Panel Training'
+                : 'Returning to Stage',
+            onComplete: finalizeExit,
+        })) {
+            finalizeExit();
+        }
+    },
+
+    recoverAfterFailure(failedSpec, payload) {
+        const data = payload || {};
+        const result = data.result || {};
+        if (String(result.reason || '') !== 'attempts_exhausted') return false;
+        const mapId = Number(data.mapId || (failedSpec && failedSpec.mapId)) || 4;
+        if (mapId !== 4) return false;
+
+        const specs = this._questSpecs();
+        const tutorial = specs.find(function (spec) {
+            return Number(spec && spec.mapId) === 4 && !!spec.tutorial;
+        }) || this.PATCH_PANEL_QUESTS[0];
+        const qm = IP2Live.QuestManager;
+        if (!tutorial || !qm) return false;
+
+        qm.completedObjectives[tutorial.id] = {};
+        if (failedSpec && failedSpec.id) qm.completedObjectives[failedSpec.id] = {};
+        qm.startQuest(tutorial.id, {
+            mapId: 4,
+            mapQuestMode: true,
+            keepLastCompletion: true,
+            visible: true,
+            preview: false,
+            guideActive: true,
+            allowCompletion: true,
+        });
+        this._introShown = false;
+
+        if (IP2Live.IPPatchPanelTutorial && typeof IP2Live.IPPatchPanelTutorial.showRecovery === 'function') {
+            setTimeout(() => IP2Live.IPPatchPanelTutorial.showRecovery(failedSpec && failedSpec.label), 220);
+        }
+        if (Manager && Manager.Stack) Manager.Stack.requestPaintHUD = true;
+        return true;
     },
 
     _onCancel(options) {
@@ -2626,10 +2776,14 @@ const PatchPanelGameplayManager = {
             this._restoreStageMusic();
             if (typeof opts.onCancel === 'function') opts.onCancel();
 
-            if (IP2Live.GameManager && typeof IP2Live.GameManager.handleGameplayFailed === 'function') {
-                IP2Live.GameManager.handleGameplayFailed('ip_patch_panel_classes', {
+            if (IP2Live.GameManager && typeof IP2Live.GameManager.handleGameplayCancelled === 'function') {
+                IP2Live.GameManager.handleGameplayCancelled('ip_patch_panel_classes', {
                     gameplayId: 'ip_patch_panel_classes',
-                    reason: 'cancelled',
+                    spec,
+                    questId: opts.questId || spec.id,
+                    objectiveId: opts.objectiveId || spec.objectiveId,
+                    mapId: Number(opts.mapId || spec.mapId) || 4,
+                    result: { cancelled: true },
                 });
             }
 
@@ -2639,7 +2793,9 @@ const PatchPanelGameplayManager = {
         if (!this._showLoadingScreen2({
             mode: 'replace',
             status: 'Loading Stage',
-            detail: 'Returning to Stage 1 Level 2',
+            detail: Number(opts.mapId || spec.mapId) === 4
+                ? 'Returning to Stage 1 Level 2'
+                : 'Returning to Stage',
             onComplete: finalizeExit,
         })) {
             finalizeExit();

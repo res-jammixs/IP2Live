@@ -6,7 +6,7 @@
  */
 
 const IPPatchPanelTutorial = {
-    VERSION: 'ip-patchpanel-tutorial-20260815-06',
+    VERSION: 'ip-patchpanel-tutorial-20260817-08',
     _dialogueSerial: 0,
 
     showIntro(onComplete) {
@@ -34,17 +34,20 @@ const IPPatchPanelTutorial = {
                     'This stream contains both IP addresses and subnet masks.',
                     'Their numeric patterns determine which Class tunnel accepts them.',
                     '',
-                    'The first 4 packets teach subnet-mask Classes. The next 5 demonstrate IP Classes A through E in order.',
+                    'The first 3 packets teach the standard Class A, B, and C subnet masks: 255.0.0.0, 255.255.0.0, and 255.255.255.0.',
+                    'The next 5 packets review the IP address ranges for Classes A through E in order.',
                 ], [
-                    'GUIDED SAFETY LOCK is active for those first 9 training packets.',
+                    'GUIDED SAFETY LOCK is active for those first 8 training packets.',
                     'A wrong tunnel reverses the same signal to INGRESS without consuming a delivery or adding a scoring mistake.',
                     '',
-                    'Try that packet again until it is correct. The final 6 independent packets use the normal scoring rules.',
+                    'Try that packet again until it is correct. The final 7 independent IP packets use the normal scoring rules.',
                 ], [
-                    'A full round carries 15 packets. Secure at least 10 correctly to stabilize the panel and proceed.',
+                    'The guided tutorial always runs all 15 packets so you can complete the entire lesson.',
+                    'Secure at least 10 correctly to stabilize the panel and proceed.',
                     '',
-                    'If you finish below 10, the complete stream restarts and you must attempt the round again.',
-                    'After the 9 guided signals, the final 6 are yours to route independently.',
+                    'You have two total round attempts at each Patch Panel node. If the first score is below 10, the complete stream restarts once.',
+                    'If the second round also misses the target, we return to this guided tutorial before trying the unfinished node again.',
+                    'Regular Patch Panel nodes finish immediately when you secure the tenth correct route.',
                 ],
             ],
             onComplete,
@@ -105,7 +108,8 @@ const IPPatchPanelTutorial = {
                 'The PACKET FLOW rail records all 15 deliveries in the round.',
                 'Cyan segments are secured routes; red segments are misroutes; dark segments have not arrived yet.',
                 '',
-                'You need at least 10 correct packets to complete this game. A lower score resets the full round, and you must try again before proceeding.',
+                'This guided tutorial records all 15 deliveries and requires at least 10 correct routes. Regular Patch Panel nodes finish as soon as the tenth route is secured.',
+                'A lower first-round score uses your only retry; a second failed round returns you to tutorial training.',
             ]],
             onComplete,
         });
@@ -177,15 +181,15 @@ const IPPatchPanelTutorial = {
         const isMask = String(data.kind || '').toUpperCase() === 'MASK';
         const classRanges = {
             A: 'first octet 1-126',
-            B: 'first octet 127-191',
+            B: 'first octet 128-191',
             C: 'first octet 192-223',
             D: 'first octet 224-239',
             E: 'first octet 240-255',
         };
         const order = Math.max(1, Number(lesson.order) || 1);
-        const title = isMask ? 'SUBNET MASK TRAINING ' + order + '/4' : 'IP CLASS TRAINING ' + order + '/5';
+        const title = isMask ? 'SUBNET MASK TRAINING ' + order + '/3' : 'IP CLASS TRAINING ' + order + '/5';
         const explanation = isMask
-            ? value + ' is the guided subnet-mask signature assigned to Class ' + className + ' in this classifier.'
+            ? value + ' is the standard subnet mask for Class ' + className + '.'
             : value + ' belongs to Class ' + className + ' because its ' + (classRanges[className] || 'class range') + '.';
 
         return this._startDynamicDialogue('stage1.ippatchpanel.guided.training.', {
@@ -202,7 +206,7 @@ const IPPatchPanelTutorial = {
                 '',
                 'Use the arrow keys to align CLASS ' + className + ', then let the packet cross the center core.',
                 isMask
-                    ? 'Memorize this mask pattern; the first four packets introduce the subnet-mask routes one at a time.'
+                    ? 'Memorize this mask pattern; only Classes A, B, and C use these standard subnet-mask lessons.'
                     : 'The five guided IP packets now progress from Class A through Class E.',
             ]],
             onComplete,
@@ -220,7 +224,7 @@ const IPPatchPanelTutorial = {
                 trigger: 'gameplay.during',
             },
             slides: [[
-                'Now that you know the conduit, the controls, subnet masks, and IP Class ranges, route the remaining 6 packets on your own.',
+                'Now that you know the three standard subnet masks and the IP Class A-E ranges, route the remaining 7 IP packets on your own.',
                 '',
                 'Keep reading the CURRENT card, use the two upcoming previews to prepare, and secure at least 10 of all 15 packets to proceed.',
             ]],
@@ -228,10 +232,15 @@ const IPPatchPanelTutorial = {
         });
     },
 
-    showRoundReset(score, target, total, onComplete) {
+    showRoundReset(score, target, total, attemptsRemaining, onComplete) {
+        if (typeof attemptsRemaining === 'function') {
+            onComplete = attemptsRemaining;
+            attemptsRemaining = 1;
+        }
         const secured = Number(score) || 0;
         const targetScore = Number(target) || 10;
         const delivered = Number(total) || 15;
+        const remaining = Math.max(0, Number(attemptsRemaining) || 0);
         return this._startDynamicDialogue('stage1.ippatchpanel.reset.', {
             title: 'ROUND RESET',
             speaker: 'SYSTEM',
@@ -245,10 +254,33 @@ const IPPatchPanelTutorial = {
                 [
                     'The packet stream ended with ' + secured + ' / ' + delivered + ' secured routes. The required threshold is ' + targetScore + '.',
                     '',
-                    'You cannot proceed until you complete a passing round.',
-                    'The full 15-packet stream will restart. You must do it again and secure at least ' + targetScore + ' packets.',
+                    'You cannot proceed until you complete a passing round. ' + remaining + ' attempt remains.',
+                    'The full 15-packet stream will restart once. Secure at least ' + targetScore + ' packets or we will return to tutorial training.',
                 ],
             ],
+            onComplete,
+        });
+    },
+
+    showRecovery(failedLabel, onComplete) {
+        const label = failedLabel || 'the unfinished Patch Panel node';
+        return this._startDynamicDialogue('stage1.ippatchpanel.recovery.', {
+            title: 'TRAINING PROTOCOL RESTORED',
+            speaker: 'SYSTEM',
+            timing: 'after',
+            bindings: {
+                mapId: 4,
+                gameplayId: 'ip_patch_panel_classes',
+                trigger: 'gameplay.failed',
+            },
+            slides: [[
+                'Both Patch Panel attempts missed the required routing threshold.',
+                '',
+                'Return to the guided Patch Panel node and complete the tutorial sequence again.',
+            ], [
+                'Once training is stable, the route will resume at ' + label + '.',
+                'Read the current packet carefully and use the upcoming packet previews to prepare.',
+            ]],
             onComplete,
         });
     },
