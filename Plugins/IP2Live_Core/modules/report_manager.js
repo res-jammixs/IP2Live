@@ -6,7 +6,7 @@
  */
 
 const IP2LiveReportManager = {
-    VERSION: 'report-manager-20260529-01',
+    VERSION: 'report-manager-20260816-02',
 
     async boot() {
         return true;
@@ -569,6 +569,7 @@ const IP2LiveReportManager = {
             ip_class_wires_harder: 'Advanced IP Wires',
             ip_patch_panel_classes: 'IP Patch Panel',
             ip_cidr_binary_panel: 'CIDR Binary Panel',
+            ip_cidr_binary_panel_harder: 'Adaptive CIDR Panel',
             ip_subnet_simulator: 'Subnet Simulator',
             ip_network_repair: 'Network Repair PCs',
             ip_vlsm_allocator: 'VLSM Infiltration Grid',
@@ -689,7 +690,7 @@ const IP2LiveReportManager = {
         const taskType = mistake && mistake.taskType ? String(mistake.taskType) : '';
         if (id === 'ip_network_repair') return taskType || 'network_range_calculation';
         if (id === 'ip_vlsm_allocator') return mistake && mistake.stepKey ? String(mistake.stepKey) : 'vlsm_allocation';
-        if (id === 'ip_cidr_binary_panel') return 'cidr_prefix';
+        if (id === 'ip_cidr_binary_panel' || id === 'ip_cidr_binary_panel_harder') return 'cidr_prefix';
         if (id === 'ip_subnet_simulator') return 'subnet_calculation';
         if (id === 'ip_patch_panel_classes') return 'ip_classification_route';
         if (id === 'ip_class_wires' || id === 'ip_class_wires_harder') return 'ip_classification';

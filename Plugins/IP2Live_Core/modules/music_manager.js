@@ -29,6 +29,7 @@ var MUSIC_TRACKS = {
     STAGE_3: { src: 'Songs/Musics/Stage 3 Music.mp3', volume: 0.72 },
     STAGE_4: { src: 'Songs/Musics/Stage 4 Music.mp3', volume: 0.72 },
     GAMEPLAY_1: { src: 'Songs/Musics/Gameplay 1.mp3', volume: 0.58 },
+    GAMEPLAY_2: { src: 'Songs/Musics/Gameplay 2.mp3', volume: 0.58 },
     GAMEPLAY_56: { src: 'Songs/Musics/Gameplay 5 & 6.mp3', volume: 0.58 },
 };
 
@@ -68,6 +69,7 @@ var MusicManager = {
         STAGE_3: 'STAGE_3',
         STAGE_4: 'STAGE_4',
         GAMEPLAY_1: 'GAMEPLAY_1',
+        GAMEPLAY_2: 'GAMEPLAY_2',
         GAMEPLAY_56: 'GAMEPLAY_56',
     },
 

@@ -2529,7 +2529,7 @@ const PatchPanelGameplayManager = {
             });
 
             const openGameplay = () => {
-                this._playMusicZone('GAMEPLAY_1');
+                this._playMusicZone('GAMEPLAY_2');
                 if (Manager && Manager.Stack && typeof Manager.Stack.replace === 'function') {
                     Manager.Stack.replace(screen);
                 } else if (Manager && Manager.Stack && typeof Manager.Stack.push === 'function') {

@@ -294,20 +294,79 @@ class IP2LivePauseMenu extends Scene.Base {
                 status: 'Debug Jump',
                 detail,
                 source: 'PauseMenu.debugJump',
+                cleanMapSession: true,
+                discardDialogue: true,
             });
             return;
         }
         if (IP2Live.MapManager && typeof IP2Live.MapManager.goTo === 'function') {
+            this._clearDebugJumpCarryover(mapId, mode);
             IP2Live.MapManager.goTo(mapId, { status: 'Debug Jump', detail });
         }
     }
 
+    _clearDebugJumpCarryover(mapId, mode) {
+        if (IP2Live.Tutorial && typeof IP2Live.Tutorial.forceResetState === 'function') {
+            IP2Live.Tutorial.forceResetState({ hideQuest: true });
+        }
+        if (IP2Live.DialogueManager && typeof IP2Live.DialogueManager.resetTransitionState === 'function') {
+            IP2Live.DialogueManager.resetTransitionState({ stopActive: true, discardActive: true });
+        }
+        if (IP2Live.QuestManager && typeof IP2Live.QuestManager.resetTransitionState === 'function') {
+            IP2Live.QuestManager.resetTransitionState({ clearPendingRestore: true, targetMapId: mapId });
+        } else if (IP2Live.QuestManager) {
+            if (typeof IP2Live.QuestManager.hideQuest === 'function') IP2Live.QuestManager.hideQuest();
+            if (typeof IP2Live.QuestManager.clearGuide === 'function') IP2Live.QuestManager.clearGuide();
+            IP2Live.QuestManager.activeQuestId = null;
+            IP2Live.QuestManager.activeObjectiveId = null;
+            IP2Live.QuestManager.activeMapId = null;
+        }
+        if (IP2Live.QuestMinimap && typeof IP2Live.QuestMinimap.destroy === 'function') {
+            IP2Live.QuestMinimap.destroy();
+        }
+        return true;
+    }
+
     _debugListLayout(cW, cH) {
-        const panelW = Math.min(640, cW * 0.82);
-        const panelH = Math.min(420, cH * 0.72);
+        const scale = Math.max(0.72, Math.min(cW / 1280, cH / 720));
+        const panelW = Math.min(820 * scale, cW * 0.86);
+        const panelH = Math.min(558 * scale, cH * 0.84);
         const panelX = (cW - panelW) / 2;
         const panelY = (cH - panelH) / 2;
-        return { panelW, panelH, panelX, panelY };
+        const headerH = 76 * scale;
+        const footerH = 58 * scale;
+        const padX = 24 * scale;
+        const listY = panelY + headerH + 15 * scale;
+        const listH = panelH - headerH - footerH - 28 * scale;
+        const rowH = 45 * scale;
+        return { panelW, panelH, panelX, panelY, headerH, footerH, padX, listY, listH, rowH, scale };
+    }
+
+    _traceDebugPanelPath(ctx, x, y, w, h, cut) {
+        const c = Math.max(6, Math.min(cut || 16, w * 0.12, h * 0.12));
+        ctx.beginPath();
+        ctx.moveTo(x + c, y);
+        ctx.lineTo(x + w - c * 0.55, y);
+        ctx.lineTo(x + w, y + c * 0.72);
+        ctx.lineTo(x + w, y + h - c);
+        ctx.lineTo(x + w - c, y + h);
+        ctx.lineTo(x + c * 0.45, y + h);
+        ctx.lineTo(x, y + h - c * 0.55);
+        ctx.lineTo(x, y + c);
+        ctx.closePath();
+    }
+
+    _traceDebugRowPath(ctx, x, y, w, h, cut) {
+        const c = Math.max(4, Math.min(cut || 10, h * 0.34));
+        ctx.beginPath();
+        ctx.moveTo(x + c, y);
+        ctx.lineTo(x + w - c * 1.5, y);
+        ctx.lineTo(x + w, y + h * 0.5);
+        ctx.lineTo(x + w - c * 1.5, y + h);
+        ctx.lineTo(x + c * 0.55, y + h);
+        ctx.lineTo(x, y + h - c * 0.6);
+        ctx.lineTo(x, y + c);
+        ctx.closePath();
     }
 
     _getDebugItemAt(x, y) {
@@ -324,41 +383,114 @@ class IP2LivePauseMenu extends Scene.Base {
         const panelY = layout.panelY;
         const panelW = layout.panelW;
         const panelH = layout.panelH;
-        const listX = panelX + 28;
-        const listY = panelY + 78;
-        const rowH = 34;
-        const maxRows = Math.floor((panelH - 120) / rowH);
+        const s = layout.scale;
+        const listX = panelX + layout.padX;
+        const listY = layout.listY;
+        const listW = panelW - layout.padX * 2;
+        const rowH = layout.rowH;
+        const maxRows = Math.max(1, Math.floor(layout.listH / rowH));
         const stages = this.debugStages || [];
+        const selectedEntry = stages[this.debugIndex] || null;
+        const titleFont = IP2Live.Assets.abnesLoaded ? 'Abnes' : 'Arial Black';
+        const uiFont = IP2Live.Assets.nebulaLoaded ? 'Nebula-Regular' : 'monospace';
+        const currentMapId = Core.Game.current ? Number(Core.Game.current.currentMapID) || 0 : 0;
+        const tick = this.animTick || 0;
 
         this.debugItemRects = [];
 
         ctx.save();
-        ctx.fillStyle = 'rgba(5, 8, 18, 0.92)';
-        ctx.fillRect(panelX, panelY, panelW, panelH);
-        ctx.strokeStyle = '#00F0FF';
-        ctx.lineWidth = 2;
-        ctx.strokeRect(panelX, panelY, panelW, panelH);
+        ctx.fillStyle = 'rgba(0, 2, 10, 0.70)';
+        ctx.fillRect(0, 0, cW, cH);
 
-        ctx.fillStyle = '#FF003C';
-        ctx.fillRect(panelX, panelY, panelW, 44);
+        ctx.save();
+        ctx.translate(12 * s, 12 * s);
+        this._traceDebugPanelPath(ctx, panelX, panelY, panelW, panelH, 20 * s);
+        ctx.fillStyle = 'rgba(0,0,0,0.62)';
+        ctx.fill();
+        ctx.restore();
+
+        this._traceDebugPanelPath(ctx, panelX, panelY, panelW, panelH, 20 * s);
+        const shell = ctx.createLinearGradient(panelX, panelY, panelX + panelW, panelY + panelH);
+        shell.addColorStop(0, 'rgba(8,20,27,0.985)');
+        shell.addColorStop(0.42, 'rgba(2,7,13,0.985)');
+        shell.addColorStop(0.82, 'rgba(7,6,17,0.99)');
+        shell.addColorStop(1, 'rgba(18,4,13,0.99)');
+        ctx.fillStyle = shell;
+        ctx.fill();
+        ctx.shadowColor = '#00D9E7';
+        ctx.shadowBlur = 12 * s;
+        ctx.strokeStyle = 'rgba(0,224,236,0.86)';
+        ctx.lineWidth = 1.5 * s;
+        ctx.stroke();
+        ctx.shadowBlur = 0;
+
+        ctx.save();
+        this._traceDebugPanelPath(ctx, panelX + 7 * s, panelY + 7 * s, panelW - 14 * s, panelH - 14 * s, 15 * s);
+        ctx.clip();
+        const headerGlow = ctx.createLinearGradient(panelX, panelY, panelX + panelW, panelY);
+        headerGlow.addColorStop(0, 'rgba(255,0,60,0.22)');
+        headerGlow.addColorStop(0.34, 'rgba(0,240,255,0.08)');
+        headerGlow.addColorStop(1, 'rgba(0,0,0,0)');
+        ctx.fillStyle = headerGlow;
+        ctx.fillRect(panelX, panelY, panelW, layout.headerH + 16 * s);
+        for (let sy = panelY + ((tick * 0.42) % (7 * s)); sy < panelY + panelH; sy += 7 * s) {
+            ctx.fillStyle = 'rgba(0,220,230,0.028)';
+            ctx.fillRect(panelX, sy, panelW, Math.max(1, s * 0.75));
+        }
+        ctx.restore();
+
+        const tagW = 118 * s;
+        this._traceDebugRowPath(ctx, panelX + 1 * s, panelY + 1 * s, tagW, 36 * s, 9 * s);
+        ctx.fillStyle = '#FF0040';
+        ctx.fill();
         ctx.fillStyle = '#FFFFFF';
-        ctx.font = 'bold 16px monospace';
-        ctx.textAlign = 'left';
-        ctx.fillText('DEBUG MAP JUMP', panelX + 18, panelY + 28);
+        ctx.font = 'bold ' + (8 * s).toFixed(1) + 'px monospace';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText('SYS // DEV ROUTE', panelX + tagW * 0.5, panelY + 18 * s);
 
-        ctx.fillStyle = '#9ADFFF';
-        ctx.font = '12px monospace';
-        ctx.fillText('UP/DOWN: Select   ENTER: Jump   ESC: Back', panelX + 18, panelY + panelH - 18);
+        ctx.textAlign = 'left';
+        ctx.fillStyle = '#F5FAFF';
+        ctx.font = 'bold ' + (23 * s).toFixed(1) + 'px ' + titleFont;
+        ctx.fillText('MAP ROUTER', panelX + 28 * s, panelY + 54 * s);
+        ctx.fillStyle = '#00E6F0';
+        ctx.font = 'bold ' + (7.5 * s).toFixed(1) + 'px ' + uiFont;
+        ctx.fillText('DEBUG TRANSIT CONTROL // ISOLATED DESTINATION LOAD', panelX + 29 * s, panelY + 69 * s);
+
+        ctx.textAlign = 'right';
+        ctx.fillStyle = '#FFE600';
+        ctx.font = 'bold ' + (8 * s).toFixed(1) + 'px monospace';
+        ctx.fillText(
+            'DEST::' + String(selectedEntry ? selectedEntry.id : 0).padStart(4, '0') + '  //  CLEAN SESSION',
+            panelX + panelW - 25 * s,
+            panelY + 31 * s
+        );
+        ctx.fillStyle = '#718B96';
+        ctx.font = 'bold ' + (6.8 * s).toFixed(1) + 'px monospace';
+        ctx.fillText('CURRENT MAP::' + String(currentMapId).padStart(4, '0'), panelX + panelW - 25 * s, panelY + 49 * s);
+
+        ctx.strokeStyle = 'rgba(0,230,240,0.34)';
+        ctx.lineWidth = 1 * s;
+        ctx.beginPath();
+        ctx.moveTo(panelX + 25 * s, panelY + layout.headerH + 2 * s);
+        ctx.lineTo(panelX + panelW * 0.47, panelY + layout.headerH + 2 * s);
+        ctx.lineTo(panelX + panelW * 0.52, panelY + layout.headerH + 9 * s);
+        ctx.lineTo(panelX + panelW - 25 * s, panelY + layout.headerH + 9 * s);
+        ctx.stroke();
 
         if (!stages.length) {
             ctx.fillStyle = '#FFE600';
-            ctx.font = '13px monospace';
-            ctx.fillText('No stages discovered.', listX, listY + 20);
+            ctx.font = 'bold ' + (12 * s).toFixed(1) + 'px monospace';
+            ctx.textAlign = 'left';
+            ctx.fillText('NO STAGE ROUTES DISCOVERED', listX, listY + 28 * s);
             ctx.restore();
             return;
         }
 
-        const start = Math.max(0, Math.min(stages.length - 1, this.debugIndex) - Math.floor(maxRows / 2));
+        const start = Math.max(0, Math.min(
+            Math.max(0, stages.length - maxRows),
+            Math.min(stages.length - 1, this.debugIndex) - Math.floor(maxRows / 2)
+        ));
         const end = Math.min(stages.length, start + maxRows);
         let row = 0;
         for (let i = start; i < end; i++) {
@@ -366,23 +498,107 @@ class IP2LivePauseMenu extends Scene.Base {
             const y = listY + row * rowH;
             const isSelected = i === this.debugIndex;
             const label = entry.name || ('Map ' + String(entry.id).padStart(4, '0'));
-            const suffix = (entry.stage !== null && entry.level !== null)
-                ? '  (Stage ' + entry.stage + ' / Level ' + entry.level + ')'
-                : (entry.tutorial ? '  (Tutorial)' : '');
+            const suffix = entry.tutorial
+                ? 'TRAINING ENVIRONMENT // FOUNDATION PROTOCOL'
+                : 'STAGE ' + String(entry.stage || 0).padStart(2, '0') + ' // LEVEL ' + String(entry.level || 0).padStart(2, '0');
+            const rowX = listX;
+            const rowY = y + 2 * s;
+            const rowW = listW - 10 * s;
+            const rowDrawH = rowH - 5 * s;
 
-            ctx.fillStyle = isSelected ? 'rgba(255, 216, 74, 0.22)' : 'rgba(0, 0, 0, 0.25)';
-            ctx.fillRect(listX - 8, y - 4, panelW - 40, rowH - 4);
+            ctx.save();
+            this._traceDebugRowPath(ctx, rowX, rowY, rowW, rowDrawH, 10 * s);
+            if (isSelected) {
+                const active = ctx.createLinearGradient(rowX, rowY, rowX + rowW, rowY);
+                active.addColorStop(0, '#FFE600');
+                active.addColorStop(0.18, 'rgba(255,230,0,0.92)');
+                active.addColorStop(0.19, 'rgba(20,25,25,0.98)');
+                active.addColorStop(1, 'rgba(5,9,14,0.98)');
+                ctx.fillStyle = active;
+                ctx.shadowColor = '#FFE600';
+                const selectionPulse = Math.sin(tick * 0.12);
+                ctx.shadowBlur = (8 + 5 * selectionPulse * selectionPulse) * s;
+            } else {
+                const idle = ctx.createLinearGradient(rowX, rowY, rowX + rowW, rowY);
+                idle.addColorStop(0, 'rgba(10,28,34,0.86)');
+                idle.addColorStop(0.20, 'rgba(4,10,16,0.90)');
+                idle.addColorStop(1, 'rgba(2,5,11,0.88)');
+                ctx.fillStyle = idle;
+            }
+            ctx.fill();
+            ctx.shadowBlur = 0;
+            ctx.strokeStyle = isSelected ? '#FFE600' : 'rgba(0,207,220,0.28)';
+            ctx.lineWidth = (isSelected ? 1.7 : 1) * s;
+            ctx.stroke();
 
-            ctx.fillStyle = isSelected ? '#FFE600' : '#DAEEFF';
-            ctx.font = 'bold 13px monospace';
-            ctx.fillText(label, listX, y + 16);
-            ctx.fillStyle = isSelected ? '#FFFFFF' : '#8ACAE8';
-            ctx.font = '11px monospace';
-            ctx.fillText(suffix, listX, y + 30);
+            ctx.fillStyle = isSelected ? '#05070A' : '#00D9E7';
+            ctx.font = 'bold ' + (8 * s).toFixed(1) + 'px monospace';
+            ctx.textAlign = 'center';
+            ctx.fillText(String(i + 1).padStart(2, '0'), rowX + 43 * s, rowY + rowDrawH * 0.5);
 
-            this.debugItemRects.push({ index: i, x: listX - 8, y: y - 4, w: panelW - 40, h: rowH - 4 });
+            ctx.textAlign = 'left';
+            ctx.fillStyle = '#F4F8FF';
+            ctx.font = 'bold ' + (11 * s).toFixed(1) + 'px ' + uiFont;
+            ctx.fillText(label.toUpperCase(), rowX + 82 * s, rowY + 14 * s);
+            ctx.fillStyle = isSelected ? '#FFE600' : '#6E9BA7';
+            ctx.font = 'bold ' + (6.5 * s).toFixed(1) + 'px monospace';
+            ctx.fillText(suffix, rowX + 82 * s, rowY + 29 * s);
+
+            ctx.textAlign = 'right';
+            ctx.fillStyle = isSelected ? '#FFFFFF' : '#587681';
+            ctx.font = 'bold ' + (7.2 * s).toFixed(1) + 'px monospace';
+            ctx.fillText('MAP::' + String(entry.id).padStart(4, '0'), rowX + rowW - 25 * s, rowY + rowDrawH * 0.5);
+            ctx.restore();
+
+            this.debugItemRects.push({ index: i, x: rowX, y: rowY, w: rowW, h: rowDrawH });
             row++;
         }
+
+        if (stages.length > maxRows) {
+            const railX = panelX + panelW - 20 * s;
+            const railY = listY + 3 * s;
+            const railH = Math.min(layout.listH, maxRows * rowH) - 8 * s;
+            const thumbH = Math.max(22 * s, railH * (maxRows / stages.length));
+            const thumbTravel = Math.max(0, railH - thumbH);
+            const thumbP = stages.length <= 1 ? 0 : this.debugIndex / (stages.length - 1);
+            ctx.fillStyle = 'rgba(48,78,87,0.55)';
+            ctx.fillRect(railX, railY, 3 * s, railH);
+            ctx.fillStyle = '#00E0EC';
+            ctx.fillRect(railX - 1 * s, railY + thumbTravel * thumbP, 5 * s, thumbH);
+        }
+
+        const footerY = panelY + panelH - layout.footerH;
+        ctx.fillStyle = 'rgba(1,6,11,0.94)';
+        ctx.fillRect(panelX + 8 * s, footerY, panelW - 16 * s, layout.footerH - 8 * s);
+        ctx.strokeStyle = 'rgba(0,225,235,0.28)';
+        ctx.beginPath();
+        ctx.moveTo(panelX + 20 * s, footerY);
+        ctx.lineTo(panelX + panelW - 20 * s, footerY);
+        ctx.stroke();
+
+        const controls = [
+            ['UP/DOWN', 'SELECT'],
+            ['ENTER', 'CLEAN JUMP'],
+            ['ESC', 'BACK'],
+        ];
+        let controlX = panelX + 26 * s;
+        for (let i = 0; i < controls.length; i++) {
+            ctx.fillStyle = i === 1 ? '#FFE600' : '#00D9E7';
+            ctx.font = 'bold ' + (7.2 * s).toFixed(1) + 'px monospace';
+            ctx.textAlign = 'left';
+            ctx.fillText(controls[i][0], controlX, footerY + 21 * s);
+            ctx.fillStyle = '#7896A0';
+            ctx.font = 'bold ' + (6.2 * s).toFixed(1) + 'px monospace';
+            ctx.fillText(controls[i][1], controlX, footerY + 36 * s);
+            controlX += (i === 0 ? 108 : 124) * s;
+        }
+
+        ctx.textAlign = 'right';
+        ctx.fillStyle = '#FF6D88';
+        ctx.font = 'bold ' + (6.4 * s).toFixed(1) + 'px monospace';
+        ctx.fillText('PREVIOUS MAP DIALOGUE + QUEST GUIDES WILL BE DISCARDED', panelX + panelW - 25 * s, footerY + 23 * s);
+        ctx.fillStyle = '#66838D';
+        ctx.fillText('DESTINATION OBJECTIVES INITIALIZE ON ARRIVAL', panelX + panelW - 25 * s, footerY + 38 * s);
 
         ctx.restore();
     }

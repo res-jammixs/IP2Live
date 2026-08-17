@@ -8,7 +8,7 @@
  */
 
 const IP2LiveGameManager = {
-    VERSION: 'game-manager-20260528-01',
+    VERSION: 'game-manager-20260816-03',
 
     STATE: {
         BOOT: 'BOOT',
@@ -113,6 +113,24 @@ const IP2LiveGameManager = {
                 worldTitle: true,
                 gameplayNodes: ['ip_cidr_binary_panel', 'ip_subnet_simulator'],
             },
+            9: {
+                id: 9,
+                name: 'Stage 2 Level 3',
+                stage: 2,
+                level: 3,
+                spawn: { x: 6, y: 0, z: 17 },
+                worldTitle: true,
+                gameplayNodes: ['ip_cidr_binary_panel_harder', 'ip_subnet_simulator'],
+            },
+            10: {
+                id: 10,
+                name: 'Stage 2 Level 4',
+                stage: 2,
+                level: 4,
+                spawn: { x: 6, y: 0, z: 17 },
+                worldTitle: true,
+                gameplayNodes: ['ip_cidr_binary_panel_harder'],
+            },
             15: {
                 id: 15,
                 name: 'Stage 4 Level 1',
@@ -168,6 +186,12 @@ const IP2LiveGameManager = {
                 mapId: 7,
                 manager: 'CIDRPanelGameplayManager',
                 method: 'launchCIDRGameplay',
+            },
+            ip_cidr_binary_panel_harder: {
+                id: 'ip_cidr_binary_panel_harder',
+                mapId: 9,
+                manager: 'CIDRPanelHarderGameplayManager',
+                method: 'launchHarderCIDRGameplay',
             },
             ip_subnet_simulator: {
                 id: 'ip_subnet_simulator',
@@ -274,66 +298,67 @@ const IP2LiveGameManager = {
             targetClearMs: 120000,
             objectiveHandler: { manager: 'CIDRPanelGameplayManager', method: '_handleCIDRObjective' },
             quests: [
-                { id: 'stage.7.ip_cidr_panel.01', objectiveId: 'solve_cidr_panel_01', title: 'SOLVE CIDR BINARY PANEL 01', label: 'CIDR Panel 01', targetTile: { x: 4, y: 0, z: 28 } },
-                { id: 'stage.7.ip_cidr_panel.02', objectiveId: 'solve_cidr_panel_02', title: 'SOLVE CIDR BINARY PANEL 02', label: 'CIDR Panel 02', targetTile: { x: 10, y: 0, z: 30 } },
-                { id: 'stage.7.ip_cidr_panel.03', objectiveId: 'solve_cidr_panel_03', title: 'SOLVE CIDR BINARY PANEL 03', label: 'CIDR Panel 03', targetTile: { x: 18, y: 0, z: 27 } },
-                { id: 'stage.7.ip_cidr_panel.04', objectiveId: 'solve_cidr_panel_04', title: 'SOLVE CIDR BINARY PANEL 04', label: 'CIDR Panel 04', targetTile: { x: 27, y: 0, z: 30 } },
-                { id: 'stage.7.ip_cidr_panel.05', objectiveId: 'solve_cidr_panel_05', title: 'SOLVE CIDR BINARY PANEL 05', label: 'CIDR Panel 05', targetTile: { x: 31, y: 0, z: 21 } },
-                {
-                    id: 'stage.8.cidr_chain.01',
-                    label: 'CIDR Chain 01',
-                    handoffKey: 'stage8-cidr-chain-01',
-                    targetMask: '255.255.255.128',
-                    mapId: 8,
-                    objectives: [
-                        { gameplayId: 'ip_cidr_binary_panel', objectiveId: 'solve_cidr_chain_01_panel', title: 'SOLVE CIDR PANEL 01', label: 'CIDR Panel 01', targetTile: { x: 5, y: 0, z: 28 } },
-                        { gameplayId: 'ip_subnet_simulator', objectiveId: 'solve_cidr_chain_01_subnet', title: 'SOLVE SUBNET SIMULATOR 01', label: 'Subnet Simulator 01', targetTile: { x: 7, y: 0, z: 28 } },
-                    ],
-                },
-                {
-                    id: 'stage.8.cidr_chain.02',
-                    label: 'CIDR Chain 02',
-                    handoffKey: 'stage8-cidr-chain-02',
-                    targetMask: '255.255.255.192',
-                    mapId: 8,
-                    objectives: [
-                        { gameplayId: 'ip_cidr_binary_panel', objectiveId: 'solve_cidr_chain_02_panel', title: 'SOLVE CIDR PANEL 02', label: 'CIDR Panel 02', targetTile: { x: 12, y: 0, z: 30 } },
-                        { gameplayId: 'ip_subnet_simulator', objectiveId: 'solve_cidr_chain_02_subnet', title: 'SOLVE SUBNET SIMULATOR 02', label: 'Subnet Simulator 02', targetTile: { x: 12, y: 0, z: 28 } },
-                    ],
-                },
-                {
-                    id: 'stage.8.cidr_chain.03',
-                    label: 'CIDR Chain 03',
-                    handoffKey: 'stage8-cidr-chain-03',
-                    targetMask: '255.255.255.224',
-                    mapId: 8,
-                    objectives: [
-                        { gameplayId: 'ip_cidr_binary_panel', objectiveId: 'solve_cidr_chain_03_panel', title: 'SOLVE CIDR PANEL 03', label: 'CIDR Panel 03', targetTile: { x: 24, y: 0, z: 28 } },
-                        { gameplayId: 'ip_subnet_simulator', objectiveId: 'solve_cidr_chain_03_subnet', title: 'SOLVE SUBNET SIMULATOR 03', label: 'Subnet Simulator 03', targetTile: { x: 26, y: 0, z: 28 } },
-                    ],
-                },
-                {
-                    id: 'stage.8.cidr_chain.04',
-                    label: 'CIDR Chain 04',
-                    handoffKey: 'stage8-cidr-chain-04',
-                    targetMask: '255.255.255.240',
-                    mapId: 8,
-                    objectives: [
-                        { gameplayId: 'ip_cidr_binary_panel', objectiveId: 'solve_cidr_chain_04_panel', title: 'SOLVE CIDR PANEL 04', label: 'CIDR Panel 04', targetTile: { x: 8, y: 0, z: 18 } },
-                        { gameplayId: 'ip_subnet_simulator', objectiveId: 'solve_cidr_chain_04_subnet', title: 'SOLVE SUBNET SIMULATOR 04', label: 'Subnet Simulator 04', targetTile: { x: 10, y: 0, z: 18 } },
-                    ],
-                },
-                {
-                    id: 'stage.8.cidr_chain.05',
-                    label: 'CIDR Chain 05',
-                    handoffKey: 'stage8-cidr-chain-05',
-                    targetMask: '255.255.255.248',
-                    mapId: 8,
-                    objectives: [
-                        { gameplayId: 'ip_cidr_binary_panel', objectiveId: 'solve_cidr_chain_05_panel', title: 'SOLVE CIDR PANEL 05', label: 'CIDR Panel 05', targetTile: { x: 22, y: 0, z: 18 } },
-                        { gameplayId: 'ip_subnet_simulator', objectiveId: 'solve_cidr_chain_05_subnet', title: 'SOLVE SUBNET SIMULATOR 05', label: 'Subnet Simulator 05', targetTile: { x: 24, y: 0, z: 18 } },
-                    ],
-                },
+                { id: 'stage.7.ip_cidr_panel.01', objectiveId: 'solve_cidr_panel_01', title: 'SOLVE CIDR BINARY PANEL 01', label: 'CIDR Panel 01', mapId: 7, tutorial: true, randomizeTarget: true, targetClasses: ['A', 'B', 'C'], targetTile: { x: 4, y: 0, z: 28 } },
+                { id: 'stage.7.ip_cidr_panel.02', objectiveId: 'solve_cidr_panel_02', title: 'SOLVE CIDR BINARY PANEL 02', label: 'CIDR Panel 02', mapId: 7, randomizeTarget: true, targetClasses: ['A', 'B', 'C'], targetTile: { x: 10, y: 0, z: 30 } },
+                { id: 'stage.7.ip_cidr_panel.03', objectiveId: 'solve_cidr_panel_03', title: 'SOLVE CIDR BINARY PANEL 03', label: 'CIDR Panel 03', mapId: 7, randomizeTarget: true, targetClasses: ['A', 'B', 'C'], targetTile: { x: 18, y: 0, z: 27 } },
+                { id: 'stage.7.ip_cidr_panel.04', objectiveId: 'solve_cidr_panel_04', title: 'SOLVE CIDR BINARY PANEL 04', label: 'CIDR Panel 04', mapId: 7, randomizeTarget: true, targetClasses: ['A', 'B', 'C'], targetTile: { x: 27, y: 0, z: 30 } },
+                { id: 'stage.7.ip_cidr_panel.05', objectiveId: 'solve_cidr_panel_05', title: 'SOLVE CIDR BINARY PANEL 05', label: 'CIDR Panel 05', mapId: 7, randomizeTarget: true, targetClasses: ['A', 'B', 'C'], targetTile: { x: 31, y: 0, z: 21 } },
+                { id: 'stage.8.cidr_chain.01', label: 'CIDR Chain 01', handoffKey: 'stage8-cidr-chain-01', mapId: 8, targetClass: 'C', randomizeTarget: true, objectives: [
+                    { gameplayId: 'ip_cidr_binary_panel', objectiveId: 'solve_cidr_chain_01_panel', title: 'SOLVE CIDR PANEL 01', label: 'CIDR Panel 01', targetTile: { x: 5, y: 0, z: 28 } },
+                    { gameplayId: 'ip_subnet_simulator', objectiveId: 'solve_cidr_chain_01_subnet', title: 'SOLVE SUBNET SIMULATOR 01', label: 'Subnet Simulator 01', tutorial: true, targetTile: { x: 7, y: 0, z: 28 } },
+                ] },
+                { id: 'stage.8.cidr_chain.02', label: 'CIDR Chain 02', handoffKey: 'stage8-cidr-chain-02', mapId: 8, targetClass: 'C', randomizeTarget: true, objectives: [
+                    { gameplayId: 'ip_cidr_binary_panel', objectiveId: 'solve_cidr_chain_02_panel', title: 'SOLVE CIDR PANEL 02', label: 'CIDR Panel 02', targetTile: { x: 12, y: 0, z: 30 } },
+                    { gameplayId: 'ip_subnet_simulator', objectiveId: 'solve_cidr_chain_02_subnet', title: 'SOLVE SUBNET SIMULATOR 02', label: 'Subnet Simulator 02', targetTile: { x: 12, y: 0, z: 28 } },
+                ] },
+                { id: 'stage.8.cidr_chain.03', label: 'CIDR Chain 03', handoffKey: 'stage8-cidr-chain-03', mapId: 8, targetClass: 'C', randomizeTarget: true, objectives: [
+                    { gameplayId: 'ip_cidr_binary_panel', objectiveId: 'solve_cidr_chain_03_panel', title: 'SOLVE CIDR PANEL 03', label: 'CIDR Panel 03', targetTile: { x: 24, y: 0, z: 28 } },
+                    { gameplayId: 'ip_subnet_simulator', objectiveId: 'solve_cidr_chain_03_subnet', title: 'SOLVE SUBNET SIMULATOR 03', label: 'Subnet Simulator 03', targetTile: { x: 26, y: 0, z: 28 } },
+                ] },
+                { id: 'stage.8.cidr_chain.04', label: 'CIDR Chain 04', handoffKey: 'stage8-cidr-chain-04', mapId: 8, targetClass: 'C', randomizeTarget: true, objectives: [
+                    { gameplayId: 'ip_cidr_binary_panel', objectiveId: 'solve_cidr_chain_04_panel', title: 'SOLVE CIDR PANEL 04', label: 'CIDR Panel 04', targetTile: { x: 8, y: 0, z: 18 } },
+                    { gameplayId: 'ip_subnet_simulator', objectiveId: 'solve_cidr_chain_04_subnet', title: 'SOLVE SUBNET SIMULATOR 04', label: 'Subnet Simulator 04', targetTile: { x: 10, y: 0, z: 18 } },
+                ] },
+                { id: 'stage.8.cidr_chain.05', label: 'CIDR Chain 05', handoffKey: 'stage8-cidr-chain-05', mapId: 8, targetClass: 'C', randomizeTarget: true, objectives: [
+                    { gameplayId: 'ip_cidr_binary_panel', objectiveId: 'solve_cidr_chain_05_panel', title: 'SOLVE CIDR PANEL 05', label: 'CIDR Panel 05', targetTile: { x: 22, y: 0, z: 18 } },
+                    { gameplayId: 'ip_subnet_simulator', objectiveId: 'solve_cidr_chain_05_subnet', title: 'SOLVE SUBNET SIMULATOR 05', label: 'Subnet Simulator 05', targetTile: { x: 24, y: 0, z: 18 } },
+                ] },
+            ],
+        },
+        ip_cidr_binary_panel_harder: {
+            gameplayId: 'ip_cidr_binary_panel_harder',
+            mapId: 9,
+            label: 'Adaptive CIDR Binary Panel',
+            competencyKey: 'cidr_custom_mask_adaptive',
+            competencyLabel: 'Adaptive CIDR and custom subnet mask understanding',
+            targetClearMs: 150000,
+            objectiveHandler: { manager: 'CIDRPanelHarderGameplayManager', method: '_handleCIDRObjective' },
+            quests: [
+                { id: 'stage.9.cidr_chain.01', label: 'Adaptive CIDR Chain 01', handoffKey: 'stage9-cidr-chain-01', mapId: 9, targetClass: 'C', randomizeTarget: true, harderIntro: true, objectives: [
+                    { gameplayId: 'ip_cidr_binary_panel_harder', objectiveId: 'solve_harder_cidr_chain_01_panel', title: 'BREACH ADAPTIVE CIDR PANEL 01', label: 'Adaptive CIDR Panel 01', targetTile: { x: 5, y: 0, z: 28 } },
+                    { gameplayId: 'ip_subnet_simulator', objectiveId: 'solve_harder_cidr_chain_01_subnet', title: 'SOLVE SUBNET SIMULATOR 01', label: 'Subnet Simulator 01', targetTile: { x: 7, y: 0, z: 28 } },
+                ] },
+                { id: 'stage.9.cidr_chain.02', label: 'Adaptive CIDR Chain 02', handoffKey: 'stage9-cidr-chain-02', mapId: 9, targetClass: 'C', randomizeTarget: true, objectives: [
+                    { gameplayId: 'ip_cidr_binary_panel_harder', objectiveId: 'solve_harder_cidr_chain_02_panel', title: 'BREACH ADAPTIVE CIDR PANEL 02', label: 'Adaptive CIDR Panel 02', targetTile: { x: 12, y: 0, z: 30 } },
+                    { gameplayId: 'ip_subnet_simulator', objectiveId: 'solve_harder_cidr_chain_02_subnet', title: 'SOLVE SUBNET SIMULATOR 02', label: 'Subnet Simulator 02', targetTile: { x: 12, y: 0, z: 28 } },
+                ] },
+                { id: 'stage.9.cidr_chain.03', label: 'Adaptive CIDR Chain 03', handoffKey: 'stage9-cidr-chain-03', mapId: 9, targetClass: 'C', randomizeTarget: true, objectives: [
+                    { gameplayId: 'ip_cidr_binary_panel_harder', objectiveId: 'solve_harder_cidr_chain_03_panel', title: 'BREACH ADAPTIVE CIDR PANEL 03', label: 'Adaptive CIDR Panel 03', targetTile: { x: 24, y: 0, z: 28 } },
+                    { gameplayId: 'ip_subnet_simulator', objectiveId: 'solve_harder_cidr_chain_03_subnet', title: 'SOLVE SUBNET SIMULATOR 03', label: 'Subnet Simulator 03', targetTile: { x: 26, y: 0, z: 28 } },
+                ] },
+                { id: 'stage.9.cidr_chain.04', label: 'Adaptive CIDR Chain 04', handoffKey: 'stage9-cidr-chain-04', mapId: 9, targetClass: 'C', randomizeTarget: true, objectives: [
+                    { gameplayId: 'ip_cidr_binary_panel_harder', objectiveId: 'solve_harder_cidr_chain_04_panel', title: 'BREACH ADAPTIVE CIDR PANEL 04', label: 'Adaptive CIDR Panel 04', targetTile: { x: 8, y: 0, z: 18 } },
+                    { gameplayId: 'ip_subnet_simulator', objectiveId: 'solve_harder_cidr_chain_04_subnet', title: 'SOLVE SUBNET SIMULATOR 04', label: 'Subnet Simulator 04', targetTile: { x: 10, y: 0, z: 18 } },
+                ] },
+                { id: 'stage.9.cidr_chain.05', label: 'Adaptive CIDR Chain 05', handoffKey: 'stage9-cidr-chain-05', mapId: 9, targetClass: 'C', randomizeTarget: true, objectives: [
+                    { gameplayId: 'ip_cidr_binary_panel_harder', objectiveId: 'solve_harder_cidr_chain_05_panel', title: 'BREACH ADAPTIVE CIDR PANEL 05', label: 'Adaptive CIDR Panel 05', targetTile: { x: 22, y: 0, z: 18 } },
+                    { gameplayId: 'ip_subnet_simulator', objectiveId: 'solve_harder_cidr_chain_05_subnet', title: 'SOLVE SUBNET SIMULATOR 05', label: 'Subnet Simulator 05', targetTile: { x: 24, y: 0, z: 18 } },
+                ] },
+                { id: 'stage.10.ip_cidr_harder.01', gameplayId: 'ip_cidr_binary_panel_harder', objectiveId: 'solve_harder_cidr_panel_01', title: 'BREACH ADAPTIVE CIDR PANEL 01', label: 'Adaptive CIDR Panel 01', mapId: 10, targetClass: 'C', randomizeTarget: true, harderIntro: true, targetTile: { x: 4, y: 0, z: 28 } },
+                { id: 'stage.10.ip_cidr_harder.02', gameplayId: 'ip_cidr_binary_panel_harder', objectiveId: 'solve_harder_cidr_panel_02', title: 'BREACH ADAPTIVE CIDR PANEL 02', label: 'Adaptive CIDR Panel 02', mapId: 10, targetClass: 'C', randomizeTarget: true, targetTile: { x: 10, y: 0, z: 30 } },
+                { id: 'stage.10.ip_cidr_harder.03', gameplayId: 'ip_cidr_binary_panel_harder', objectiveId: 'solve_harder_cidr_panel_03', title: 'BREACH ADAPTIVE CIDR PANEL 03', label: 'Adaptive CIDR Panel 03', mapId: 10, targetClass: 'C', randomizeTarget: true, targetTile: { x: 18, y: 0, z: 27 } },
+                { id: 'stage.10.ip_cidr_harder.04', gameplayId: 'ip_cidr_binary_panel_harder', objectiveId: 'solve_harder_cidr_panel_04', title: 'BREACH ADAPTIVE CIDR PANEL 04', label: 'Adaptive CIDR Panel 04', mapId: 10, targetClass: 'C', randomizeTarget: true, targetTile: { x: 27, y: 0, z: 30 } },
+                { id: 'stage.10.ip_cidr_harder.05', gameplayId: 'ip_cidr_binary_panel_harder', objectiveId: 'solve_harder_cidr_panel_05', title: 'BREACH ADAPTIVE CIDR PANEL 05', label: 'Adaptive CIDR Panel 05', mapId: 10, targetClass: 'C', randomizeTarget: true, targetTile: { x: 31, y: 0, z: 21 } },
             ],
         },
         ip_subnet_simulator: {
@@ -673,13 +698,13 @@ const IP2LiveGameManager = {
                 },
             };
         }
-        if (gameplayId === 'ip_cidr_binary_panel') {
+        if (gameplayId === 'ip_cidr_binary_panel' || gameplayId === 'ip_cidr_binary_panel_harder') {
             const cidr = Number(r.cidr);
             const entered = Number(r.enteredCIDR);
             const errorDistance = Number.isFinite(cidr) && Number.isFinite(entered) ? Math.abs(cidr - entered) : null;
             return {
-                attemptsUsed: 1,
-                maxAttempts: 1,
+                attemptsUsed: Number(r.attemptsUsed || r.retries || 1) || 1,
+                maxAttempts: Number(r.maxAttempts || 0) || 0,
                 retries: Number(r.retries || 0) || 0,
                 mistakeCount: Number(r.retries || 0) || 0,
                 mistakeRate: Number(r.passed) === false ? 1 : 0,
@@ -690,6 +715,9 @@ const IP2LiveGameManager = {
                     cidrErrorDistance: errorDistance,
                     mask: r.mask || null,
                     firstTrySuccess: r.firstTrySuccess === undefined ? null : !!r.firstTrySuccess,
+                    harderMode: !!r.harderMode,
+                    adaptiveRerollCount: Number(r.adaptiveRerollCount || 0) || 0,
+                    initialMask: r.initialMask || null,
                 },
             };
         }
@@ -700,7 +728,7 @@ const IP2LiveGameManager = {
             const accuracy = totalChecks > 0 ? Math.max(0, Math.min(1, (totalChecks - wrongChecks) / totalChecks)) : (r.passed ? 1 : 0);
             return {
                 attemptsUsed: Number(r.validationAttempts || 1) || 1,
-                maxAttempts: 0,
+                maxAttempts: Number(r.maxAttempts || 0) || 0,
                 retries: Math.max(0, (Number(r.validationAttempts || 1) || 1) - 1),
                 mistakeCount: wrongChecks,
                 mistakeRate: totalChecks > 0 ? wrongChecks / totalChecks : (r.passed ? 0 : 1),
@@ -861,7 +889,10 @@ const IP2LiveGameManager = {
         const mapConfig = this.flowConfig.maps[targetMapId] || {};
         const flowMode = opts.mode || mapConfig.mode || (stage && stage.tutorial ? 'tutorial' : 'stage');
         const flowId = ++this._flowSerial;
-        this._prepareTransitionState(targetMapId, flowMode);
+        this._prepareTransitionState(targetMapId, flowMode, {
+            cleanMapSession: !!opts.cleanMapSession,
+            discardDialogue: !!opts.discardDialogue || !!opts.cleanMapSession,
+        });
 
         this._activeMapFlow = {
             id: flowId,
@@ -1000,6 +1031,13 @@ const IP2LiveGameManager = {
             }
             if (node.id === 'ip_cidr_binary_panel' && IP2Live.CIDRPanelGameplayManager && typeof IP2Live.CIDRPanelGameplayManager.launchCIDRGameplay === 'function') {
                 return IP2Live.CIDRPanelGameplayManager.launchCIDRGameplay(Object.assign({}, opts, {
+                    _fromGameManager: true,
+                    showIntro: opts.showIntro,
+                    mode: 'replace',
+                }));
+            }
+            if (node.id === 'ip_cidr_binary_panel_harder' && IP2Live.CIDRPanelHarderGameplayManager && typeof IP2Live.CIDRPanelHarderGameplayManager.launchHarderCIDRGameplay === 'function') {
+                return IP2Live.CIDRPanelHarderGameplayManager.launchHarderCIDRGameplay(Object.assign({}, opts, {
                     _fromGameManager: true,
                     showIntro: opts.showIntro,
                     mode: 'replace',
@@ -2065,11 +2103,12 @@ const IP2LiveGameManager = {
 
     _prepareTransitionState(mapId, mode, options) {
         const opts = options || {};
+        const cleanMapSession = !!opts.cleanMapSession;
         const tutorial = IP2Live.Tutorial;
         if (!opts.onLoad && tutorial) {
             if (typeof tutorial.forceResetState === 'function') {
                 tutorial.forceResetState({
-                    hideQuest: mode === 'tutorial',
+                    hideQuest: cleanMapSession || mode === 'tutorial',
                 });
             } else {
                 if (tutorial._stepTimeout) {
@@ -2090,9 +2129,41 @@ const IP2LiveGameManager = {
 
         const dm = IP2Live.DialogueManager;
         if (dm && typeof dm.resetTransitionState === 'function') {
-            dm.resetTransitionState({ stopActive: !opts.onLoad });
-        } else if (dm && !opts.onLoad && typeof dm.stop === 'function' && dm.isActive && dm.isActive()) {
-            dm.stop();
+            dm.resetTransitionState({
+                stopActive: !opts.onLoad,
+                discardActive: cleanMapSession || !!opts.discardDialogue,
+            });
+        } else if (dm && !opts.onLoad && dm.isActive && dm.isActive()) {
+            if ((cleanMapSession || opts.discardDialogue) && typeof dm.discardActive === 'function') dm.discardActive();
+            else if (typeof dm.stop === 'function') dm.stop();
+        }
+
+        if (cleanMapSession) {
+            const qm = IP2Live.QuestManager;
+            if (qm && typeof qm.resetTransitionState === 'function') {
+                qm.resetTransitionState({ clearPendingRestore: true, targetMapId: Number(mapId) || 0 });
+            } else if (qm) {
+                if (typeof qm.hideQuest === 'function') qm.hideQuest();
+                if (typeof qm.clearGuide === 'function') qm.clearGuide();
+                qm.activeQuestId = null;
+                qm.activeObjectiveId = null;
+                qm.activeMapId = null;
+                if (typeof qm.setDialogueSuppressed === 'function') qm.setDialogueSuppressed(false);
+            }
+
+            if (IP2Live.QuestMinimap && typeof IP2Live.QuestMinimap.destroy === 'function') {
+                IP2Live.QuestMinimap.destroy();
+            }
+
+            this._tutorialIntroPending = false;
+            this._lastWorldTitleFinishKey = null;
+            this._activeGameplayNode = null;
+
+            const game = Core && Core.Game ? Core.Game.current : null;
+            if (game) {
+                delete game._ip2livePendingSlotRestore;
+                delete game._ip2livePendingHeroPosition;
+            }
         }
     },
 };

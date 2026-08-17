@@ -912,15 +912,17 @@ IP2Live.GameplayManagerReady = (async function () {
         },
         {
             baseDir: root + 'Plugins/IP2Live_Core/gameplay/gameplay3/CIDRPanel/',
-            version: '20260528_ip_cidrpanel_01_',
+            version: '20260816_ip_cidrpanel_03_',
             files: [
                 'ip_cidrpanel_tutorial.js',
                 'ip_cidrpanel_gameplay.js',
+                'ip_cidrpanel_gameplay_harder_tutorial.js',
+                'ip_cidrpanel_gameplay_harder.js',
             ],
         },
         {
             baseDir: root + 'Plugins/IP2Live_Core/gameplay/gameplay4/SubnetSimulator/',
-            version: '20260529_ip_subnetsim_01_',
+            version: '20260816_ip_subnetsim_02_',
             files: [
                 'ip_subnetsim_tutorial.js',
                 'ip_subnetsim_gameplay.js',
