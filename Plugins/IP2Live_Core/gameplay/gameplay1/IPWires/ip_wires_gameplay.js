@@ -1256,18 +1256,114 @@
         }
 
         _drawCompleteOverlay(ctx, layout, font) {
-            const p = layout.panel;
+            const cW = ctx.canvas.width;
+            const cH = ctx.canvas.height;
+            const sX = layout.sX;
+            const sY = layout.sY;
             const tick = this.animTick || 0;
             const pulse = 0.5 + 0.5 * Math.sin(tick * 0.14);
+            const titleFont = IP2Live.Assets && IP2Live.Assets.abnesLoaded ? 'Abnes' : font;
+            const boxW = Math.min(720 * sX, cW * 0.72);
+            const boxH = Math.min(250 * sY, cH * 0.36);
+            const boxX = (cW - boxW) * 0.5;
+            const boxY = (cH - boxH) * 0.5;
+
             ctx.save();
-            ctx.fillStyle = 'rgba(0,0,0,0.30)';
-            ctx.fillRect(p.x, p.y, p.w, p.h);
+            if (typeof ctx.setTransform === 'function') ctx.setTransform(1, 0, 0, 1, 0, 0);
+
+            try {
+                if (ctx.canvas && typeof ctx.drawImage === 'function') {
+                    ctx.filter = 'blur(' + Math.max(2.5, 4 * sX).toFixed(1) + 'px)';
+                    ctx.globalAlpha = 0.46;
+                    ctx.drawImage(ctx.canvas, -4 * sX, -4 * sY, cW + 8 * sX, cH + 8 * sY);
+                    ctx.filter = 'none';
+                }
+            } catch (e) {
+                ctx.filter = 'none';
+            }
+
+            ctx.globalAlpha = 1;
+            const veil = ctx.createRadialGradient(cW * 0.5, cH * 0.5, 0, cW * 0.5, cH * 0.5, cW * 0.62);
+            veil.addColorStop(0, 'rgba(2,13,18,0.56)');
+            veil.addColorStop(0.55, 'rgba(0,4,10,0.72)');
+            veil.addColorStop(1, 'rgba(0,1,6,0.86)');
+            ctx.fillStyle = veil;
+            ctx.fillRect(0, 0, cW, cH);
+
+            ctx.globalAlpha = 0.08;
+            ctx.fillStyle = '#00F0FF';
+            for (let y = (tick * 0.7) % (7 * sY); y < cH; y += 7 * sY) {
+                ctx.fillRect(0, y, cW, Math.max(1, 1 * sY));
+            }
+            ctx.globalAlpha = 1;
+
+            ctx.shadowColor = '#00F0FF';
+            ctx.shadowBlur = (18 + pulse * 16) * sX;
+            this._angularRectPath(ctx, boxX, boxY, boxW, boxH, 18 * sX);
+            const shell = ctx.createLinearGradient(boxX, boxY, boxX + boxW, boxY + boxH);
+            shell.addColorStop(0, 'rgba(12,29,37,0.98)');
+            shell.addColorStop(0.2, 'rgba(3,10,15,0.985)');
+            shell.addColorStop(0.82, 'rgba(4,7,14,0.99)');
+            shell.addColorStop(1, 'rgba(11,4,14,0.99)');
+            ctx.fillStyle = shell;
+            ctx.fill();
+            ctx.strokeStyle = '#00F0FF';
+            ctx.lineWidth = 2.2 * sX;
+            ctx.stroke();
+            ctx.shadowBlur = 0;
+
+            this._angularRectPath(ctx, boxX + 9 * sX, boxY + 9 * sY, boxW - 18 * sX, boxH - 18 * sY, 12 * sX);
+            ctx.strokeStyle = 'rgba(193,228,236,0.22)';
+            ctx.lineWidth = 1 * sX;
+            ctx.stroke();
+
+            const tagW = 164 * sX;
+            this._angularRectPath(ctx, boxX, boxY, tagW, 29 * sY, 7 * sX);
+            ctx.fillStyle = '#FF315F';
+            ctx.fill();
+            ctx.fillStyle = '#FFFFFF';
+            ctx.font = 'bold ' + Math.round(7.2 * sX) + 'px monospace';
             ctx.textAlign = 'center';
-            ctx.font = 'bold ' + Math.round(30 * layout.sX) + 'px ' + font;
+            ctx.textBaseline = 'middle';
+            ctx.fillText('SYS::ROUTE_VERIFIED', boxX + tagW * 0.5, boxY + 15 * sY);
+
+            ctx.textAlign = 'center';
+            ctx.fillStyle = '#F7FBFF';
+            ctx.font = 'bold ' + Math.round(39 * sX) + 'px ' + titleFont;
+            ctx.shadowColor = '#00F0FF';
+            ctx.shadowBlur = (10 + pulse * 10) * sX;
+            ctx.fillText('PATCH COMPLETE', cW * 0.5, boxY + boxH * 0.49);
+            ctx.shadowBlur = 0;
+
+            ctx.fillStyle = '#00F0FF';
+            ctx.font = 'bold ' + Math.round(9 * sX) + 'px ' + font;
+            ctx.fillText('ALL ROUTES VERIFIED // NETWORK LINK STABLE', cW * 0.5, boxY + boxH * 0.68);
+
+            const railW = boxW * 0.58;
+            const railX = cW * 0.5 - railW * 0.5;
+            const railY = boxY + boxH * 0.79;
+            ctx.fillStyle = 'rgba(42,70,78,0.65)';
+            ctx.fillRect(railX, railY, railW, 4 * sY);
             ctx.fillStyle = '#00F0FF';
             ctx.shadowColor = '#00F0FF';
-            ctx.shadowBlur = 12 + pulse * 10;
-            ctx.fillText('PATCH COMPLETE', p.x + p.w / 2, p.y + p.h - 48 * layout.sY);
+            ctx.shadowBlur = 8 * sX;
+            ctx.fillRect(railX, railY, railW * (0.82 + pulse * 0.18), 4 * sY);
+            ctx.shadowBlur = 0;
+
+            ctx.strokeStyle = 'rgba(255,230,0,' + (0.52 + pulse * 0.35) + ')';
+            ctx.lineWidth = 2 * sX;
+            const corner = 28 * sX;
+            const edge = 18 * sX;
+            ctx.beginPath();
+            ctx.moveTo(edge, edge + corner); ctx.lineTo(edge, edge); ctx.lineTo(edge + corner, edge);
+            ctx.moveTo(cW - edge - corner, edge); ctx.lineTo(cW - edge, edge); ctx.lineTo(cW - edge, edge + corner);
+            ctx.moveTo(edge, cH - edge - corner); ctx.lineTo(edge, cH - edge); ctx.lineTo(edge + corner, cH - edge);
+            ctx.moveTo(cW - edge - corner, cH - edge); ctx.lineTo(cW - edge, cH - edge); ctx.lineTo(cW - edge, cH - edge - corner);
+            ctx.stroke();
+
+            ctx.fillStyle = 'rgba(0,240,255,0.72)';
+            ctx.font = 'bold ' + Math.round(6.5 * sX) + 'px monospace';
+            ctx.fillText('LINK::SECURED  //  EXITING PATCH INTERFACE', cW * 0.5, cH - 26 * sY);
             ctx.restore();
         }
 

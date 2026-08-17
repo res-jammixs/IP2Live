@@ -10,7 +10,7 @@
 
 class IP2LiveQuestManager {
     constructor() {
-        this.VERSION = 'quest-manager-20260518-02';
+        this.VERSION = 'quest-manager-20260815-03';
 
         this.quests = {};
         this.mapQuestQueues = {};
@@ -292,6 +292,28 @@ class IP2LiveQuestManager {
 
     clearGuide() {
         if (this._arrowGuide) this._arrowGuide.clear();
+    }
+
+    resetTransitionState(options) {
+        const opts = options || {};
+        this.activeQuestId = null;
+        this.activeObjectiveId = null;
+        this.activeMapId = null;
+        this.visible = false;
+        this.preview = false;
+        this.guideActive = false;
+        this.allowCompletion = false;
+        this.suppressedByDialogue = false;
+        this._mapQuestMode = false;
+        this._showFinishedPanel = false;
+        this._lastCompletion = null;
+        this._sceneRef = null;
+        this._lastHeroRef = null;
+        this._lastHeroPath = '';
+        if (opts.clearPendingRestore) this._pendingSlotRestore = null;
+        if (this._arrowGuide) this._arrowGuide.clear();
+        if (Manager && Manager.Stack) Manager.Stack.requestPaintHUD = true;
+        return true;
     }
 
     skipToStageExitQuest(mapId, options) {

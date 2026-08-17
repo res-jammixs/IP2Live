@@ -9,7 +9,7 @@
 
 class IP2LiveDialogueManager {
     constructor() {
-        this.VERSION = 'dialogue-manager-20260527-02';
+        this.VERSION = 'dialogue-manager-20260815-03';
 
         this.EVENT = {
             MAP_ENTER: 'map:enter',
@@ -471,6 +471,15 @@ class IP2LiveDialogueManager {
         if (Manager && Manager.Stack) Manager.Stack.requestPaintHUD = true;
     }
 
+    discardActive() {
+        if (!this._active) return false;
+        const discarded = this._active;
+        this._active = null;
+        if (discarded.hideQuestPanel) this._setQuestPanelSuppressed(false);
+        if (Manager && Manager.Stack) Manager.Stack.requestPaintHUD = true;
+        return true;
+    }
+
     advance() {
         if (!this._active) return false;
 
@@ -786,7 +795,10 @@ class IP2LiveDialogueManager {
 
     resetTransitionState(options) {
         const opts = options || {};
-        if (opts.stopActive && this.isActive()) this.stop();
+        if (opts.stopActive && this.isActive()) {
+            if (opts.discardActive && typeof this.discardActive === 'function') this.discardActive();
+            else this.stop();
+        }
         this.clearQueuedStarts();
         const keys = Object.keys(this._pendingTriggers || {});
         for (let i = 0; i < keys.length; i++) {

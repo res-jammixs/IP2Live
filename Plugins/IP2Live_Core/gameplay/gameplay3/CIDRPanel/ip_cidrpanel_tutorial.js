@@ -1,39 +1,96 @@
 /**
  * IP2Live - CIDR Panel Tutorial Dialogue Helpers
  *
- * Dynamic dialogue content for the Stage 1 Level 3 CIDR light-panel gameplay.
+ * Dynamic dialogue content for the Stage 2 Level 1 CIDR light-panel gameplay.
  * Loaded before ip_cidrpanel_gameplay.js.
  */
 
 const IPCIDRPanelTutorial = {
-    VERSION: 'ip-cidrpanel-tutorial-20260528-01',
+    VERSION: 'ip-cidrpanel-tutorial-20260816-06',
     _dialogueSerial: 0,
 
     showIntro(targetMask, onComplete) {
+        return this.showTargetMaskGuide(targetMask, onComplete);
+    },
+
+    showTargetMaskGuide(targetMask, onComplete) {
         const mask = targetMask || '255.255.255.224';
-        return this._startDynamicDialogue('stage1.ipcidrpanel.intro.', {
-            title: 'CIDR BINARY BRIEFING',
+        return this._startDynamicDialogue('stage2.ipcidrpanel.target.', {
+            title: 'TARGET SUBNET MASK',
             speaker: 'SYSTEM',
-            timing: 'before',
+            timing: 'during',
             bindings: {
-                mapId: 5,
+                mapId: 7,
                 gameplayId: 'ip_cidr_binary_panel',
-                trigger: 'gameplay.before',
+                trigger: 'gameplay.during',
             },
-            slides: [
-                [
-                    'Welcome to CIDR Binary Panel.',
-                    'Target subnet mask for this round: ' + mask,
-                    '',
-                    'Turn ON bulbs to match the binary subnet mask across all four octets.',
-                ],
-                [
-                    'Each row is one octet. Values above bulbs are: 128 64 32 16 8 4 2 1.',
-                    'Use row "SWITCH ALL" to quickly set a full 255 octet.',
-                    '',
-                    'Press CONFIRM to run animated octet sum verification.',
-                ],
-            ],
+            slides: [[
+                'First, look at the SUBNET MASK // TARGET display.',
+                'The mask you must reproduce is ' + mask + '.',
+                '',
+                'Each dotted-decimal octet maps to one row of the panel. Build all four rows so their values match this target exactly.',
+            ]],
+            onComplete,
+        });
+    },
+
+    showLampArrayGuide(onComplete) {
+        return this._startDynamicDialogue('stage2.ipcidrpanel.lamps.', {
+            title: 'BINARY LAMP ARRAY',
+            speaker: 'SYSTEM',
+            timing: 'during',
+            bindings: {
+                mapId: 7,
+                gameplayId: 'ip_cidr_binary_panel',
+                trigger: 'gameplay.during',
+            },
+            slides: [[
+                'This is the BINARY LAMP ARRAY. Its four rows represent the four subnet-mask octets.',
+                'From left to right, the lamps are worth 128, 64, 32, 16, 8, 4, 2, and 1.',
+                '',
+                'A lit bulb is a binary 1. An unlit bulb is a binary 0. Add the lit values in each row to produce that octet.',
+            ]],
+            onComplete,
+        });
+    },
+
+    showLampControlsGuide(onComplete) {
+        return this._startDynamicDialogue('stage2.ipcidrpanel.controls.', {
+            title: 'LAMP CONTROLS',
+            speaker: 'SYSTEM',
+            timing: 'during',
+            bindings: {
+                mapId: 7,
+                gameplayId: 'ip_cidr_binary_panel',
+                trigger: 'gameplay.during',
+            },
+            slides: [[
+                'Click any bulb to turn that single binary bit ON or OFF.',
+                'Use the switch at the right of a row to turn ALL of its bulbs ON. When the row is full, the same switch turns them ALL OFF.',
+                '',
+                'Match every row to the target subnet mask, then press VERIFY MATCH.',
+            ]],
+            onComplete,
+        });
+    },
+
+    showCIDRGuide(targetMask, onComplete) {
+        const mask = targetMask || 'the target mask';
+        return this._startDynamicDialogue('stage2.ipcidrpanel.cidr.', {
+            title: 'CALCULATE THE CIDR PREFIX',
+            speaker: 'SYSTEM',
+            timing: 'during',
+            bindings: {
+                mapId: 7,
+                gameplayId: 'ip_cidr_binary_panel',
+                trigger: 'gameplay.during',
+            },
+            slides: [[
+                'Subnet mask matched: ' + mask + '.',
+                'Now calculate its CIDR prefix by counting every bulb that is ON across all four rows.',
+                '',
+                'Enter that total as /number in the unlocked CIDR field, then press VERIFY MATCH again. Once the prefix is accepted, this calibration is complete.',
+            ]],
             onComplete,
         });
     },
@@ -46,7 +103,7 @@ const IPCIDRPanelTutorial = {
             speaker: 'SYSTEM',
             timing: 'during',
             bindings: {
-                mapId: 5,
+                mapId: 7,
                 gameplayId: 'ip_cidr_binary_panel',
                 trigger: 'gameplay.mistake',
             },
@@ -65,6 +122,27 @@ const IPCIDRPanelTutorial = {
                     'Try again. Align every octet row with the target mask.',
                 ],
             ],
+            onComplete,
+        });
+    },
+
+    showAttemptReset(failedLabel, onComplete) {
+        const label = failedLabel || 'the active CIDR panel';
+        return this._startDynamicDialogue('stage2.ipcidrpanel.retry_reset.', {
+            title: 'CIDR TRAINING RECALIBRATION',
+            speaker: 'SYSTEM',
+            timing: 'after',
+            bindings: {
+                mapId: 7,
+                gameplayId: 'ip_cidr_binary_panel',
+                trigger: 'gameplay.failed',
+            },
+            slides: [[
+                'Three verification attempts were spent at ' + label + '.',
+                '',
+                'APEX is exploiting uncertainty in the mask conversion. Return to the first CIDR training relay and replay the guided lamp-array lesson.',
+                'Your completed relays remain secured. Once the tutorial relay is stable again, the route will return you to the unfinished panel.',
+            ]],
             onComplete,
         });
     },
