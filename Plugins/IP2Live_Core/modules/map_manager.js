@@ -91,9 +91,9 @@ const MapManager = {
             introLines: [
                 'Welcome to Stage 3 Level 1.',
                 '',
-                'This subnet sector is under active CIDR quarantine. Rogue AI clusters are hiding inside address blocks, and the relay will only stabilize when each quarantine node is solved.',
-                'Follow the route beacon to each highlighted node, build the optimized CIDR connector, and keep every path clear of virus tiles.',
-                'Start at the calibration node, then clear the four quarantine nodes across the sector.',
+                'Before you build quarantine routes, you must learn how much host power each subnet actually needs.',
+                'Every node on this floor is a Host-Power Reactor. Find the smallest exponent h where 2^h - 2 can hold the required usable hosts.',
+                'Begin with the guided calibration reactor, then stabilize the remaining four nodes. This is the bridge to the quarantine systems ahead.',
             ],
         },
         {
@@ -105,12 +105,25 @@ const MapManager = {
             introLines: [
                 'Welcome to Stage 3 Level 2.',
                 '',
-                'The quarantine has expanded into a multi-connector matrix. Each relay node now contains multiple CIDR routes that must be linked without overlap.',
-                'Read the movement values, connect every matching pair, avoid mutating virus nodes, and confirm only when every CIDR preview is optimized.',
-                'Begin at the matrix calibration node, then secure the four matrix nodes across the sector.',
+                'Start by proving the host capacity at the first two Host-Power Reactors.',
+                'Once those relays are stable, the next node introduces CIDR Quarantine: connect the blue endpoints, avoid virus tiles, and finish on the optimized prefix.',
+                'Use the host-power calculation as your capacity guide, then secure the remaining quarantine nodes.',
             ],
         },
-        { id: 13, name: 'Stage 3 Level 3', stage: 3, level: 3 },
+        {
+            id: 13,
+            name: 'Stage 3 Level 3',
+            stage: 3,
+            level: 3,
+            spawn: { x: 8, y: 0, z: 17 },
+            introLines: [
+                'Welcome to Stage 3 Level 3.',
+                '',
+                'This sector combines Host-Power Reactors with the single-route CIDR Quarantine you already know.',
+                'The final node introduces CIDR Quarantine Matrix. Multiple connector pairs must be optimized without touching viruses, endpoints, or each other.',
+                'Follow the route beacon in order. Calculate capacity, stabilize each quarantine route, then complete the guided matrix calibration.',
+            ],
+        },
         { id: 14, name: 'Stage 3 Level 4', stage: 3, level: 4 },
         { id: 15, name: 'Stage 4 Level 1', stage: 4, level: 1 },
         { id: 16, name: 'Stage 4 Level 2', stage: 4, level: 2 },
@@ -593,6 +606,16 @@ const MapManager = {
                     once: false,
                     delay: 320,
                     action: function (context, manager) {
+                        if (
+                            IP2Live.GameManager &&
+                            typeof IP2Live.GameManager.isResumingMapFromSave === 'function' &&
+                            IP2Live.GameManager.isResumingMapFromSave(targetMapId, context && context.scene)
+                        ) {
+                            if (context && context.scene && typeof IP2Live.GameManager.prepareLoadedMapScene === 'function') {
+                                IP2Live.GameManager.prepareLoadedMapScene(context.scene, targetMapId);
+                            }
+                            return false;
+                        }
                         if (IP2Live.GameManager && typeof IP2Live.GameManager.handlesMapIntro === 'function' && IP2Live.GameManager.handlesMapIntro(targetMapId)) {
                             return false;
                         }
@@ -603,9 +626,26 @@ const MapManager = {
                         if (!manager || typeof manager.start !== 'function' || manager.isActive()) return false;
 
                         if (scene) scene._ip2liveStageIntroStarted = true;
+                        if (IP2Live.GameManager && typeof IP2Live.GameManager.markMapEntryDialogueSeen === 'function') {
+                            IP2Live.GameManager.markMapEntryDialogueSeen(targetMapId);
+                        }
                         return manager.start(dialogueId, context);
                     },
                     condition: function (context, manager) {
+                        if (
+                            IP2Live.GameManager &&
+                            typeof IP2Live.GameManager.isResumingMapFromSave === 'function' &&
+                            IP2Live.GameManager.isResumingMapFromSave(targetMapId, context && context.scene)
+                        ) {
+                            return false;
+                        }
+                        if (
+                            IP2Live.GameManager &&
+                            typeof IP2Live.GameManager.hasSeenMapEntryDialogue === 'function' &&
+                            IP2Live.GameManager.hasSeenMapEntryDialogue(targetMapId)
+                        ) {
+                            return false;
+                        }
                         if (IP2Live.GameManager && typeof IP2Live.GameManager.handlesMapIntro === 'function' && IP2Live.GameManager.handlesMapIntro(targetMapId)) {
                             return false;
                         }
@@ -841,13 +881,57 @@ const MapManager = {
 
         const musicKey = String(mapId) + ':' + zone;
         if (scene._ip2liveMusicZoneKey === musicKey) return true;
-        scene._ip2liveMusicZoneKey = musicKey;
-        music.play(zone);
+        if (scene._ip2liveMusicPendingKey === musicKey) return true;
+        if (Number(scene._ip2liveMusicRetryAt) > Date.now()) return false;
+
+        // A zone is considered installed only after Howler confirms that the
+        // native RPG Paper Maker playback actually began. Registry-loading or
+        // audio-unlock failures therefore retry instead of permanently
+        // silencing the whole map after the first rejected promise.
+        scene._ip2liveMusicPendingKey = musicKey;
+        Promise.resolve(music.play(zone))
+            .then((started) => {
+                if (scene._ip2liveMusicPendingKey !== musicKey) return;
+                scene._ip2liveMusicPendingKey = null;
+                if (started) {
+                    scene._ip2liveMusicZoneKey = musicKey;
+                    scene._ip2liveMusicRetryAt = 0;
+                } else {
+                    scene._ip2liveMusicRetryAt = Date.now() + 1000;
+                }
+            })
+            .catch((error) => {
+                if (scene._ip2liveMusicPendingKey !== musicKey) return;
+                scene._ip2liveMusicPendingKey = null;
+                scene._ip2liveMusicRetryAt = Date.now() + 1000;
+                console.warn('[IP2Live] Stage music will retry after playback failure:', error);
+            });
         return true;
     },
 
     _ensureStageIntro(scene, mapId) {
         if (!scene || scene._ip2liveStageIntroStarted || scene._ip2liveStageIntroPending) return false;
+        if (
+            IP2Live.GameManager &&
+            typeof IP2Live.GameManager.isResumingMapFromSave === 'function' &&
+            IP2Live.GameManager.isResumingMapFromSave(mapId, scene)
+        ) {
+            if (typeof IP2Live.GameManager.prepareLoadedMapScene === 'function') {
+                IP2Live.GameManager.prepareLoadedMapScene(scene, mapId);
+            } else {
+                scene._ip2liveStageIntroStarted = true;
+                scene._ip2liveEntryDialogueSuppressedForRestore = true;
+            }
+            return false;
+        }
+        if (
+            IP2Live.GameManager &&
+            typeof IP2Live.GameManager.hasSeenMapEntryDialogue === 'function' &&
+            IP2Live.GameManager.hasSeenMapEntryDialogue(mapId)
+        ) {
+            scene._ip2liveStageIntroStarted = true;
+            return false;
+        }
         if (IP2Live.GameManager && typeof IP2Live.GameManager.handlesMapIntro === 'function' && IP2Live.GameManager.handlesMapIntro(mapId)) {
             return false;
         }
@@ -869,6 +953,9 @@ const MapManager = {
             if (!IP2Live.DialogueManager || IP2Live.DialogueManager.isActive()) return;
 
             scene._ip2liveStageIntroStarted = true;
+            if (IP2Live.GameManager && typeof IP2Live.GameManager.markMapEntryDialogueSeen === 'function') {
+                IP2Live.GameManager.markMapEntryDialogueSeen(mapId);
+            }
             IP2Live.DialogueManager.start(dialogueId, {
                 source: 'MapManager.stageIntro',
                 mapId,

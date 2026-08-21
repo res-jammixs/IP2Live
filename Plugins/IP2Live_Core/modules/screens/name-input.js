@@ -162,12 +162,27 @@ class IP2LiveNameInputScreen extends Scene.Base {
         this.awaitingNameConfirmation = false;
         this.confirmed = true;
         try {
-            await IP2Live.DBManager.saveRecord('profiles', {
+            const existingProfile = await IP2Live.DBManager.getRecord('profiles', rawName);
+            let profileId = existingProfile && existingProfile.profileId
+                ? String(existingProfile.profileId)
+                : '';
+            if (!profileId) {
+                try {
+                    profileId = (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function')
+                        ? crypto.randomUUID()
+                        : '';
+                } catch (error) {}
+                if (!profileId) profileId = 'profile-' + Date.now() + '-' + Math.floor(Math.random() * 1000000000);
+            }
+            const profile = Object.assign({}, existingProfile || {}, {
                 infiltratorName: rawName,
-                createdAt:       Date.now(),
-                playTime:        0,
-                currentMapId:    1,
+                profileId: profileId,
+                createdAt: (existingProfile && existingProfile.createdAt) || Date.now(),
+                playTime: (existingProfile && existingProfile.playTime) || 0,
+                currentMapId: 1,
+                updatedAt: Date.now(),
             });
+            await IP2Live.DBManager.saveRecord('profiles', profile);
 
             if (Main && typeof Main.waitForGameData === 'function') {
                 await Main.waitForGameData();
@@ -176,6 +191,8 @@ class IP2LiveNameInputScreen extends Scene.Base {
             Core.Game.current = new Core.Game();
             Core.Game.current.initializeDefault();
             Core.Game.current.infiltratorName = rawName;
+            Core.Game.current._ip2liveProfileId = profileId;
+            Core.Game.current.profileId = profileId;
 
             this._removeInputElement();
 

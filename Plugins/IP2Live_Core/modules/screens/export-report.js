@@ -14,12 +14,13 @@ class IP2LiveExportReportMenu extends Scene.Base {
         this.selectedIndex = 0;
         this.items = ['SCOPE', 'FORMAT', 'FILENAME', 'BACK', 'EXPORT'];
         this.scopeDaysOptions = [7, 30, 90];
-        this.scopeIndex = 1;
+        this.scopeIndex = 2;
         this.formatOptions = ['PDF', 'EXCEL', 'BOTH'];
         this.formatIndex = 2;
         this.filename = this._defaultFilename();
         this.editFilename = false;
         this.statusLine = 'SELECT OPTIONS TO EXPORT REPORT';
+        this.outputPaths = [];
         this.busy = false;
         this.animTick = 0;
         this.scanlineOffset = 0;
@@ -37,6 +38,14 @@ class IP2LiveExportReportMenu extends Scene.Base {
             : 'UNKNOWN';
         const safe = name.replace(/[^A-Za-z0-9_\-]+/g, '_');
         return 'IP2Live_Report_' + safe;
+    }
+
+    _exportFilenameBase(timestamp) {
+        const requested = String(this.filename || '').trim() || this._defaultFilename();
+        const instant = Number(timestamp);
+        const date = Number.isFinite(instant) && instant > 0 ? new Date(instant) : new Date();
+        const stamp = date.toISOString().replace(/[:.]/g, '-');
+        return requested + '_' + stamp;
     }
 
     async load() {
@@ -153,12 +162,17 @@ class IP2LiveExportReportMenu extends Scene.Base {
                 return;
             }
             const result = await gm.exportProgressReport({
-                scopeDays: this.scopeDaysOptions[this.scopeIndex] || 30,
+                scopeDays: this.scopeDaysOptions[this.scopeIndex] || 90,
                 format: format,
-                filenameBase: String(this.filename || '').trim() || null,
+                // Always make the archived set unique, even if the operator
+                // keeps the same editable label for several exports.
+                filenameBase: this._exportFilenameBase(),
             });
             if (result && result.ok) {
-                this.statusLine = 'EXPORT COMPLETE: ' + (result.exported || []).join(' + ').toUpperCase();
+                this.outputPaths = Array.isArray(result.archivedPaths) ? result.archivedPaths.slice() : [];
+                this.statusLine = 'EXPORT COMPLETE: ' + (result.exported || []).join(' + ').toUpperCase() +
+                    (this.outputPaths.length ? ' // ARCHIVED IN IP2LIVE\\REPORTS' : '');
+                if (this.outputPaths.length) console.log('[IP2Live] Report archive files:', this.outputPaths);
                 Data.Systems.soundConfirmation.playSound();
             } else {
                 this.statusLine = 'EXPORT FAILED';
@@ -265,7 +279,7 @@ class IP2LiveExportReportMenu extends Scene.Base {
         ctx.textAlign = 'left';
 
         const rows = [
-            { label: 'SCOPE WINDOW', value: String(this.scopeDaysOptions[this.scopeIndex] || 30) + ' DAYS', nav: true },
+            { label: 'SCOPE WINDOW', value: String(this.scopeDaysOptions[this.scopeIndex] || 90) + ' DAYS', nav: true },
             { label: 'EXPORT FORMAT', value: String(this.formatOptions[this.formatIndex] || 'BOTH'), nav: true },
             {
                 label: 'FILENAME',

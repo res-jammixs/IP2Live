@@ -50,6 +50,8 @@ class IP2LiveTitleScreenImplementation extends Scene.Base {
 
         // Music guard — ensure we only call play() once per session
         this._musicStarted = false;
+        this._musicStartPending = false;
+        this._musicAttemptToken = 0;
         this.networkBackdrop = (window.IP2LiveBackgroundScreen)
             ? new window.IP2LiveBackgroundScreen()
             : null;
@@ -77,11 +79,8 @@ class IP2LiveTitleScreenImplementation extends Scene.Base {
         this.loading = false;
         Manager.Stack.requestPaintHUD = true;
         // Attempt to start music immediately — works if autoplay is allowed.
-        // If blocked, the MusicManager will queue it for first user interaction.
-        if (IP2Live.MusicManager) {
-            IP2Live.MusicManager.play(IP2Live.MusicManager.ZONE.MAIN_MENU);
-        }
-        this._musicStarted = true;
+        // If blocked, keyboard or mouse input retries after unlocking Howler.
+        this._tryStartMusic(false);
     }
 
     // The cyberpunk labels are canvas-rendered rather than WindowChoices
@@ -93,12 +92,45 @@ class IP2LiveTitleScreenImplementation extends Scene.Base {
 
     // Ensures music starts on the very first user key interaction if
     // autoplay was blocked by the browser.
-    _tryStartMusic() {
-        if (this._musicStarted) return;
-        if (IP2Live.MusicManager) {
-            IP2Live.MusicManager.play(IP2Live.MusicManager.ZONE.MAIN_MENU);
+    _tryStartMusic(fromUserGesture = false) {
+        const music = IP2Live.MusicManager;
+        if (!music || !music.ZONE) return Promise.resolve(false);
+
+        if (fromUserGesture && typeof music.unlock === 'function') {
+            // Invoke resume() directly inside the keyboard/mouse handler so
+            // browser autoplay policies recognize the user gesture.
+            music.unlock();
         }
-        this._musicStarted = true;
+        if (this._musicStarted) return Promise.resolve(true);
+        // A direct user gesture may replace an earlier autoplay request that
+        // is still decoding or waiting for AudioContext resume. Ignoring that
+        // gesture could leave long BGM files silent even while click SFX work.
+        if (this._musicStartPending && !fromUserGesture) return Promise.resolve(false);
+
+        const attemptToken = ++this._musicAttemptToken;
+        this._musicStartPending = true;
+        const attempt = fromUserGesture && typeof music.retry === 'function'
+            ? music.retry()
+            : music.play(music.ZONE.MAIN_MENU);
+
+        return Promise.resolve(attempt)
+            .then((started) => {
+                if (attemptToken !== this._musicAttemptToken) return false;
+                const isActuallyPlaying = typeof music.isPlaying === 'function'
+                    ? music.isPlaying()
+                    : started !== false;
+                this._musicStarted = started !== false && isActuallyPlaying;
+                return this._musicStarted;
+            })
+            .catch((error) => {
+                if (attemptToken !== this._musicAttemptToken) return false;
+                this._musicStarted = false;
+                console.warn('[IP2Live] Main-menu music start failed:', error);
+                return false;
+            })
+            .finally(() => {
+                if (attemptToken === this._musicAttemptToken) this._musicStartPending = false;
+            });
     }
 
     _seedParticles(count) {
@@ -152,7 +184,7 @@ class IP2LiveTitleScreenImplementation extends Scene.Base {
 
     onKeyPressed(key) {
         // First key press = confirmed user interaction → safe to start audio
-        this._tryStartMusic();
+        this._tryStartMusic(true);
         if (Data.Keyboards.checkActionMenu(key)) {
             this._confirmSelection();
         } else if (Data.Keyboards.checkCancelMenu(key)) {
@@ -188,6 +220,7 @@ class IP2LiveTitleScreenImplementation extends Scene.Base {
     }
 
     onMouseUp(x, y) {
+        this._tryStartMusic(true);
         const idx = this._getButtonAt(x, y);
         if (idx >= 0) {
             if (idx !== this.selectedIndex) {
@@ -296,12 +329,26 @@ class IP2LiveTitleScreenImplementation extends Scene.Base {
                 systemLabel: 'SYS::TERMINATION_REQUEST',
                 danger: true,
                 onConfirm: function () {
-                    Common.Platform.quit();
+                    const manager = IP2Live.GameManager;
+                    if (manager && typeof manager.prepareForShutdown === 'function') {
+                        manager.prepareForShutdown('main_menu_quit')
+                            .catch(function (error) { console.warn('[IP2Live] Shutdown flush failed:', error); })
+                            .finally(function () { Common.Platform.quit(); });
+                    } else {
+                        Common.Platform.quit();
+                    }
                 },
             });
             return;
         }
-        Common.Platform.quit();
+        const manager = IP2Live.GameManager;
+        if (manager && typeof manager.prepareForShutdown === 'function') {
+            manager.prepareForShutdown('main_menu_quit')
+                .catch(function (error) { console.warn('[IP2Live] Shutdown flush failed:', error); })
+                .finally(function () { Common.Platform.quit(); });
+        } else {
+            Common.Platform.quit();
+        }
     }
 
     update() {

@@ -50,6 +50,9 @@ class IP2LiveVLSMAllocatorGameplayScreen extends Scene.Base {
 
     update() {
         this.animTick++;
+        if (IP2Live.GameplayCompletionPopup && typeof IP2Live.GameplayCompletionPopup.update === 'function') {
+            IP2Live.GameplayCompletionPopup.update(this);
+        }
         if (this.errorTimer > 0) this.errorTimer--;
         if (this.successTimer > 0) this.successTimer--;
         if (Manager && Manager.Stack) Manager.Stack.requestPaintHUD = true;
@@ -149,6 +152,9 @@ class IP2LiveVLSMAllocatorGameplayScreen extends Scene.Base {
         else this._drawBranchTerminal(ctx, m);
         this._drawFooter(ctx, m);
         ctx.restore();
+        if (IP2Live.GameplayCompletionPopup && typeof IP2Live.GameplayCompletionPopup.drawFor === 'function') {
+            IP2Live.GameplayCompletionPopup.drawFor(this, ctx, { tick: this.animTick || 0 });
+        }
     }
 
     _metrics() {
@@ -643,9 +649,28 @@ class IP2LiveVLSMAllocatorGameplayScreen extends Scene.Base {
     _finishSuccess(result) {
         if (this.finished) return;
         this.finished = true;
-        if (this.options && typeof this.options.onComplete === 'function') {
-            this.options.onComplete(result || {});
+        const payload = Object.assign({
+            gameplayId: 'ip_vlsm_allocator',
+            passed: true,
+        }, result || {});
+        const complete = () => {
+            if (this.options && typeof this.options.onComplete === 'function') this.options.onComplete(payload);
+        };
+        const branch = this._branch();
+        const sharedPopup = IP2Live.GameplayCompletionPopup;
+        if (sharedPopup && typeof sharedPopup.begin === 'function' && sharedPopup.begin(this, {
+            gameplayId: 'ip_vlsm_allocator',
+            label: this.options.questLabel || (this.spec && this.spec.label) || (branch && branch.label) || 'VLSM allocation verified',
+            footer: this.terminalType === 'core'
+                ? 'ROUTE TABLE VERIFIED  //  PROGRESS SECURED'
+                : 'SUBNET ALLOCATION LOCKED  //  PROGRESS SECURED',
+            durationMs: 950,
+            result: payload,
+            onComplete: complete,
+        })) {
+            return;
         }
+        complete();
     }
 
     _cancel() {
@@ -1128,6 +1153,16 @@ const VLSMAllocatorGameplayManager = {
         if (Manager && Manager.Stack && typeof Manager.Stack.pop === 'function') Manager.Stack.pop();
         this._restoreStageMusic();
         if (typeof opts.onCancel === 'function') opts.onCancel();
+        if (IP2Live.GameManager && typeof IP2Live.GameManager.handleGameplayCancelled === 'function') {
+            IP2Live.GameManager.handleGameplayCancelled('ip_vlsm_allocator', {
+                gameplayId: 'ip_vlsm_allocator',
+                spec: spec,
+                questId: opts.questId || (spec && spec.id),
+                objectiveId: opts.objectiveId || (spec && spec.objectiveId),
+                mapId: opts.mapId || 17,
+                result: { cancelled: true },
+            });
+        }
         if (Manager && Manager.Stack) Manager.Stack.requestPaintHUD = true;
     },
 

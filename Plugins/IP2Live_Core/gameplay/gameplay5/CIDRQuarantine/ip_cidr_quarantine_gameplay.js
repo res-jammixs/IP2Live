@@ -1,6 +1,6 @@
 /**
  * IP2Live - Gameplay Five: CIDR Quarantine
- * Stage 3 Level 1 path connector quarantine puzzle.
+ * Stage 3 Level 2+ path connector quarantine puzzle.
  */
 
 class IP2LiveCIDRQuarantineGameplayScreen extends Scene.Base {
@@ -116,6 +116,9 @@ class IP2LiveCIDRQuarantineGameplayScreen extends Scene.Base {
 
     update() {
         this.animTick++;
+        if (IP2Live.GameplayCompletionPopup && typeof IP2Live.GameplayCompletionPopup.update === 'function') {
+            IP2Live.GameplayCompletionPopup.update(this);
+        }
         if (this.tutorialMode && !this.tutorialStarted) {
             this.tutorialStarted = true;
             this._showTutorialIntro();
@@ -151,6 +154,7 @@ class IP2LiveCIDRQuarantineGameplayScreen extends Scene.Base {
             }
             return true;
         }
+        if (this.finished) return true;
         const value = key && (key.name || key.code || key);
         const upper = String(value || '').toUpperCase();
         if (Data.Keyboards.checkCancelMenu && Data.Keyboards.checkCancelMenu(key)) {
@@ -368,7 +372,7 @@ class IP2LiveCIDRQuarantineGameplayScreen extends Scene.Base {
         this.phase = 'diagnostic';
         if (IP2Live.GameManager && typeof IP2Live.GameManager.handleGameplayMistake === 'function') {
             IP2Live.GameManager.handleGameplayMistake('ip_cidr_quarantine', {
-                mapId: this.options.mapId || 11,
+                mapId: this.options.mapId || (this.options.spec && this.options.spec.mapId) || 12,
                 questId: this.options.questId,
                 objectiveId: this.options.objectiveId,
                 mistakes: [{
@@ -398,15 +402,29 @@ class IP2LiveCIDRQuarantineGameplayScreen extends Scene.Base {
     _finishSuccess(result) {
         if (this.finished) return;
         this.finished = true;
-        if (typeof this.options.onComplete === 'function') {
-            this.options.onComplete(Object.assign({}, result, {
-                gameplayId: 'ip_cidr_quarantine',
-                passed: true,
-                attemptsUsed: this.attemptsUsed,
-                maxAttempts: this.maxAttempts,
-                retries: Math.max(0, this.attemptsUsed - 1),
-            }));
+        this.phase = 'success';
+        const payload = Object.assign({}, result, {
+            gameplayId: 'ip_cidr_quarantine',
+            passed: true,
+            attemptsUsed: this.attemptsUsed,
+            maxAttempts: this.maxAttempts,
+            retries: Math.max(0, this.attemptsUsed - 1),
+        });
+        const complete = () => {
+            if (typeof this.options.onComplete === 'function') this.options.onComplete(payload);
+        };
+        const sharedPopup = IP2Live.GameplayCompletionPopup;
+        if (sharedPopup && typeof sharedPopup.begin === 'function' && sharedPopup.begin(this, {
+            gameplayId: 'ip_cidr_quarantine',
+            label: this.options.questLabel || (this.options.spec && this.options.spec.label) || 'CIDR quarantine route secured',
+            footer: 'QUARANTINE PATH VERIFIED  //  PROGRESS SECURED',
+            durationMs: 950,
+            result: payload,
+            onComplete: complete,
+        })) {
+            return;
         }
+        complete();
     }
 
     _failOut(result) {
@@ -459,6 +477,9 @@ class IP2LiveCIDRQuarantineGameplayScreen extends Scene.Base {
         this._drawVirusAlert(ctx, m);
         if (IP2Live.DialogueManager && typeof IP2Live.DialogueManager.drawOverlay === 'function') {
             IP2Live.DialogueManager.drawOverlay(ctx);
+        }
+        if (IP2Live.GameplayCompletionPopup && typeof IP2Live.GameplayCompletionPopup.drawFor === 'function') {
+            IP2Live.GameplayCompletionPopup.drawFor(this, ctx, { tick: this.animTick || 0 });
         }
     }
 
@@ -1862,11 +1883,11 @@ const CIDRQuarantineGameplayManager = {
     _recoveryLoops: {},
 
     CIDR_QUARANTINE_QUESTS: [
-        { id: 'stage.11.cidr_quarantine.01.tutorial', objectiveId: 'solve_cidr_quarantine_01', title: 'CALIBRATE QUARANTINE NODE', label: 'Quarantine Node 01', tutorial: true, targetTile: { x: 6, y: 0, z: 28 }, profile: { index: 1, minHosts: 18, maxHosts: 34 } },
-        { id: 'stage.11.cidr_quarantine.02', objectiveId: 'solve_cidr_quarantine_02', title: 'TRAP ROGUE AI CLUSTER', label: 'Quarantine Node 02', targetTile: { x: 34, y: 0, z: 17 }, profile: { index: 2, minHosts: 26, maxHosts: 58 } },
-        { id: 'stage.11.cidr_quarantine.03', objectiveId: 'solve_cidr_quarantine_03', title: 'SEAL INFECTED SEGMENT', label: 'Quarantine Node 03', targetTile: { x: 3, y: 0, z: 12 }, profile: { index: 3, minHosts: 42, maxHosts: 92 } },
-        { id: 'stage.11.cidr_quarantine.04', objectiveId: 'solve_cidr_quarantine_04', title: 'LOCK APEX RELAY AI', label: 'Quarantine Node 04', targetTile: { x: 10, y: 0, z: 25 }, profile: { index: 4, minHosts: 70, maxHosts: 120 } },
-        { id: 'stage.11.cidr_quarantine.05', objectiveId: 'solve_cidr_quarantine_05', title: 'FINALIZE CIDR QUARANTINE', label: 'Quarantine Node 05', targetTile: { x: 18, y: 0, z: 1 }, profile: { index: 5, minHosts: 96, maxHosts: 180 } },
+        { id: 'stage.12.mixed.03.cidr_quarantine.tutorial', objectiveId: 'solve_cidr_quarantine_12_03', title: 'CALIBRATE QUARANTINE NODE', label: 'Quarantine Node 03', mapId: 12, sequence: 3, tutorial: true, targetTile: { x: 17, y: 0, z: 0 }, profile: { index: 1, minHosts: 18, maxHosts: 34 } },
+        { id: 'stage.12.mixed.04.cidr_quarantine', objectiveId: 'solve_cidr_quarantine_12_04', title: 'TRAP ROGUE AI CLUSTER', label: 'Quarantine Node 04', mapId: 12, sequence: 4, targetTile: { x: 34, y: 0, z: 16 }, profile: { index: 2, minHosts: 26, maxHosts: 58 } },
+        { id: 'stage.12.mixed.05.cidr_quarantine', objectiveId: 'solve_cidr_quarantine_12_05', title: 'SEAL INFECTED SEGMENT', label: 'Quarantine Node 05', mapId: 12, sequence: 5, targetTile: { x: 17, y: 0, z: 19 }, profile: { index: 3, minHosts: 42, maxHosts: 92 } },
+        { id: 'stage.13.mixed.02.cidr_quarantine', objectiveId: 'solve_cidr_quarantine_13_02', title: 'BUILD SINGLE-ZONE QUARANTINE', label: 'Quarantine Node 02', mapId: 13, sequence: 2, targetTile: { x: 34, y: 0, z: 17 }, profile: { index: 4, minHosts: 70, maxHosts: 120 } },
+        { id: 'stage.13.mixed.04.cidr_quarantine', objectiveId: 'solve_cidr_quarantine_13_04', title: 'SEAL APEX RELAY AI', label: 'Quarantine Node 04', mapId: 13, sequence: 4, targetTile: { x: 10, y: 0, z: 25 }, profile: { index: 5, minHosts: 96, maxHosts: 180 } },
     ],
 
     _questSpecs() {
@@ -1877,16 +1898,22 @@ const CIDRQuarantineGameplayManager = {
         return this.CIDR_QUARANTINE_QUESTS;
     },
 
-    _defaultQuestSpec() {
+    _defaultQuestSpec(mapId) {
         const specs = this._questSpecs();
-        return specs[0] || this.CIDR_QUARANTINE_QUESTS[0];
+        const requestedMapId = Number(mapId);
+        if (requestedMapId) {
+            const sameMap = specs.filter((spec) => Number(spec.mapId || 12) === requestedMapId);
+            return sameMap.find((spec) => !!spec.tutorial) || sameMap[0] || specs[0] || this.CIDR_QUARANTINE_QUESTS[0];
+        }
+        return specs.find((spec) => !!spec.tutorial) || specs[0] || this.CIDR_QUARANTINE_QUESTS[0];
     },
 
     registerStageGameplayQuests(questManager, mapManager, stage) {
         const qm = questManager || IP2Live.QuestManager;
-        if (!qm || !stage || Number(stage.id) !== 11) return [];
+        const stageId = Number(stage && stage.id);
+        if (!qm || !stageId) return [];
         const questIds = [];
-        const specs = this._questSpecs();
+        const specs = this._questSpecs().filter((spec) => Number(spec.mapId || 12) === stageId);
         for (let i = 0; i < specs.length; i++) {
             const spec = specs[i];
             questIds.push(spec.id);
@@ -1895,7 +1922,7 @@ const CIDRQuarantineGameplayManager = {
             qm.registerQuest({
                 id: spec.id,
                 title: 'QUEST AREA',
-                stageMapId: 11,
+                stageMapId: stageId,
                 resetOnMapEnter: true,
                 objectives: [{
                     id: spec.objectiveId,
@@ -1938,7 +1965,7 @@ const CIDRQuarantineGameplayManager = {
         const attemptKey = this._resolveAttemptKey({ spec, questId: spec.id, objectiveId: spec.objectiveId });
         if (this._activeAttempt === attemptKey || this._active) return false;
         this._activeAttempt = attemptKey;
-        const launchOptions = { spec, questId: spec.id, objectiveId: spec.objectiveId, mapId: 11, _fromObjective: true };
+        const launchOptions = { spec, questId: spec.id, objectiveId: spec.objectiveId, mapId: Number(spec.mapId) || 12, _fromObjective: true };
         if (IP2Live.GameManager && typeof IP2Live.GameManager.startGameplayNode === 'function') {
             IP2Live.GameManager.startGameplayNode('ip_cidr_quarantine', Object.assign({}, launchOptions, { showIntro: !!spec.tutorial && !this._introShown, _reservedAttempt: attemptKey }));
             return false;
@@ -1978,13 +2005,13 @@ const CIDRQuarantineGameplayManager = {
         if (this._activeAttempt === attemptKey && !isReservedAttempt && opts.questId) return false;
         this._active = true;
         if (opts.questId) this._activeAttempt = attemptKey;
-        const problem = this._freshProblem(opts.spec || this._defaultQuestSpec());
+        const problem = this._freshProblem(opts.spec || this._defaultQuestSpec(opts.mapId));
         const open = () => {
             const screen = new IP2LiveCIDRQuarantineGameplayScreen({
                 spec: opts.spec,
                 questId: opts.questId,
                 objectiveId: opts.objectiveId,
-                mapId: opts.mapId || 11,
+                mapId: opts.mapId || (opts.spec && opts.spec.mapId) || 12,
                 maxAttempts: 3,
                 problem,
                 tutorialMode: !!(opts.spec && opts.spec.tutorial),
@@ -2017,7 +2044,8 @@ const CIDRQuarantineGameplayManager = {
 
     _onComplete(options, result) {
         const opts = options || {};
-        const spec = opts.spec || this._defaultQuestSpec();
+        const spec = opts.spec || this._defaultQuestSpec(opts.mapId);
+        const mapId = Number(opts.mapId || spec.mapId) || 12;
         this._active = false;
         this._activeAttempt = null;
         if (spec && spec.objectiveId) delete this._triggerLocks[spec.objectiveId];
@@ -2028,7 +2056,7 @@ const CIDRQuarantineGameplayManager = {
                 const qm = IP2Live.QuestManager;
                 if (qm.activeQuestId !== opts.questId) {
                     qm.startQuest(opts.questId, {
-                        mapId: 11,
+                        mapId,
                         mapQuestMode: true,
                         keepLastCompletion: true,
                         visible: true,
@@ -2041,7 +2069,7 @@ const CIDRQuarantineGameplayManager = {
             }
             if (typeof opts.onComplete === 'function') opts.onComplete(result);
             if (IP2Live.GameManager && typeof IP2Live.GameManager.handleGameplayCompleted === 'function') {
-                IP2Live.GameManager.handleGameplayCompleted('ip_cidr_quarantine', { gameplayId: 'ip_cidr_quarantine', spec, questId: opts.questId, objectiveId: opts.objectiveId, mapId: 11, result });
+                IP2Live.GameManager.handleGameplayCompleted('ip_cidr_quarantine', { gameplayId: 'ip_cidr_quarantine', spec, questId: opts.questId, objectiveId: opts.objectiveId, mapId, result });
             }
             if (Manager && Manager.Stack) Manager.Stack.requestPaintHUD = true;
         };
@@ -2050,7 +2078,8 @@ const CIDRQuarantineGameplayManager = {
 
     _onFailed(options, result) {
         const opts = options || {};
-        const spec = opts.spec || this._defaultQuestSpec();
+        const spec = opts.spec || this._defaultQuestSpec(opts.mapId);
+        const mapId = Number(opts.mapId || spec.mapId) || 12;
         this._active = false;
         this._activeAttempt = null;
         this._lockUntilStepOff(spec);
@@ -2058,7 +2087,7 @@ const CIDRQuarantineGameplayManager = {
             if (Manager && Manager.Stack && typeof Manager.Stack.pop === 'function') Manager.Stack.pop();
             this._restoreStageMusic();
             if (IP2Live.GameManager && typeof IP2Live.GameManager.handleGameplayFailed === 'function') {
-                IP2Live.GameManager.handleGameplayFailed('ip_cidr_quarantine', { gameplayId: 'ip_cidr_quarantine', spec, questId: opts.questId, objectiveId: opts.objectiveId, mapId: 11, result });
+                IP2Live.GameManager.handleGameplayFailed('ip_cidr_quarantine', { gameplayId: 'ip_cidr_quarantine', spec, questId: opts.questId, objectiveId: opts.objectiveId, mapId, result });
             } else {
                 this._recoverToTutorial(spec);
             }
@@ -2074,12 +2103,14 @@ const CIDRQuarantineGameplayManager = {
 
     _recoverToTutorial(failedSpec) {
         const qm = IP2Live.QuestManager;
-        const tutorial = this._defaultQuestSpec();
+        const failedMapId = Number(failedSpec && failedSpec.mapId) || 12;
+        const sameMapSpecs = this._questSpecs().filter((spec) => Number(spec.mapId || 12) === failedMapId);
+        const tutorial = sameMapSpecs.find((spec) => !!spec.tutorial) || failedSpec || sameMapSpecs[0] || this._defaultQuestSpec(failedMapId);
         this._introShown = false;
         if (qm && tutorial) {
             qm.completedObjectives[tutorial.id] = {};
             if (failedSpec && failedSpec.id) qm.completedObjectives[failedSpec.id] = {};
-            qm.startQuest(tutorial.id, { mapId: 11, mapQuestMode: true, keepLastCompletion: true, visible: true, preview: false, guideActive: true, allowCompletion: true });
+            qm.startQuest(tutorial.id, { mapId: failedMapId, mapQuestMode: true, keepLastCompletion: true, visible: true, preview: false, guideActive: true, allowCompletion: true });
         }
         if (IP2Live.IPCIDRQuarantineTutorial && typeof IP2Live.IPCIDRQuarantineTutorial.showRecovery === 'function') {
             setTimeout(() => IP2Live.IPCIDRQuarantineTutorial.showRecovery({ failedLabel: failedSpec && failedSpec.label }), 220);
@@ -2088,12 +2119,22 @@ const CIDRQuarantineGameplayManager = {
 
     _onCancel(options) {
         const opts = options || {};
-        const spec = opts.spec || this._defaultQuestSpec();
+        const spec = opts.spec || this._defaultQuestSpec(opts.mapId);
         this._active = false;
         this._activeAttempt = null;
         this._lockUntilStepOff(spec);
         if (Manager && Manager.Stack && typeof Manager.Stack.pop === 'function') Manager.Stack.pop();
         this._restoreStageMusic();
+        if (IP2Live.GameManager && typeof IP2Live.GameManager.handleGameplayCancelled === 'function') {
+            IP2Live.GameManager.handleGameplayCancelled('ip_cidr_quarantine', {
+                gameplayId: 'ip_cidr_quarantine',
+                spec,
+                questId: opts.questId || spec.id,
+                objectiveId: opts.objectiveId || spec.objectiveId,
+                mapId: opts.mapId || spec.mapId || 12,
+                result: { cancelled: true },
+            });
+        }
         if (Manager && Manager.Stack) Manager.Stack.requestPaintHUD = true;
     },
 };

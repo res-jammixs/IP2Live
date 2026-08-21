@@ -541,6 +541,9 @@ class IP2LiveEndCreditsScene extends Scene.Base {
         if (!Core || !Core.Game) return;
         const oldGame = Core.Game.current || null;
         const name = oldGame && oldGame.infiltratorName ? oldGame.infiltratorName : null;
+        if (IP2Live.GameManager && typeof IP2Live.GameManager.clearActiveSaveSlot === 'function') {
+            IP2Live.GameManager.clearActiveSaveSlot(oldGame);
+        }
         const newGame = new Core.Game();
         newGame.initializeDefault();
         if (name) newGame.infiltratorName = name;

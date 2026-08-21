@@ -1891,6 +1891,17 @@ class IP2LiveCIDRPanelGameplayScreen extends Scene.Base {
             return;
         }
         if (this.phase === 'success') {
+            const sharedPopup = IP2Live.GameplayCompletionPopup;
+            if (sharedPopup && typeof sharedPopup.draw === 'function') {
+                sharedPopup.draw(ctx, {
+                    gameplayId: this.gameplayId || 'ip_cidr_binary_panel',
+                    label: this.options.questLabel || 'CIDR mask and prefix verified',
+                    footer: 'CIDR /' + this.targetCIDR + ' LOCKED  //  PROGRESS SECURED',
+                    progress: Math.max(0, Math.min(1, 1 - this.phaseTimer / 90)),
+                    tick: this.animTick || 0,
+                });
+                return;
+            }
             ctx.fillStyle = 'rgba(68, 255, 150, 0.16)';
             ctx.fillRect(0, 0, m.cW, m.cH);
             ctx.fillStyle = '#F4FFF8';
@@ -2562,10 +2573,14 @@ const CIDRPanelGameplayManager = {
             if (Manager && Manager.Stack && typeof Manager.Stack.pop === 'function') Manager.Stack.pop();
             this._restoreStageMusic();
             if (typeof opts.onCancel === 'function') opts.onCancel();
-            if (IP2Live.GameManager && typeof IP2Live.GameManager.handleGameplayFailed === 'function') {
-                IP2Live.GameManager.handleGameplayFailed('ip_cidr_binary_panel', {
+            if (IP2Live.GameManager && typeof IP2Live.GameManager.handleGameplayCancelled === 'function') {
+                IP2Live.GameManager.handleGameplayCancelled('ip_cidr_binary_panel', {
                     gameplayId: 'ip_cidr_binary_panel',
-                    reason: 'cancelled',
+                    spec,
+                    questId: opts.questId || spec.id,
+                    objectiveId: opts.objectiveId || spec.objectiveId,
+                    mapId: opts.mapId || spec.mapId || 7,
+                    result: { cancelled: true },
                 });
             }
             if (Manager && Manager.Stack) Manager.Stack.requestPaintHUD = true;

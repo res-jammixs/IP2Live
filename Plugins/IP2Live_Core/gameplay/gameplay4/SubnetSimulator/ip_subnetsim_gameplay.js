@@ -1076,6 +1076,17 @@ class IP2LiveSubnetSimulatorGameplayScreen extends Scene.Base {
         this._drawTutorialHighlight(ctx, m);
         ctx.restore();
 
+        const sharedPopup = IP2Live.GameplayCompletionPopup;
+        if (this.phase === 'success' && sharedPopup && typeof sharedPopup.draw === 'function') {
+            sharedPopup.draw(ctx, {
+                gameplayId: 'ip_subnet_simulator',
+                label: this.options.questLabel || 'Subnet capacity simulation validated',
+                footer: 'SUBNET MODEL STABLE  //  PROGRESS SECURED',
+                progress: Math.max(0, Math.min(1, 1 - this.phaseTimer / 120)),
+                tick: this.animTick || 0,
+            });
+        }
+
         if (IP2Live.DialogueManager && typeof IP2Live.DialogueManager.drawOverlay === 'function') {
             IP2Live.DialogueManager.drawOverlay(ctx);
         }
@@ -2385,10 +2396,14 @@ const SubnetSimulatorGameplayManager = {
             if (Manager && Manager.Stack && typeof Manager.Stack.pop === 'function') Manager.Stack.pop();
             this._restoreStageMusic();
             if (typeof opts.onCancel === 'function') opts.onCancel();
-            if (IP2Live.GameManager && typeof IP2Live.GameManager.handleGameplayFailed === 'function') {
-                IP2Live.GameManager.handleGameplayFailed('ip_subnet_simulator', {
+            if (IP2Live.GameManager && typeof IP2Live.GameManager.handleGameplayCancelled === 'function') {
+                IP2Live.GameManager.handleGameplayCancelled('ip_subnet_simulator', {
                     gameplayId: 'ip_subnet_simulator',
-                    reason: 'cancelled',
+                    spec,
+                    questId: opts.questId || spec.id,
+                    objectiveId: opts.objectiveId || spec.objectiveId,
+                    mapId: opts.mapId || spec.mapId || 8,
+                    result: { cancelled: true },
                 });
             }
             if (Manager && Manager.Stack) Manager.Stack.requestPaintHUD = true;

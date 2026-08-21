@@ -8,7 +8,7 @@
 
 class IP2LiveLightingManager {
     constructor() {
-        this.VERSION = 'lighting-manager-20260518-02';
+        this.VERSION = 'lighting-manager-20260821-03';
 
         this.presets = {};
         this.activeMapId = null;
@@ -18,6 +18,7 @@ class IP2LiveLightingManager {
         this._managedLights = [];
         this._dimmedLights = [];
         this._appliedThreeScene = null;
+        this._reapplyWhenSceneReady = false;
         this._originalFog = undefined;
         this._fogScene = null;
         this._lastHeroRef = null;
@@ -103,8 +104,14 @@ class IP2LiveLightingManager {
 
         this._sceneRef = currentScene;
         const threeScene = this._getThreeScene(currentScene);
+        const sceneBecameReady = !!(
+            this._reapplyWhenSceneReady &&
+            currentScene &&
+            currentScene.loading === false
+        );
         if (this.activeMapId !== mapId ||
-            (threeScene && threeScene !== this._appliedThreeScene)) {
+            (threeScene && threeScene !== this._appliedThreeScene) ||
+            sceneBecameReady) {
             this.applyPreset(mapId, currentScene);
         }
 
@@ -125,6 +132,11 @@ class IP2LiveLightingManager {
         this.activeMapId = key || null;
         this.activePreset = preset;
         this._sceneRef = scene || this._sceneRef;
+        // Scene.Map creates its Three.js scene synchronously, but its native
+        // lights, fog, and portions arrive later in the asynchronous load().
+        // Remember an early application so update() can apply the same preset
+        // once more after loading becomes false and dim the real map lights.
+        this._reapplyWhenSceneReady = !!(scene && scene.loading === true);
 
         if (!preset || preset.enabled === false) {
             this._overlayAlpha = 0;
@@ -163,6 +175,7 @@ class IP2LiveLightingManager {
         this.activeMapId = null;
         this.activePreset = null;
         this._appliedThreeScene = null;
+        this._reapplyWhenSceneReady = false;
         this._overlayAlpha = 0;
         this._apertureConfig = null;
         if (Manager && Manager.Stack) Manager.Stack.requestPaintHUD = true;

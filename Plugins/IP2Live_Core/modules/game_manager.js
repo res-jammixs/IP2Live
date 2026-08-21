@@ -8,7 +8,7 @@
  */
 
 const IP2LiveGameManager = {
-    VERSION: 'game-manager-20260817-07',
+    VERSION: 'game-manager-20260821-10',
 
     STATE: {
         BOOT: 'BOOT',
@@ -42,11 +42,19 @@ const IP2LiveGameManager = {
     _tutorialIntroPending: false,
     _dialogueLibraryReady: false,
     _activeSaveSlot: null,
+    _activeSaveGame: null,
+    _saveQueue: null,
     _slotSnapshotStorageKey: 'IP2Live_SlotProgress_v1',
     _registeredGameplayQuestIds: {},
     _reportSessionId: null,
+    _reportSessionProfileName: null,
     _reportActiveAttempts: {},
     _reportTelemetrySequence: 0,
+    _reportPendingWrites: new Set(),
+    _checkpointTimer: null,
+    _checkpointDebounceTimer: null,
+    _checkpointInFlight: false,
+    _shutdownListenerInstalled: false,
     enableQuestSkipButton: true,
     _skipQuestButtonRect: null,
 
@@ -156,7 +164,7 @@ const IP2LiveGameManager = {
                 level: 1,
                 spawn: { x: 6, y: 0, z: 17 },
                 worldTitle: true,
-                gameplayNodes: ['ip_cidr_quarantine'],
+                gameplayNodes: ['ip_host_power_reactor'],
             },
             12: {
                 id: 12,
@@ -165,7 +173,16 @@ const IP2LiveGameManager = {
                 level: 2,
                 spawn: { x: 6, y: 0, z: 17 },
                 worldTitle: true,
-                gameplayNodes: ['ip_cidr_quarantine_matrix'],
+                gameplayNodes: ['ip_host_power_reactor', 'ip_cidr_quarantine'],
+            },
+            13: {
+                id: 13,
+                name: 'Stage 3 Level 3',
+                stage: 3,
+                level: 3,
+                spawn: { x: 8, y: 0, z: 17 },
+                worldTitle: true,
+                gameplayNodes: ['ip_host_power_reactor', 'ip_cidr_quarantine', 'ip_cidr_quarantine_matrix'],
             },
         },
         gameplayNodes: {
@@ -199,15 +216,21 @@ const IP2LiveGameManager = {
                 manager: 'SubnetSimulatorGameplayManager',
                 method: 'launchSubnetSimulatorGameplay',
             },
+            ip_host_power_reactor: {
+                id: 'ip_host_power_reactor',
+                mapId: 11,
+                manager: 'HostPowerReactorGameplayManager',
+                method: 'launchHostPowerReactorGameplay',
+            },
             ip_cidr_quarantine: {
                 id: 'ip_cidr_quarantine',
-                mapId: 11,
+                mapId: 12,
                 manager: 'CIDRQuarantineGameplayManager',
                 method: 'launchCIDRQuarantineGameplay',
             },
             ip_cidr_quarantine_matrix: {
                 id: 'ip_cidr_quarantine_matrix',
-                mapId: 12,
+                mapId: 13,
                 manager: 'CIDRQuarantineMatrixGameplayManager',
                 method: 'launchCIDRQuarantineMatrixGameplay',
             },
@@ -372,9 +395,29 @@ const IP2LiveGameManager = {
             objectiveHandler: { manager: 'SubnetSimulatorGameplayManager', method: '_handleObjective' },
             quests: [],
         },
+        ip_host_power_reactor: {
+            gameplayId: 'ip_host_power_reactor',
+            mapId: 11,
+            label: 'Host-Power Reactor',
+            competencyKey: 'host_bit_power_calculation',
+            competencyLabel: 'Host-bit exponent and usable-address capacity calculation',
+            targetClearMs: 60000,
+            objectiveHandler: { manager: 'HostPowerReactorGameplayManager', method: '_handleObjective' },
+            quests: [
+                { id: 'stage.11.host_power.01.tutorial', gameplayId: 'ip_host_power_reactor', objectiveId: 'stabilize_host_power_11_01', title: 'CALIBRATE HOST-POWER REACTOR', label: 'Host-Power Node 01', mapId: 11, sequence: 1, tutorial: true, targetClass: 'C', requiredHosts: 50, targetTile: { x: 6, y: 0, z: 28 } },
+                { id: 'stage.11.host_power.02', gameplayId: 'ip_host_power_reactor', objectiveId: 'stabilize_host_power_11_02', title: 'POWER CLASS C RELAY', label: 'Host-Power Node 02', mapId: 11, sequence: 2, targetClass: 'C', requiredHosts: 100, targetTile: { x: 34, y: 0, z: 17 } },
+                { id: 'stage.11.host_power.03', gameplayId: 'ip_host_power_reactor', objectiveId: 'stabilize_host_power_11_03', title: 'BALANCE CLASS C CAPACITY', label: 'Host-Power Node 03', mapId: 11, sequence: 3, targetClass: 'C', requiredHosts: 200, targetTile: { x: 3, y: 0, z: 12 } },
+                { id: 'stage.11.host_power.04', gameplayId: 'ip_host_power_reactor', objectiveId: 'stabilize_host_power_11_04', title: 'POWER CLASS B RELAY', label: 'Host-Power Node 04', mapId: 11, sequence: 4, targetClass: 'B', requiredHosts: 510, targetTile: { x: 10, y: 0, z: 25 } },
+                { id: 'stage.11.host_power.05', gameplayId: 'ip_host_power_reactor', objectiveId: 'stabilize_host_power_11_05', title: 'FINALIZE HOST-POWER GRID', label: 'Host-Power Node 05', mapId: 11, sequence: 5, targetClass: 'B', requiredHosts: 1022, targetTile: { x: 18, y: 0, z: 1 } },
+                { id: 'stage.12.mixed.01.host_power', gameplayId: 'ip_host_power_reactor', objectiveId: 'stabilize_host_power_12_01', title: 'VERIFY HOST-POWER CAPACITY', label: 'Host-Power Node 01', mapId: 12, sequence: 1, targetClass: 'C', requiredHosts: 126, targetTile: { x: 21, y: 0, z: 28 } },
+                { id: 'stage.12.mixed.02.host_power', gameplayId: 'ip_host_power_reactor', objectiveId: 'stabilize_host_power_12_02', title: 'PRIME QUARANTINE CAPACITY', label: 'Host-Power Node 02', mapId: 12, sequence: 2, targetClass: 'B', requiredHosts: 2046, targetTile: { x: 0, y: 0, z: 16 } },
+                { id: 'stage.13.mixed.01.host_power', gameplayId: 'ip_host_power_reactor', objectiveId: 'stabilize_host_power_13_01', title: 'CALCULATE CONTAINMENT POWER', label: 'Host-Power Node 01', mapId: 13, sequence: 1, targetClass: 'C', requiredHosts: 200, targetTile: { x: 6, y: 0, z: 28 } },
+                { id: 'stage.13.mixed.03.host_power', gameplayId: 'ip_host_power_reactor', objectiveId: 'stabilize_host_power_13_03', title: 'RECALCULATE HOST CAPACITY', label: 'Host-Power Node 03', mapId: 13, sequence: 3, targetClass: 'B', requiredHosts: 4094, targetTile: { x: 3, y: 0, z: 12 } },
+            ],
+        },
         ip_cidr_quarantine: {
             gameplayId: 'ip_cidr_quarantine',
-            mapId: 11,
+            mapId: 12,
             label: 'CIDR Quarantine',
             competencyKey: 'cidr_quarantine_zone',
             competencyLabel: 'CIDR quarantine zone construction',
@@ -382,16 +425,16 @@ const IP2LiveGameManager = {
             objectiveHandler: { manager: 'CIDRQuarantineGameplayManager', method: '_handleObjective' },
             failureHandler: { manager: 'CIDRQuarantineGameplayManager', method: 'recoverAfterFailure' },
             quests: [
-                { id: 'stage.11.cidr_quarantine.01.tutorial', objectiveId: 'solve_cidr_quarantine_01', title: 'CALIBRATE QUARANTINE NODE', label: 'Quarantine Node 01', tutorial: true, targetTile: { x: 6, y: 0, z: 28 }, profile: { index: 1, minHosts: 18, maxHosts: 34 } },
-                { id: 'stage.11.cidr_quarantine.02', objectiveId: 'solve_cidr_quarantine_02', title: 'TRAP ROGUE AI CLUSTER', label: 'Quarantine Node 02', targetTile: { x: 34, y: 0, z: 17 }, profile: { index: 2, minHosts: 26, maxHosts: 58 } },
-                { id: 'stage.11.cidr_quarantine.03', objectiveId: 'solve_cidr_quarantine_03', title: 'SEAL INFECTED SEGMENT', label: 'Quarantine Node 03', targetTile: { x: 3, y: 0, z: 12 }, profile: { index: 3, minHosts: 42, maxHosts: 92 } },
-                { id: 'stage.11.cidr_quarantine.04', objectiveId: 'solve_cidr_quarantine_04', title: 'LOCK APEX RELAY AI', label: 'Quarantine Node 04', targetTile: { x: 10, y: 0, z: 25 }, profile: { index: 4, minHosts: 70, maxHosts: 120 } },
-                { id: 'stage.11.cidr_quarantine.05', objectiveId: 'solve_cidr_quarantine_05', title: 'FINALIZE CIDR QUARANTINE', label: 'Quarantine Node 05', targetTile: { x: 18, y: 0, z: 1 }, profile: { index: 5, minHosts: 96, maxHosts: 180 } },
+                { id: 'stage.12.mixed.03.cidr_quarantine.tutorial', gameplayId: 'ip_cidr_quarantine', objectiveId: 'solve_cidr_quarantine_12_03', title: 'CALIBRATE QUARANTINE NODE', label: 'Quarantine Node 03', mapId: 12, sequence: 3, tutorial: true, targetTile: { x: 17, y: 0, z: 0 }, profile: { index: 1, minHosts: 18, maxHosts: 34 } },
+                { id: 'stage.12.mixed.04.cidr_quarantine', gameplayId: 'ip_cidr_quarantine', objectiveId: 'solve_cidr_quarantine_12_04', title: 'TRAP ROGUE AI CLUSTER', label: 'Quarantine Node 04', mapId: 12, sequence: 4, targetTile: { x: 34, y: 0, z: 16 }, profile: { index: 2, minHosts: 26, maxHosts: 58 } },
+                { id: 'stage.12.mixed.05.cidr_quarantine', gameplayId: 'ip_cidr_quarantine', objectiveId: 'solve_cidr_quarantine_12_05', title: 'SEAL INFECTED SEGMENT', label: 'Quarantine Node 05', mapId: 12, sequence: 5, targetTile: { x: 17, y: 0, z: 19 }, profile: { index: 3, minHosts: 42, maxHosts: 92 } },
+                { id: 'stage.13.mixed.02.cidr_quarantine', gameplayId: 'ip_cidr_quarantine', objectiveId: 'solve_cidr_quarantine_13_02', title: 'BUILD SINGLE-ZONE QUARANTINE', label: 'Quarantine Node 02', mapId: 13, sequence: 2, targetTile: { x: 34, y: 0, z: 17 }, profile: { index: 4, minHosts: 70, maxHosts: 120 } },
+                { id: 'stage.13.mixed.04.cidr_quarantine', gameplayId: 'ip_cidr_quarantine', objectiveId: 'solve_cidr_quarantine_13_04', title: 'SEAL APEX RELAY AI', label: 'Quarantine Node 04', mapId: 13, sequence: 4, targetTile: { x: 10, y: 0, z: 25 }, profile: { index: 5, minHosts: 96, maxHosts: 180 } },
             ],
         },
         ip_cidr_quarantine_matrix: {
             gameplayId: 'ip_cidr_quarantine_matrix',
-            mapId: 12,
+            mapId: 13,
             label: 'CIDR Quarantine Matrix',
             competencyKey: 'cidr_multi_zone_quarantine',
             competencyLabel: 'Multi-zone CIDR quarantine construction',
@@ -399,11 +442,7 @@ const IP2LiveGameManager = {
             objectiveHandler: { manager: 'CIDRQuarantineMatrixGameplayManager', method: '_handleObjective' },
             failureHandler: { manager: 'CIDRQuarantineMatrixGameplayManager', method: 'recoverAfterFailure' },
             quests: [
-                { id: 'stage.12.cidr_matrix.01.tutorial', objectiveId: 'solve_cidr_matrix_01', title: 'CALIBRATE MATRIX NODE', label: 'Matrix Node 01', tutorial: true, targetTile: { x: 21, y: 0, z: 28 }, profile: { index: 1, zoneCount: 2, parentPrefix: 23 } },
-                { id: 'stage.12.cidr_matrix.02', objectiveId: 'solve_cidr_matrix_02', title: 'SPLIT AI QUARANTINE', label: 'Matrix Node 02', targetTile: { x: 0, y: 0, z: 16 }, profile: { index: 2, zoneCount: 2, parentPrefix: 23 } },
-                { id: 'stage.12.cidr_matrix.03', objectiveId: 'solve_cidr_matrix_03', title: 'SEAL SHARD TRIAD', label: 'Matrix Node 03', targetTile: { x: 17, y: 0, z: 0 }, profile: { index: 3, zoneCount: 3, parentPrefix: 23 } },
-                { id: 'stage.12.cidr_matrix.04', objectiveId: 'solve_cidr_matrix_04', title: 'LOCK RELAY MATRIX', label: 'Matrix Node 04', targetTile: { x: 34, y: 0, z: 16 }, profile: { index: 4, zoneCount: 3, parentPrefix: 22 } },
-                { id: 'stage.12.cidr_matrix.05', objectiveId: 'solve_cidr_matrix_05', title: 'FINALIZE AI CONTAINMENT', label: 'Matrix Node 05', targetTile: { x: 17, y: 0, z: 19 }, profile: { index: 5, zoneCount: 3, parentPrefix: 22 } },
+                { id: 'stage.13.mixed.05.cidr_matrix.tutorial', gameplayId: 'ip_cidr_quarantine_matrix', objectiveId: 'solve_cidr_matrix_13_05', title: 'CALIBRATE MULTI-ZONE MATRIX', label: 'Matrix Node 05', mapId: 13, sequence: 5, tutorial: true, targetTile: { x: 18, y: 0, z: 1 }, profile: { index: 1, zoneCount: 2, parentPrefix: 23 } },
             ],
         },
         ip_network_repair: {
@@ -448,8 +487,17 @@ const IP2LiveGameManager = {
         if (IP2Live.GameStateManager && typeof IP2Live.GameStateManager.bindGameManager === 'function') {
             IP2Live.GameStateManager.bindGameManager(this);
         }
+        // MapManager boots before GameManager is loaded, so its first quest
+        // pass can only see the older per-gameplay fallback registries. Run a
+        // second authoritative pass now that the mixed Stage 3 catalog is
+        // available; registerMapQuests(..., append:false) replaces that early
+        // map ordering with the exact Gameplay 4.5 -> 5 -> 6 curriculum.
+        if (IP2Live.MapManager && typeof IP2Live.MapManager.syncStageFoundation === 'function') {
+            IP2Live.MapManager.syncStageFoundation();
+        }
         await this.loadDialogueLibrary();
-        this._ensureReportSession();
+        this._installCheckpointTimer();
+        this._installShutdownListener();
         return true;
     },
 
@@ -516,11 +564,23 @@ const IP2LiveGameManager = {
     },
 
     _ensureReportSession() {
-        if (this._reportSessionId) return this._reportSessionId;
+        const profileName = this._deriveTelemetryProfileName({});
+        if (this._reportSessionId && this._reportSessionProfileName === profileName) return this._reportSessionId;
+        if (this._reportSessionId && this._reportSessionProfileName !== profileName) {
+            this._logTelemetryEvent('session_end', {
+                sessionId: this._reportSessionId,
+                infiltratorName: this._reportSessionProfileName || 'UNKNOWN',
+                timestamp: Date.now(),
+                notes: 'profile_changed',
+            });
+            this._reportSessionId = null;
+        }
         const ts = Date.now();
         this._reportSessionId = 'session-' + ts + '-' + Math.floor(Math.random() * 99999);
+        this._reportSessionProfileName = profileName;
         this._logTelemetryEvent('session_start', {
             sessionId: this._reportSessionId,
+            infiltratorName: profileName,
             mapId: this._currentMapId(),
         });
         return this._reportSessionId;
@@ -540,6 +600,106 @@ const IP2LiveGameManager = {
         return 'UNKNOWN';
     },
 
+    _deriveTelemetryProfileId(payload) {
+        const game = Core && Core.Game ? Core.Game.current : null;
+        const candidates = [
+            payload && payload.profileId,
+            game && game._ip2liveProfileId,
+            game && game.profileId,
+        ];
+        for (let i = 0; i < candidates.length; i++) {
+            const value = String(candidates[i] || '').trim();
+            if (value) return value;
+        }
+        return null;
+    },
+
+    _newEventId(prefix) {
+        try {
+            if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+                return String(prefix || 'event') + '-' + crypto.randomUUID();
+            }
+        } catch (error) {}
+        return String(prefix || 'event') + '-' + Date.now() + '-' + Math.floor(Math.random() * 1000000000);
+    },
+
+    _trackTelemetryWrite(writePromise) {
+        const tracked = Promise.resolve(writePromise);
+        this._reportPendingWrites.add(tracked);
+        const self = this;
+        tracked.then(function () { self._reportPendingWrites.delete(tracked); }, function () { self._reportPendingWrites.delete(tracked); });
+        return tracked;
+    },
+
+    async flushTelemetryWrites() {
+        const pending = Array.from(this._reportPendingWrites);
+        if (pending.length) await Promise.allSettled(pending);
+        if (IP2Live.DesktopStorage && typeof IP2Live.DesktopStorage.flushPendingWrites === 'function') {
+            await IP2Live.DesktopStorage.flushPendingWrites();
+        }
+        return true;
+    },
+
+    async prepareForShutdown(reason) {
+        const why = String(reason || 'application_quit');
+        const activeIds = Object.keys(this._reportActiveAttempts || {});
+        for (let i = 0; i < activeIds.length; i++) {
+            this._closeReportAttempt(activeIds[i], {
+                cancelled: true,
+                reason: 'interrupted',
+                notes: why,
+                result: { cancelled: true, interrupted: true, reason: why },
+            }, false);
+        }
+        if (this._reportSessionId) {
+            this._logTelemetryEvent('session_end', {
+                sessionId: this._reportSessionId,
+                infiltratorName: this._reportSessionProfileName || this._deriveTelemetryProfileName({}),
+                timestamp: Date.now(),
+                endedAt: Date.now(),
+                notes: why,
+            });
+            this._reportSessionId = null;
+            this._reportSessionProfileName = null;
+        }
+        if (this._hasExplicitSaveSlot() && Core && Core.Game && Core.Game.current) {
+            try {
+                await this.saveProgressToActiveSlot(null, null, { checkpointReason: 'shutdown' });
+            } catch (error) {
+                console.warn('[IP2Live] Shutdown checkpoint failed:', error);
+            }
+        }
+        await this.flushTelemetryWrites();
+        return true;
+    },
+
+    _installShutdownListener() {
+        if (this._shutdownListenerInstalled || typeof window === 'undefined' || !window.addEventListener) return;
+        this._shutdownListenerInstalled = true;
+        const self = this;
+        window.addEventListener('beforeunload', function () {
+            const activeIds = Object.keys(self._reportActiveAttempts || {});
+            for (let i = 0; i < activeIds.length; i++) {
+                self._closeReportAttempt(activeIds[i], {
+                    cancelled: true,
+                    reason: 'window_closed',
+                    result: { cancelled: true, interrupted: true, reason: 'window_closed' },
+                }, false);
+            }
+            if (self._reportSessionId) {
+                self._logTelemetryEvent('session_end', {
+                    sessionId: self._reportSessionId,
+                    infiltratorName: self._reportSessionProfileName || self._deriveTelemetryProfileName({}),
+                    timestamp: Date.now(),
+                    endedAt: Date.now(),
+                    notes: 'window_closed',
+                });
+                self._reportSessionId = null;
+                self._reportSessionProfileName = null;
+            }
+        });
+    },
+
     _logTelemetryEvent(eventType, payload) {
         const data = payload || {};
         const catalogEntry = data.gameplayId && this.gameplayCatalog[data.gameplayId]
@@ -555,6 +715,7 @@ const IP2LiveGameManager = {
             : Number(stageMeta.level || 0) || 0;
         const record = {
             telemetryVersion: 'telemetry-20260817-02',
+            eventId: data.eventId || this._newEventId('telemetry'),
             sequence: this._nextTelemetrySeq(),
             sessionId: data.sessionId || this._ensureReportSession(),
             eventType: String(eventType || 'unknown'),
@@ -562,6 +723,7 @@ const IP2LiveGameManager = {
             startedAt: Number(data.startedAt || 0) || 0,
             endedAt: Number(data.endedAt || data.timestamp || 0) || 0,
             infiltratorName: this._deriveTelemetryProfileName(data),
+            profileId: this._deriveTelemetryProfileId(data),
             gameplayId: data.gameplayId || null,
             gameplayLabel: data.gameplayLabel || (catalogEntry && catalogEntry.label) || null,
             competencyKey: data.competencyKey || (catalogEntry && catalogEntry.competencyKey) || null,
@@ -598,14 +760,15 @@ const IP2LiveGameManager = {
         };
 
         if (IP2Live.ReportManager && typeof IP2Live.ReportManager.logTelemetryRecord === 'function') {
-            IP2Live.ReportManager.logTelemetryRecord(record);
-            return;
+            return this._trackTelemetryWrite(IP2Live.ReportManager.logTelemetryRecord(record));
         }
         if (IP2Live.DBManager && typeof IP2Live.DBManager.saveRecord === 'function') {
-            IP2Live.DBManager.saveRecord('telemetry', record).catch(function (e) {
+            return this._trackTelemetryWrite(IP2Live.DBManager.saveRecord('telemetry', record).catch(function (e) {
                 console.warn('[IP2Live] Telemetry write failed:', e);
-            });
+                return false;
+            }));
         }
+        return Promise.resolve(false);
     },
 
     _reportActiveAttempt(gameplayId) {
@@ -766,7 +929,7 @@ const IP2LiveGameManager = {
                 maxAttempts: Number(r.maxAttempts || 0) || 0,
                 retries: Number(r.retries || 0) || 0,
                 mistakeCount: Number(r.retries || 0) || 0,
-                mistakeRate: Number(r.passed) === false ? 1 : 0,
+                mistakeRate: r.passed === false ? 1 : 0,
                 accuracy: Number.isFinite(errorDistance) ? (errorDistance === 0 ? 1 : 0) : (r.passed ? 1 : 0),
                 payload: {
                     expectedCIDR: Number.isFinite(cidr) ? cidr : null,
@@ -796,6 +959,39 @@ const IP2LiveGameManager = {
                     answers: this._clonePlain(r.answers || {}),
                     slotStats: this._clonePlain(slotStats),
                     wrongSlotFrequency: this._clonePlain(slotStats.wrongSlotFrequency || {}),
+                },
+            };
+        }
+        if (gameplayId === 'ip_host_power_reactor') {
+            const targetExponent = Number(r.targetExponent);
+            const exponent = Number(r.exponent);
+            const exponentDistance = Number.isFinite(targetExponent) && Number.isFinite(exponent)
+                ? Math.abs(targetExponent - exponent)
+                : null;
+            const passed = r.success === true || r.passed === true;
+            const overshoots = Number(r.overshoots || 0) || 0;
+            return {
+                attemptsUsed: 1,
+                maxAttempts: 1,
+                retries: 0,
+                mistakeCount: overshoots,
+                mistakeRate: overshoots > 0 ? Math.min(1, overshoots / Math.max(1, overshoots + 1)) : (passed ? 0 : 1),
+                accuracy: passed ? (overshoots > 0 ? Math.max(0, 1 - (overshoots * 0.1)) : 1) : (exponentDistance === null ? 0 : Math.max(0, 1 - (exponentDistance / Math.max(1, targetExponent)))),
+                payload: {
+                    className: r.className || null,
+                    requiredHosts: Number(r.requiredHosts || 0) || 0,
+                    addressDemand: Number(r.addressDemand || 0) || 0,
+                    exponent: Number.isFinite(exponent) ? exponent : null,
+                    targetExponent: Number.isFinite(targetExponent) ? targetExponent : null,
+                    exponentDistance: exponentDistance,
+                    totalAddresses: Number(r.totalAddresses || 0) || 0,
+                    usableHosts: Number(r.usableHosts || 0) || 0,
+                    reservedAddresses: Number(r.reservedAddresses || 2) || 2,
+                    bitsToBorrow: Number(r.bitsToBorrow || 0) || 0,
+                    targetBitsToBorrow: Number(r.targetBitsToBorrow || 0) || 0,
+                    overshoots: overshoots,
+                    hits: this._clonePlain(r.hits || []),
+                    timeRemainingMs: Number(r.timeRemainingMs || 0) || 0,
                 },
             };
         }
@@ -915,6 +1111,7 @@ const IP2LiveGameManager = {
     },
 
     startNewGameFlow(playerName) {
+        this.clearActiveSaveSlot();
         return this.startTutorialFlow({
             playerName,
             useLoading: false,
@@ -1118,6 +1315,13 @@ const IP2LiveGameManager = {
                     mode: 'replace',
                 }));
             }
+            if (node.id === 'ip_host_power_reactor' && IP2Live.HostPowerReactorGameplayManager && typeof IP2Live.HostPowerReactorGameplayManager.launchHostPowerReactorGameplay === 'function') {
+                return IP2Live.HostPowerReactorGameplayManager.launchHostPowerReactorGameplay(Object.assign({}, opts, {
+                    _fromGameManager: true,
+                    showIntro: opts.showIntro,
+                    mode: opts.mode || 'push',
+                }));
+            }
             if (node.id === 'ip_cidr_quarantine' && IP2Live.CIDRQuarantineGameplayManager && typeof IP2Live.CIDRQuarantineGameplayManager.launchCIDRQuarantineGameplay === 'function') {
                 return IP2Live.CIDRQuarantineGameplayManager.launchCIDRQuarantineGameplay(Object.assign({}, opts, {
                     _fromGameManager: true,
@@ -1177,12 +1381,14 @@ const IP2LiveGameManager = {
         const active = this._reportActiveAttempt(gameplayId) || this._openReportAttempt(gameplayId, data);
         if (active) {
             const mistakesThisTry = Array.isArray(data.mistakes) ? data.mistakes.length : 0;
-            active.mistakeCount = (active.mistakeCount || 0) + 1;
+            const tryNumber = (active.mistakeEvents ? active.mistakeEvents.length : 0) + 1;
+            active.mistakeCount = (active.mistakeCount || 0) + Math.max(1, mistakesThisTry);
+            active.retries = Math.max(Number(active.retries || 0) || 0, tryNumber);
             if (Array.isArray(data.mistakes) && data.mistakes.length) {
                 for (let i = 0; i < data.mistakes.length; i++) active.mistakes.push(this._clonePlain(data.mistakes[i]));
             }
             active.mistakeEvents.push({
-                tryNumber: active.mistakeCount,
+                tryNumber: tryNumber,
                 timestamp: Date.now(),
                 mistakesThisTry: mistakesThisTry,
                 attemptsRemaining: Number(data.attemptsRemaining || 0) || 0,
@@ -1197,13 +1403,15 @@ const IP2LiveGameManager = {
                 objectiveId: data.objectiveId || active.objectiveId || null,
                 mistakeCount: active.mistakeCount,
                 payload: {
-                    tryNumber: active.mistakeCount,
+                    tryNumber: tryNumber,
                     mistakesThisTry: mistakesThisTry,
                     mistakes: this._clonePlain(data.mistakes || []),
                     attemptsRemaining: Number(data.attemptsRemaining || 0) || 0,
                 },
             });
         }
+
+        if (data.telemetryOnly) return true;
 
         if (
             gameplayId === 'ip_network_repair' &&
@@ -1263,6 +1471,7 @@ const IP2LiveGameManager = {
         this._activeGameplayNode = null;
         this.emit(this.EVENT.GAMEPLAY_COMPLETED, data);
         this._closeReportAttempt(gameplayId, data, true);
+        this._queueCheckpoint('gameplay_completed');
         this._setState(this.STATE.DIALOGUE_AFTER, data);
         const hadDialogue = this._runTimingDialogues(data, 'after', () => {
             this._setState(this.STATE.NEXT_NODE, data);
@@ -1355,6 +1564,7 @@ const IP2LiveGameManager = {
     handleQuestObjectiveCompleted(result) {
         this._ensureQuestMinimap();
         this.emit(this.EVENT.QUEST_OBJECTIVE_COMPLETED, result || {});
+        this._queueCheckpoint('quest_objective_completed');
         return true;
     },
 
@@ -1412,7 +1622,29 @@ const IP2LiveGameManager = {
         const scope = this._mapScope(mapId, context || {});
         this._setState(this.STATE.DIALOGUE_AFTER, scope);
 
+        const skipEntryDialogue = this.isResumingMapFromSave(mapId, scope.scene) ||
+            this.hasSeenMapEntryDialogue(mapId);
+
         if (stage && stage.tutorial) {
+            if (skipEntryDialogue) {
+                this.prepareLoadedMapScene(scope.scene, mapId);
+                const scene = this._currentScene();
+                if (scene) scene._ip2liveGameManagerTutorialActivated = true;
+                if (IP2Live.Tutorial && typeof IP2Live.Tutorial.activate === 'function') {
+                    IP2Live.Tutorial.activate({
+                        skipIntro: true,
+                        preserveQuestProgress: true,
+                        resumeQuestProgress: true,
+                        source: 'GameManager.resumeTutorialWithoutIntro',
+                        mapId: Number(mapId) || 1,
+                        scene: scene,
+                    });
+                }
+                this._setState(this.STATE.NEXT_NODE, Object.assign({}, scope, {
+                    source: 'GameManager.resumeTutorialWithoutIntro',
+                }));
+                return true;
+            }
             this._runTutorialIntroThenActivate(scope);
             return true;
         }
@@ -1425,7 +1657,22 @@ const IP2LiveGameManager = {
             }));
         }
 
-        return this._runTimingDialogues(scope, 'after');
+        // A slot restore creates a brand-new Scene.Map instance. Scene-only
+        // flags therefore cannot tell a resumed map from a genuine first
+        // entry. Suppress only the normal world-entry briefing on resume (or
+        // when this game has already seen it); special return/failure
+        // dialogues above must still run.
+        if (skipEntryDialogue) {
+            this.prepareLoadedMapScene(scope.scene, mapId);
+            this._setState(this.STATE.NEXT_NODE, Object.assign({}, scope, {
+                source: 'GameManager.resumeWithoutEntryDialogue',
+            }));
+            return true;
+        }
+
+        const hadEntryDialogue = this._runTimingDialogues(scope, 'after');
+        if (hadEntryDialogue) this.markMapEntryDialogueSeen(mapId);
+        return hadEntryDialogue;
     },
 
     _runTutorialIntroThenActivate(context) {
@@ -1458,6 +1705,7 @@ const IP2LiveGameManager = {
         };
 
         const hadDialogue = this._runTimingDialogues(scope, 'after', activateTutorial);
+        if (hadDialogue) this.markMapEntryDialogueSeen(scope.mapId);
         if (!hadDialogue) activateTutorial();
         return true;
     },
@@ -1655,13 +1903,58 @@ const IP2LiveGameManager = {
         return Number(mapId) || (Core.Game.current && Number(Core.Game.current.currentMapID)) || 0;
     },
 
-    setActiveSaveSlot(slotId) {
+    setActiveSaveSlot(slotId, game) {
         const slot = Number(slotId);
         if (!Number.isInteger(slot) || slot <= 0) return false;
+        const targetGame = game || (Core && Core.Game ? Core.Game.current : null);
         this._activeSaveSlot = slot;
-        if (Core && Core.Game && Core.Game.current) {
-            this._assignSaveSlotToGame(Core.Game.current, slot);
+        this._activeSaveGame = targetGame || null;
+        if (targetGame) this._assignSaveSlotToGame(targetGame, slot);
+        return true;
+    },
+
+    clearActiveSaveSlot(game) {
+        const targetGame = game || this._activeSaveGame;
+        if (targetGame && targetGame._ip2liveSaveSlot !== undefined) {
+            delete targetGame._ip2liveSaveSlot;
         }
+        this._activeSaveSlot = null;
+        this._activeSaveGame = null;
+        return true;
+    },
+
+    getActiveSaveSlot(game) {
+        const targetGame = game || (Core && Core.Game ? Core.Game.current : null);
+        if (!targetGame || this._activeSaveGame !== targetGame) return null;
+        const slot = Number(this._activeSaveSlot);
+        return Number.isInteger(slot) && slot > 0 ? slot : null;
+    },
+
+    _hasExplicitSaveSlot() {
+        const game = Core && Core.Game ? Core.Game.current : null;
+        return this.getActiveSaveSlot(game) !== null;
+    },
+
+    _installCheckpointTimer() {
+        if (this._checkpointTimer || typeof setInterval !== 'function') return;
+        const self = this;
+        this._checkpointTimer = setInterval(function () {
+            self._queueCheckpoint('periodic_60_seconds');
+        }, 60000);
+    },
+
+    _queueCheckpoint(reason) {
+        if (!this._hasExplicitSaveSlot() || this._checkpointInFlight || typeof setTimeout !== 'function') return false;
+        if (this._checkpointDebounceTimer) clearTimeout(this._checkpointDebounceTimer);
+        const self = this;
+        this._checkpointDebounceTimer = setTimeout(function () {
+            self._checkpointDebounceTimer = null;
+            if (!self._hasExplicitSaveSlot() || self._checkpointInFlight) return;
+            self._checkpointInFlight = true;
+            self.saveProgressToActiveSlot(null, null, { checkpointReason: reason || 'checkpoint' })
+                .catch(function (error) { console.warn('[IP2Live] Automatic checkpoint failed:', error); })
+                .finally(function () { self._checkpointInFlight = false; });
+        }, 750);
         return true;
     },
 
@@ -1671,9 +1964,10 @@ const IP2LiveGameManager = {
         if (Number.isInteger(preferred) && preferred >= 1 && preferred <= maxSlots) return preferred;
 
         const game = Core && Core.Game ? Core.Game.current : null;
+        const ownedActiveSlot = this.getActiveSaveSlot(game);
         const candidates = [
             game && game._ip2liveSaveSlot,
-            this._activeSaveSlot,
+            ownedActiveSlot,
             game && game.currentSlot,
             game && game.slotID,
             game && game.slotId,
@@ -1705,6 +1999,19 @@ const IP2LiveGameManager = {
             const value = String(candidates[i] || '').trim();
             if (!value || value.toUpperCase() === 'UNKNOWN') continue;
             return value;
+        }
+        return null;
+    },
+
+    _resolveProfileId(game) {
+        const g = game || (Core && Core.Game ? Core.Game.current : null);
+        const candidates = [
+            g && g._ip2liveProfileId,
+            g && g.profileId,
+        ];
+        for (let i = 0; i < candidates.length; i++) {
+            const value = String(candidates[i] || '').trim();
+            if (value) return value;
         }
         return null;
     },
@@ -1814,6 +2121,16 @@ const IP2LiveGameManager = {
         const opts = options || {};
         const profileName = String(opts.infiltratorName || this._resolveProfileName(opts.loadedGame) || '').trim();
 
+        const desktopStorage = IP2Live.DesktopStorage;
+        if (desktopStorage && typeof desktopStorage.readProgressSnapshot === 'function') {
+            try {
+                const durableSnapshot = await desktopStorage.readProgressSnapshot(resolvedSlot, profileName);
+                if (durableSnapshot) return durableSnapshot;
+            } catch (error) {
+                console.warn('[IP2Live] GameManager: durable slot metadata could not be read:', error);
+            }
+        }
+
         let profileSnapshot = null;
         if (profileName) profileSnapshot = await this._readProfileSlotSnapshot(profileName, resolvedSlot);
         const cachedSnapshot = this._readSlotSnapshot(resolvedSlot, profileName);
@@ -1822,24 +2139,24 @@ const IP2LiveGameManager = {
         return cachedSnapshot || null;
     },
 
-    async _saveCoreGame(slot) {
-        const game = Core && Core.Game ? Core.Game.current : null;
+    async _saveCoreGame(slot, expectedGame) {
+        const currentGame = Core && Core.Game ? Core.Game.current : null;
+        const game = expectedGame || currentGame;
         if (!game || typeof game.save !== 'function') return false;
+        // A queued checkpoint belongs to the game object that created its
+        // snapshot. Never let a title/new-game transition redirect it into a
+        // replacement Core.Game while asynchronous metadata reads are pending.
+        if (currentGame !== game) return false;
         this._assignSaveSlotToGame(game, slot);
-
+        const previousSaveCount = Number(game.saves || 0) || 0;
         try {
             const result = game.save.length > 0 ? game.save(slot) : game.save();
             if (result && typeof result.then === 'function') await result;
             return true;
-        } catch (e1) {
-            try {
-                const retry = game.save();
-                if (retry && typeof retry.then === 'function') await retry;
-                return true;
-            } catch (e2) {
-                console.warn('[IP2Live] GameManager: core save failed for slot', slot, e2);
-                return false;
-            }
+        } catch (error) {
+            game.saves = previousSaveCount;
+            console.warn('[IP2Live] GameManager: core save failed for slot', slot, error);
+            return false;
         }
     },
 
@@ -1885,7 +2202,7 @@ const IP2LiveGameManager = {
         const snap = snapshot || {};
         const mapId = Number(snap.mapId) || 0;
         return {
-            version: 'slot-restore-20260530-01',
+            version: 'slot-restore-20260821-02',
             slot: Number(slot) || 0,
             mapId: mapId,
             profileName: String(snap.profileName || '').trim() || null,
@@ -1893,6 +2210,8 @@ const IP2LiveGameManager = {
             heroPosition: this._clonePlain(snap.heroPosition || null),
             restoredAt: Date.now(),
             resetBypassConsumed: false,
+            resumeFromSave: true,
+            suppressMapEntryDialogue: true,
         };
     },
 
@@ -1904,26 +2223,130 @@ const IP2LiveGameManager = {
         return true;
     },
 
-    async saveProgressToActiveSlot(preferredSlot, saveName) {
-        const slot = this._resolveActiveSaveSlot(preferredSlot);
+    getPendingSlotRestoreForMap(mapId, scene) {
+        const game = Core && Core.Game ? Core.Game.current : null;
+        const context = (scene && scene._ip2livePendingSlotRestore) ||
+            (game && game._ip2livePendingSlotRestore) ||
+            null;
+        if (!context || context.resumeFromSave === false) return null;
+        const restoreMapId = Number(context.mapId) || 0;
+        const resolvedMapId = Number(mapId) || this._currentMapId();
+        if (restoreMapId && resolvedMapId && restoreMapId !== resolvedMapId) return null;
+        return context;
+    },
+
+    isResumingMapFromSave(mapId, scene) {
+        const context = this.getPendingSlotRestoreForMap(mapId, scene);
+        return !!(context && context.suppressMapEntryDialogue !== false);
+    },
+
+    prepareLoadedMapScene(scene, mapId) {
+        const resolvedMapId = Number(mapId) || this._currentMapId();
+        const context = this.getPendingSlotRestoreForMap(resolvedMapId, scene);
+        if (!context || context.suppressMapEntryDialogue === false) return false;
+
+        if (scene) {
+            scene._ip2livePendingSlotRestore = context;
+            scene._ip2liveStageIntroPending = false;
+            scene._ip2liveStageIntroStarted = true;
+            scene._ip2liveEntryDialogueSuppressedForRestore = true;
+            if (
+                IP2Live.GameStateManager &&
+                typeof IP2Live.GameStateManager.queueMapStateRestore === 'function'
+            ) {
+                IP2Live.GameStateManager.queueMapStateRestore(scene, resolvedMapId, {
+                    slot: Number(context.slot) || 0,
+                    source: 'GameManager.prepareLoadedMapScene',
+                });
+            }
+        }
+        this.markMapEntryDialogueSeen(resolvedMapId);
+        return true;
+    },
+
+    _entryDialogueState(game, create) {
+        const target = game || (Core && Core.Game ? Core.Game.current : null);
+        if (!target) return null;
+        if (!target.ip2liveGameStates || typeof target.ip2liveGameStates !== 'object') {
+            if (!create) return null;
+            target.ip2liveGameStates = {};
+        }
+        if (!target.ip2liveGameStates.mapEntryDialoguesSeen || typeof target.ip2liveGameStates.mapEntryDialoguesSeen !== 'object') {
+            if (!create) return null;
+            target.ip2liveGameStates.mapEntryDialoguesSeen = {};
+        }
+        return target.ip2liveGameStates.mapEntryDialoguesSeen;
+    },
+
+    hasSeenMapEntryDialogue(mapId, game) {
+        const resolvedMapId = Number(mapId) || 0;
+        if (!resolvedMapId) return false;
+        const state = this._entryDialogueState(game, false);
+        return !!(state && state[String(resolvedMapId)]);
+    },
+
+    markMapEntryDialogueSeen(mapId, game) {
+        const resolvedMapId = Number(mapId) || 0;
+        if (!resolvedMapId) return false;
+        const state = this._entryDialogueState(game, true);
+        if (!state) return false;
+        state[String(resolvedMapId)] = true;
+        return true;
+    },
+
+    saveProgressToActiveSlot(preferredSlot, saveName, options) {
+        const self = this;
+        const previous = this._saveQueue || Promise.resolve();
+        const queued = previous.catch(function () {}).then(function () {
+            return self._saveProgressToActiveSlotNow(preferredSlot, saveName, options);
+        });
+        this._saveQueue = queued;
+        queued.then(function () {
+            if (self._saveQueue === queued) self._saveQueue = null;
+        }, function () {
+            if (self._saveQueue === queued) self._saveQueue = null;
+        });
+        return queued;
+    },
+
+    async _saveProgressToActiveSlotNow(preferredSlot, saveName, options) {
         const game = Core && Core.Game ? Core.Game.current : null;
         if (!game) return { saved: false, reason: 'no-game' };
-
-        const coreSaved = await this._saveCoreGame(slot);
-        if (!coreSaved) return { saved: false, reason: 'core-save-failed', slot: slot };
-
-        this.setActiveSaveSlot(slot);
+        const opts = options || {};
+        const preferred = Number(preferredSlot);
+        const maxSlots = Math.max(1, Number(Data && Data.Systems && Data.Systems.saveSlots) || 1);
+        const hasPreferredSlot = Number.isInteger(preferred) && preferred >= 1 && preferred <= maxSlots;
+        const ownedActiveSlot = this.getActiveSaveSlot(game);
+        if (!hasPreferredSlot && ownedActiveSlot === null) {
+            return { saved: false, reason: 'no-explicit-save-slot' };
+        }
+        const slot = hasPreferredSlot ? preferred : ownedActiveSlot;
         const profileName = this._resolveProfileName(game);
         if (profileName) {
             game._ip2liveProfileName = profileName;
             game.infiltratorName = profileName;
         }
+        const profileId = this._resolveProfileId(game);
+        if (profileId) {
+            game._ip2liveProfileId = profileId;
+            game.profileId = profileId;
+        }
         const mapId = Number(game.currentMapID) || this._currentMapId() || 1;
         const stage = this._stageFor(mapId) || {};
+        let previousSnapshot = null;
+        try { previousSnapshot = await this.getSlotProgressSnapshot(slot, { loadedGame: game }); } catch (error) {}
+        if (!Core || !Core.Game || Core.Game.current !== game) {
+            return { saved: false, reason: 'game-changed-before-save', slot: slot };
+        }
+        if (!hasPreferredSlot && this.getActiveSaveSlot(game) !== slot) {
+            return { saved: false, reason: 'save-slot-changed-before-checkpoint', slot: slot };
+        }
+        const requestedSaveName = String(saveName || '').trim();
         const snapshot = {
             slot: slot,
-            saveName: String(saveName || '').trim() || null,
+            saveName: requestedSaveName || (previousSnapshot && previousSnapshot.saveName) || null,
             profileName: profileName || null,
+            profileId: profileId || null,
             mapId: mapId,
             stage: stage.stage || null,
             level: stage.level || null,
@@ -1931,8 +2354,40 @@ const IP2LiveGameManager = {
             questState: this._buildQuestSnapshot(),
             gameStates: this._clonePlain(game.ip2liveGameStates || null),
             savedAt: Date.now(),
+            checkpointReason: opts.checkpointReason || (requestedSaveName ? 'manual_save' : 'checkpoint'),
         };
+
+        const desktopStorage = IP2Live.DesktopStorage;
+        if (desktopStorage && typeof desktopStorage.prepareSaveMetadata === 'function') {
+            desktopStorage.prepareSaveMetadata(slot, {
+                profileId: profileId || null,
+                profileName: profileName || null,
+                savedAt: snapshot.savedAt,
+                snapshot: snapshot,
+            });
+        }
+
+        const coreSaved = await this._saveCoreGame(slot, game);
+        if (!coreSaved) {
+            if (desktopStorage && typeof desktopStorage.clearPendingSaveMetadata === 'function') {
+                desktopStorage.clearPendingSaveMetadata(slot);
+            }
+            return { saved: false, reason: 'core-save-failed', slot: slot };
+        }
+
+        if (Core && Core.Game && Core.Game.current === game) {
+            this.setActiveSaveSlot(slot, game);
+        }
         this._persistSlotSnapshot(slot, snapshot);
+
+        let fileSnapshot = null;
+        if (desktopStorage && typeof desktopStorage.writeProgressSnapshot === 'function') {
+            try {
+                fileSnapshot = await desktopStorage.writeProgressSnapshot(slot, snapshot);
+            } catch (error) {
+                console.warn('[IP2Live] GameManager: core save is safe, but progress sidecar could not be refreshed:', error);
+            }
+        }
 
         if (profileName && IP2Live.DBManager && typeof IP2Live.DBManager.getRecord === 'function' && typeof IP2Live.DBManager.saveRecord === 'function') {
             try {
@@ -1940,6 +2395,7 @@ const IP2LiveGameManager = {
                     infiltratorName: profileName,
                     createdAt: Date.now(),
                 };
+                if (profileId && !existing.profileId) existing.profileId = profileId;
                 if (!existing.progressBySlot || typeof existing.progressBySlot !== 'object') existing.progressBySlot = {};
                 existing.progressBySlot[String(slot)] = snapshot;
                 existing.lastSavedSlot = slot;
@@ -1951,17 +2407,51 @@ const IP2LiveGameManager = {
                 console.warn('[IP2Live] GameManager: could not persist profile snapshot for slot', slot, e);
             }
         }
-        return { saved: true, slot: slot, mapId: mapId, snapshot: snapshot };
+        return {
+            saved: true,
+            slot: slot,
+            mapId: mapId,
+            snapshot: snapshot,
+            durableStorage: desktopStorage && typeof desktopStorage.getStorageInfo === 'function'
+                ? desktopStorage.getStorageInfo()
+                : null,
+            progressFile: fileSnapshot && fileSnapshot.path ? fileSnapshot.path : null,
+        };
     },
 
     async restoreProgressFromSlot(slotId, loadedGame) {
         const slot = this._resolveActiveSaveSlot(slotId);
         const game = loadedGame || (Core && Core.Game ? Core.Game.current : null);
         if (!game) return { restored: false, reason: 'no-game' };
-        this.setActiveSaveSlot(slot);
+        if (Core && Core.Game && Core.Game.current === game) {
+            this.setActiveSaveSlot(slot, game);
+        }
 
         const snapshot = await this.getSlotProgressSnapshot(slot, { loadedGame: game });
-        if (!snapshot) return { restored: false, reason: 'no-slot-snapshot' };
+        if (!snapshot) {
+            // A valid RPG Paper Maker core save may predate the progress
+            // sidecar (or the sidecar may have been lost independently). The
+            // core slot was still loaded deliberately, so mark this map as a
+            // resume before constructing Scene.Map. This prevents the
+            // first-entry briefing from replaying while leaving the engine's
+            // own loaded state untouched.
+            const coreOnlySnapshot = {
+                mapId: Number(game.currentMapID) || this._currentMapId() || 0,
+                profileName: this._resolveProfileName(game),
+                profileId: this._resolveProfileId(game),
+                questState: null,
+                heroPosition: null,
+            };
+            const coreOnlyContext = this._buildSlotRestoreContext(slot, coreOnlySnapshot);
+            this._attachPendingSlotRestore(game, coreOnlyContext);
+            return {
+                restored: true,
+                metadataRestored: false,
+                slot: slot,
+                snapshot: null,
+                reason: 'core-save-only',
+            };
+        }
 
         const profileName = String(snapshot.profileName || '').trim();
         if (profileName) {
@@ -1970,6 +2460,11 @@ const IP2LiveGameManager = {
         }
         if (Number(snapshot.mapId) > 0) {
             game.currentMapID = Number(snapshot.mapId);
+        }
+        const profileId = String(snapshot.profileId || '').trim();
+        if (profileId) {
+            game._ip2liveProfileId = profileId;
+            game.profileId = profileId;
         }
         if (snapshot.gameStates && typeof snapshot.gameStates === 'object') {
             game.ip2liveGameStates = this._clonePlain(snapshot.gameStates);
@@ -2004,14 +2499,17 @@ const IP2LiveGameManager = {
 
     async exportProgressReport(options) {
         const opts = options || {};
-        const scopeDays = Number(opts.scopeDays || 30) || 30;
+        const scopeDays = Number(opts.scopeDays || 90) || 90;
         const format = String(opts.format || 'both').toLowerCase();
-        const profileName = this._resolveProfileName((Core && Core.Game) ? Core.Game.current : null) || 'UNKNOWN';
+        const currentGame = (Core && Core.Game) ? Core.Game.current : null;
+        const profileName = this._resolveProfileName(currentGame) || 'UNKNOWN';
+        const profileId = this._resolveProfileId(currentGame);
         if (!IP2Live.ReportManager || typeof IP2Live.ReportManager.export !== 'function') {
             return { ok: false, reason: 'report-manager-missing' };
         }
         return IP2Live.ReportManager.export({
             infiltratorName: profileName,
+            profileId: profileId,
             scopeDays: scopeDays,
             format: format,
             filenameBase: opts.filenameBase || null,

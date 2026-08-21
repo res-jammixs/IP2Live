@@ -14,9 +14,11 @@ const inject = Manager.Plugins.inject;
 const IP2Live = {};
 
 IP2Live.DBManager = {
-    dbName: 'IP2Live_Database', dbVersion: 2, db: null,
+    dbName: 'IP2Live_Database', dbVersion: 3, db: null, _openPromise: null,
     initDB() {
-        return new Promise((resolve, reject) => {
+        if (this.db) return Promise.resolve(this.db);
+        if (this._openPromise) return this._openPromise;
+        this._openPromise = new Promise((resolve, reject) => {
             const request = window.indexedDB.open(this.dbName, this.dbVersion);
             request.onupgradeneeded = (e) => {
                 const db = e.target.result;
@@ -26,6 +28,15 @@ IP2Live.DBManager = {
                     const sessions = db.createObjectStore('sessions', { keyPath: 'id', autoIncrement: true });
                     sessions.createIndex('infiltratorName', 'infiltratorName', { unique: false });
                     sessions.createIndex('startedAt', 'startedAt', { unique: false });
+                    sessions.createIndex('sessionId', 'sessionId', { unique: false });
+                } else {
+                    const tx = e.target.transaction;
+                    if (tx) {
+                        const sessions = tx.objectStore('sessions');
+                        if (!sessions.indexNames.contains('infiltratorName')) sessions.createIndex('infiltratorName', 'infiltratorName', { unique: false });
+                        if (!sessions.indexNames.contains('startedAt')) sessions.createIndex('startedAt', 'startedAt', { unique: false });
+                        if (!sessions.indexNames.contains('sessionId')) sessions.createIndex('sessionId', 'sessionId', { unique: false });
+                    }
                 }
                 if (!db.objectStoreNames.contains('telemetry')) {
                     const s = db.createObjectStore('telemetry', { keyPath: 'id', autoIncrement: true });
@@ -34,6 +45,9 @@ IP2Live.DBManager = {
                     s.createIndex('timestamp', 'timestamp', { unique: false });
                     s.createIndex('gameplayId', 'gameplayId', { unique: false });
                     s.createIndex('eventType', 'eventType', { unique: false });
+                    s.createIndex('eventId', 'eventId', { unique: false });
+                    s.createIndex('sessionId', 'sessionId', { unique: false });
+                    s.createIndex('attemptId', 'attemptId', { unique: false });
                 } else {
                     // Upgrade existing telemetry store indexes for report queries.
                     const tx = e.target.transaction;
@@ -44,19 +58,39 @@ IP2Live.DBManager = {
                         if (!s.indexNames.contains('timestamp')) s.createIndex('timestamp', 'timestamp', { unique: false });
                         if (!s.indexNames.contains('gameplayId')) s.createIndex('gameplayId', 'gameplayId', { unique: false });
                         if (!s.indexNames.contains('eventType')) s.createIndex('eventType', 'eventType', { unique: false });
+                        if (!s.indexNames.contains('eventId')) s.createIndex('eventId', 'eventId', { unique: false });
+                        if (!s.indexNames.contains('sessionId')) s.createIndex('sessionId', 'sessionId', { unique: false });
+                        if (!s.indexNames.contains('attemptId')) s.createIndex('attemptId', 'attemptId', { unique: false });
                     }
                 }
             };
-            request.onsuccess = (e) => { this.db = e.target.result; resolve(this.db); };
-            request.onerror = (e) => reject(e.target.error);
+            request.onsuccess = (e) => {
+                this.db = e.target.result;
+                this.db.onversionchange = () => {
+                    try { this.db.close(); } catch (error) {}
+                    this.db = null;
+                    this._openPromise = null;
+                };
+                resolve(this.db);
+            };
+            request.onerror = (e) => {
+                this._openPromise = null;
+                reject(e.target.error);
+            };
+            request.onblocked = () => console.warn('[IP2Live] IndexedDB upgrade is waiting for another game window to close.');
         });
+        return this._openPromise;
     },
     async saveRecord(storeName, data) {
         if (!this.db) await this.initDB();
         return new Promise((resolve, reject) => {
-            const req = this.db.transaction([storeName], 'readwrite').objectStore(storeName).put(data);
-            req.onsuccess = () => resolve(req.result);
-            req.onerror = (e) => reject(e.target.error);
+            const tx = this.db.transaction([storeName], 'readwrite');
+            const req = tx.objectStore(storeName).put(data);
+            let result = null;
+            req.onsuccess = () => { result = req.result; };
+            tx.oncomplete = () => resolve(result);
+            tx.onerror = (e) => reject(e.target.error || tx.error);
+            tx.onabort = () => reject(tx.error || new Error('IndexedDB transaction aborted'));
         });
     },
     async getRecord(storeName, key) {
@@ -893,6 +927,13 @@ IP2Live.GameplayManagerReady = (async function () {
     const root = Common.Platform.ROOT_DIRECTORY;
     const bundles = [
         {
+            baseDir: root + 'Plugins/IP2Live_Core/gameplay/common/',
+            version: '20260821_gameplay_completion_popup_01_',
+            files: [
+                'gameplay_completion_popup.js',
+            ],
+        },
+        {
             baseDir: root + 'Plugins/IP2Live_Core/gameplay/gameplay1/IPWires/',
             version: '20260530_ip_wires_05_',
             files: [
@@ -927,6 +968,15 @@ IP2Live.GameplayManagerReady = (async function () {
             files: [
                 'ip_subnetsim_tutorial.js',
                 'ip_subnetsim_gameplay.js',
+            ],
+        },
+        {
+            baseDir: root + 'Plugins/IP2Live_Core/gameplay/gameplay4_5/HostPowerReactor/',
+            version: '20260821_ip_host_power_reactor_02_',
+            files: [
+                'ip_host_power_gameplay.js',
+                'ip_host_power_tutorial.js',
+                'ip_host_power_tool.js',
             ],
         },
         {
@@ -1101,7 +1151,11 @@ IP2Live.RestartManager = {
         }
             
         // Cache persistent data
-        const currentName = Core.Game.current ? Core.Game.current.infiltratorName : 'UNKNOWN';
+        const previousGame = Core.Game.current || null;
+        const currentName = previousGame ? previousGame.infiltratorName : 'UNKNOWN';
+        const activeSaveSlot = IP2Live.GameManager && typeof IP2Live.GameManager.getActiveSaveSlot === 'function'
+            ? IP2Live.GameManager.getActiveSaveSlot(previousGame)
+            : null;
         
         // Wipe all scenes from stack (Pause Menu, Map, etc)
         Manager.Stack.popAll();
@@ -1111,6 +1165,9 @@ IP2Live.RestartManager = {
         newGame.initializeDefault();
         newGame.infiltratorName = currentName; // Restore profile name
         Core.Game.current = newGame;
+        if (activeSaveSlot && IP2Live.GameManager && typeof IP2Live.GameManager.setActiveSaveSlot === 'function') {
+            IP2Live.GameManager.setActiveSaveSlot(activeSaveSlot, newGame);
+        }
 
         if (IP2Live.DialogueManager && typeof IP2Live.DialogueManager.resetTransitionState === 'function') {
             IP2Live.DialogueManager.resetTransitionState({ stopActive: true });
@@ -1151,11 +1208,15 @@ window.IP2LiveRestartManager = IP2Live.RestartManager;
 //  music_manager.js is loaded before tutorial + screens so that
 //  IP2Live.MusicManager is available to all other modules.
 // ================================================================
-IP2Live.MusicManagerReady = (async function () {
+// Durable Windows storage is loaded before save slots are enumerated. Browser
+// builds simply keep the IndexedDB/localStorage fallback.
+IP2Live.DesktopStorageReady = (async function () {
     const root = Common.Platform.ROOT_DIRECTORY;
-    const src  = root + 'Plugins/IP2Live_Core/modules/music_manager.js';
+    const src = root + 'Plugins/IP2Live_Core/modules/desktop_storage.js';
     try {
-        const resp = await fetch(src);
+        const versionedSrc = src + '?v=20260821_desktop_storage_02_' + Date.now();
+        let resp = await fetch(versionedSrc, { cache: 'no-store' });
+        if (!resp.ok) resp = await fetch(src, { cache: 'no-store' });
         if (!resp.ok) throw new Error('HTTP ' + resp.status);
         const code = await resp.text();
         new Function(
@@ -1163,7 +1224,47 @@ IP2Live.MusicManagerReady = (async function () {
             'Manager', 'Scene', 'Model', 'Main', 'THREE', 'IP2Live', 'inject',
             code
         )(Common, Core, Data, Graphic, Manager, Scene, Model, Main, THREE, IP2Live, inject);
-        console.log('[IP2Live] Music manager loaded from:', src);
+        if (IP2Live.DesktopStorage && typeof IP2Live.DesktopStorage.boot === 'function') {
+            await IP2Live.DesktopStorage.boot();
+        }
+        console.log('[IP2Live] Durable desktop storage loaded from:', resp.url || src);
+    } catch (e) {
+        console.error('[IP2Live] Failed to load durable desktop storage:', src, e);
+    }
+}());
+
+// The engine calls Data.Settings.read() immediately after Manager.Plugins.load().
+// The storage module above is fetched asynchronously, so make that one startup
+// read wait for the durable settings hooks. This is installed synchronously while
+// the plugin runs and therefore cannot lose the race with the title-screen load.
+(function installDesktopSettingsReadBarrier() {
+    if (!Data.Settings || typeof Data.Settings.read !== 'function' || Data.Settings._ip2liveDurableReadBarrier) return;
+    const originalRead = Data.Settings.read;
+    Data.Settings._ip2liveDurableReadBarrier = true;
+    Data.Settings.read = async function (...args) {
+        if (IP2Live.DesktopStorageReady) await IP2Live.DesktopStorageReady;
+        return originalRead.apply(this, args);
+    };
+}());
+
+IP2Live.MusicManagerReady = (async function () {
+    const root = Common.Platform.ROOT_DIRECTORY;
+    const src  = root + 'Plugins/IP2Live_Core/modules/music_manager.js';
+    try {
+        // Do not let Electron's persistent Chromium profile reuse an older
+        // music manager after a game update. Audio bugs otherwise survive a
+        // reinstall even when the packaged module was replaced correctly.
+        const versionedSrc = src + '?v=20260821_native_bgm_03_' + Date.now();
+        let resp = await fetch(versionedSrc, { cache: 'no-store' });
+        if (!resp.ok) resp = await fetch(src, { cache: 'no-store' });
+        if (!resp.ok) throw new Error('HTTP ' + resp.status);
+        const code = await resp.text();
+        new Function(
+            'Common', 'Core', 'Data', 'Graphic',
+            'Manager', 'Scene', 'Model', 'Main', 'THREE', 'IP2Live', 'inject',
+            code
+        )(Common, Core, Data, Graphic, Manager, Scene, Model, Main, THREE, IP2Live, inject);
+        console.log('[IP2Live] Music manager loaded from:', resp.url || src);
     } catch (e) {
         console.error('[IP2Live] Failed to load music manager:', src, e);
     }
@@ -1223,6 +1324,7 @@ IP2Live.TutorialReady = (async function () {
 //  tutorial activation, and gameplay lifecycle events.
 // ================================================================
 IP2Live.GameManagerReady = (async function () {
+    if (IP2Live.DesktopStorageReady) await IP2Live.DesktopStorageReady;
     if (IP2Live.DialogueManagerReady) await IP2Live.DialogueManagerReady;
     if (IP2Live.GameStateManagerReady) await IP2Live.GameStateManagerReady;
     if (IP2Live.MapManagerReady) await IP2Live.MapManagerReady;
@@ -1259,6 +1361,7 @@ IP2Live.GameManagerReady = (async function () {
 //  Unified telemetry aggregation + PDF/Excel export.
 // ================================================================
 IP2Live.ReportManagerReady = (async function () {
+    if (IP2Live.DesktopStorageReady) await IP2Live.DesktopStorageReady;
     if (IP2Live.GameManagerReady) await IP2Live.GameManagerReady;
     const root = Common.Platform.ROOT_DIRECTORY;
     const src  = root + 'Plugins/IP2Live_Core/modules/report_manager.js';
@@ -1290,6 +1393,7 @@ IP2Live.ReportManagerReady = (async function () {
 //  Custom screen modules are loaded after GameManager is ready.
 // ================================================================
 IP2Live.ScreenModulesReady = (async function () {
+    if (IP2Live.DesktopStorageReady) await IP2Live.DesktopStorageReady;
     if (IP2Live.DialogueManagerReady) await IP2Live.DialogueManagerReady;
     if (IP2Live.LightingManagerReady) await IP2Live.LightingManagerReady;
     if (IP2Live.QuestManagerReady) await IP2Live.QuestManagerReady;

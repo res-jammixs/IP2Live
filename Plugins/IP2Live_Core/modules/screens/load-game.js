@@ -514,7 +514,11 @@ class IP2LiveLoadGameMenu extends Scene.Base {
                     }
 
                     Manager.Stack.popAll();
-                    Manager.Stack.push(new Scene.Map(Core.Game.current.currentMapID));
+                    const restoredScene = new Scene.Map(Core.Game.current.currentMapID);
+                    if (IP2Live.GameManager && typeof IP2Live.GameManager.prepareLoadedMapScene === 'function') {
+                        IP2Live.GameManager.prepareLoadedMapScene(restoredScene, Core.Game.current.currentMapID);
+                    }
+                    Manager.Stack.push(restoredScene);
                     Manager.Stack.clearHUD();
                     if (Manager.Stack) Manager.Stack.requestPaintHUD = true;
                 },
@@ -537,7 +541,11 @@ class IP2LiveLoadGameMenu extends Scene.Base {
             }
 
             Manager.Stack.pop();
-            Manager.Stack.replace(new Scene.Map(Core.Game.current.currentMapID));
+            const restoredScene = new Scene.Map(Core.Game.current.currentMapID);
+            if (IP2Live.GameManager && typeof IP2Live.GameManager.prepareLoadedMapScene === 'function') {
+                IP2Live.GameManager.prepareLoadedMapScene(restoredScene, Core.Game.current.currentMapID);
+            }
+            Manager.Stack.replace(restoredScene);
             Manager.Stack.clearHUD();
         } finally {
             this.loading = false;
