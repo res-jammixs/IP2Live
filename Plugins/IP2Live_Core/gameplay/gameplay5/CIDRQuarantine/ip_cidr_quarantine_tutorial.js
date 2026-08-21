@@ -1,5 +1,5 @@
 /**
- * IP2Live - Stage 3 Level 1 path connector tutorial dialogue helpers.
+ * IP2Live - Stage 3 Level 2 path connector tutorial dialogue helpers.
  *
  * Tutorial flow:
  *   showIntro -> 3 slides: concept, UI, goal
@@ -23,8 +23,8 @@ const IPCIDRQuarantineTutorial = {
             timing: 'before',
             slides: [
                 [
-                    'STAGE 3 LEVEL 1 - CIDR Quarantine',
-                    'Welcome to the first Stage 3 quarantine sector.',
+                    'STAGE 3 LEVEL 2 - CIDR Quarantine',
+                    'The Host-Power Reactors prepared you for this first quarantine sector.',
                     'This sector introduces path-based CIDR containment.',
                     'One infected relay must be isolated with a clean connector route.',
                     '',
@@ -118,7 +118,7 @@ const IPCIDRQuarantineTutorial = {
             title: 'GUIDED PATH QUARANTINE',
             speaker: 'SYSTEM',
             timing: 'during',
-            bindings: { mapId: 11, gameplayId: 'ip_cidr_quarantine', trigger: 'tutorial.step' },
+            bindings: { mapId: 12, gameplayId: 'ip_cidr_quarantine', trigger: 'tutorial.step' },
             slides: slidesByStep[n] || slidesByStep[1],
             onComplete,
         });
@@ -184,7 +184,7 @@ const IPCIDRQuarantineTutorial = {
             title: 'ROUTE FEEDBACK',
             speaker: 'SYSTEM',
             timing: 'during',
-            bindings: { mapId: 11, gameplayId: 'ip_cidr_quarantine', trigger: 'tutorial.feedback' },
+            bindings: { mapId: 12, gameplayId: 'ip_cidr_quarantine', trigger: 'tutorial.feedback' },
             slides: [text[reason] || text.submitWrong],
             onComplete,
         });
@@ -195,7 +195,7 @@ const IPCIDRQuarantineTutorial = {
             title: 'PATH QUARANTINE STABLE',
             speaker: 'SYSTEM',
             timing: 'after',
-            bindings: { mapId: 11, gameplayId: 'ip_cidr_quarantine', trigger: 'tutorial.completed' },
+            bindings: { mapId: 12, gameplayId: 'ip_cidr_quarantine', trigger: 'tutorial.completed' },
             slides: [
                 [
                     'Quarantine successful.',
@@ -216,7 +216,7 @@ const IPCIDRQuarantineTutorial = {
             title: 'ROUTE RECOVERY',
             speaker: 'SYSTEM',
             timing: 'after',
-            bindings: { mapId: 11, gameplayId: 'ip_cidr_quarantine', trigger: 'gameplay.failed' },
+            bindings: { mapId: 12, gameplayId: 'ip_cidr_quarantine', trigger: 'gameplay.failed' },
             slides: [
                 [
                     'Connector collapsed. All attempts used.',

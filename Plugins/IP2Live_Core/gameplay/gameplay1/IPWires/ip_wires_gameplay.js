@@ -78,6 +78,7 @@
             this.maxAttempts = Math.max(1, Number(this.options.maxAttempts) || 3);
             this.completed = false;
             this.completedAt = 0;
+            this._completionVisibleAt = 0;
             this._finished = false;
 
             const puzzle = this._generatePuzzle();
@@ -126,8 +127,15 @@
                 if (this.randomizeTimer === 0) this._commitHarderReroll();
             }
             const dialogueActive = IP2Live.DialogueManager && IP2Live.DialogueManager.isActive && IP2Live.DialogueManager.isActive();
-            if (this.completed && this.completedAt && Date.now() - this.completedAt > 650 && !dialogueActive) {
-                this._finish();
+            if (this.completed) {
+                if (dialogueActive) {
+                    // The tutorial may show a victory dialogue first. Start
+                    // the compact card timer only once that dialogue closes.
+                    this._completionVisibleAt = 0;
+                } else {
+                    if (!this._completionVisibleAt) this._completionVisibleAt = Date.now();
+                    if (Date.now() - this._completionVisibleAt > 950) this._finish();
+                }
             }
             if (Manager && Manager.Stack) Manager.Stack.requestPaintHUD = true;
         }
@@ -1261,6 +1269,19 @@
             const sX = layout.sX;
             const sY = layout.sY;
             const tick = this.animTick || 0;
+            const sharedPopup = IP2Live.GameplayCompletionPopup;
+            if (sharedPopup && typeof sharedPopup.draw === 'function') {
+                sharedPopup.draw(ctx, {
+                    gameplayId: this.gameplayId,
+                    label: this.options.questLabel || 'IP class routes connected',
+                    footer: 'PROGRESS SECURED  //  RETURNING TO NETWORK',
+                    progress: (this._completionVisibleAt || this.completedAt)
+                        ? Math.min(1, (Date.now() - (this._completionVisibleAt || this.completedAt)) / 950)
+                        : 0,
+                    tick,
+                });
+                return;
+            }
             const pulse = 0.5 + 0.5 * Math.sin(tick * 0.14);
             const titleFont = IP2Live.Assets && IP2Live.Assets.abnesLoaded ? 'Abnes' : font;
             const boxW = Math.min(720 * sX, cW * 0.72);
@@ -1597,7 +1618,22 @@
 
             this.wrongConnections = {};
 
-            if (this._isHarderMode() && this.options && this.options.adaptiveReroll !== false) {
+            const feedbackEnabled = this.options && this.options.tutorialFeedback;
+            const isHarderMode = this._isHarderMode();
+            if (!isHarderMode && IP2Live.GameManager && typeof IP2Live.GameManager.handleGameplayMistake === 'function') {
+                const remaining = Math.max(0, this.maxAttempts - this.attemptsUsed);
+                IP2Live.GameManager.handleGameplayMistake(this.gameplayId, {
+                    mapId: this.options.mapId || 3,
+                    questId: this.options.questId,
+                    objectiveId: this.options.objectiveId,
+                    mistakes: mistakes,
+                    attemptsRemaining: remaining,
+                    telemetryOnly: !feedbackEnabled,
+                    screen: this,
+                });
+            }
+
+            if (isHarderMode && this.options && this.options.adaptiveReroll !== false) {
                 const deferredFailure = this.pendingFailureExit;
                 this.pendingFailureExit = null;
                 this._beginHarderReroll(mistakes, deferredFailure);
@@ -1609,18 +1645,7 @@
                 return;
             }
 
-            const feedbackEnabled = this.options && this.options.tutorialFeedback;
-            if (feedbackEnabled && IP2Live.GameManager && typeof IP2Live.GameManager.handleGameplayMistake === 'function') {
-                const remaining = Math.max(0, this.maxAttempts - this.attemptsUsed);
-                IP2Live.GameManager.handleGameplayMistake(this.gameplayId, {
-                    mapId: this.options.mapId || 3,
-                    questId: this.options.questId,
-                    objectiveId: this.options.objectiveId,
-                    mistakes: mistakes,
-                    attemptsRemaining: remaining,
-                    screen: this,
-                });
-            } else if (feedbackEnabled && IP2Live.IPWiresTutorial && typeof IP2Live.IPWiresTutorial.showMistakeAnalysis === 'function') {
+            if (feedbackEnabled && (!IP2Live.GameManager || typeof IP2Live.GameManager.handleGameplayMistake !== 'function') && IP2Live.IPWiresTutorial && typeof IP2Live.IPWiresTutorial.showMistakeAnalysis === 'function') {
                 const remaining = Math.max(0, this.maxAttempts - this.attemptsUsed);
                 IP2Live.IPWiresTutorial.showMistakeAnalysis(mistakes, remaining);
             }

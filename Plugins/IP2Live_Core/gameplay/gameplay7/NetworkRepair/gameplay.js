@@ -925,6 +925,17 @@ class IP2LiveNetworkRepairGameplayScreen extends Scene.Base {
     }
 
     _drawSuccess(ctx, m) {
+        var sharedPopup = IP2Live.GameplayCompletionPopup;
+        if (sharedPopup && typeof sharedPopup.draw === 'function') {
+            sharedPopup.draw(ctx, {
+                gameplayId: 'ip_network_repair',
+                label: this.options.questLabel || 'Network repair formula verified',
+                footer: String(this.scenario.expectedText || 'ROUTE RESTORED') + '  //  PROGRESS SECURED',
+                progress: Math.max(0, Math.min(1, 1 - this.phaseTimer / 80)),
+                tick: this.animTick || 0,
+            });
+            return;
+        }
         ctx.fillStyle = 'rgba(66,245,155,0.16)';
         ctx.fillRect(0, 0, m.cW, m.cH);
         ctx.fillStyle = '#F5FFF9';
@@ -1326,6 +1337,16 @@ const NetworkRepairGameplayManager = {
         if (Manager && Manager.Stack && typeof Manager.Stack.pop === 'function') Manager.Stack.pop();
         this._restoreStageMusic();
         if (typeof opts.onCancel === 'function') opts.onCancel();
+        if (IP2Live.GameManager && typeof IP2Live.GameManager.handleGameplayCancelled === 'function') {
+            IP2Live.GameManager.handleGameplayCancelled('ip_network_repair', {
+                gameplayId: 'ip_network_repair',
+                spec: spec,
+                questId: opts.questId || (spec && spec.id),
+                objectiveId: opts.objectiveId || (spec && spec.objectiveId),
+                mapId: opts.mapId || 15,
+                result: { cancelled: true },
+            });
+        }
         if (Manager && Manager.Stack) Manager.Stack.requestPaintHUD = true;
     },
 

@@ -1,6 +1,6 @@
 /**
  * IP2Live - Gameplay Six: CIDR Quarantine Matrix
- * Stage 3 Level 2 multi-zone visual CIDR containment puzzle.
+ * Stage 3 Level 3 multi-zone visual CIDR containment puzzle.
  */
 
 class IP2LiveCIDRQuarantineMatrixGameplayScreen extends Scene.Base {
@@ -118,6 +118,9 @@ class IP2LiveCIDRQuarantineMatrixGameplayScreen extends Scene.Base {
 
     update() {
         this.animTick++;
+        if (IP2Live.GameplayCompletionPopup && typeof IP2Live.GameplayCompletionPopup.update === 'function') {
+            IP2Live.GameplayCompletionPopup.update(this);
+        }
         if (this.tutorialMode && !this.tutorialStarted) {
             this.tutorialStarted = true;
             this._showTutorialIntro();
@@ -152,6 +155,7 @@ class IP2LiveCIDRQuarantineMatrixGameplayScreen extends Scene.Base {
             }
             return true;
         }
+        if (this.finished) return true;
         const value = key && (key.name || key.code || key);
         const upper = String(value || '').toUpperCase();
         if (Data.Keyboards.checkCancelMenu && Data.Keyboards.checkCancelMenu(key)) {
@@ -432,7 +436,7 @@ class IP2LiveCIDRQuarantineMatrixGameplayScreen extends Scene.Base {
         this.phase = 'diagnostic';
         if (IP2Live.GameManager && typeof IP2Live.GameManager.handleGameplayMistake === 'function') {
             IP2Live.GameManager.handleGameplayMistake('ip_cidr_quarantine_matrix', {
-                mapId: this.options.mapId || 12,
+                mapId: this.options.mapId || (this.options.spec && this.options.spec.mapId) || 13,
                 questId: this.options.questId,
                 objectiveId: this.options.objectiveId,
                 mistakes: [{ reason: result.reason, problemId: this.problem.id }],
@@ -851,6 +855,9 @@ class IP2LiveCIDRQuarantineMatrixConnectorScreen extends Scene.Base {
 
     update() {
         this.animTick++;
+        if (IP2Live.GameplayCompletionPopup && typeof IP2Live.GameplayCompletionPopup.update === 'function') {
+            IP2Live.GameplayCompletionPopup.update(this);
+        }
         if (this.tutorialMode && !this.tutorialStarted) {
             this.tutorialStarted = true;
             this._showTutorialIntro();
@@ -884,6 +891,7 @@ class IP2LiveCIDRQuarantineMatrixConnectorScreen extends Scene.Base {
             if (upperWhenDialogue === 'ENTER' || upperWhenDialogue === 'SPACE' || upperWhenDialogue === 'SPACEBAR') IP2Live.DialogueManager.advance();
             return true;
         }
+        if (this.finished) return true;
         const value = key && (key.name || key.code || key);
         const upper = String(value || '').toUpperCase();
         if (Data.Keyboards.checkCancelMenu && Data.Keyboards.checkCancelMenu(key)) {
@@ -1286,7 +1294,7 @@ class IP2LiveCIDRQuarantineMatrixConnectorScreen extends Scene.Base {
         this.phase = 'diagnostic';
         if (IP2Live.GameManager && typeof IP2Live.GameManager.handleGameplayMistake === 'function') {
             IP2Live.GameManager.handleGameplayMistake('ip_cidr_quarantine_matrix', {
-                mapId: this.options.mapId || 12,
+                mapId: this.options.mapId || (this.options.spec && this.options.spec.mapId) || 13,
                 questId: this.options.questId,
                 objectiveId: this.options.objectiveId,
                 mistakes: [{ reason: result.reason, problemId: this.problem.id }],
@@ -1305,15 +1313,31 @@ class IP2LiveCIDRQuarantineMatrixConnectorScreen extends Scene.Base {
     _finishSuccess(result) {
         if (this.finished) return;
         this.finished = true;
+        this.phase = 'success';
         this._playConfirm();
-        if (typeof this.options.onComplete === 'function') {
-            const completedAttempts = this.tutorialMode ? this.attemptsUsed + 1 : this.attemptsUsed;
-            this.options.onComplete(Object.assign({}, result, {
-                passed: true,
-                attemptsUsed: completedAttempts,
-                retries: Math.max(0, completedAttempts - 1),
-            }));
+        const completedAttempts = this.tutorialMode ? this.attemptsUsed + 1 : this.attemptsUsed;
+        const payload = Object.assign({}, result, {
+            gameplayId: 'ip_cidr_quarantine_matrix',
+            passed: true,
+            attemptsUsed: completedAttempts,
+            maxAttempts: this.maxAttempts,
+            retries: Math.max(0, completedAttempts - 1),
+        });
+        const complete = () => {
+            if (typeof this.options.onComplete === 'function') this.options.onComplete(payload);
+        };
+        const sharedPopup = IP2Live.GameplayCompletionPopup;
+        if (sharedPopup && typeof sharedPopup.begin === 'function' && sharedPopup.begin(this, {
+            gameplayId: 'ip_cidr_quarantine_matrix',
+            label: this.options.questLabel || (this.options.spec && this.options.spec.label) || 'CIDR quarantine matrix secured',
+            footer: 'ALL CONNECTOR PAIRS VERIFIED  //  PROGRESS SECURED',
+            durationMs: 950,
+            result: payload,
+            onComplete: complete,
+        })) {
+            return;
         }
+        complete();
     }
 
     _failOut(result) {
@@ -1366,6 +1390,9 @@ class IP2LiveCIDRQuarantineMatrixConnectorScreen extends Scene.Base {
         this._drawControls(ctx, m);
         this._drawVirusAlert(ctx, m);
         if (IP2Live.DialogueManager && typeof IP2Live.DialogueManager.drawOverlay === 'function') IP2Live.DialogueManager.drawOverlay(ctx);
+        if (IP2Live.GameplayCompletionPopup && typeof IP2Live.GameplayCompletionPopup.drawFor === 'function') {
+            IP2Live.GameplayCompletionPopup.drawFor(this, ctx, { tick: this.animTick || 0 });
+        }
     }
 
     _metrics() {
@@ -2530,11 +2557,7 @@ const CIDRQuarantineMatrixGameplayManager = {
     RECOVERY_LIMIT: 3,
 
     CIDR_MATRIX_QUESTS: [
-        { id: 'stage.12.cidr_matrix.01.tutorial', objectiveId: 'solve_cidr_matrix_01', title: 'CALIBRATE MATRIX NODE', label: 'Matrix Node 01', tutorial: true, targetTile: { x: 21, y: 0, z: 28 }, profile: { index: 1, zoneCount: 2, parentPrefix: 23 } },
-        { id: 'stage.12.cidr_matrix.02', objectiveId: 'solve_cidr_matrix_02', title: 'SPLIT AI QUARANTINE', label: 'Matrix Node 02', targetTile: { x: 0, y: 0, z: 16 }, profile: { index: 2, zoneCount: 2, parentPrefix: 23 } },
-        { id: 'stage.12.cidr_matrix.03', objectiveId: 'solve_cidr_matrix_03', title: 'SEAL SHARD TRIAD', label: 'Matrix Node 03', targetTile: { x: 17, y: 0, z: 0 }, profile: { index: 3, zoneCount: 3, parentPrefix: 23 } },
-        { id: 'stage.12.cidr_matrix.04', objectiveId: 'solve_cidr_matrix_04', title: 'LOCK RELAY MATRIX', label: 'Matrix Node 04', targetTile: { x: 34, y: 0, z: 16 }, profile: { index: 4, zoneCount: 3, parentPrefix: 22 } },
-        { id: 'stage.12.cidr_matrix.05', objectiveId: 'solve_cidr_matrix_05', title: 'FINALIZE AI CONTAINMENT', label: 'Matrix Node 05', targetTile: { x: 17, y: 0, z: 19 }, profile: { index: 5, zoneCount: 3, parentPrefix: 22 } },
+        { id: 'stage.13.mixed.05.cidr_matrix.tutorial', objectiveId: 'solve_cidr_matrix_13_05', title: 'CALIBRATE MULTI-ZONE MATRIX', label: 'Matrix Node 05', mapId: 13, sequence: 5, tutorial: true, targetTile: { x: 18, y: 0, z: 1 }, profile: { index: 1, zoneCount: 2, parentPrefix: 23 } },
     ],
 
     _questSpecs() {
@@ -2545,16 +2568,22 @@ const CIDRQuarantineMatrixGameplayManager = {
         return this.CIDR_MATRIX_QUESTS;
     },
 
-    _defaultQuestSpec() {
+    _defaultQuestSpec(mapId) {
         const specs = this._questSpecs();
-        return specs[0] || this.CIDR_MATRIX_QUESTS[0];
+        const requestedMapId = Number(mapId);
+        if (requestedMapId) {
+            const sameMap = specs.filter((spec) => Number(spec.mapId || 13) === requestedMapId);
+            return sameMap.find((spec) => !!spec.tutorial) || sameMap[0] || specs[0] || this.CIDR_MATRIX_QUESTS[0];
+        }
+        return specs.find((spec) => !!spec.tutorial) || specs[0] || this.CIDR_MATRIX_QUESTS[0];
     },
 
     registerStageGameplayQuests(questManager, mapManager, stage) {
         const qm = questManager || IP2Live.QuestManager;
-        if (!qm || !stage || Number(stage.id) !== 12) return [];
+        const stageId = Number(stage && stage.id);
+        if (!qm || !stageId) return [];
         const questIds = [];
-        const specs = this._questSpecs();
+        const specs = this._questSpecs().filter((spec) => Number(spec.mapId || 13) === stageId);
         for (let i = 0; i < specs.length; i++) {
             const spec = specs[i];
             questIds.push(spec.id);
@@ -2563,7 +2592,7 @@ const CIDRQuarantineMatrixGameplayManager = {
             qm.registerQuest({
                 id: spec.id,
                 title: 'QUEST AREA',
-                stageMapId: 12,
+                stageMapId: stageId,
                 resetOnMapEnter: true,
                 objectives: [{
                     id: spec.objectiveId,
@@ -2606,7 +2635,7 @@ const CIDRQuarantineMatrixGameplayManager = {
         const attemptKey = this._resolveAttemptKey({ spec, questId: spec.id, objectiveId: spec.objectiveId });
         if (this._activeAttempt === attemptKey || this._active) return false;
         this._activeAttempt = attemptKey;
-        const launchOptions = { spec, questId: spec.id, objectiveId: spec.objectiveId, mapId: 12, _fromObjective: true };
+        const launchOptions = { spec, questId: spec.id, objectiveId: spec.objectiveId, mapId: Number(spec.mapId) || 13, _fromObjective: true };
         if (IP2Live.GameManager && typeof IP2Live.GameManager.startGameplayNode === 'function') {
             IP2Live.GameManager.startGameplayNode('ip_cidr_quarantine_matrix', Object.assign({}, launchOptions, { showIntro: !!spec.tutorial && !this._introShown, _reservedAttempt: attemptKey }));
             return false;
@@ -2646,13 +2675,13 @@ const CIDRQuarantineMatrixGameplayManager = {
         if (this._activeAttempt === attemptKey && !isReservedAttempt && opts.questId) return false;
         this._active = true;
         if (opts.questId) this._activeAttempt = attemptKey;
-        const problem = this._freshProblem(opts.spec || this._defaultQuestSpec());
+        const problem = this._freshProblem(opts.spec || this._defaultQuestSpec(opts.mapId));
         const open = () => {
             const screen = new IP2LiveCIDRQuarantineMatrixConnectorScreen({
                 spec: opts.spec,
                 questId: opts.questId,
                 objectiveId: opts.objectiveId,
-                mapId: opts.mapId || 12,
+                mapId: opts.mapId || (opts.spec && opts.spec.mapId) || 13,
                 maxAttempts: 3,
                 problem,
                 tutorialMode: !!(opts.spec && opts.spec.tutorial),
@@ -2685,7 +2714,8 @@ const CIDRQuarantineMatrixGameplayManager = {
 
     _onComplete(options, result) {
         const opts = options || {};
-        const spec = opts.spec || this._defaultQuestSpec();
+        const spec = opts.spec || this._defaultQuestSpec(opts.mapId);
+        const mapId = Number(opts.mapId || spec.mapId) || 13;
         this._active = false;
         this._activeAttempt = null;
         if (spec && spec.objectiveId) delete this._triggerLocks[spec.objectiveId];
@@ -2699,7 +2729,7 @@ const CIDRQuarantineMatrixGameplayManager = {
                 // If the quest is not yet active (e.g. first time after tutorial launch), start it first.
                 if (qm.activeQuestId !== opts.questId) {
                     qm.startQuest(opts.questId, {
-                        mapId: 12,
+                        mapId,
                         mapQuestMode: true,
                         keepLastCompletion: true,
                         visible: true,
@@ -2712,7 +2742,7 @@ const CIDRQuarantineMatrixGameplayManager = {
             }
             if (typeof opts.onComplete === 'function') opts.onComplete(result);
             if (IP2Live.GameManager && typeof IP2Live.GameManager.handleGameplayCompleted === 'function') {
-                IP2Live.GameManager.handleGameplayCompleted('ip_cidr_quarantine_matrix', { gameplayId: 'ip_cidr_quarantine_matrix', spec, questId: opts.questId, objectiveId: opts.objectiveId, mapId: 12, result });
+                IP2Live.GameManager.handleGameplayCompleted('ip_cidr_quarantine_matrix', { gameplayId: 'ip_cidr_quarantine_matrix', spec, questId: opts.questId, objectiveId: opts.objectiveId, mapId, result });
             }
             if (Manager && Manager.Stack) Manager.Stack.requestPaintHUD = true;
         };
@@ -2721,7 +2751,8 @@ const CIDRQuarantineMatrixGameplayManager = {
 
     _onFailed(options, result) {
         const opts = options || {};
-        const spec = opts.spec || this._defaultQuestSpec();
+        const spec = opts.spec || this._defaultQuestSpec(opts.mapId);
+        const mapId = Number(opts.mapId || spec.mapId) || 13;
         this._active = false;
         this._activeAttempt = null;
         this._lockUntilStepOff(spec);
@@ -2729,7 +2760,7 @@ const CIDRQuarantineMatrixGameplayManager = {
             if (Manager && Manager.Stack && typeof Manager.Stack.pop === 'function') Manager.Stack.pop();
             this._restoreStageMusic();
             if (IP2Live.GameManager && typeof IP2Live.GameManager.handleGameplayFailed === 'function') {
-                IP2Live.GameManager.handleGameplayFailed('ip_cidr_quarantine_matrix', { gameplayId: 'ip_cidr_quarantine_matrix', spec, questId: opts.questId, objectiveId: opts.objectiveId, mapId: 12, result });
+                IP2Live.GameManager.handleGameplayFailed('ip_cidr_quarantine_matrix', { gameplayId: 'ip_cidr_quarantine_matrix', spec, questId: opts.questId, objectiveId: opts.objectiveId, mapId, result });
             } else {
                 this.recoverAfterFailure(spec);
             }
@@ -2752,12 +2783,13 @@ const CIDRQuarantineMatrixGameplayManager = {
 
     _recoverToTutorial(failedSpec) {
         const qm = IP2Live.QuestManager;
-        const tutorial = this._defaultQuestSpec();
+        const failedMapId = Number(failedSpec && failedSpec.mapId) || 13;
+        const tutorial = this._defaultQuestSpec(failedMapId);
         this._introShown = false;
         if (qm && tutorial) {
             qm.completedObjectives[tutorial.id] = {};
             if (failedSpec && failedSpec.id) qm.completedObjectives[failedSpec.id] = {};
-            qm.startQuest(tutorial.id, { mapId: 12, mapQuestMode: true, keepLastCompletion: true, visible: true, preview: false, guideActive: true, allowCompletion: true });
+            qm.startQuest(tutorial.id, { mapId: failedMapId, mapQuestMode: true, keepLastCompletion: true, visible: true, preview: false, guideActive: true, allowCompletion: true });
         }
         if (IP2Live.IPCIDRQuarantineMatrixTutorial && typeof IP2Live.IPCIDRQuarantineMatrixTutorial.showRecovery === 'function') {
             setTimeout(() => IP2Live.IPCIDRQuarantineMatrixTutorial.showRecovery({ failedLabel: failedSpec && failedSpec.label }), 220);
@@ -2767,7 +2799,7 @@ const CIDRQuarantineMatrixGameplayManager = {
     _rollbackToPreviousLevel() {
         const goBack = () => {
             if (IP2Live.MapManager && typeof IP2Live.MapManager.goTo === 'function') {
-                IP2Live.MapManager.goTo(11, { status: 'Loading Previous Level', detail: 'Stage 3 Level 1' });
+                IP2Live.MapManager.goTo(12, { status: 'Loading Previous Level', detail: 'Stage 3 Level 2' });
             }
         };
         if (IP2Live.IPCIDRQuarantineMatrixTutorial && typeof IP2Live.IPCIDRQuarantineMatrixTutorial.showRollback === 'function') {
@@ -2779,12 +2811,22 @@ const CIDRQuarantineMatrixGameplayManager = {
 
     _onCancel(options) {
         const opts = options || {};
-        const spec = opts.spec || this._defaultQuestSpec();
+        const spec = opts.spec || this._defaultQuestSpec(opts.mapId);
         this._active = false;
         this._activeAttempt = null;
         this._lockUntilStepOff(spec);
         if (Manager && Manager.Stack && typeof Manager.Stack.pop === 'function') Manager.Stack.pop();
         this._restoreStageMusic();
+        if (IP2Live.GameManager && typeof IP2Live.GameManager.handleGameplayCancelled === 'function') {
+            IP2Live.GameManager.handleGameplayCancelled('ip_cidr_quarantine_matrix', {
+                gameplayId: 'ip_cidr_quarantine_matrix',
+                spec,
+                questId: opts.questId || spec.id,
+                objectiveId: opts.objectiveId || spec.objectiveId,
+                mapId: opts.mapId || spec.mapId || 13,
+                result: { cancelled: true },
+            });
+        }
         if (Manager && Manager.Stack) Manager.Stack.requestPaintHUD = true;
     },
 };

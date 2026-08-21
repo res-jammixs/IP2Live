@@ -182,11 +182,11 @@ class IP2LiveSettingsMenu extends Scene.Base {
         if (typeof IP2Live !== 'undefined' && typeof IP2Live.sfxVolume === 'number') {
             return Math.round(Math.max(0, Math.min(1, IP2Live.sfxVolume)) * 100);
         }
+        if (IP2Live.SoundFX && typeof IP2Live.SoundFX.getMasterVolume === 'function') {
+            return Math.round(IP2Live.SoundFX.getMasterVolume() * 100);
+        }
         if (typeof IP2Live !== 'undefined' && typeof IP2Live.masterVolume === 'number') {
             return Math.round(Math.max(0, Math.min(1, IP2Live.masterVolume)) * 100);
-        }
-        if (typeof Howler !== 'undefined' && typeof Howler.volume === 'function') {
-            return Math.round(Howler.volume() * 100);
         }
         return 100;
     }
@@ -218,9 +218,6 @@ class IP2LiveSettingsMenu extends Scene.Base {
     _applySfxVolumeSetting() {
         const volume = this.sfxVolume / 100;
         IP2Live.sfxVolume = volume;
-        if (typeof Howler !== 'undefined' && typeof Howler.volume === 'function') {
-            Howler.volume(volume);
-        }
         if (IP2Live.SoundFX && typeof IP2Live.SoundFX.setMasterVolume === 'function') {
             IP2Live.SoundFX.setMasterVolume(volume);
         }

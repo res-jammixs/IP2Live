@@ -2178,6 +2178,17 @@ class IP2LivePatchPanelGameplayScreen extends Scene.Base {
 
         const success = this.phase === 'success';
         const terminalFailure = this.phase === 'failure';
+        const sharedPopup = IP2Live.GameplayCompletionPopup;
+        if (success && sharedPopup && typeof sharedPopup.draw === 'function') {
+            sharedPopup.draw(ctx, {
+                gameplayId: 'ip_patch_panel_classes',
+                label: this.options.questLabel || 'Packet classification route secured',
+                footer: 'SCORE ' + this.score + '/' + this.totalPackets + '  //  PROGRESS SECURED',
+                progress: Math.max(0, Math.min(1, 1 - this.phaseTimer / 120)),
+                tick: this.animTick || 0,
+            });
+            return;
+        }
         const accent = success ? '#59FF8A' : '#FF315F';
         const secondary = success ? '#00F0FF' : '#FFE600';
         const title = success

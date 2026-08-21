@@ -82,7 +82,7 @@
     };
 
     const GameStateManager = {
-        VERSION: 'game-state-manager-20260817-04',
+        VERSION: 'game-state-manager-20260821-05',
         states: {},
         activeStates: {},
         _boundGameManager: null,
@@ -145,6 +145,93 @@
             }
         },
 
+        /**
+         * Queue persistent ambience/gameplay state for a restored Scene.Map.
+         * RPG Paper Maker builds maps asynchronously, so applying lighting in
+         * the constructor would run before the native lights and fog exist.
+         */
+        queueMapStateRestore(scene, mapId, options) {
+            const targetScene = scene || this._currentScene();
+            const resolvedMapId = Number(mapId) || this._currentMapId();
+            if (!targetScene || !resolvedMapId) return false;
+            targetScene._ip2livePendingGameStateRestore = Object.assign({}, options || {}, {
+                mapId: resolvedMapId,
+                queuedAt: Date.now(),
+                restoreFromSave: true,
+                preservePersistentState: true,
+            });
+            return true;
+        },
+
+        _restoreQueuedMapState(scene) {
+            const targetScene = scene || this._currentScene();
+            const pending = targetScene && targetScene._ip2livePendingGameStateRestore;
+            if (!targetScene || !pending) return false;
+            if (targetScene.loading === true) return false;
+
+            const mapId = Number(pending.mapId) || this._currentMapId();
+            const sceneMapId = Number(
+                targetScene.id ||
+                targetScene.mapID ||
+                (targetScene.currentMap && targetScene.currentMap.id) ||
+                0
+            ) || mapId;
+            if (!mapId || (sceneMapId && sceneMapId !== mapId)) {
+                delete targetScene._ip2livePendingGameStateRestore;
+                return false;
+            }
+
+            delete targetScene._ip2livePendingGameStateRestore;
+            const restored = this.restoreMapState(mapId, targetScene, pending);
+            targetScene._ip2liveGameStateRestoreApplied = {
+                mapId,
+                restoredAt: Date.now(),
+                restored: !!restored,
+            };
+            return restored;
+        },
+
+        /** Rebuild transient runtime effects from the durable per-game store. */
+        restoreMapState(mapId, scene, options) {
+            const resolvedMapId = Number(mapId) || this._currentMapId();
+            if (!resolvedMapId) return false;
+            const context = Object.assign({}, options || {}, {
+                restoreFromSave: true,
+                preservePersistentState: true,
+            });
+
+            this._onMapEntered({
+                mapId: resolvedMapId,
+                scene: scene || this._currentScene(),
+                context,
+            });
+
+            // activeStates is process-local and is deliberately not serialized.
+            // Reconcile the security overlay from its durable record as well.
+            if (resolvedMapId === STAGE_ONE_LEVEL_TWO_MAP_ID) {
+                const security = this._securityStore(resolvedMapId);
+                if (security.triggered && this.states[SECURITY_LIGHT_KEY]) {
+                    this.activate(SECURITY_LIGHT_KEY, {
+                        mapId: resolvedMapId,
+                        strikeCount: Number(security.strikes) || 0,
+                        failedQuestId: security.lastQuestId || null,
+                        restoredFromSave: true,
+                    });
+                } else if (this.activeStates[SECURITY_LIGHT_KEY] && this.states[SECURITY_LIGHT_KEY]) {
+                    this.clear(SECURITY_LIGHT_KEY, { restoredFromSave: true });
+                }
+            } else if (this.activeStates[SECURITY_LIGHT_KEY] && this.states[SECURITY_LIGHT_KEY]) {
+                this.clear(SECURITY_LIGHT_KEY, { restoredFromSave: true });
+            }
+
+            const lighting = IP2Live.LightingManager;
+            if (lighting && typeof lighting.refresh === 'function') {
+                lighting.refresh(scene || this._currentScene());
+            }
+            if (Manager && Manager.Stack) Manager.Stack.requestPaintHUD = true;
+            return true;
+        },
+
         installSceneHooks() {
             if (this._sceneHooksInstalled || !Scene || !Scene.Map || !Scene.Map.prototype) return false;
             this._sceneHooksInstalled = true;
@@ -152,6 +239,7 @@
             const originalUpdate = Scene.Map.prototype.update;
             Scene.Map.prototype.update = function () {
                 if (typeof originalUpdate === 'function') originalUpdate.call(this);
+                manager._restoreQueuedMapState(this);
                 manager.update(this);
             };
 
@@ -288,7 +376,7 @@
             const context = data.context || {};
             const config = this._darklightsConfigForMap(mapId);
 
-            if (mapId !== STAGE_ONE_LEVEL_TWO_MAP_ID) {
+            if (mapId !== STAGE_ONE_LEVEL_TWO_MAP_ID && !context.preservePersistentState) {
                 this.resetSecurityState(STAGE_ONE_LEVEL_TWO_MAP_ID);
             }
 
@@ -300,7 +388,18 @@
             if (config) {
                 const store = this._darklightsStore(config.mapId);
                 if (store.cleared || this._darklightsObjectivesComplete(config.mapId)) {
-                    this.resetDarklights(config.mapId);
+                    if (context.preservePersistentState) {
+                        // A completed saved level should load with full light,
+                        // but loading it must not erase the objective evidence
+                        // that made it complete.
+                        this.clear(DARKLIGHTS_KEY, {
+                            fullRestore: true,
+                            mapId: config.mapId,
+                            preservePersistentState: true,
+                        });
+                    } else {
+                        this.resetDarklights(config.mapId);
+                    }
                 } else {
                     if (!store.progressInitialized && store.brightnessStep <= 0) {
                         this._setBrightnessStep(store, config.baselineBrightnessStep, config.entryReason, config);
@@ -309,7 +408,9 @@
                     this._syncStore();
                     this._activateDarklights(config, {
                         scene: data.scene || this._currentScene(),
-                        reason: config.entryReason,
+                        reason: context.restoreFromSave
+                            ? (store.lastReason || 'save-restore')
+                            : config.entryReason,
                     });
                 }
                 return;

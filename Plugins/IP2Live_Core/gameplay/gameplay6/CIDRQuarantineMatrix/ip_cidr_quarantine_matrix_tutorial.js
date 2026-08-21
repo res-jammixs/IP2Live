@@ -1,5 +1,5 @@
 /**
- * IP2Live - Stage 3 Level 2 multi-pair connector tutorial dialogue helpers.
+ * IP2Live - Stage 3 Level 3 multi-pair connector tutorial dialogue helpers.
  */
 
 const IPCIDRQuarantineMatrixTutorial = {
@@ -14,8 +14,8 @@ const IPCIDRQuarantineMatrixTutorial = {
             timing: 'before',
             slides: [
                 [
-                    'STAGE 3 LEVEL 2 - CIDR Quarantine Matrix',
-                    'Welcome to the second Stage 3 quarantine sector.',
+                    'STAGE 3 LEVEL 3 - CIDR Quarantine Matrix',
+                    'You have reached the third Stage 3 quarantine sector.',
                     'This sector expands quarantine routing into a multi-connector matrix.',
                     '',
                     'You must connect every A node to its matching B node.',
@@ -88,7 +88,7 @@ const IPCIDRQuarantineMatrixTutorial = {
             title: 'GUIDED MATRIX',
             speaker: 'SYSTEM',
             timing: 'during',
-            bindings: { mapId: 12, gameplayId: 'ip_cidr_quarantine_matrix', trigger: 'tutorial.step' },
+            bindings: { mapId: 13, gameplayId: 'ip_cidr_quarantine_matrix', trigger: 'tutorial.step' },
             slides,
             onComplete,
         });
@@ -173,7 +173,7 @@ const IPCIDRQuarantineMatrixTutorial = {
             title: 'MATRIX FEEDBACK',
             speaker: 'SYSTEM',
             timing: 'during',
-            bindings: { mapId: 12, gameplayId: 'ip_cidr_quarantine_matrix', trigger: 'tutorial.feedback' },
+            bindings: { mapId: 13, gameplayId: 'ip_cidr_quarantine_matrix', trigger: 'tutorial.feedback' },
             slides: [text[reason] || text.offset],
             onComplete,
         });
@@ -184,7 +184,7 @@ const IPCIDRQuarantineMatrixTutorial = {
             title: 'MATRIX STABLE',
             speaker: 'SYSTEM',
             timing: 'after',
-            bindings: { mapId: 12, gameplayId: 'ip_cidr_quarantine_matrix', trigger: 'tutorial.completed' },
+            bindings: { mapId: 13, gameplayId: 'ip_cidr_quarantine_matrix', trigger: 'tutorial.completed' },
             slides: [[
                 'Matrix quarantine successful.',
                 'All node pairs linked.',
@@ -203,7 +203,7 @@ const IPCIDRQuarantineMatrixTutorial = {
             title: 'MATRIX RECOVERY',
             speaker: 'SYSTEM',
             timing: 'after',
-            bindings: { mapId: 12, gameplayId: 'ip_cidr_quarantine_matrix', trigger: 'gameplay.failed' },
+            bindings: { mapId: 13, gameplayId: 'ip_cidr_quarantine_matrix', trigger: 'gameplay.failed' },
             slides: [[
                 'Matrix collapsed. All attempts used.',
                 'Routing back to the calibration node.',
@@ -222,7 +222,7 @@ const IPCIDRQuarantineMatrixTutorial = {
             title: 'TRACE COMPROMISED',
             speaker: 'SYSTEM',
             timing: 'after',
-            bindings: { mapId: 12, gameplayId: 'ip_cidr_quarantine_matrix', trigger: 'gameplay.failed' },
+            bindings: { mapId: 13, gameplayId: 'ip_cidr_quarantine_matrix', trigger: 'gameplay.failed' },
             slides: [[
                 'Trace compromised. APEX has our signal.',
                 'Pulling back one sector to protect the relay.',

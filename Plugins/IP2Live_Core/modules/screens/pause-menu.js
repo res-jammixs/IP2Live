@@ -186,10 +186,23 @@ class IP2LivePauseMenu extends Scene.Base {
                 cancelLabel: 'RESUME LINK',
                 systemLabel: 'SYS::TERMINATION_REQUEST',
                 danger: true,
-                onConfirm: function () {
-                    Common.Platform.quit();
-                },
+                onConfirm: () => this._quitAfterCheckpoint(),
             });
+            return;
+        }
+        this._quitAfterCheckpoint();
+    }
+
+    _quitAfterCheckpoint() {
+        if (this._quitInProgress) return;
+        this._quitInProgress = true;
+        const manager = IP2Live.GameManager;
+        if (manager && typeof manager.prepareForShutdown === 'function') {
+            Promise.resolve(manager.prepareForShutdown('pause_menu_quit'))
+                .catch(function (error) {
+                    console.warn('[IP2Live] PauseMenu shutdown checkpoint failed:', error);
+                })
+                .finally(function () { Common.Platform.quit(); });
             return;
         }
         Common.Platform.quit();

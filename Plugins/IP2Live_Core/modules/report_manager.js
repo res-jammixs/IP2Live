@@ -6,34 +6,89 @@
  */
 
 const IP2LiveReportManager = {
-    VERSION: 'report-manager-20260817-03',
+    VERSION: 'report-manager-20260821-05',
+    _failedTelemetry: [],
 
     async boot() {
         return true;
     },
 
     async logTelemetryRecord(record) {
-        if (!record || !IP2Live.DBManager || typeof IP2Live.DBManager.saveRecord !== 'function') return false;
+        if (!record) return false;
+        let fileSaved = false;
+        let databaseSaved = false;
+        const desktopStorage = IP2Live.DesktopStorage;
+        if (desktopStorage && desktopStorage.enabled && typeof desktopStorage.appendTelemetry === 'function') {
+            try {
+                const result = await desktopStorage.appendTelemetry(record);
+                fileSaved = !!result;
+            } catch (e) {
+                this._failedTelemetry.push(this._clonePlain(record));
+                console.warn('[IP2Live] Durable telemetry journal write failed:', e);
+            }
+        }
         try {
-            await IP2Live.DBManager.saveRecord('telemetry', record);
-            return true;
+            if (IP2Live.DBManager && typeof IP2Live.DBManager.saveRecord === 'function') {
+                await IP2Live.DBManager.saveRecord('telemetry', record);
+                databaseSaved = true;
+                if (record.eventType === 'session_start') {
+                    const existingRows = typeof IP2Live.DBManager.getRecordsByIndex === 'function'
+                        ? await IP2Live.DBManager.getRecordsByIndex('sessions', 'sessionId', record.sessionId)
+                        : [];
+                    const session = existingRows && existingRows.length ? existingRows[0] : {};
+                    await IP2Live.DBManager.saveRecord('sessions', Object.assign({}, session, {
+                        sessionId: record.sessionId,
+                        profileId: record.profileId || null,
+                        infiltratorName: record.infiltratorName,
+                        startedAt: record.timestamp,
+                        updatedAt: Date.now(),
+                    }));
+                }
+            }
         } catch (e) {
             console.warn('[IP2Live] ReportManager telemetry save failed:', e);
-            return false;
         }
+        return fileSaved || databaseSaved;
+    },
+
+    async flush() {
+        if (IP2Live.GameManager && typeof IP2Live.GameManager.flushTelemetryWrites === 'function') {
+            await IP2Live.GameManager.flushTelemetryWrites();
+        }
+        const desktopStorage = IP2Live.DesktopStorage;
+        if (desktopStorage && typeof desktopStorage.flushPendingWrites === 'function') {
+            await desktopStorage.flushPendingWrites();
+        }
+        if (desktopStorage && desktopStorage.enabled && this._failedTelemetry.length) {
+            const retry = this._failedTelemetry.splice(0);
+            const failedAgain = [];
+            for (let i = 0; i < retry.length; i++) {
+                try {
+                    await desktopStorage.appendTelemetry(retry[i]);
+                } catch (error) {
+                    failedAgain.push(retry[i]);
+                }
+            }
+            this._failedTelemetry = failedAgain;
+            if (failedAgain.length) throw new Error('Some gameplay events could not be committed to local system files.');
+        }
+        return true;
     },
 
     async export(options) {
         const opts = options || {};
         const profileName = String(opts.infiltratorName || 'UNKNOWN').trim() || 'UNKNOWN';
-        const scopeDays = Math.max(1, Number(opts.scopeDays || 30) || 30);
+        if (profileName.toUpperCase() === 'UNKNOWN') return { ok: false, reason: 'profile-required' };
+        const profileId = String(opts.profileId || '').trim() || null;
+        const scopeDays = Math.max(1, Number(opts.scopeDays || 90) || 90);
         const format = String(opts.format || 'both').toLowerCase();
-        const baseName = String(opts.filenameBase || '').trim() || this._defaultFileBase(profileName);
+        const baseName = this._safeFileBase(String(opts.filenameBase || '').trim() || this._defaultFileBase(profileName));
         const catalog = Array.isArray(opts.gameplayCatalog) ? opts.gameplayCatalog : [];
 
+        await this.flush();
         const now = Date.now();
         const since = now - scopeDays * 24 * 60 * 60 * 1000;
-        const telemetry = await this._queryTelemetry(profileName, since);
+        const telemetry = await this._queryTelemetry(profileName, since, profileId);
         const dto = this._buildReportDTO({
             infiltratorName: profileName,
             scopeDays: scopeDays,
@@ -43,53 +98,133 @@ const IP2LiveReportManager = {
         });
 
         const exported = [];
+        const archivedPaths = [];
         if (format === 'pdf' || format === 'both') {
             const pdfBlob = await this._buildPdfBlob(dto);
+            const archivedPdf = await this._archiveReportBlob(pdfBlob, baseName + '.pdf');
+            if (archivedPdf && archivedPdf.path) archivedPaths.push(archivedPdf.path);
             this._downloadBlob(pdfBlob, baseName + '.pdf');
             exported.push('pdf');
         }
         if (format === 'excel' || format === 'both' || format === 'xlsx') {
             const xlsBlob = this._buildExcelXmlBlob(dto);
+            const archivedXls = await this._archiveReportBlob(xlsBlob, baseName + '.xls');
+            if (archivedXls && archivedXls.path) archivedPaths.push(archivedXls.path);
             this._downloadBlob(xlsBlob, baseName + '.xls');
             exported.push('excel');
         }
         if (!exported.length) {
             const fallback = this._buildExcelXmlBlob(dto);
+            const archivedFallback = await this._archiveReportBlob(fallback, baseName + '.xls');
+            if (archivedFallback && archivedFallback.path) archivedPaths.push(archivedFallback.path);
             this._downloadBlob(fallback, baseName + '.xls');
             exported.push('excel');
         }
+        const evidenceBlob = new Blob([JSON.stringify(dto, null, 2)], { type: 'application/json' });
+        const archivedEvidence = await this._archiveReportBlob(evidenceBlob, baseName + '.json');
+        if (archivedEvidence && archivedEvidence.path) archivedPaths.push(archivedEvidence.path);
         return {
             ok: true,
             exported: exported,
+            archivedPaths: archivedPaths,
             report: dto,
         };
     },
 
-    async _queryTelemetry(infiltratorName, sinceTs) {
-        if (!IP2Live.DBManager) return [];
+    async _queryTelemetry(infiltratorName, sinceTs, profileId) {
         let rows = [];
+        let durableRows = [];
+        let databaseError = null;
         try {
-            if (typeof IP2Live.DBManager.getRecordsByIndex === 'function') {
+            if (IP2Live.DBManager && typeof IP2Live.DBManager.getRecordsByIndex === 'function') {
                 rows = await IP2Live.DBManager.getRecordsByIndex('telemetry', 'infiltratorName', infiltratorName);
-            } else if (typeof IP2Live.DBManager.getRecordsByFilter === 'function') {
+            } else if (IP2Live.DBManager && typeof IP2Live.DBManager.getRecordsByFilter === 'function') {
                 rows = await IP2Live.DBManager.getRecordsByFilter('telemetry', function (r) {
                     return r && r.infiltratorName === infiltratorName;
                 });
-            } else if (typeof IP2Live.DBManager.getAllRecords === 'function') {
+            } else if (IP2Live.DBManager && typeof IP2Live.DBManager.getAllRecords === 'function') {
                 rows = await IP2Live.DBManager.getAllRecords('telemetry');
                 rows = rows.filter(function (r) { return r && r.infiltratorName === infiltratorName; });
             }
         } catch (e) {
             console.warn('[IP2Live] ReportManager telemetry query failed:', e);
+            databaseError = e;
             rows = [];
         }
         const minTs = Number(sinceTs || 0) || 0;
+        const desktopStorage = IP2Live.DesktopStorage;
+        if (desktopStorage && desktopStorage.enabled && typeof desktopStorage.readTelemetryRecordsSince === 'function') {
+            try {
+                const fileRows = await desktopStorage.readTelemetryRecordsSince(minTs, infiltratorName);
+                durableRows = Array.isArray(fileRows) ? fileRows : [];
+                // Keep the journal rows first and explicitly mark them preferred.
+                // The IndexedDB copy is a query mirror; only the filesystem copy
+                // carries the host-verified journal integrity envelope.
+                rows = durableRows.concat(rows);
+            } catch (error) {
+                if (databaseError || !rows.length) throw error;
+                console.warn('[IP2Live] Local telemetry journal query failed; using IndexedDB mirror:', error);
+            }
+        } else if (databaseError) {
+            throw databaseError;
+        }
+        const expectedProfileId = String(profileId || '').trim();
         rows = rows.filter(function (r) {
             const t = Number(r && r.timestamp) || 0;
-            return t >= minTs;
+            if (t < minTs || !r || r.infiltratorName !== infiltratorName) return false;
+            if (expectedProfileId && r.profileId && String(r.profileId) !== expectedProfileId) return false;
+            return true;
         });
+        rows = this._deduplicateTelemetry(rows, new Set(durableRows));
         rows.sort(function (a, b) { return (Number(a.timestamp) || 0) - (Number(b.timestamp) || 0); });
         return rows;
+    },
+
+    _clonePlain(value) {
+        if (value === undefined) return undefined;
+        try { return JSON.parse(JSON.stringify(value)); } catch (error) { return null; }
+    },
+
+    _safeFileBase(value) {
+        let name = String(value || '').trim().replace(/[<>:"/\\|?*\x00-\x1F]/g, '_');
+        name = name.replace(/^\.+/, '').replace(/[. ]+$/, '').slice(0, 100);
+        return name || 'IP2Live_Report';
+    },
+
+    _deduplicateTelemetry(rows, preferredRows) {
+        const out = [];
+        const positions = new Map();
+        const preferred = preferredRows instanceof Set ? preferredRows : null;
+        const list = Array.isArray(rows) ? rows : [];
+        for (let i = 0; i < list.length; i++) {
+            const row = list[i];
+            if (!row) continue;
+            const key = row.eventId
+                ? 'event:' + String(row.eventId)
+                : 'legacy:' + [
+                    row.sessionId || '', row.attemptId || '', row.eventType || '',
+                    Number(row.timestamp) || 0, Number(row.sequence) || 0,
+                    row.gameplayId || '', row.questId || '',
+                ].join('|');
+            if (positions.has(key)) {
+                const position = positions.get(key);
+                if (preferred && preferred.has(row) && !preferred.has(out[position])) {
+                    out[position] = row;
+                }
+                continue;
+            }
+            positions.set(key, out.length);
+            out.push(row);
+        }
+        return out;
+    },
+
+    async _archiveReportBlob(blob, filename) {
+        const desktopStorage = IP2Live.DesktopStorage;
+        if (!desktopStorage || !desktopStorage.enabled || typeof desktopStorage.saveReportBlob !== 'function') return null;
+        const result = await desktopStorage.saveReportBlob(blob, filename);
+        if (!result || result.ok === false) throw new Error('The report could not be archived to local system files.');
+        return result;
     },
 
     _buildReportDTO(input) {
@@ -100,7 +235,11 @@ const IP2LiveReportManager = {
         const assessedAttempts = attempts.filter(function (a) { return !a.cancelled; });
         const attemptMistakes = this._mistakeAttemptRows(telemetry, catalogByGameplay);
         const stepAnalysis = this._stepAnalysisRows(attemptMistakes, assessedAttempts);
-        const sessionsCount = this._uniqueCount(attempts.map(function (a) { return a.sessionId || null; }).filter(Boolean));
+        const sessionsCount = this._uniqueCount(telemetry.map(function (row) { return row && row.sessionId || null; }).filter(Boolean));
+        const activityTimestamps = telemetry
+            .map(function (row) { return Number(row && row.timestamp) || 0; })
+            .filter(function (value) { return value > 0; })
+            .sort(function (a, b) { return a - b; });
         const totalActiveMs = attempts.reduce(function (sum, a) { return sum + Math.max(0, Number(a.durationMs || 0) || 0); }, 0);
         const passedCount = assessedAttempts.filter(function (a) { return !!a.passed; }).length;
         const failedCount = assessedAttempts.filter(function (a) { return a.passed === false; }).length;
@@ -121,7 +260,10 @@ const IP2LiveReportManager = {
             accuracyWeight += w;
         }
         const overallAccuracy = accuracyWeight > 0 ? accuracyWeightedSum / accuracyWeight : 0;
-        const clearTimes = assessedAttempts.map(function (a) { return Number(a.durationMs || 0) || 0; }).filter(function (n) { return n > 0; });
+        const clearTimes = assessedAttempts
+            .filter(function (a) { return !!a.passed; })
+            .map(function (a) { return Number(a.durationMs || 0) || 0; })
+            .filter(function (n) { return n > 0; });
         const avgClearMs = this._avg(clearTimes);
         const medianClearMs = this._median(clearTimes);
         const bestClearMs = clearTimes.length ? Math.min.apply(null, clearTimes) : 0;
@@ -153,16 +295,16 @@ const IP2LiveReportManager = {
         const performanceSummary = this._generatePerformanceSummary(stats);
 
         return {
-            version: 'report-dto-20260817-02',
+            version: 'report-dto-20260821-03',
             summary: {
                 infiltratorName: input.infiltratorName,
                 generatedAt: Number(input.generatedAt) || Date.now(),
-                scopeDays: Number(input.scopeDays) || 30,
+                scopeDays: Number(input.scopeDays) || 90,
                 sessionsCount: sessionsCount,
                 totalActivePlayMs: totalActiveMs,
                 activeDays: daily.length,
-                firstActivityAt: attempts.length ? attempts[0].timestamp : 0,
-                lastActivityAt: attempts.length ? attempts[attempts.length - 1].timestamp : 0,
+                firstActivityAt: activityTimestamps.length ? activityTimestamps[0] : 0,
+                lastActivityAt: activityTimestamps.length ? activityTimestamps[activityTimestamps.length - 1] : 0,
             },
             kpi: {
                 attempts: attemptsCount,
@@ -194,6 +336,11 @@ const IP2LiveReportManager = {
             performanceSummary: performanceSummary,
             attemptsRaw: attempts,
             attemptMistakes: attemptMistakes,
+            eventAudit: {
+                eventCount: telemetry.length,
+                interruptedAttemptCount: attempts.filter(function (row) { return row.outcome === 'interrupted'; }).length,
+                records: this._clonePlain(telemetry),
+            },
         };
     },
 
@@ -621,6 +768,15 @@ const IP2LiveReportManager = {
 
     _attemptRows(telemetry) {
         const out = [];
+        const terminalKeys = new Set();
+        const attemptKey = function (row) {
+            if (row && row.attemptId) return String(row.attemptId);
+            return [row && row.sessionId || '', row && row.gameplayId || '', Number(row && row.startedAt) || 0].join('|');
+        };
+        for (let i = 0; i < telemetry.length; i++) {
+            const row = telemetry[i] || {};
+            if (row.eventType === 'attempt_end') terminalKeys.add(attemptKey(row));
+        }
         for (let i = 0; i < telemetry.length; i++) {
             const row = telemetry[i] || {};
             if (row.eventType !== 'attempt_end') continue;
@@ -664,6 +820,48 @@ const IP2LiveReportManager = {
                 darklightsDimmed: !!row.darklightsDimmed,
                 recoveryAction: row.recoveryAction || null,
                 payload: row.payload || {},
+            });
+        }
+        for (let i = 0; i < telemetry.length; i++) {
+            const row = telemetry[i] || {};
+            if (row.eventType !== 'attempt_start' || terminalKeys.has(attemptKey(row))) continue;
+            out.push({
+                timestamp: Number(row.timestamp || row.startedAt || 0) || 0,
+                startedAt: Number(row.startedAt || row.timestamp || 0) || 0,
+                endedAt: 0,
+                sessionId: row.sessionId || null,
+                attemptId: row.attemptId || null,
+                gameplayId: row.gameplayId || 'unknown_gameplay',
+                gameplayLabel: row.gameplayLabel || row.gameplayId || 'Unknown Gameplay',
+                competencyKey: row.competencyKey || null,
+                competencyLabel: row.competencyLabel || null,
+                stageId: Number(row.stageId || 0) || 0,
+                levelId: Number(row.levelId || 0) || 0,
+                stageName: row.stageName || null,
+                mapId: Number(row.mapId || 0) || 0,
+                questId: row.questId || null,
+                questLabel: row.questLabel || null,
+                questSequence: Number(row.questSequence || 0) || 0,
+                objectiveId: row.objectiveId || null,
+                tutorial: !!(row.tutorial || /tutorial/i.test(String(row.questId || ''))),
+                outcome: 'interrupted',
+                cancelled: true,
+                failureReason: 'attempt_started_without_terminal_event',
+                passed: false,
+                durationMs: 0,
+                attemptsUsed: 0,
+                maxAttempts: Number(row.maxAttempts || 0) || 0,
+                retries: Number(row.retries || 0) || 0,
+                mistakeCount: Number(row.mistakeCount || 0) || 0,
+                mistakeRate: Number(row.mistakeRate || 0) || 0,
+                accuracy: 0,
+                securityStrikeCount: Number(row.securityStrikeCount || 0) || 0,
+                securityTriggered: !!row.securityTriggered,
+                rollbackQuestId: row.rollbackQuestId || null,
+                rollbackObjectiveId: row.rollbackObjectiveId || null,
+                darklightsDimmed: !!row.darklightsDimmed,
+                recoveryAction: row.recoveryAction || null,
+                payload: Object.assign({}, row.payload || {}, { recoveredOrphan: true }),
             });
         }
         return out;
@@ -3220,6 +3418,45 @@ const IP2LiveReportManager = {
             tryRows.push([this._dayKey(m.timestamp), this._formatLocalTime(m.timestamp), m.sessionId, m.attemptId, m.gameplayId, m.gameplayLabel, m.tryNumber, m.attemptsRemaining, m.stepKey, m.stepLabel, m.issueType, m.submitted, m.expected, m.detail, m.mapId, meta.stageId, meta.levelId, m.questId, m.objectiveId]);
         }
         sheets.push({ name: 'Try Mistakes', frozenRows: 1, rows: tryRows });
+
+        const auditRows = [[
+            'Event ID', 'Timestamp', 'Event Type', 'Profile ID', 'Student', 'Session ID',
+            'Attempt ID', 'Sequence', 'Gameplay ID', 'Stage', 'Level', 'Map', 'Quest ID',
+            'Objective ID', 'Outcome', 'Passed?', 'Cancelled?', 'Duration', 'Retries',
+            'Mistake Count', 'Integrity SHA-256', 'Notes', 'Complete Event JSON'
+        ]];
+        const auditRecords = report.eventAudit && Array.isArray(report.eventAudit.records)
+            ? report.eventAudit.records
+            : [];
+        for (let i = 0; i < auditRecords.length; i++) {
+            const row = auditRecords[i] || {};
+            auditRows.push([
+                row.eventId || '',
+                this._formatLocalDateTime(row.timestamp),
+                row.eventType || '',
+                row.profileId || '',
+                row.infiltratorName || '',
+                row.sessionId || '',
+                row.attemptId || '',
+                Number(row.sequence || 0) || 0,
+                row.gameplayId || '',
+                Number(row.stageId || 0) || 0,
+                Number(row.levelId || 0) || 0,
+                Number(row.mapId || 0) || 0,
+                row.questId || '',
+                row.objectiveId || '',
+                row.outcome || '',
+                row.passed === null || row.passed === undefined ? '' : (row.passed ? 'YES' : 'NO'),
+                row.cancelled ? 'YES' : 'NO',
+                this._ms(row.durationMs),
+                Number(row.retries || 0) || 0,
+                Number(row.mistakeCount || 0) || 0,
+                row.integrity && row.integrity.value || '',
+                row.notes || '',
+                this._stringifyCell(row),
+            ]);
+        }
+        sheets.push({ name: 'Event Audit', frozenRows: 1, rows: auditRows });
 
         sheets.push({
             name: 'Report Metadata',

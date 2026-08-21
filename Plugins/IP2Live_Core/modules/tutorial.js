@@ -21,7 +21,7 @@
 // ================================================================
 const Tutorial = {
 
-    VERSION: 'quest-debug-20260518-13',
+    VERSION: 'quest-debug-20260821-14',
     isActive: false,
 
     PHASE: { IDLE: -1, INTRO: 0, MOVE_FB: 1, MOVE_LR: 2, CAMERA: 3, QUEST_INFO: 4, QUEST_ACTIVE: 5, COMPLETE: 6, DONE: 7 },
@@ -126,9 +126,18 @@ const Tutorial = {
         if (this.isActive) return;
         const opts = options || {};
         this._syncDialogueContent();
-        this._resetQuestManagerState();
+        if (!opts.preserveQuestProgress) this._resetQuestManagerState();
         this.isActive = true;
-        this.phase = opts.skipIntro ? this.PHASE.MOVE_FB : this.PHASE.INTRO;
+        const questManager = IP2Live.QuestManager;
+        const resumeAtQuest = !!(
+            opts.resumeQuestProgress &&
+            questManager &&
+            questManager.activeQuestId === 'tutorial.navigation' &&
+            questManager.activeObjectiveId
+        );
+        this.phase = resumeAtQuest
+            ? this.PHASE.QUEST_ACTIVE
+            : (opts.skipIntro ? this.PHASE.MOVE_FB : this.PHASE.INTRO);
         this.slideIndex = 0;
         this.pressedKeys = new Set();
         this._stepTimeout = null;
@@ -158,6 +167,7 @@ const Tutorial = {
         this._teleported = false;
 
         this._attachListeners();
+        if (resumeAtQuest) this._syncQuestManagerState();
         if (Manager && Manager.Stack) Manager.Stack.requestPaintHUD = true;
         console.log('[IP2Live] Tutorial activated.');
         console.log('[IP2Live] Tutorial version:', this.VERSION);

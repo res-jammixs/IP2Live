@@ -1,0 +1,766 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>IP2Live Deployment, Local Data, and Online Migration Guide</title>
+  <style>
+    :root {
+      --ink: #102033;
+      --muted: #526174;
+      --navy: #0b1f33;
+      --blue: #0f6ea8;
+      --cyan: #17a7c8;
+      --pale: #eef7fb;
+      --line: #ccd9e2;
+      --green: #147a55;
+      --green-bg: #eaf7f0;
+      --amber: #9a5b00;
+      --amber-bg: #fff5dc;
+      --red: #a63737;
+      --red-bg: #fff0ef;
+      --paper: #fff;
+    }
+    * { box-sizing: border-box; }
+    html { font-size: 10.2pt; }
+    body {
+      margin: 0;
+      color: var(--ink);
+      background: var(--paper);
+      font-family: "Segoe UI", Arial, sans-serif;
+      line-height: 1.46;
+    }
+    @page { size: A4; margin: 15mm 16mm 17mm; }
+    @media print {
+      a { color: inherit; text-decoration: none; }
+      .cover { break-after: page; }
+      .page-break { break-before: page; }
+      h2, h3 { break-after: avoid; }
+      table, .callout, pre, .diagram { break-inside: avoid; }
+    }
+    .cover {
+      min-height: 257mm;
+      margin: -15mm -16mm -17mm;
+      padding: 23mm 19mm 18mm;
+      color: #fff;
+      background:
+        radial-gradient(circle at 82% 18%, rgba(23,167,200,.45), transparent 31%),
+        linear-gradient(145deg, #071523 0%, #0b2943 57%, #0f6ea8 100%);
+      position: relative;
+      overflow: hidden;
+    }
+    .cover:after {
+      content: "";
+      position: absolute;
+      width: 150mm;
+      height: 150mm;
+      border: 1px solid rgba(255,255,255,.18);
+      border-radius: 50%;
+      right: -54mm;
+      bottom: -44mm;
+      box-shadow: 0 0 0 18mm rgba(255,255,255,.035), 0 0 0 36mm rgba(255,255,255,.025);
+    }
+    .eyebrow { letter-spacing: .14em; text-transform: uppercase; font-weight: 700; color: #8be4f4; }
+    .cover h1 { color: #fff; font-size: 34pt; line-height: 1.06; max-width: 155mm; margin: 25mm 0 6mm; }
+    .cover .subtitle { font-size: 16pt; line-height: 1.35; max-width: 145mm; color: #d9edf5; }
+    .cover-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 5mm; margin-top: 30mm; max-width: 160mm; }
+    .cover-card { border: 1px solid rgba(255,255,255,.24); background: rgba(255,255,255,.08); padding: 4mm; border-radius: 3mm; }
+    .cover-card strong { display: block; color: #fff; font-size: 12pt; margin-bottom: 1mm; }
+    .cover-card span { color: #cbe4ee; }
+    .cover-meta { position: absolute; left: 19mm; bottom: 18mm; color: #bdd9e4; font-size: 9pt; }
+    main { max-width: 180mm; margin: 0 auto; }
+    h1, h2, h3, h4 { color: var(--navy); line-height: 1.2; }
+    h2 { margin: 8mm 0 3mm; padding-bottom: 2mm; border-bottom: 2px solid var(--cyan); font-size: 20pt; }
+    h3 { margin: 5.5mm 0 2mm; font-size: 14pt; }
+    h4 { margin: 4mm 0 1.5mm; font-size: 11pt; }
+    p { margin: 0 0 2.8mm; }
+    ul, ol { margin: 1.5mm 0 3mm 5.5mm; padding-left: 4mm; }
+    li { margin: 1mm 0; }
+    a { color: var(--blue); }
+    .lead { font-size: 12pt; color: #33475b; }
+    .muted { color: var(--muted); }
+    .small { font-size: 8.6pt; }
+    .section-label { color: var(--blue); font-weight: 800; letter-spacing: .08em; text-transform: uppercase; margin-top: 8mm; }
+    .toc { columns: 2; column-gap: 10mm; }
+    .toc a { display: block; break-inside: avoid; padding: 1.2mm 0; border-bottom: 1px dotted #ccd6df; }
+    .callout { border-left: 4px solid var(--blue); background: var(--pale); padding: 3.2mm 4mm; margin: 3.5mm 0; border-radius: 0 2mm 2mm 0; }
+    .callout strong:first-child { color: var(--navy); }
+    .good { border-color: var(--green); background: var(--green-bg); }
+    .warn { border-color: var(--amber); background: var(--amber-bg); }
+    .stop { border-color: var(--red); background: var(--red-bg); }
+    .verdict { display: grid; grid-template-columns: 42mm 1fr; gap: 0; border: 1px solid var(--line); border-radius: 3mm; overflow: hidden; margin: 4mm 0; }
+    .verdict .tag { padding: 4mm; color: white; background: var(--green); font-weight: 800; text-transform: uppercase; letter-spacing: .05em; }
+    .verdict .body { padding: 4mm; background: #f7fafc; }
+    .verdict.caution .tag { background: var(--amber); }
+    .verdict.block .tag { background: var(--red); }
+    table { width: 100%; border-collapse: collapse; margin: 3mm 0 5mm; font-size: 8.7pt; }
+    th { text-align: left; color: #fff; background: var(--navy); padding: 2.2mm; vertical-align: top; }
+    td { border: 1px solid var(--line); padding: 2.2mm; vertical-align: top; }
+    tr:nth-child(even) td { background: #f6f9fb; }
+    .status { display: inline-block; font-size: 7.8pt; font-weight: 800; border-radius: 10mm; padding: .7mm 2.2mm; text-transform: uppercase; white-space: nowrap; }
+    .status.green { color: var(--green); background: var(--green-bg); }
+    .status.amber { color: var(--amber); background: var(--amber-bg); }
+    .status.red { color: var(--red); background: var(--red-bg); }
+    code { font-family: Consolas, "Courier New", monospace; font-size: .92em; background: #edf2f6; padding: .15em .35em; border-radius: 1mm; }
+    pre { white-space: pre-wrap; background: #0c1d2b; color: #d6ecf5; padding: 3.2mm; border-radius: 2mm; font: 8pt/1.45 Consolas, "Courier New", monospace; margin: 2.5mm 0 4mm; }
+    .diagram { border: 1px solid var(--line); background: #fbfdfe; border-radius: 3mm; padding: 4mm; margin: 4mm 0; }
+    .flow { display: grid; grid-template-columns: repeat(5, 1fr); align-items: center; gap: 2mm; text-align: center; }
+    .node { border: 1px solid #8fb6ca; background: #eaf6fb; border-radius: 2mm; padding: 3mm 1.8mm; font-weight: 700; min-height: 18mm; display: flex; align-items: center; justify-content: center; }
+    .arrow { color: var(--blue); font-size: 16pt; font-weight: 900; }
+    .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 5mm; }
+    .metric-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 3mm; margin: 4mm 0; }
+    .metric { border: 1px solid var(--line); border-top: 3px solid var(--cyan); border-radius: 2mm; padding: 3mm; }
+    .metric b { display: block; font-size: 14pt; color: var(--navy); }
+    .checklist { list-style: none; padding-left: 0; margin-left: 0; }
+    .checklist li { padding-left: 6mm; position: relative; }
+    .checklist li:before { content: "□"; position: absolute; left: 0; color: var(--blue); font-weight: bold; }
+    .source-list { font-size: 8.4pt; }
+    .source-list li { margin-bottom: 1.7mm; }
+    .footer-note { margin-top: 8mm; border-top: 1px solid var(--line); padding-top: 2mm; font-size: 8pt; color: var(--muted); }
+  </style>
+</head>
+<body>
+  <section class="cover">
+    <div class="eyebrow">IP2Live release planning</div>
+    <h1>Deployment, Local Data, and Online Migration Guide</h1>
+    <div class="subtitle">A repository-based assessment of the existing Windows export plus the hardened offline-storage, reporting, music, release, installer, browser, and online-database path.</div>
+    <div class="cover-grid">
+      <div class="cover-card"><strong>Part I</strong><span>What is ready now for offline Windows delivery</span></div>
+      <div class="cover-card"><strong>Part II</strong><span>How to publish online and when a server database is needed</span></div>
+      <div class="cover-card"><strong>Evidence</strong><span>Source code, exported Electron package, and existing runtime storage</span></div>
+      <div class="cover-card"><strong>Recommended first release</strong><span>Fresh RPG Paper Maker export, hardened release preparation, then a signed Windows ZIP or installer</span></div>
+    </div>
+    <div class="cover-meta">Prepared 21 August 2026 · Audit target: IP2Live project and IP2Live-1.1-Windows export</div>
+  </section>
+
+  <main>
+    <div class="section-label">Purpose and scope</div>
+    <h2 id="summary">Executive answer</h2>
+    <p class="lead">IP2Live can run fully offline and now has a hardened Windows data design: core saves, progress snapshots, monthly attempt journals, and archived reports are written under <code>%LOCALAPPDATA%\IP2Live</code>, while IndexedDB and localStorage remain useful mirrors. The existing <code>IP2Live-1.1-Windows</code> folder is an older audit baseline and must be freshly exported and prepared before distribution.</p>
+
+    <div class="verdict">
+      <div class="tag">Ready in source</div>
+      <div class="body"><strong>Offline Windows persistence.</strong> Saves are atomic and integrity-checked, a verified backup is retained, reports are archived with SHA-256 sidecars, and telemetry is journaled before being mirrored to IndexedDB.</div>
+    </div>
+    <div class="verdict caution">
+      <div class="tag">Offline by design</div>
+      <div class="body"><strong>Local attempts and reports.</strong> Passed, failed, cancelled, interrupted, and detailed mistake events are retained locally. The default report window is 90 days, raw evidence is included, and PDF/XLS/JSON files are archived to the managed Reports folder.</div>
+    </div>
+    <div class="verdict block">
+      <div class="tag">Re-export first</div>
+      <div class="body"><strong>The old Game.exe package is stale.</strong> It omitted all 11 custom music/effect assets. Create a fresh protected Windows export, run the supplied release-preparation script, then complete a clean-machine smoke test. A browser release still requires a separate web export.</div>
+    </div>
+
+    <h3>The database question in one sentence</h3>
+    <div class="callout good"><strong>Putting the game online does not automatically require an online database.</strong> Keep IndexedDB if progress and reports may remain on one browser/device. Add a server database when you need accounts, cross-device continuation, centralized teacher reports, reliable backups, administrative dashboards, or authoritative assessment records.</div>
+
+    <h3>Hardened implementation delivered with this guide</h3>
+    <table>
+      <thead><tr><th>Area</th><th>Implemented behavior</th><th>Release consequence</th></tr></thead>
+      <tbody>
+        <tr><td>Save/load</td><td>Atomic per-slot JSON, fsync, backup recovery, SHA-256 corruption detection, embedded custom progress metadata, and non-destructive migration from legacy <code>build\Saves</code>.</td><td>Install location may be read-only; the player data remains in <code>%LOCALAPPDATA%\IP2Live\Saves</code>.</td></tr>
+        <tr><td>Attempt history</td><td>Durable monthly JSONL journals are authoritative; IndexedDB is a query mirror. Events use profile/session/attempt/event IDs and pending writes are drained before export/quit.</td><td>Normal history is kept indefinitely and the reporting contract guarantees at least the requested three-month window.</td></tr>
+        <tr><td>Reports</td><td>PDF, SpreadsheetML <code>.xls</code>, and JSON evidence are atomically archived under <code>%LOCALAPPDATA%\IP2Live\Reports</code> with SHA-256 sidecars.</td><td>The UI reports real archive paths; export does not claim success if local archival fails.</td></tr>
+        <tr><td>Electron host</td><td>Stable <code>IP2Live</code> identity, sandbox, context isolation, no renderer Node.js, narrow validated IPC, blocked navigation/popups, and managed file-size/path limits.</td><td>Use the supplied preparation script after every fresh RPG Paper Maker export.</td></tr>
+        <tr><td>Music</td><td>Nine custom tracks and two effects are registered in RPG Paper Maker and played through its native <code>Data.Songs</code>/Howler path with retry and independent music/SFX volume.</td><td>A new protected export is mandatory so RPG Paper Maker embeds the registered audio bytes.</td></tr>
+      </tbody>
+    </table>
+    <div class="callout warn"><strong>Important status boundary.</strong> All later references to the “current export” or <code>%APPDATA%\game</code> describe the audited <code>IP2Live-1.1-Windows</code> baseline. They are retained to explain the migration. The hardened behavior applies only after a fresh export is passed through <code>tools\prepare-windows-release.ps1</code>.</div>
+
+    <h3>Recommended release sequence</h3>
+    <ol>
+      <li><strong>Fresh Windows export:</strong> export again from RPG Paper Maker so the newly registered music and effects are embedded; do not distribute the stale <code>IP2Live-1.1-Windows</code> folder.</li>
+      <li><strong>Prepare and validate:</strong> run <code>tools\prepare-windows-release.ps1</code> into a new destination. It installs the hardened host, synchronizes the plugin, excludes Git/developer saves, validates audio registrations, and writes a runtime hash manifest.</li>
+      <li><strong>Desktop production:</strong> smoke-test save/restart/backup recovery, every music zone, 90-day reporting, standard-user install, update, and uninstall; then sign and publish the ZIP or installer.</li>
+      <li><strong>Browser pilot:</strong> produce a separate RPG Paper Maker web export, clean it, test it from HTTPS, confirm report downloads and storage persistence, then publish as an itch.io HTML game or on a static web host.</li>
+      <li><strong>Online service:</strong> retain IndexedDB as an offline cache/outbox and synchronize events through an authenticated HTTPS API into a server database.</li>
+    </ol>
+
+    <h3>Contents</h3>
+    <div class="toc">
+      <a href="#audit">1. Audit basis and confidence</a>
+      <a href="#current-package">2. Current package capability</a>
+      <a href="#local-data">3. Local data architecture</a>
+      <a href="#attempts">4. Attempts and export reports</a>
+      <a href="#capacity">5. Local capacity and durability</a>
+      <a href="#offline-options">6. Offline delivery choices</a>
+      <a href="#itch-download">7. itch.io downloadable workflow</a>
+      <a href="#direct-delivery">8. Google Drive and direct delivery</a>
+      <a href="#installer">9. Windows installer plan</a>
+      <a href="#updates">10. Updates, backup, and migration</a>
+      <a href="#online-meaning">11. What “online” can mean</a>
+      <a href="#web-export">12. Browser and itch.io HTML deployment</a>
+      <a href="#web-storage">13. IndexedDB in the browser</a>
+      <a href="#server-db">14. When to use an online database</a>
+      <a href="#architecture">15. Recommended online architecture</a>
+      <a href="#data-model">16. Data model and synchronization</a>
+      <a href="#security">17. Security and privacy</a>
+      <a href="#roadmap">18. Phased implementation roadmap</a>
+      <a href="#qa">19. Release acceptance checklists</a>
+      <a href="#appendix">Appendices and sources</a>
+    </div>
+
+    <div class="page-break"></div>
+    <div class="section-label">Part I · Offline and Windows distribution</div>
+    <h2 id="audit">1. Audit basis and confidence</h2>
+    <p>This guide is based on three forms of evidence, not on assumptions about the screenshot alone:</p>
+    <ul>
+      <li><strong>Project source:</strong> the inlined database manager, game manager, report manager, export screen, pause menu, and gameplay integrations in <code>Plugins/IP2Live_Core</code>.</li>
+      <li><strong>Actual export:</strong> <code>C:\Users\User\Desktop\IP2Live-1.1-Windows</code>, including its Electron <code>package.json</code>, <code>main.js</code>, preload, engine scripts, and build content.</li>
+      <li><strong>Runtime evidence:</strong> Chromium storage under <code>%APPDATA%\game</code> contains <code>IP2Live_Database</code>, a named profile, <code>session_start</code>, <code>attempt_start</code>, and <code>attempt_end</code> records.</li>
+    </ul>
+    <div class="callout warn"><strong>Confidence boundary.</strong> Baseline local persistence is confirmed by source and real runtime data. The hardened storage, report, release, and music paths have automated tests, but a valid song-inclusive export was not yet available for a complete <code>Game.exe</code> clean-machine smoke test. That remains the final release gate.</div>
+
+    <div class="metric-grid">
+      <div class="metric"><b>480.1 MiB</b><span>Current full Windows export</span></div>
+      <div class="metric"><b>1,147</b><span>Files in the full export</span></div>
+      <div class="metric"><b>123.3 MiB</b><span>Game build subtree</span></div>
+      <div class="metric"><b>41.3 MiB</b><span>Unnecessary <code>.git</code> data in build</span></div>
+    </div>
+    <p class="small muted">The clean game build, excluding <code>.git</code>, is approximately 82.0 MiB across 609 files. The largest game payload is <code>songs.json</code> at about 66.5 MiB because audio is embedded as base64 data.</p>
+
+    <h2 id="current-package">2. Baseline: what IP2Live-1.1-Windows can do</h2>
+    <div class="callout"><strong>Why this baseline remains in the guide.</strong> It documents what users would receive if the old folder in the screenshot were distributed today and explains why migration and a fresh build are required. It is not the status of the newly hardened source.</div>
+    <table>
+      <thead><tr><th>Capability</th><th>Current state</th><th>Operational meaning</th></tr></thead>
+      <tbody>
+        <tr><td>Run without the RPG Paper Maker editor</td><td><span class="status green">Yes</span></td><td>The exported Electron runtime is self-contained. Users do not need Node.js, Electron, or RPG Paper Maker installed.</td></tr>
+        <tr><td>Run offline</td><td><span class="status green">Yes</span></td><td>Core game, local data, and report generation have no required server dependency.</td></tr>
+        <tr><td>Send only <code>Game.exe</code></td><td><span class="status red">No</span></td><td>The executable depends on <code>resources</code>, <code>locales</code>, DLLs, PAK files, and other neighboring runtime files.</td></tr>
+        <tr><td>Keep named profiles</td><td><span class="status green">Yes</span></td><td>Profiles are keyed by <code>infiltratorName</code> in IndexedDB.</td></tr>
+        <tr><td>Keep detailed attempt telemetry</td><td><span class="status green">Yes</span></td><td>Attempt starts, ends, mistakes, outcomes, timings, stage data, retries, and gameplay-specific evidence are stored.</td></tr>
+        <tr><td>Save/load game slots</td><td><span class="status amber">Yes, path risk</span></td><td>Core save JSON is written under the exported app’s <code>build\Saves</code>; progress metadata is also mirrored in localStorage and IndexedDB.</td></tr>
+        <tr><td>Export PDF and spreadsheet report</td><td><span class="status green">Implemented</span></td><td>The menu offers PDF, Excel, or both. “Excel” is SpreadsheetML XML saved with an <code>.xls</code> extension, not native <code>.xlsx</code>.</td></tr>
+        <tr><td>Safe conventional installer</td><td><span class="status red">Not yet</span></td><td>The current save path can become unwritable or be removed during upgrades/uninstall.</td></tr>
+        <tr><td>Play directly in a website</td><td><span class="status red">Separate build</span></td><td>A dedicated web export is required. The desktop shell relies on Electron APIs.</td></tr>
+        <tr><td>Central teacher dashboard</td><td><span class="status red">No</span></td><td>Data stays on each Windows account/browser unless the player manually exports and sends a report.</td></tr>
+      </tbody>
+    </table>
+
+    <h3>How to distribute the package correctly</h3>
+    <ol>
+      <li>Make a release copy of the exported folder. Do not clean or alter the only master copy.</li>
+      <li>Remove release-inappropriate content from the copy—at minimum <code>resources\app\build\.git</code>, <code>.gitignore</code>, and internal verification documents—then smoke-test.</li>
+      <li>Keep every Electron runtime file and the entire <code>resources</code> and <code>locales</code> directories.</li>
+      <li>Create one versioned ZIP, for example <code>IP2Live-1.1-Windows-x64.zip</code>.</li>
+      <li>Tell users to extract the ZIP completely, then run <code>Game.exe</code>. Do not run it from inside the ZIP viewer.</li>
+      <li>Publish a SHA-256 checksum and a short README with controls, minimum Windows version, report instructions, and support contact.</li>
+    </ol>
+
+    <div class="callout stop"><strong>Do not ship the current export unchanged.</strong> It contains the project’s Git history inside <code>resources\app\build\.git</code>. That adds 459 files and about 41.3 MiB and may expose deleted or historical source content. Removing it also brings the game-content file count from 1,068 to 609.</div>
+
+    <h2 id="local-data">3. Local data architecture: baseline and hardened release</h2>
+    <div class="diagram">
+      <div class="flow">
+        <div class="node">Player actions and game outcomes</div><div class="arrow">→</div>
+        <div class="node">GameManager telemetry normalization</div><div class="arrow">→</div>
+        <div class="node">IndexedDB<br><code>IP2Live_Database</code></div>
+      </div>
+      <div class="flow" style="margin-top:3mm">
+        <div class="node">Pause/Credits<br>Export Report</div><div class="arrow">→</div>
+        <div class="node">Report aggregation<br>7 / 30 / 90 days</div><div class="arrow">→</div>
+        <div class="node">PDF + SpreadsheetML <code>.xls</code></div>
+      </div>
+    </div>
+
+    <h3>Audited 1.1 baseline locations</h3>
+    <table>
+      <thead><tr><th>Data</th><th>Technology and location</th><th>Current purpose</th><th>Main risk</th></tr></thead>
+      <tbody>
+        <tr><td>Profiles</td><td>IndexedDB store <code>profiles</code><br><code>%APPDATA%\game\IndexedDB</code></td><td>Name, creation/update dates, last save slot, map, play time, and per-slot progress snapshots.</td><td>Name is the primary key; two people using the same Windows account and same name merge into one logical profile.</td></tr>
+        <tr><td>Telemetry</td><td>IndexedDB store <code>telemetry</code><br>indexed by name, stage, timestamp, gameplay, event type</td><td>Append-style attempt and mistake history used to build reports.</td><td>Local, user-clearable, unencrypted, not centrally backed up, and not authoritative.</td></tr>
+        <tr><td>Sessions store</td><td>IndexedDB store <code>sessions</code></td><td>Schema exists.</td><td>No code was found writing session rows to this store; reports infer sessions from telemetry <code>sessionId</code>.</td></tr>
+        <tr><td>Slot snapshot cache</td><td><code>localStorage</code> key <code>IP2Live_SlotProgress_v1</code><br><code>%APPDATA%\game\Local Storage</code></td><td>Small map/quest/position metadata used to restore custom progress.</td><td>Web Storage is much smaller than IndexedDB and can be cleared with site/app data.</td></tr>
+        <tr><td>Core RPG save</td><td>JSON at <code>resources\app\build\Saves\{slot}.json</code></td><td>Engine-level party, variables, inventory, map, hero position, and other game state.</td><td>Lives in the program tree rather than the user-data directory.</td></tr>
+        <tr><td>Exported reports</td><td>Browser/Electron download destination, normally Downloads or the configured browser download path</td><td>Portable copy for learner/teacher sharing.</td><td>Contains identifiable performance data and must be handled accordingly.</td></tr>
+      </tbody>
+    </table>
+
+    <h3>Hardened Windows release locations</h3>
+    <table>
+      <thead><tr><th>Data</th><th>Authoritative location</th><th>Durability and role</th></tr></thead>
+      <tbody>
+        <tr><td>Core save plus progress metadata</td><td><code>%LOCALAPPDATA%\IP2Live\Saves\{slot}.json</code></td><td>Atomic replacement, fsync, verified <code>.bak</code> recovery, bounded JSON, and SHA-256 corruption detection. Saves do not expire.</td></tr>
+        <tr><td>Progress sidecar</td><td><code>%LOCALAPPDATA%\IP2Live\Data\progress-slot-{slot}.json</code></td><td>Recoverable custom snapshot; the same snapshot is embedded in the core save transaction so mirrors cannot silently outrank durable state.</td></tr>
+        <tr><td>Attempt evidence</td><td><code>%LOCALAPPDATA%\IP2Live\Telemetry\YYYY-MM.jsonl</code></td><td>Append-only monthly journal with record hashes and flush-before-export. Kept indefinitely by default, guaranteeing at least 90 days.</td></tr>
+        <tr><td>Profiles/query cache</td><td>IndexedDB under <code>%LOCALAPPDATA%\IP2Live\Browser</code></td><td>Profile, session, telemetry, and indexes for fast UI/report queries; rebuildable from durable evidence where applicable.</td></tr>
+        <tr><td>Reports</td><td><code>%LOCALAPPDATA%\IP2Live\Reports</code></td><td>PDF, <code>.xls</code>, and JSON evidence plus <code>.sha256</code> sidecars; downloaded copies are optional conveniences.</td></tr>
+      </tbody>
+    </table>
+
+    <h3>Why there are three persistence layers</h3>
+    <p>The app combines the RPG Paper Maker core save file with custom restore metadata and educational telemetry. IndexedDB is the correct layer for structured attempt history; localStorage is suitable only for the small snapshot map; the core save JSON is an engine requirement. The architecture is workable, but all three layers must be migrated and tested as a unit when packaging changes.</p>
+
+    <h2 id="attempts">4. Does it record all attempts and export them?</h2>
+    <p><strong>Hardened answer: normal gameplay paths record starts, mistakes, and one terminal outcome; interrupted starts are preserved as unassessed evidence instead of disappearing.</strong> A forced power loss can still interrupt the final physical write in any local application, which is why the design uses an append-only journal, fsync, recovery, event IDs, and an audit sheet.</p>
+    <table>
+      <thead><tr><th>Question</th><th>Finding</th></tr></thead>
+      <tbody>
+        <tr><td>Are gameplay launches recorded?</td><td>Yes. <code>attempt_start</code> is written when a gameplay node opens.</td></tr>
+        <tr><td>Are successes and failures recorded?</td><td>Yes. Both close as <code>attempt_end</code> with passed/failed outcome and gameplay-specific metrics.</td></tr>
+        <tr><td>Are cancellations recorded?</td><td>Yes. Cancellation closes an <code>attempt_end</code> marked cancelled and unassessed. Six previously wrong or missing gameplay cancellation paths were corrected.</td></tr>
+        <tr><td>Are mistakes/retries recorded?</td><td>Yes where gameplay calls the central mistake handler. Raw <code>attempt_mistake</code> events and summarized retry/mistake data are supported.</td></tr>
+        <tr><td>Does the report show incomplete/crashed attempts?</td><td>Yes. An orphaned <code>attempt_start</code> is reconciled as interrupted and remains unassessed; it is also visible in the raw Event Audit and JSON evidence.</td></tr>
+        <tr><td>What history is exported?</td><td>The menu retains 7/30/90-day choices and defaults to 90 days. The durable journal is retained indefinitely by default, while the normal reporting guarantee is at least three months.</td></tr>
+        <tr><td>Is the latest event drained before export/quit?</td><td>Yes during controlled export and quit paths. Pending journal and IndexedDB writes are awaited and storage failures fail the export instead of reporting false success.</td></tr>
+      </tbody>
+    </table>
+
+    <h3>What the report already provides</h3>
+    <ul>
+      <li>Player name, selected date window, generated date, sessions, active days, and play duration.</li>
+      <li>Gameplay instances, assessed attempts, passes, failures, cancellations, repetitions, rounds, retries, and mistakes.</li>
+      <li>Accuracy, completion rate, average/median/best completion time, trends, mastery indicators, competency summaries, and suggested intervention.</li>
+      <li>Attempt history with stage, level, map, quest, objective, gameplay, timing, outcome, recovery/rollback, security alerts, and evidence payload.</li>
+      <li>Daily, stage, quest, gameplay, competency, and step/mistake breakdowns.</li>
+    </ul>
+    <div class="callout"><strong>Meaning of “all attempts.”</strong> The hardened event audit includes complete and interrupted attempts inside the selected window and archives raw JSON evidence. The menu intentionally promises a 90-day default rather than an all-time report. Local hashes detect accidental corruption; they do not make a learner-controlled device tamper-proof.</div>
+
+    <h2 id="capacity">5. How capable is the app’s local storage?</h2>
+    <p>For ordinary educational telemetry, capacity is not the limiting factor. IndexedDB is designed for structured, indexed datasets much larger than localStorage. The current records are JSON-like objects and should allow many thousands of attempts on a normal device. The bigger concerns are durability, identity, backup, and trust.</p>
+    <table>
+      <thead><tr><th>Dimension</th><th>Assessment</th><th>Recommendation</th></tr></thead>
+      <tbody>
+        <tr><td>Offline operation</td><td>Strong</td><td>Keep IndexedDB even if a server is later added; it supports offline-first play.</td></tr>
+        <tr><td>Volume</td><td>Strong for telemetry</td><td>Monitor <code>navigator.storage.estimate()</code>; add retention/export only if actual usage grows unusually.</td></tr>
+        <tr><td>Persistence</td><td>Strong on hardened Windows; best-effort on web</td><td>Windows uses managed files with backup recovery. Request persistent browser storage for a future web build.</td></tr>
+        <tr><td>Cross-device use</td><td>None</td><td>Add authentication and server synchronization if required.</td></tr>
+        <tr><td>Multi-user separation</td><td>Improved</td><td>New profiles receive immutable UUIDs; display names remain user-facing labels. Use authenticated server IDs for cross-device accounts.</td></tr>
+        <tr><td>Integrity</td><td>Weak</td><td>Do not treat a locally generated report as tamper-proof. Use server-received events for formal assessment.</td></tr>
+        <tr><td>Backup</td><td>Local backup plus evidence archive</td><td>Each save keeps a verified backup and each report has a checksum. Add full bundle import/export or online sync for off-device disaster recovery.</td></tr>
+        <tr><td>Privacy</td><td>Local by default</td><td>This minimizes transmission, but device users can inspect the data. Define retention and deletion controls.</td></tr>
+      </tbody>
+    </table>
+
+    <p>Browser storage is origin-scoped and best-effort by default. Users can erase it, private browsing normally removes it at session end, and browsers may evict non-persistent data under storage pressure. Web Storage is commonly limited to about 10 MiB per origin, while IndexedDB receives a much larger browser-managed quota. These are reasons to keep high-volume telemetry in IndexedDB and small metadata only in localStorage.</p>
+
+    <h2 id="offline-options">6. Offline delivery options</h2>
+    <table>
+      <thead><tr><th>Channel</th><th>Best for</th><th>Strengths</th><th>Weaknesses</th><th>Recommendation</th></tr></thead>
+      <tbody>
+        <tr><td>itch.io downloadable ZIP</td><td>Public or controlled pilots</td><td>Game page, platform labeling, versioned uploads, itch app support, Butler patching.</td><td>Unsigned executables may warn; users still download/extract unless using itch app.</td><td><strong>Best immediate option.</strong></td></tr>
+        <tr><td>Google Drive / OneDrive / Dropbox</td><td>Small private cohorts</td><td>Fast to share, familiar permissions.</td><td>No game-specific updates, weak version control, link/access issues, no platform metadata.</td><td>Acceptable pilot backup.</td></tr>
+        <tr><td>USB / LAN / school LMS</td><td>Offline lab deployment</td><td>No internet dependency, controlled audience.</td><td>Manual updates and data collection.</td><td>Good for supervised labs.</td></tr>
+        <tr><td>Portable EXE folder</td><td>Technical users</td><td>No installation; current format already works.</td><td>Large folder and easy to separate files accidentally.</td><td>Always deliver as one ZIP.</td></tr>
+        <tr><td>Installer (Inno/NSIS/MSIX)</td><td>Broad Windows release</td><td>Shortcuts, uninstall, clean presentation, version metadata.</td><td>Storage and identity are now prepared; installer configuration, signing, upgrade/uninstall policy, and clean-machine QA remain.</td><td>After the hardened ZIP passes.</td></tr>
+        <tr><td>itch.io HTML/browser</td><td>Zero-install access</td><td>One click, cross-device browser access.</td><td>Separate build; browser storage and performance constraints.</td><td>Separate web pilot.</td></tr>
+      </tbody>
+    </table>
+
+    <h2 id="itch-download">7. Publishing the hardened game as an itch.io downloadable</h2>
+    <h3>Release preparation</h3>
+    <ol>
+      <li>Export a fresh Windows build from the intended tagged source revision.</li>
+      <li>Run <code>tools\prepare-windows-release.ps1</code> with the fresh export as <code>-SourceExportPath</code>, a new empty destination, <code>-ProjectRoot .</code>, and the release version. Do not manually patch the export in place.</li>
+      <li>Verify <code>Game.exe</code> starts on a clean Windows user account with no RPG Paper Maker installation.</li>
+      <li>Create a profile, complete a pass, a failure, and a cancellation, save to a non-default slot, restart, load, and export both formats.</li>
+      <li>Close the game, ZIP the whole folder, extract that ZIP to a new location, and repeat the launch/load test.</li>
+      <li>Scan the release with current endpoint protection, calculate SHA-256, and archive the exact released ZIP and source tag.</li>
+    </ol>
+
+    <h3>itch.io page setup</h3>
+    <ol>
+      <li>Create a project, choose <strong>Downloadable</strong>, and upload the ZIP directly or with Butler.</li>
+      <li>Mark only Windows for this file, since that is the platform actually exported and tested.</li>
+      <li>Provide version, approximate download/extracted size, 64-bit status if applicable, controls, save/report behavior, and known limitations.</li>
+      <li>For private testing, keep the page restricted or use itch.io download keys. For a public release, add 3–5 screenshots and accurate metadata.</li>
+      <li>For updates, keep the same project and Windows channel so players receive the new build through the itch app.</li>
+    </ol>
+
+    <h3>Butler workflow</h3>
+    <pre>butler login
+butler push "C:\Release\IP2Live-1.1-Windows" YOUR_ACCOUNT/ip2live:windows</pre>
+    <p>Butler accepts a directory or ZIP, creates compressed patch data, and efficiently uploads only changed content on later pushes. Its current uncompressed build limit is far above this game’s size. Do not place API credentials in source control or build logs.</p>
+
+    <div class="callout warn"><strong>Licensing check.</strong> RPG Paper Maker states that free use is for non-commercial releases and that commercialized games require its commercial license. Confirm the engine license and every font, audio, image, video, and third-party asset license before charging money, accepting revenue tied to access, or distributing commercially.</div>
+
+    <h2 id="direct-delivery">8. Google Drive and other direct-delivery methods</h2>
+    <p>Direct links are technically sufficient because the build is self-contained. They are less convenient for updates, so use a disciplined release layout:</p>
+    <ul>
+      <li>One immutable ZIP per version; never silently replace a file with different contents under the same filename.</li>
+      <li>A separate <code>README.txt</code> or landing page with “download → extract all → run Game.exe”.</li>
+      <li>Published SHA-256 checksum, file size, release date, change log, and support contact.</li>
+      <li>Read-only sharing permissions and a tested anonymous/student-access link.</li>
+      <li>A retention policy for older packages and a clear label for the currently supported version.</li>
+    </ul>
+    <div class="callout"><strong>Update behavior.</strong> Hardened releases share <code>%LOCALAPPDATA%\IP2Live</code>, so installing or extracting a newer version elsewhere does not strand new-format saves or reports. The first hardened launch can import normal JSON saves found in its legacy <code>build\Saves</code>; moving from a different old portable folder still requires an explicit migration/backup step.</div>
+
+    <h2 id="installer">9. Windows installer plan</h2>
+    <h3>Installer readiness status</h3>
+    <ol>
+      <li><strong>Implemented — identity:</strong> the prepared package uses the stable product/package identity <code>IP2Live</code> and an isolated Chromium directory.</li>
+      <li><strong>Implemented — per-user data:</strong> saves, progress, telemetry, reports, and browser state live under <code>%LOCALAPPDATA%\IP2Live</code>, outside program files.</li>
+      <li><strong>Implemented — legacy core saves:</strong> first launch imports valid normal JSON slots found in the legacy build folder without deleting or overwriting the source. Back up and explicitly migrate the old generic <code>%APPDATA%\game</code> browser data if preserving a 1.1 profile history is required.</li>
+      <li><strong>Implemented — release hygiene:</strong> the preparation tool excludes embedded <code>.git</code> directories and developer save JSON, exactly synchronizes the current plugin, validates songs, and writes runtime hashes.</li>
+      <li><strong>Implemented — host hardening:</strong> renderer Node.js is disabled, context isolation and sandboxing are enabled, IPC is narrow and sender-validated, paths are never accepted from renderer storage calls, and unexpected navigation/popups are blocked.</li>
+      <li><strong>Still required — product release:</strong> configure the installer, test update/downgrade/uninstall policy, sign and timestamp the executable/installer, and verify on clean standard-user devices.</li>
+    </ol>
+
+    <h3>Pragmatic installer choice</h3>
+    <p>Because RPG Paper Maker already produced a complete Electron directory, Inno Setup is a straightforward wrapper. NSIS is equally viable; MSIX offers stronger Windows integration but has stricter packaging rules. A per-user installer avoids an elevation prompt, but it does not remove the need to keep user data outside the application directory.</p>
+    <pre>; Illustrative Inno Setup skeleton — build from a CLEAN release folder
+[Setup]
+AppId={{B57A9A5C-9E9F-4AC7-A11A-CHANGE-ONCE-AND-KEEP}}
+AppName=IP2Live
+AppVersion=1.1.0
+DefaultDirName={localappdata}\Programs\IP2Live
+DefaultGroupName=IP2Live
+PrivilegesRequired=lowest
+OutputBaseFilename=IP2Live-1.1.0-Setup
+Compression=lzma2
+SolidCompression=yes
+WizardStyle=modern
+
+[Files]
+Source: "release\IP2Live-1.1-Windows\*"; DestDir: "{app}"; \
+  Flags: ignoreversion recursesubdirs createallsubdirs
+
+[Icons]
+Name: "{group}\IP2Live"; Filename: "{app}\Game.exe"
+Name: "{autodesktop}\IP2Live"; Filename: "{app}\Game.exe"; Tasks: desktopicon
+
+[Tasks]
+Name: desktopicon; Description: "Create a desktop shortcut"</pre>
+    <p class="small muted">Replace the example GUID once, then preserve it for every upgrade. Set publisher, URL, icon, license, architecture, and version-resource fields for production. Compile from a clean directory and sign the resulting installer.</p>
+
+    <h3>Installer behavior to specify</h3>
+    <ul>
+      <li>Upgrades replace program files but never delete profiles, saves, or telemetry.</li>
+      <li>Uninstall removes application files; user data remains by default, with an explicit optional “remove my data” action.</li>
+      <li>A first-launch migration log records what was found and copied without containing sensitive attempt details.</li>
+      <li>The About screen exposes version, data location, report export, backup, privacy, and support information.</li>
+    </ul>
+
+    <h2 id="updates">10. Updates, backups, and migration</h2>
+    <h3>Hardened-release manual backup</h3>
+    <ol>
+      <li>Exit IP2Live completely so its journals and browser database are closed.</li>
+      <li>Back up the whole <code>%LOCALAPPDATA%\IP2Live</code> directory. This contains saves, backups, progress, telemetry, report archives, and browser mirrors.</li>
+      <li>Verify the copied save/report SHA-256 sidecars where applicable and protect the backup because reports contain identifiable performance information.</li>
+      <li>For a one-time 1.1 migration, also preserve the old export's <code>resources\app\build\Saves</code> and <code>%APPDATA%\game</code> before changing identity.</li>
+    </ol>
+    <h3>Preferred future backup format</h3>
+    <p>Add an in-game “Export My Data” command that creates one versioned bundle containing profile UUID, slot snapshots, engine save, telemetry event rows, schema version, export date, and a checksum. Add a matching import flow that validates the schema and shows a conflict preview.</p>
+    <div class="callout warn"><strong>Old profile-history migration is a separate operation.</strong> The prepared host intentionally stops using the collision-prone <code>%APPDATA%\game</code> identity. Preserve that directory before upgrading existing pilot users; the release tool migrates core JSON saves, not an arbitrary generic Chromium profile.</div>
+
+    <div class="page-break"></div>
+    <div class="section-label">Part II · Browser deployment and online data</div>
+    <h2 id="online-meaning">11. “Deploy online” can mean three different products</h2>
+    <table>
+      <thead><tr><th>Model</th><th>Game delivery</th><th>Data</th><th>Server database?</th></tr></thead>
+      <tbody>
+        <tr><td>A. Download page</td><td>Players download the Windows ZIP from itch.io or another website.</td><td>Same local AppData/save behavior as today.</td><td><strong>No.</strong> The website is only a delivery channel.</td></tr>
+        <tr><td>B. Browser game, local-only</td><td>Game runs as HTML/JavaScript in the browser.</td><td>IndexedDB/localStorage remain on that browser and origin.</td><td><strong>No.</strong> Useful for casual or private single-device play.</td></tr>
+        <tr><td>C. Connected learning service</td><td>Desktop and/or browser clients authenticate and sync.</td><td>Local offline cache plus centralized server records.</td><td><strong>Yes.</strong> Needed for accounts, dashboards, cross-device data, and reliable collection.</td></tr>
+      </tbody>
+    </table>
+
+    <h2 id="web-export">12. Browser and itch.io HTML deployment</h2>
+    <div class="callout stop"><strong>Do not upload the Windows export as an HTML game.</strong> Its <code>index.html</code> is the renderer of an Electron app; the package uses a preload and <code>window.ipcRenderer</code> for desktop file I/O. Use RPG Paper Maker’s separate “Deploy for web browser” output.</div>
+
+    <h3>Build and test workflow</h3>
+    <ol>
+      <li>In RPG Paper Maker, export <strong>Deploy for web browser</strong> to a new empty directory.</li>
+      <li>Confirm <code>index.html</code> is at the ZIP root, not inside an extra parent folder.</li>
+      <li>Remove <code>.git</code> and internal files. Measure extracted size, individual file sizes, file count, and longest path.</li>
+      <li>Serve locally through HTTP—not by double-clicking <code>index.html</code>—and test Chrome and Edge first, then Firefox. Test at 1280×720 and smaller viewports.</li>
+      <li>Check the developer console and network panel for missing resources, case mismatches, absolute paths, mixed HTTP content, autoplay restrictions, codec failures, and cross-origin errors.</li>
+      <li>Verify every gameplay module, save/load, keyboard/mouse behavior, report export, reload persistence, browser restart persistence, private-window behavior, and storage clearing.</li>
+      <li>Zip only the web output contents and upload it as an itch.io <strong>HTML Game</strong>.</li>
+    </ol>
+
+    <h3>Current itch.io HTML constraints to design for</h3>
+    <table>
+      <thead><tr><th>Constraint</th><th>itch.io requirement</th><th>IP2Live implication</th></tr></thead>
+      <tbody>
+        <tr><td>Entry point</td><td><code>index.html</code> inside a ZIP</td><td>Use the web export root.</td></tr>
+        <tr><td>Extracted files</td><td>Maximum 1,000</td><td>The current desktop build subtree has 1,068 because it contains <code>.git</code>; without <code>.git</code> it has 609. Measure the actual web export.</td></tr>
+        <tr><td>Extracted total</td><td>Maximum 500 MiB by default</td><td>The cleaned game payload is about 82 MiB, but the web build must be measured independently.</td></tr>
+        <tr><td>Single extracted file</td><td>Maximum 200 MiB</td><td>The current largest game file is 66.5 MiB; within the limit, but expensive to parse/load.</td></tr>
+        <tr><td>Path length</td><td>Maximum 240 characters</td><td>Check deeply nested gameplay paths.</td></tr>
+        <tr><td>Filenames</td><td>Case-sensitive, UTF-8</td><td>Windows success does not prove web-host success.</td></tr>
+        <tr><td>Resource URLs</td><td>Relative paths; external APIs must use HTTPS</td><td>Audit plugin fetches and future API base URL.</td></tr>
+      </tbody>
+    </table>
+
+    <h3>Performance priorities for the web build</h3>
+    <ul>
+      <li>The 66.5 MiB base64 audio JSON expands in memory and must be parsed. Prefer web-appropriate streamed/compressed audio assets if RPG Paper Maker supports that export mode.</li>
+      <li>Check the <code>.mov</code> title video codec in Chrome, Edge, Firefox, and Safari. Container extension alone does not guarantee browser playback.</li>
+      <li>Lazy-load large audio/video and gameplay assets where practical; show a clear loading indicator and require a click before audio starts.</li>
+      <li>Do not enable mobile support until touch controls, layout, memory use, and real devices are tested.</li>
+    </ul>
+
+    <h2 id="web-storage">13. What happens to IndexedDB when the game is online?</h2>
+    <p>The same IndexedDB code can operate in a browser because it uses standard Web APIs. Its meaning changes:</p>
+    <ul>
+      <li>Data belongs to the site’s <strong>origin</strong>—scheme, hostname, and port—not to an IP2Live account.</li>
+      <li>A different browser profile, computer, hostname, protocol, or port receives a different empty database.</li>
+      <li>Clearing site data, private browsing, storage pressure, browser policies, or corruption can delete it.</li>
+      <li>An itch.io game runs inside an iframe and browser privacy policies may affect third-party storage. Test the exact published page, not only localhost.</li>
+      <li>IndexedDB does not synchronize itself with a server database. Sync logic must be designed and implemented.</li>
+    </ul>
+
+    <h3>Local-only web hardening</h3>
+    <ol>
+      <li>Call <code>navigator.storage.persist()</code> after explaining why persistence is useful.</li>
+      <li>Show storage status and approximate usage from <code>navigator.storage.estimate()</code>.</li>
+      <li>Add full data export/import and an “erase my local data” control.</li>
+      <li>Show a clear warning in private browsing or when persistence is unavailable.</li>
+      <li>Use a stable production domain/origin and test data continuity across deployments.</li>
+    </ol>
+
+    <h2 id="server-db">14. When an online database becomes necessary</h2>
+    <table>
+      <thead><tr><th>Requirement</th><th>Local IndexedDB only</th><th>Server database</th></tr></thead>
+      <tbody>
+        <tr><td>Play offline on one device</td><td>Excellent</td><td>Optional</td></tr>
+        <tr><td>Continue on another device</td><td>Cannot</td><td>Required</td></tr>
+        <tr><td>Teacher sees reports without student sending files</td><td>Cannot</td><td>Required</td></tr>
+        <tr><td>Recover after browser/device loss</td><td>Only manual backup</td><td>Required for automatic recovery</td></tr>
+        <tr><td>Multiple students on shared computers</td><td>Name-based separation is weak</td><td>Recommended with authenticated IDs</td></tr>
+        <tr><td>Formal/authoritative attempt record</td><td>User can alter/clear local data</td><td>Required, with server-side validation/audit</td></tr>
+        <tr><td>Aggregate research/analytics</td><td>Manual collection</td><td>Required, subject to consent and governance</td></tr>
+        <tr><td>Simple public game with private local progress</td><td>Sufficient</td><td>Unnecessary complexity</td></tr>
+      </tbody>
+    </table>
+
+    <h2 id="architecture">15. Recommended online architecture</h2>
+    <div class="diagram">
+      <div class="flow">
+        <div class="node">Browser or desktop game</div><div class="arrow">→</div>
+        <div class="node">IndexedDB event log + sync outbox</div><div class="arrow">→</div>
+        <div class="node">HTTPS API</div>
+      </div>
+      <div class="flow" style="margin-top:3mm">
+        <div class="node">Teacher/admin dashboard</div><div class="arrow">←</div>
+        <div class="node">Reporting service + access control</div><div class="arrow">←</div>
+        <div class="node">PostgreSQL-compatible database</div>
+      </div>
+    </div>
+    <p><strong>Keep the client offline-first.</strong> Each event is saved locally first. A background sync worker sends pending events when connectivity is available. The API authenticates the player, validates the payload, assigns/accepts an idempotency key, stores the event once, and acknowledges it. The client then marks the outbox item synchronized.</p>
+
+    <h3>Do not connect the game directly to the database</h3>
+    <p>Database credentials embedded in JavaScript or an Electron renderer are recoverable by users. Place authorization, validation, rate limiting, data ownership checks, and schema evolution behind an HTTPS API or a managed backend that enforces equivalent server-side policies.</p>
+
+    <h3>Deployment components</h3>
+    <ul>
+      <li><strong>Static game host:</strong> itch.io HTML hosting or another HTTPS static/CDN host.</li>
+      <li><strong>API:</strong> versioned endpoints such as <code>/v1/events:batch</code>, <code>/v1/progress</code>, and <code>/v1/reports</code>.</li>
+      <li><strong>Database:</strong> relational storage is a strong fit because users, sessions, attempts, mistakes, stages, and reports have clear relationships.</li>
+      <li><strong>Authentication:</strong> school SSO, managed accounts, or invitation codes mapped to immutable user IDs. Never use display name as identity.</li>
+      <li><strong>Dashboard:</strong> separate teacher/admin web application with role-based access and server-generated reports.</li>
+      <li><strong>Observability:</strong> service health and sync failure metrics without logging sensitive payloads unnecessarily.</li>
+    </ul>
+
+    <h2 id="data-model">16. Suggested server data model and sync contract</h2>
+    <table>
+      <thead><tr><th>Entity</th><th>Key fields</th><th>Notes</th></tr></thead>
+      <tbody>
+        <tr><td><code>users</code></td><td><code>user_id</code> UUID, external identity, display name, status</td><td>Display name may change; UUID does not.</td></tr>
+        <tr><td><code>devices</code></td><td><code>device_id</code>, user, first/last seen, client version</td><td>Supports diagnostics and revocation without fingerprinting more than needed.</td></tr>
+        <tr><td><code>sessions</code></td><td><code>session_id</code>, user, device, started/ended, client version</td><td>Populate deliberately rather than relying only on inferred telemetry.</td></tr>
+        <tr><td><code>attempts</code></td><td><code>attempt_id</code>, event ID, user/session, gameplay, quest, outcome, timing, metrics</td><td>Append-first; unique event ID prevents duplicate sync.</td></tr>
+        <tr><td><code>mistake_events</code></td><td>event ID, attempt ID, step, issue, submitted/expected, timestamp</td><td>Keep detailed evidence separate from the attempt summary.</td></tr>
+        <tr><td><code>progress_snapshots</code></td><td>user, slot, revision, map, quest state, save payload, updated time</td><td>Versioned mutable state; define conflict policy.</td></tr>
+        <tr><td><code>report_exports</code></td><td>requester, subject, scope, generated time, format, audit reference</td><td>Useful if reports are official records.</td></tr>
+        <tr><td><code>consents</code>/<code>deletions</code></td><td>subject, policy version, action, timestamps</td><td>Supports governance where required.</td></tr>
+      </tbody>
+    </table>
+
+    <h3>Event envelope</h3>
+    <pre>{
+  "eventId": "uuid-generated-on-client",
+  "schemaVersion": "telemetry-v3",
+  "userId": "server-issued-uuid",
+  "deviceId": "client-installation-uuid",
+  "sessionId": "uuid",
+  "eventType": "attempt_end",
+  "occurredAt": "2026-08-21T13:09:58.000Z",
+  "clientVersion": "1.2.0",
+  "payload": { "attemptId": "uuid", "gameplayId": "...", "outcome": "passed" }
+}</pre>
+    <h3>Synchronization rules</h3>
+    <ul>
+      <li><strong>Idempotency:</strong> server enforces uniqueness on <code>eventId</code>; retrying the same batch never creates duplicates.</li>
+      <li><strong>Ordering:</strong> retain client timestamp and sequence, but also store server receipt time. Do not trust client clock for authorization.</li>
+      <li><strong>Batching:</strong> send small batches, compress where supported, and back off after failures.</li>
+      <li><strong>Append vs mutable:</strong> attempts/mistakes are append-only; progress snapshots are versioned and need conflict resolution.</li>
+      <li><strong>Acknowledgement:</strong> remove nothing from the local outbox until the server confirms accepted event IDs.</li>
+      <li><strong>Schema evolution:</strong> accept at least the current and previous event version during rolling updates.</li>
+      <li><strong>Deletion:</strong> a server deletion request must also tell all signed-in clients to clear the corresponding local data.</li>
+    </ul>
+
+    <h2 id="security">17. Security, privacy, and trust boundaries</h2>
+    <h3>Desktop package</h3>
+    <ul>
+      <li>Keep external content out of the privileged Electron renderer. The current <code>nodeIntegration: true</code>/<code>contextIsolation: false</code> combination is acceptable only as a legacy local-content constraint, not as a pattern for loading remote pages.</li>
+      <li>Validate every IPC request, especially file paths. The current save IPC resolves a renderer-provided relative path against the app directory.</li>
+      <li>Remove DevTools shortcuts in production or gate them behind a deliberate support mode.</li>
+      <li>Use a current supported Electron line, track vulnerabilities, sign releases, and publish checksums.</li>
+    </ul>
+    <h3>Online service</h3>
+    <ul>
+      <li>HTTPS only; never ship database administrator keys in the client.</li>
+      <li>Use role-based authorization: student sees own records; teacher sees assigned groups; administrator scope is explicit and audited.</li>
+      <li>Validate sizes, types, allowed gameplay IDs, timestamps, and ownership on the server. Rate-limit event submission and report generation.</li>
+      <li>Encrypt data in transit and at rest, manage secrets outside source control, back up the database, and test restoration.</li>
+      <li>Collect the minimum necessary personal information. Define purpose, consent/notice, retention, correction, export, and deletion procedures before a school rollout.</li>
+      <li>Separate research analytics from operational records and de-identify exports where identity is unnecessary.</li>
+    </ul>
+    <div class="callout stop"><strong>Trust statement.</strong> A PDF produced entirely from local IndexedDB proves what the local software reported, not that the data was never modified. For graded or compliance-sensitive use, generate the official report from authenticated server-received events and include report/audit identifiers.</div>
+
+    <h2 id="roadmap">18. Phased implementation roadmap</h2>
+    <table>
+      <thead><tr><th>Phase</th><th>Deliverable</th><th>Exit criteria</th></tr></thead>
+      <tbody>
+        <tr><td>0. Release hygiene</td><td>Clean Windows export; release README; checksum; source tag.</td><td>No <code>.git</code>/internal files; clean-user smoke test passes.</td></tr>
+        <tr><td>1. Offline pilot</td><td>itch.io downloadable Windows ZIP; optional restricted Drive mirror.</td><td>Pass/fail/cancel, save/load, restart, and PDF/XLS export pass on at least two Windows devices.</td></tr>
+        <tr><td>2. Desktop production</td><td>Stable identity, user-data saves, migration, installer, signing.</td><td>Install/update/uninstall matrices prove no unintended data loss; signatures verify.</td></tr>
+        <tr><td>3. Local-only web pilot</td><td>Dedicated RPG Paper Maker web build on HTTPS/itch.io.</td><td>Size limits, asset loading, gameplay, persistence, report download, and privacy-mode behavior pass.</td></tr>
+        <tr><td>4. Sync foundation</td><td>UUID identity, local outbox, authenticated batch API, server attempts.</td><td>Offline play and reconnect sync are idempotent; duplicate/loss tests pass.</td></tr>
+        <tr><td>5. Connected learning service</td><td>Progress sync, teacher dashboard, server reports, governance controls.</td><td>Role/access, backup restore, deletion/export, monitoring, and security review pass.</td></tr>
+      </tbody>
+    </table>
+
+    <h2 id="qa">19. Release acceptance checklists</h2>
+    <div class="two-col">
+      <div>
+        <h3>Windows portable</h3>
+        <ul class="checklist">
+          <li>Fresh export from tagged source</li>
+          <li>No <code>.git</code> or private/internal files</li>
+          <li>Entire folder zipped</li>
+          <li>Launch from extracted ZIP copy</li>
+          <li>Clean Windows user test</li>
+          <li>Offline launch test</li>
+          <li>All gameplay modules smoke-tested</li>
+          <li>Pass/fail/cancel telemetry verified</li>
+          <li>Save slots survive restart</li>
+          <li>PDF and XLS opened and checked</li>
+          <li>Checksum and malware scan complete</li>
+          <li>License inventory approved</li>
+        </ul>
+      </div>
+      <div>
+        <h3>Installer/update</h3>
+        <ul class="checklist">
+          <li>Stable app/package/installer IDs</li>
+          <li>User data outside app directory</li>
+          <li>Old portable data migration tested</li>
+          <li>Upgrade over previous version tested</li>
+          <li>Downgrade behavior documented</li>
+          <li>Uninstall preserves data by default</li>
+          <li>Standard-user install tested</li>
+          <li>Paths with spaces/non-ASCII tested</li>
+          <li>Executable and installer signed</li>
+          <li>SmartScreen/SAC behavior checked</li>
+          <li>Recovery/backup guide published</li>
+          <li>Support diagnostics available</li>
+        </ul>
+      </div>
+    </div>
+    <div class="two-col">
+      <div>
+        <h3>Browser/itch HTML</h3>
+        <ul class="checklist">
+          <li>Separate web export used</li>
+          <li><code>index.html</code> at ZIP root</li>
+          <li>≤1,000 files, ≤500 MiB extracted</li>
+          <li>No individual file >200 MiB</li>
+          <li>Relative, case-correct paths</li>
+          <li>HTTPS-only external calls</li>
+          <li>Chrome/Edge/Firefox tested</li>
+          <li>Exact itch iframe tested</li>
+          <li>Reload/restart persistence tested</li>
+          <li>Storage clear/private mode explained</li>
+          <li>Report downloads verified</li>
+          <li>Audio/video compatibility verified</li>
+        </ul>
+      </div>
+      <div>
+        <h3>Online database</h3>
+        <ul class="checklist">
+          <li>Immutable user/device/event IDs</li>
+          <li>No secrets in client</li>
+          <li>Authorization tested by role</li>
+          <li>Server-side validation and limits</li>
+          <li>Idempotent retry/deduplication</li>
+          <li>Offline/reconnect test</li>
+          <li>Clock/order conflict test</li>
+          <li>Backup restore rehearsal</li>
+          <li>Retention/deletion/export flows</li>
+          <li>Consent/privacy notice approved</li>
+          <li>Monitoring and incident runbook</li>
+          <li>Server-generated reports reconciled</li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="page-break"></div>
+    <div class="section-label">Appendices</div>
+    <h2 id="appendix">Appendix A. Implementation status and remaining backlog</h2>
+    <table>
+      <thead><tr><th>Priority</th><th>Backlog item</th><th>Reason</th></tr></thead>
+      <tbody>
+        <tr><td>Done</td><td>Exclude <code>.git</code> and developer saves from prepared releases.</td><td>Automated by the release tool and covered by an integration test.</td></tr>
+        <tr><td>Done</td><td>Move core saves out of <code>resources\app\build\Saves</code>.</td><td>Managed per-user save files, backups, and migration are implemented.</td></tr>
+        <tr><td>Done</td><td>Set stable IP2Live identity and isolate browser data.</td><td>The prepared host uses <code>%LOCALAPPDATA%\IP2Live</code>.</td></tr>
+        <tr><td>Done</td><td>Reconcile interrupted attempts and add raw report evidence.</td><td>Event Audit plus JSON evidence covers incomplete starts; 90 days remains the promised default window.</td></tr>
+        <tr><td>Done</td><td>Await telemetry/report flush and expose failures.</td><td>Controlled export and quit paths drain pending storage writes.</td></tr>
+        <tr><td>Done</td><td>Add immutable UUID profile IDs for new profiles.</td><td>Display-name collisions no longer define event ownership.</td></tr>
+        <tr><td>P1</td><td>Add full data export/import and erase controls.</td><td>Backup, migration, and privacy.</td></tr>
+        <tr><td>Done</td><td>Harden Electron preload, IPC, and navigation.</td><td>Sandboxed CommonJS preload, context isolation, trusted senders, fixed destinations, and blocked popups/navigation are implemented.</td></tr>
+        <tr><td>P2</td><td>Use native <code>.xlsx</code> or label the current format precisely.</td><td>Current XML-in-<code>.xls</code> may produce format warnings.</td></tr>
+        <tr><td>P2</td><td>Optimize base64 audio and validate video codec for web.</td><td>Startup memory and browser compatibility.</td></tr>
+      </tbody>
+    </table>
+
+    <h2>Appendix B. Hardened release-preparation command</h2>
+    <p>Run this from the project root after RPG Paper Maker produces a fresh protected Windows export. The destination must not already exist; the source export is left unchanged.</p>
+    <pre>powershell.exe -NoProfile -ExecutionPolicy Bypass `
+  -File .\tools\prepare-windows-release.ps1 `
+  -SourceExportPath 'C:\Exports\IP2Live-Windows' `
+  -DestinationPath 'C:\Release\IP2Live-Prepared' `
+  -ProjectRoot . `
+  -ReleaseVersion '1.1.0'</pre>
+    <p class="small muted">The command fails before creating a destination if any registered custom track is absent from the exported <code>build\songs.json</code>. Do not bypass that guard; re-export so RPG Paper Maker embeds the audio.</p>
+
+    <h2>Appendix C. Sources</h2>
+    <h3>Project and build evidence</h3>
+    <ul class="source-list">
+      <li><code>Plugins/IP2Live_Core/code.js</code>: database name/version, stores, indexes, and IndexedDB CRUD helpers.</li>
+      <li><code>Plugins/IP2Live_Core/modules/game_manager.js</code>: telemetry lifecycle, gameplay metrics, localStorage snapshots, profile persistence, save/load bridge, and report export.</li>
+      <li><code>Plugins/IP2Live_Core/modules/report_manager.js</code>: local-only aggregation, attempt filtering, PDF construction, SpreadsheetML export, and download behavior.</li>
+      <li><code>Plugins/IP2Live_Core/modules/screens/export-report.js</code>: 7/30/90-day scopes and PDF/Excel/Both choices.</li>
+      <li><code>Plugins/IP2Live_Core/modules/desktop_storage.js</code>: engine save hooks, progress snapshots, telemetry journals, report archival, and browser fallback.</li>
+      <li><code>deployment/windows</code> and <code>tools/prepare-windows-release.ps1</code>: hardened Electron host, bounded storage service, secure preload bridge, and repeatable release construction.</li>
+      <li>Exported <code>resources/app/package.json</code> and <code>main.js</code>: Electron 43.2.0, generic package name <code>game</code>, desktop window and IPC settings.</li>
+      <li>Exported RPG Paper Maker engine <code>Core/Game.js</code>, <code>Common/Paths.js</code>, <code>Common/IO.js</code>: core save path and desktop save IPC.</li>
+      <li>Runtime Chromium profile <code>%APPDATA%\game</code>: actual IP2Live database/profile/session/attempt evidence.</li>
+    </ul>
+    <h3>Current external documentation (accessed 21 August 2026)</h3>
+    <ul class="source-list">
+      <li><a href="https://itch.io/docs/creators/html5">itch.io — Uploading HTML5 games</a>: ZIP structure, iframe behavior, file/size/path limits, relative paths, HTTPS, and case sensitivity.</li>
+      <li><a href="https://itch.io/docs/butler/pushing.html">itch.io — Pushing builds with Butler</a>: push syntax, channels, patches, and upload limits.</li>
+      <li><a href="https://itch.io/docs/creators/getting-started">itch.io — Your first itch.io page</a>: downloadable projects and platform uploads.</li>
+      <li><a href="https://itch.io/docs/creators/quality-guidelines">itch.io — Content creator quality guidelines</a>: accurate platform classification and direct uploads.</li>
+      <li><a href="https://github.com/RPG-Paper-Maker/Documentation">RPG Paper Maker — Official documentation repository</a>: desktop and web-browser deployment modes.</li>
+      <li><a href="https://rpg-paper-maker.com/">RPG Paper Maker — Official site</a>: supported deployment targets and commercial-license statement.</li>
+      <li><a href="https://www.electronjs.org/docs/latest/tutorial/application-distribution">Electron — Application packaging</a>: distributing the complete runtime folder and packaging tools.</li>
+      <li><a href="https://www.electronjs.org/docs/latest/tutorial/code-signing">Electron — Code signing</a>: signing distributed Electron applications.</li>
+      <li><a href="https://www.electronjs.org/docs/latest/tutorial/security">Electron — Security checklist</a>: context isolation, Node integration, sandboxing, CSP, IPC, and navigation.</li>
+      <li><a href="https://learn.microsoft.com/en-us/windows/apps/develop/smart-app-control/code-signing-for-smart-app-control">Microsoft — Code signing for Smart App Control</a>: trusted RSA signing and SignTool guidance.</li>
+      <li><a href="https://developer.mozilla.org/en-US/docs/Web/API/Storage_API/Storage_quotas_and_eviction_criteria">MDN — Storage quotas and eviction criteria</a>: best-effort/persistent storage, quotas, private mode, clearing, and eviction.</li>
+      <li><a href="https://developer.mozilla.org/en-US/docs/Web/API/IndexedDB_API/Basic_Terminology">MDN — IndexedDB key characteristics</a>: offline capability, origin scope, clearing risks, and lack of automatic server synchronization.</li>
+      <li><a href="https://jrsoftware.org/ishelp/topic_admininstallmode.htm">Inno Setup — Non-administrative install mode</a> and <a href="https://jrsoftware.org/ishelp/topic_setup_appid.htm">AppId</a>: per-user installation considerations and stable upgrade identity.</li>
+    </ul>
+
+    <h2>Final recommendation</h2>
+    <p><strong>Release IP2Live first as a hardened Windows downloadable ZIP on itch.io.</strong> Create a fresh protected export so all custom audio is embedded, prepare it into a new destination with the supplied script, perform the clean-machine save/restart/report/music matrix, then sign and publish it. Google Drive is suitable for a controlled pilot mirror. The old screenshot build must not be distributed as the finished release.</p>
+    <p>For browser availability, make a separate RPG Paper Maker web export and initially keep IndexedDB local. Add a server database only when the product requirements include accounts, cross-device progress, central teacher visibility, reliable backup, or authoritative assessment. When that point arrives, do not discard IndexedDB: turn it into the offline event log and synchronization outbox behind an authenticated HTTPS API.</p>
+
+    <div class="footer-note">IP2Live Deployment, Local Data, and Online Migration Guide · Repository/build audit dated 21 August 2026. Validate external platform limits and legal/licensing requirements again at each release.</div>
+  </main>
+</body>
+</html>
