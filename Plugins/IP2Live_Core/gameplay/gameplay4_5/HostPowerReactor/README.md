@@ -54,10 +54,12 @@ Quest definitions and their order are authoritative in `modules/game_manager.js`
 
 ## Full gameplay controls
 
-- Move the gun: `A/D`, left/right arrows, or mouse movement inside the left arena.
-- The gun fires automatically.
+- Move the gun one fixed lane at a time with `A/D`, left/right arrows, or mouse movement inside the left arena. Holding a direction repeats the lane step at a controlled pace.
+- Tap `Space` to fire one bullet. Holding Space does not auto-fire.
+- One bullet bursts a capsule or virus.
 - Blue capsules add `+1` through `+5` to the exponent.
 - Red viruses subtract `-1` or `-2`.
+- The power result remains hidden after changing `h`; click `CALCULATE CAPACITY` to evaluate `2^h - 2` and submit the answer.
 - `Esc` exits; `R` retries after a timeout.
 
 ## Compact tool controls

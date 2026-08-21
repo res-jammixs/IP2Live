@@ -7,7 +7,7 @@
  */
 
 const IPHostPowerReactorTutorial = {
-    VERSION: 'ip-host-power-reactor-tutorial-20260821-01',
+    VERSION: 'ip-host-power-reactor-tutorial-20260821-04',
     _dialogueSerial: 0,
 
     showIntro(context, onComplete) {
@@ -21,6 +21,9 @@ const IPHostPowerReactorTutorial = {
             ? Number(c.classConfig.maxHostBits)
             : (className === 'A' ? 24 : (className === 'B' ? 16 : 8));
         const bitsToBorrow = Math.max(0, availableHostBits - targetExponent);
+        const openingPlan = targetExponent === 6
+            ? 'For this first lesson, +1, +3, and +2 form 1 + 3 + 2 = 6. Then submit h with CALCULATE.'
+            : 'Combine positive capsule values to choose h; use a virus to correct it, then submit h with CALCULATE.';
 
         return this._startDynamicDialogue('stage.hostpower.intro.', {
             title: 'HOST-POWER REACTOR TRAINING',
@@ -55,18 +58,137 @@ const IPHostPowerReactorTutorial = {
                     availableHostBits + ' - ' + targetExponent + ' = ' + bitsToBorrow + ' bit(s) may be borrowed.',
                 ],
                 [
-                    'Move the auto-firing pulse gun with A/D, the arrow keys, or the mouse.',
+                    'The intake is divided into five fixed lanes.',
                     '',
-                    'Blue capsules add +1 to +5 host bits. Red viruses subtract -1 or -2.',
-                    'Reach the smallest correct exponent before the 60-second power bar empties.',
+                    'Tap A/D or Left/Right to move exactly one lane. Holding a direction continues stepping through the five lane centers.',
+                    'Press SPACE once to fire one bullet in the selected lane. Holding SPACE does not auto-fire.',
                 ],
                 [
-                    'The reactor glows amber while capacity is too low, green only at the smallest valid power,',
-                    'and red when you allocate more host bits than necessary.',
+                    'Every capsule and virus bursts with one accurate bullet.',
+                    '',
+                    'A capsule adds its printed value to h. A red virus subtracts its printed value.',
+                    'Choose each shot carefully; only objects in the currently selected lane can be hit.',
+                ],
+                [
+                    'Color-coded capsules add +1 to +5 host bits. Red viruses subtract -1 or -2.',
+                    '',
+                    'This training reactor starts at h = 0 and needs h = ' + targetExponent + '.',
+                    openingPlan,
+                ],
+                [
+                    'The calculator does not reveal 2^h automatically while you collect values.',
                     '',
                     'Exact total-address equality is not enough: the two reserved addresses must still fit.',
+                    'Click CALCULATE CAPACITY to submit h. Only then will the system reveal the result and validate your answer.',
                 ],
             ],
+            onComplete,
+        });
+    },
+
+    showReactorGuide(context, onComplete) {
+        const c = context || {};
+        const className = String(c.className || 'C').toUpperCase();
+        const requiredHosts = Math.max(1, Number(c.requiredHosts) || 50);
+        const targetExponent = Math.max(1, Number(c.targetExponent) || 6);
+        return this._startDynamicDialogue('stage.hostpower.guided.reactor.', {
+            title: '01 // CAPACITY TARGET',
+            speaker: 'SYSTEM',
+            timing: 'during',
+            bindings: { gameplayId: 'ip_host_power_reactor', trigger: 'gameplay.during' },
+            slides: [[
+                'The highlighted reactor must supply ' + requiredHosts + ' usable Class ' + className + ' host addresses.',
+                '',
+                'Its center number is the host-bit exponent h. For this training node, the smallest safe value is h = ' + targetExponent + '.',
+                'The reactor stays neutral while you choose h. Its result color appears only after you press CALCULATE.',
+            ]],
+            onComplete,
+        });
+    },
+
+    showFormulaGuide(context, onComplete) {
+        const c = context || {};
+        const requiredHosts = Math.max(1, Number(c.requiredHosts) || 50);
+        const targetExponent = Math.max(1, Number(c.targetExponent) || 6);
+        const total = Math.pow(2, targetExponent);
+        const usable = Math.max(0, total - 2);
+        return this._startDynamicDialogue('stage.hostpower.guided.formula.', {
+            title: '02 // MANUAL CAPACITY CHECK',
+            speaker: 'SYSTEM',
+            timing: 'during',
+            bindings: { gameplayId: 'ip_host_power_reactor', trigger: 'gameplay.during' },
+            slides: [[
+                'The highlighted calculator keeps 2^h and the usable-host result locked while you collect values.',
+                '',
+                'Always calculate 2^h - 2 because the network and broadcast addresses are reserved.',
+                'When you are ready, click CALCULATE CAPACITY. For this lesson, 2^' + targetExponent + ' - 2 = ' + usable + ', which covers ' + requiredHosts + ' hosts.',
+            ]],
+            onComplete,
+        });
+    },
+
+    showIntakeGuide(context, onComplete) {
+        return this._startDynamicDialogue('stage.hostpower.guided.intake.', {
+            title: '03 // CAPSULE INTAKE',
+            speaker: 'SYSTEM',
+            timing: 'during',
+            bindings: { gameplayId: 'ip_host_power_reactor', trigger: 'gameplay.during' },
+            slides: [[
+                'The highlighted intake has five fixed lanes labeled L1 through L5.',
+                '',
+                'Bright capsules add the clearly printed +1 to +5 value to h. Red viruses subtract 1 or 2.',
+                'Drops visit every lane before a lane is reused, giving you time to choose a target.',
+            ]],
+            onComplete,
+        });
+    },
+
+    showShellGuide(context, onComplete) {
+        return this._startDynamicDialogue('stage.hostpower.guided.shell.', {
+            title: '04 // ONE-SHOT TARGETS',
+            speaker: 'SYSTEM',
+            timing: 'during',
+            bindings: { gameplayId: 'ip_host_power_reactor', trigger: 'gameplay.during' },
+            slides: [[
+                'The highlighted capsule and virus are training samples.',
+                '',
+                'Every falling target bursts with one bullet and immediately changes h by its printed value.',
+                'Move to its exact lane first, then press SPACE once. Missed bullets do not affect neighboring lanes.',
+            ]],
+            onComplete,
+        });
+    },
+
+    showControlsGuide(context, onComplete) {
+        return this._startDynamicDialogue('stage.hostpower.guided.controls.', {
+            title: '05 // PULSE-GUN CONTROL',
+            speaker: 'SYSTEM',
+            timing: 'during',
+            bindings: { gameplayId: 'ip_host_power_reactor', trigger: 'gameplay.during' },
+            slides: [[
+                'The highlighted pulse gun is locked to one of the five lane centers.',
+                '',
+                'Tap A/D or Left/Right to step one lane. Hold a direction to continue stepping without repeatedly tapping.',
+                'Tap SPACE to fire one bullet. You must release and press SPACE again for the next shot.',
+            ]],
+            onComplete,
+        });
+    },
+
+    showTimerGuide(context, onComplete) {
+        const c = context || {};
+        const targetExponent = Math.max(1, Number(c.targetExponent) || 6);
+        return this._startDynamicDialogue('stage.hostpower.guided.timer.', {
+            title: '06 // REACTOR WINDOW',
+            speaker: 'SYSTEM',
+            timing: 'during',
+            bindings: { gameplayId: 'ip_host_power_reactor', trigger: 'gameplay.during' },
+            slides: [[
+                'The highlighted power rail gives you 60 seconds. It has not started during this guided walkthrough.',
+                '',
+                'Build h = ' + targetExponent + ' for this guided example, then click CALCULATE CAPACITY to submit it.',
+                'Training begins after this focus. Select a lane, tap SPACE, and calculate only when you are satisfied with h.',
+            ]],
             onComplete,
         });
     },

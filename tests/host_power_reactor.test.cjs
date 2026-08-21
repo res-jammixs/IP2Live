@@ -118,24 +118,70 @@ assert.equal(lifecycleScreen.roundState, 'active', 'the first update must always
 assert.ok(Number.isFinite(lifecycleScreen.startedAt));
 assert.ok(lifecycleScreen.endsAt > lifecycleScreen.startedAt);
 assert.equal(lifecycleScreen.entities.length, 1, 'the first falling capsule/virus must spawn immediately');
-assert.equal(lifecycleScreen.bullets.length, 1, 'auto-fire must begin immediately');
-assert.equal(lifecycleScreen.entities[0].hitsRemaining, 3, 'every falling target should begin with a three-hit shell');
+assert.equal(lifecycleScreen.bullets.length, 0, 'the gun must remain idle until Space is tapped');
+assert.equal(lifecycleScreen.entities[0].hitsRemaining, 1, 'every falling target should burst with one hit');
+
+const guidedCalls = [];
+const guidedMethods = [
+  ['showReactorGuide', 'reactor'],
+  ['showFormulaGuide', 'formula'],
+  ['showIntakeGuide', 'intake'],
+  ['showShellGuide', 'shell'],
+  ['showControlsGuide', 'controls'],
+  ['showTimerGuide', 'timer'],
+];
+lifecycleContext.IP2Live.IPHostPowerReactorTutorial = {};
+for (const [methodName] of guidedMethods) {
+  lifecycleContext.IP2Live.IPHostPowerReactorTutorial[methodName] = (tutorialScenario, onComplete) => {
+    guidedCalls.push([methodName, tutorialScenario]);
+    onComplete();
+    return true;
+  };
+}
+const guidedScreen = new LifecycleScreen({
+  targetClass: 'C',
+  requiredHosts: 50,
+  durationSeconds: 60,
+  guidedTutorial: true,
+});
+assert.equal(guidedScreen.roundState, 'tutorial', 'guided play should hold before the timed round');
+assert.equal(guidedScreen.endsAt, null, 'the 60-second clock must not run during instruction');
+assert.equal(guidedScreen.tutorialPaused, true);
+for (let index = 0; index < guidedMethods.length; index++) {
+  const [methodName, highlightType] = guidedMethods[index];
+  guidedScreen.update();
+  assert.equal(guidedCalls[index][0], methodName, `guided step ${index + 1} should open its dialogue`);
+  assert.equal(guidedScreen.tutorialHighlight.type, highlightType, `guided step ${index + 1} should expose its spotlight`);
+  assert.equal(guidedScreen.roundState, 'tutorial', 'timed action must remain paused until the final tutorial focus');
+  guidedScreen.tutorialSpotlightTimer = 1;
+  guidedScreen.update();
+}
+assert.equal(guidedScreen.tutorialComplete, true, 'all six guided steps should complete');
+assert.equal(guidedScreen.tutorialPaused, false);
+assert.equal(guidedScreen.roundState, 'active', 'the timed round should begin only after instruction');
+assert.ok(guidedScreen.endsAt > guidedScreen.startedAt);
+assert.equal(guidedScreen.entities.length, 1, 'guided play should spawn its first real target after training');
+assert.equal(guidedScreen.bullets.length, 0, 'guided play must not enable automatic firing');
 
 const playfield = lifecycleContext.IP2Live.HostPowerPlayfield;
 assert.equal(playfield.LANE_COUNT, 5, 'the intake should expose exactly five fixed lanes');
-assert.equal(playfield.SHOT_INTERVAL_MS, 1000, 'auto-fire must be limited to one shot per second');
+assert.equal(playfield.SHOT_COOLDOWN_MS, 160, 'manual taps should use only a short debounce cooldown');
 assert.equal(playfield.SPAWN_INTERVAL_MS, 1500, 'drops should use an even, calm cadence');
-assert.equal(lifecycleScreen.nextShotAt - lifecycleScreen.startedAt, 1000);
-
 const timingMetrics = lifecycleScreen.lastMetrics;
-const bulletCount = lifecycleScreen.bullets.length;
-assert.equal(lifecycleScreen._updateGun(timingMetrics, lifecycleScreen.nextShotAt - 1), false);
-assert.equal(lifecycleScreen.bullets.length, bulletCount, 'a second bullet must not fire early');
-assert.equal(lifecycleScreen._updateGun(timingMetrics, lifecycleScreen.nextShotAt), true);
-assert.equal(lifecycleScreen.bullets.length, bulletCount + 1, 'one bullet should fire when the full second elapses');
+lifecycleScreen.onKeyPressed({ code: 'Space' });
+assert.equal(lifecycleScreen.bullets.length, 1, 'one Space press should fire exactly one bullet');
+lifecycleScreen.onKeyPressedAndRepeat({ code: 'Space' });
+assert.equal(lifecycleScreen.bullets.length, 1, 'holding Space must not auto-fire repeated bullets');
+lifecycleScreen.onKeyReleased({ code: 'Space' });
+lifecycleScreen.lastShotAt -= playfield.SHOT_COOLDOWN_MS;
+lifecycleScreen.onKeyPressed({ code: 'Space' });
+assert.equal(lifecycleScreen.bullets.length, 2, 'releasing and tapping Space again should fire the next bullet');
+lifecycleScreen.onKeyReleased({ code: 'Space' });
 
 const laneScreen = new LifecycleScreen({ targetClass: 'C', requiredHosts: 50, durationSeconds: 60 });
 const laneMetrics = laneScreen._metrics();
+laneScreen.roundState = 'active';
+laneScreen.startedAt = Date.now();
 laneScreen.entities = [];
 laneScreen.laneCursor = 0;
 laneScreen.dropCursor = 0;
@@ -151,16 +197,26 @@ assert.deepEqual(
 assert.equal(new Set(laneScreen.entities.map((entity) => entity.x)).size, 5, 'each lane should have one fixed center');
 assert.ok(laneScreen.entities.every((entity) => entity.speed === 48 * laneMetrics.scale));
 
-const originalGunX = laneMetrics.arena.x + laneMetrics.arena.w * 0.5;
-laneScreen.gunX = originalGunX;
+const laneWidth = laneMetrics.arena.w / playfield.LANE_COUNT;
+laneScreen._ensureGun(laneMetrics);
+assert.equal(laneScreen.gunLaneIndex, 2, 'the gun should start in the center lane');
+assert.equal(laneScreen.gunX, laneMetrics.arena.x + laneWidth * 2.5);
 laneScreen.onKeyPressed({ code: 'KeyD' });
-const nudgedGunX = laneScreen.gunX;
-laneScreen._updateHeldMovement(laneMetrics, 0.5);
-assert.ok(laneScreen.gunX > nudgedGunX, 'holding D should continuously move the cannon');
+assert.equal(laneScreen.gunLaneIndex, 3, 'one D press should move exactly one column');
+assert.equal(laneScreen.gunX, laneMetrics.arena.x + laneWidth * 3.5, 'the gun should align with the same center used by falling targets');
+laneScreen.onKeyPressedAndRepeat({ code: 'KeyD' });
+assert.equal(laneScreen.gunLaneIndex, 3, 'engine key-repeat callbacks must not skip columns');
+assert.equal(laneScreen._updateHeldMovement(laneMetrics, 0.329), false, 'held movement should wait for its initial repeat delay');
+laneScreen._updateHeldMovement(laneMetrics, 0.001);
+assert.equal(laneScreen.gunLaneIndex, 4, 'holding D should step to the next column after the repeat delay');
+assert.equal(laneScreen.gunX, laneMetrics.arena.x + laneWidth * 4.5);
 laneScreen.onKeyReleased({ code: 'KeyD' });
 const releasedGunX = laneScreen.gunX;
 laneScreen._updateHeldMovement(laneMetrics, 0.5);
-assert.equal(laneScreen.gunX, releasedGunX, 'releasing D should stop continuous movement');
+assert.equal(laneScreen.gunX, releasedGunX, 'releasing D should stop column stepping');
+laneScreen.onMouseMove(laneMetrics.arena.x + laneWidth * 0.2, laneMetrics.arena.y + laneMetrics.arena.h * 0.5);
+assert.equal(laneScreen.gunLaneIndex, 0, 'mouse control should also snap to the nearest fixed column');
+assert.equal(laneScreen.gunX, laneMetrics.arena.x + laneWidth * 0.5);
 
 for (const target of [
   { type: 'capsule', value: 2, startExponent: 0, finalExponent: 2 },
@@ -178,8 +234,8 @@ for (const target of [
     x: 100,
     y: 100,
     radius: 20,
-    maxHits: 3,
-    hitsRemaining: 3,
+    maxHits: 1,
+    hitsRemaining: 1,
     hitFlashUntil: 0,
   }];
   const hitTarget = () => {
@@ -187,18 +243,30 @@ for (const target of [
     impactScreen._resolveCollisions();
   };
   hitTarget();
-  assert.equal(impactScreen.entities.length, 1, `the first bullet should not burst a ${target.type}`);
-  assert.equal(impactScreen.entities[0].hitsRemaining, 2);
-  assert.equal(impactScreen.exponent, target.startExponent, 'target value must not apply after one bullet');
-  hitTarget();
-  assert.equal(impactScreen.entities.length, 1, `the second bullet should not burst a ${target.type}`);
-  assert.equal(impactScreen.entities[0].hitsRemaining, 1);
-  assert.equal(impactScreen.exponent, target.startExponent, 'target value must not apply after two bullets');
-  hitTarget();
-  assert.equal(impactScreen.entities.length, 0, `the third bullet should burst a ${target.type}`);
-  assert.equal(impactScreen.exponent, target.finalExponent, 'target value should apply exactly once on the third bullet');
-  assert.equal(impactScreen.hits.length, 1, 'three projectile impacts should produce one collected gameplay value');
+  assert.equal(impactScreen.entities.length, 0, `one bullet should burst a ${target.type}`);
+  assert.equal(impactScreen.exponent, target.finalExponent, 'target value should apply exactly once on the first bullet');
+  assert.equal(impactScreen.hits.length, 1, 'one projectile impact should produce one collected gameplay value');
+  assert.equal(impactScreen.hits[0].status, 'pending-calculation');
+  assert.equal(impactScreen.roundState, 'active', 'matching h must not auto-complete without CALCULATE');
 }
+
+const calculateScreen = new LifecycleScreen({ targetClass: 'C', requiredHosts: 50, durationSeconds: 60 });
+calculateScreen.roundState = 'active';
+calculateScreen.startedAt = Date.now();
+calculateScreen.exponent = 5;
+assert.equal(calculateScreen.calculatedEvaluation, null, 'capacity should start concealed');
+assert.equal(calculateScreen._calculateCurrentPower(), false, 'an insufficient submitted h should not complete');
+assert.equal(calculateScreen.calculatedEvaluation.status, 'under');
+assert.equal(calculateScreen.calculationAttempts.length, 1);
+calculateScreen._applyPower(1, 'capsule');
+assert.equal(calculateScreen.exponent, 6);
+assert.equal(calculateScreen.calculatedEvaluation, null, 'changing h must lock the result again');
+assert.equal(calculateScreen.roundState, 'active', 'the exact h must remain pending until Calculate is clicked');
+const calculateButton = calculateScreen._calculateButtonRect(calculateScreen._metrics());
+calculateScreen.onMouseDown(calculateButton.x + calculateButton.w * 0.5, calculateButton.y + calculateButton.h * 0.5);
+assert.equal(calculateScreen.roundState, 'stabilizing', 'clicking Calculate should submit and accept the exact h');
+assert.equal(calculateScreen.calculatedEvaluation.valid, true);
+assert.equal(calculateScreen.calculationAttempts.length, 2);
 
 // Exercise the full canvas renderer at common exported-game sizes. The proxy
 // deliberately implements only Canvas APIs used by the gameplay so additions
@@ -221,6 +289,11 @@ const canvasContext = new Proxy({
   },
 });
 lifecycleContext.Common.Platform.ctx = canvasContext;
+let dialogueOverlayDraws = 0;
+lifecycleContext.IP2Live.DialogueManager = {
+  isActive() { return false; },
+  drawOverlay() { dialogueOverlayDraws++; },
+};
 for (const [width, height] of [[640, 360], [1280, 720], [1920, 1080]]) {
   canvas.width = width;
   canvas.height = height;
@@ -228,12 +301,24 @@ for (const [width, height] of [[640, 360], [1280, 720], [1920, 1080]]) {
   assert.ok(lifecycleScreen.lastMetrics.arena.w > 0, `arena width should remain positive at ${width}x${height}`);
   assert.ok(lifecycleScreen.lastMetrics.right.w > 0, `reactor width should remain positive at ${width}x${height}`);
 }
+assert.equal(dialogueOverlayDraws, 3, 'the custom gameplay scene must render DialogueManager overlays');
+
+guidedScreen.tutorialComplete = false;
+guidedScreen.tutorialPaused = true;
+for (const [, highlightType] of guidedMethods) {
+  guidedScreen.tutorialHighlight = { type: highlightType, label: 'TRAINING FOCUS' };
+  assert.doesNotThrow(() => guidedScreen.drawHUD(), `the ${highlightType} spotlight should render safely`);
+}
 
 const gameplaySource = fs.readFileSync(gameplayPath, 'utf8');
 assert.match(gameplaySource, /P-45/, 'the Gameplay 1/2-style identity badge should be present');
 assert.match(gameplaySource, /HOST.*POWER/s, 'the compact Host Power title treatment should be present');
-assert.match(gameplaySource, /5 LANES \/\/ 3-HIT SHELLS/, 'the five-column, three-hit rule should be labelled');
-assert.match(gameplaySource, /1 SHOT PER SEC/, 'the one-shot-per-second rate should be visible');
+assert.match(gameplaySource, /5 LANES \/\/ 1-HIT TARGETS/, 'the five-column, one-hit rule should be labelled');
+assert.match(gameplaySource, /TAP SPACE TO FIRE/, 'the manual-fire control should be visible');
+assert.match(gameplaySource, /CALCULATE CAPACITY/, 'the explicit calculation action should be visible');
+assert.doesNotMatch(gameplaySource, /_updateGun\(/, 'the timed update loop must not contain automatic firing');
+assert.match(gameplaySource, /DialogueManager\.drawOverlay/, 'the gameplay scene should draw tutorial dialogue overlays');
+assert.match(gameplaySource, /_drawTutorialHighlight/, 'the guided version should include an in-game spotlight renderer');
 assert.doesNotMatch(gameplaySource, /'00:'\s*\+\s*String\(seconds\)/, 'the timer should format 60 seconds as 01:00');
 
 console.log('Host-Power Reactor rules verified.');

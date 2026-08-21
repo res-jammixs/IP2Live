@@ -31,6 +31,7 @@ class IP2LiveCIDRQuarantineGameplayScreen extends Scene.Base {
         };
         this.directionWeights = { R: 1, L: 2, U: 3, D: 4 };
         this.problem = this.options.problem || this._generateProblem(this.options.spec || {});
+        this._normalizeHostPowerProblem();
         this.directionWeights = this._normalizeDirectionWeights(this.problem.directionWeights || this.directionWeights);
         this._initVirusSpread();
         this.path = [this._cloneTile(this.problem.start)];
@@ -38,8 +39,10 @@ class IP2LiveCIDRQuarantineGameplayScreen extends Scene.Base {
         this.buttonRects = [];
         this.controlRects = {};
         this.confirmRect = null;
+        this.hostPowerToolRect = null;
+        this.hostPowerToolOpen = false;
         this.lastDiagnostic = null;
-        this.statusText = 'Draw a path that adds the optimized CIDR bits.';
+        this.statusText = 'Draw a path whose movement total equals the required host power.';
         this.statusTone = 'idle';
         this.trace = null;
         this.tutorialStep = this.tutorialMode ? 1 : 0;
@@ -57,15 +60,17 @@ class IP2LiveCIDRQuarantineGameplayScreen extends Scene.Base {
             this.directionWeights = directionWeights;
             const classInfo = this._randomCIDRClass(difficulty);
             const minAddedBits = Math.min(classInfo.maxAddedBits, Math.max(classInfo.minAddedBits, difficulty.minAddedBits));
-            const targetAddedBits = this._randomInt(minAddedBits, classInfo.maxAddedBits);
-            const targetCIDR = classInfo.originalCIDR + targetAddedBits;
+            const borrowedBits = this._randomInt(minAddedBits, classInfo.maxAddedBits);
+            const targetCIDR = classInfo.originalCIDR + borrowedBits;
             const optimizedHostBits = Math.max(0, 32 - targetCIDR);
             const optimizedCapacity = this._capacityForHostBits(optimizedHostBits);
             const requiredHosts = this._randomRequiredHosts(optimizedHostBits);
             const ipAddress = this._randomIPForClass(classInfo.ipClass);
             const ipInt = this.tools && typeof this.tools.ipToInt === 'function' ? this.tools.ipToInt(ipAddress) : null;
             const start = this._randomStartTile(difficulty.edgeMargin);
-            const solutionRoute = this._generateSolutionRoute(start, targetAddedBits, questIndex, difficulty);
+            // Gameplay 4.5 teaches h in 2^h - 2. Gameplay 5 must therefore
+            // make the route total equal h, not the number of borrowed bits.
+            const solutionRoute = this._generateSolutionRoute(start, optimizedHostBits, questIndex, difficulty);
             if (!solutionRoute || !solutionRoute.path || solutionRoute.path.length < 3) continue;
 
             const solutionMoves = solutionRoute.moves;
@@ -98,7 +103,9 @@ class IP2LiveCIDRQuarantineGameplayScreen extends Scene.Base {
                 ipClass: classInfo.ipClass,
                 originalCIDR: classInfo.originalCIDR,
                 requiredHosts,
-                targetAddedBits,
+                targetAddedBits: optimizedHostBits,
+                targetHostBits: optimizedHostBits,
+                borrowedBits,
                 targetCIDR,
                 optimizedHostBits,
                 optimizedCapacity,
@@ -107,6 +114,32 @@ class IP2LiveCIDRQuarantineGameplayScreen extends Scene.Base {
         }
 
         return this._fallbackProblem(spec, difficulty);
+    }
+
+    _normalizeHostPowerProblem() {
+        const problem = this.problem || {};
+        const requiredHosts = Math.max(1, Math.floor(Number(problem.requiredHosts) || 1));
+        const classHostBits = Math.max(0, 32 - Number(problem.originalCIDR || 0));
+        const targetHostBits = this._minimumHostBits(requiredHosts);
+        const safeHostBits = Math.min(classHostBits, targetHostBits);
+        const targetCIDR = 32 - safeHostBits;
+
+        problem.requiredHosts = requiredHosts;
+        problem.targetHostBits = safeHostBits;
+        problem.targetAddedBits = safeHostBits;
+        problem.optimizedHostBits = safeHostBits;
+        problem.targetCIDR = targetCIDR;
+        problem.borrowedBits = Math.max(0, targetCIDR - Number(problem.originalCIDR || 0));
+        problem.optimizedCapacity = this._capacityForHostBits(safeHostBits);
+        problem.allocatedCIDR = this._allocatedCIDR(problem.ipInt, targetCIDR);
+        this.problem = problem;
+    }
+
+    _minimumHostBits(requiredHosts) {
+        const required = Math.max(1, Math.floor(Number(requiredHosts) || 1));
+        let bits = Math.max(1, Math.ceil(Math.log(required + 2) / Math.log(2)));
+        while (this._capacityForHostBits(bits) < required && bits < 32) bits++;
+        return bits;
     }
 
     async load() {
@@ -168,6 +201,7 @@ class IP2LiveCIDRQuarantineGameplayScreen extends Scene.Base {
         if (upper === 'ARROWDOWN' || upper === 'S') this._appendDirection('D');
         if (upper === 'Z' || upper === 'BACKSPACE') this._undoPath();
         if (upper === 'R') this._clearPath();
+        if (upper === 'H' || upper === 'KEYH') this._openHostPowerTool();
         if (upper === 'ENTER' || upper === 'SPACE' || upper === 'SPACEBAR') this._confirmPath();
         return true;
     }
@@ -179,6 +213,10 @@ class IP2LiveCIDRQuarantineGameplayScreen extends Scene.Base {
         }
         if (this.phase !== 'build') return true;
         this._buildInteractionRects(this._metrics());
+        if (this.hostPowerToolRect && this._pointInRect(x, y, this.hostPowerToolRect)) {
+            this._openHostPowerTool();
+            return true;
+        }
         for (let i = 0; i < this.buttonRects.length; i++) {
             const b = this.buttonRects[i];
             if (this._pointInRect(x, y, b)) {
@@ -224,6 +262,7 @@ class IP2LiveCIDRQuarantineGameplayScreen extends Scene.Base {
             targetCIDR: this.problem.targetCIDR,
             optimizedHostBits: this.problem.optimizedHostBits,
             optimizedCapacity: this._formatHosts(this.problem.optimizedCapacity),
+            borrowedBits: this.problem.borrowedBits,
             currentAddedBits: stats.addedBits,
             currentCIDR: stats.currentCIDR,
             currentHostBits: stats.currentHostBits,
@@ -483,6 +522,44 @@ class IP2LiveCIDRQuarantineGameplayScreen extends Scene.Base {
         }
     }
 
+    _openHostPowerTool() {
+        if (this.finished || this.phase !== 'build' || this.hostPowerToolOpen) return false;
+        const toolManager = IP2Live.HostPowerToolManager;
+        if (!toolManager || typeof toolManager.launchHostPowerTool !== 'function') {
+            this._setStatus('Host-Power tool is unavailable. Reload the gameplay modules and try again.', 'bad');
+            this._playCancel();
+            return false;
+        }
+
+        this.draggingPath = false;
+        this.hostPowerToolOpen = true;
+        const opened = toolManager.launchHostPowerTool({
+            targetClass: this.problem.ipClass,
+            requiredHosts: this.problem.requiredHosts,
+            startExponent: 0,
+            align: 'right',
+            showIntro: false,
+            sourceGameplayId: 'ip_cidr_quarantine',
+            onClose: (result) => {
+                this.hostPowerToolOpen = false;
+                this._setStatus('Host-Power tool closed. Apply your calculated host-bit value to the path.', 'idle');
+                if (Manager && Manager.Stack) Manager.Stack.requestPaintHUD = true;
+            },
+            backgroundScene: this,
+            preserveBackground: true,
+            neutralFeedback: true,
+            lockScenario: true,
+        });
+        if (!opened) {
+            this.hostPowerToolOpen = false;
+            this._setStatus('Host-Power tool is already open or could not be started.', 'bad');
+            this._playCancel();
+            return false;
+        }
+        this._playConfirm();
+        return true;
+    }
+
     _metrics() {
         const ctx = Common && Common.Platform ? Common.Platform.ctx : null;
         const cW = ctx && ctx.canvas ? ctx.canvas.width : 1280;
@@ -503,6 +580,13 @@ class IP2LiveCIDRQuarantineGameplayScreen extends Scene.Base {
 
     _buildInteractionRects(m) {
         const baseY = m.panelY + m.panelH - 92 * m.sY;
+        this.hostPowerToolRect = {
+            action: 'host_power_tool',
+            x: m.panelX + m.panelW - 186 * m.sX,
+            y: m.panelY + 16 * m.sY,
+            w: 158 * m.sX,
+            h: 36 * m.sY,
+        };
         this.buttonRects = [
             { action: 'undo', label: 'UNDO', x: m.panelX + 575 * m.sX, y: baseY, w: 116 * m.sX, h: 42 * m.sY },
             { action: 'clear', label: 'CLEAR', x: m.panelX + 713 * m.sX, y: baseY, w: 116 * m.sX, h: 42 * m.sY },
@@ -546,6 +630,52 @@ class IP2LiveCIDRQuarantineGameplayScreen extends Scene.Base {
         ctx.textAlign = 'left';
         ctx.fillText('CIDR QUARANTINE :: PATH CONNECTOR', m.panelX + 24 * m.sX, m.panelY + 44 * m.sY);
         ctx.restore();
+        this._drawHostPowerToolButton(ctx, m);
+    }
+
+    _drawHostPowerToolButton(ctx, m) {
+        const b = this.hostPowerToolRect;
+        if (!b) return;
+        const available = !!(IP2Live.HostPowerToolManager &&
+            typeof IP2Live.HostPowerToolManager.launchHostPowerTool === 'function');
+        const enabled = available && this.phase === 'build' && !this.finished && !this.hostPowerToolOpen;
+        const glow = 0.45 + 0.22 * Math.sin((this.animTick || 0) * 0.08);
+
+        ctx.save();
+        ctx.shadowColor = enabled ? 'rgba(0, 229, 255, ' + glow + ')' : 'transparent';
+        ctx.shadowBlur = enabled ? 8 * m.sX : 0;
+        const gradient = ctx.createLinearGradient(b.x, b.y, b.x + b.w, b.y + b.h);
+        gradient.addColorStop(0, enabled ? '#12394A' : '#13212A');
+        gradient.addColorStop(1, enabled ? '#071923' : '#091118');
+        ctx.fillStyle = gradient;
+        this._fillChamferRect(ctx, b.x, b.y, b.w, b.h, 7 * m.sX);
+        this._strokeChamferRect(ctx, b.x, b.y, b.w, b.h, 7 * m.sX, enabled ? '#00E5FF' : '#4E6872', 1.4 * m.sX);
+        ctx.shadowBlur = 0;
+
+        const iconX = b.x + 13 * m.sX;
+        const iconY = b.y + 8 * m.sY;
+        const iconW = 18 * m.sX;
+        const iconH = 21 * m.sY;
+        ctx.strokeStyle = enabled ? '#8FF8FF' : '#668089';
+        ctx.lineWidth = 1.3 * m.sX;
+        ctx.strokeRect(iconX, iconY, iconW, iconH);
+        ctx.strokeRect(iconX + 3 * m.sX, iconY + 3 * m.sY, iconW - 6 * m.sX, 5 * m.sY);
+        ctx.fillStyle = enabled ? '#FFE600' : '#668089';
+        for (let row = 0; row < 2; row++) {
+            for (let col = 0; col < 2; col++) {
+                ctx.fillRect(iconX + (4 + col * 7) * m.sX, iconY + (12 + row * 5) * m.sY, 3 * m.sX, 2 * m.sY);
+            }
+        }
+
+        ctx.fillStyle = enabled ? '#FFFFFF' : '#758B94';
+        ctx.font = 'bold ' + Math.round(11 * m.sY) + 'px monospace';
+        ctx.textAlign = 'left';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(this.hostPowerToolOpen ? 'TOOL OPEN' : 'HOST CALC', b.x + 40 * m.sX, b.y + 13 * m.sY);
+        ctx.fillStyle = enabled ? '#8FF8FF' : '#58717A';
+        ctx.font = 'bold ' + Math.round(8 * m.sY) + 'px monospace';
+        ctx.fillText('2^h - 2  //  H', b.x + 40 * m.sX, b.y + 25 * m.sY);
+        ctx.restore();
     }
 
     _drawGrid(ctx, m) {
@@ -584,12 +714,12 @@ class IP2LiveCIDRQuarantineGameplayScreen extends Scene.Base {
         ctx.fillText(this.trace ? 'ANIMATED CIDR CALCULATION' : 'CIDR ROUTE PREVIEW', infoX, infoY);
         ctx.font = 'bold ' + Math.round(24 * m.sY) + 'px monospace';
         ctx.fillStyle = '#FFE600';
-        ctx.fillText('CIDR /' + this.problem.originalCIDR + ' +' + stats.addedBits + ' = /' + stats.currentCIDR, infoX, infoY + 42 * m.sY);
+        ctx.fillText('HOST POWER h = ' + stats.currentHostBits + '  ->  CIDR /' + stats.currentCIDR, infoX, infoY + 42 * m.sY);
         ctx.font = Math.round(13 * m.sY) + 'px monospace';
         ctx.fillStyle = '#BDEEFF';
         ctx.fillText('Relay: ' + this.problem.ipAddress + '/' + this.problem.originalCIDR + '   Class ' + this.problem.ipClass, infoX, infoY + 76 * m.sY);
         ctx.fillText('Needed hosts: ' + this._formatHosts(this.problem.requiredHosts), infoX, infoY + 100 * m.sY);
-        ctx.fillText(this.tutorialMode ? 'Host bits: 32 - ' + stats.currentCIDR + ' = ' + stats.currentHostBits + '   Capacity: 2^' + stats.currentHostBits + ' = ' + this._formatHosts(stats.currentCapacity) : 'Compute the smallest fitting CIDR before confirming.', infoX, infoY + 124 * m.sY);
+        ctx.fillText(this.tutorialMode ? 'Usable hosts: 2^' + stats.currentHostBits + ' - 2 = ' + this._formatHosts(stats.currentCapacity) : 'Build the smallest h where 2^h - 2 covers the needed hosts.', infoX, infoY + 124 * m.sY);
         if (this.trace) {
             ctx.fillStyle = '#FFFFFF';
             ctx.fillText(this._traceCalculationLine(), infoX, infoY + 154 * m.sY);
@@ -617,7 +747,7 @@ class IP2LiveCIDRQuarantineGameplayScreen extends Scene.Base {
         ctx.font = 'bold ' + Math.round(12 * m.sY) + 'px monospace';
         ctx.fillStyle = '#8FF8FF';
         ctx.textAlign = 'left';
-        ctx.fillText('TRIES ' + this.attemptsUsed + '/' + this._attemptLimitLabel() + '   Drag/click path   Z: undo   R: clear   ENTER: confirm', m.panelX + 30 * m.sX, m.panelY + m.panelH - 28 * m.sY);
+        ctx.fillText('TRIES ' + this.attemptsUsed + '/' + this._attemptLimitLabel() + '   Drag/click path   H: host tool   Z: undo   R: clear   ENTER: confirm', m.panelX + 30 * m.sX, m.panelY + m.panelH - 28 * m.sY);
     }
 
     _drawVirusAlert(ctx, m) {
@@ -1096,11 +1226,14 @@ class IP2LiveCIDRQuarantineGameplayScreen extends Scene.Base {
             originalCIDR: this.problem.originalCIDR,
             requiredHosts: this.problem.requiredHosts,
             targetAddedBits: this.problem.targetAddedBits,
+            targetHostBits: this.problem.targetHostBits,
+            targetBorrowedBits: this.problem.borrowedBits,
             currentAddedBits: stats.addedBits,
             targetCIDR: this.problem.targetCIDR,
             currentCIDR: stats.currentCIDR,
             optimizedHostBits: this.problem.optimizedHostBits,
             currentHostBits: stats.currentHostBits,
+            currentBorrowedBits: stats.borrowedBits,
             optimizedCapacity: this.problem.optimizedCapacity,
             currentCapacity: stats.currentCapacity,
             allocatedCIDR: stats.allocatedCIDR,
@@ -1128,11 +1261,14 @@ class IP2LiveCIDRQuarantineGameplayScreen extends Scene.Base {
             addedBits += weight;
             moves.push({ direction, weight, from: this._cloneTile(p[i - 1]), to: this._cloneTile(p[i]) });
         }
-        const currentCIDR = Number(this.problem.originalCIDR || 0) + addedBits;
-        const currentHostBits = Math.max(0, 32 - currentCIDR);
+        // The path sum is the host exponent h. Borrowed bits and the prefix
+        // are derived values: borrowed = class host bits - h; CIDR = 32 - h.
+        const currentHostBits = Math.max(0, addedBits);
+        const currentCIDR = Math.max(0, Math.min(32, 32 - currentHostBits));
         const currentCapacity = this._capacityForHostBits(currentHostBits);
         return {
             addedBits,
+            borrowedBits: Math.max(0, currentCIDR - Number(this.problem.originalCIDR || 0)),
             currentCIDR,
             currentHostBits,
             currentCapacity,
@@ -1156,16 +1292,16 @@ class IP2LiveCIDRQuarantineGameplayScreen extends Scene.Base {
     _traceCalculationLine() {
         const visibleMoves = this._traceVisibleMoves();
         const stats = this._pathStats(this.path.slice(0, Math.min(this.path.length, visibleMoves + 1)));
-        if (visibleMoves <= 0 || !stats.moves.length) return 'Path bits +0. CIDR stays /' + this.problem.originalCIDR + '.';
+        if (visibleMoves <= 0 || !stats.moves.length) return 'Host-power path starts at h = 0.';
         const last = stats.moves[stats.moves.length - 1];
         const before = stats.addedBits - last.weight;
-        return 'Move ' + last.direction + ' +' + last.weight + ': bits +' + before + ' + ' + last.weight + ' = +' + stats.addedBits;
+        return 'Move ' + last.direction + ' +' + last.weight + ': h ' + before + ' + ' + last.weight + ' = ' + stats.addedBits;
     }
 
     _traceCIDRLine(stats) {
         const s = stats || this._traceStats();
-        if (this.tutorialMode) return 'CIDR /' + this.problem.originalCIDR + ' +' + s.addedBits + ' = /' + s.currentCIDR + '  |  host bits 32-' + s.currentCIDR + ' = ' + s.currentHostBits;
-        return 'CIDR /' + this.problem.originalCIDR + ' +' + s.addedBits + ' = /' + s.currentCIDR;
+        if (this.tutorialMode) return 'Host bits h=' + s.currentHostBits + '  |  CIDR 32-' + s.currentHostBits + ' = /' + s.currentCIDR + '  |  borrowed ' + s.borrowedBits;
+        return 'Host bits h=' + s.currentHostBits + '  ->  CIDR /' + s.currentCIDR;
     }
 
     _finalTraceLine() {
@@ -1249,7 +1385,7 @@ class IP2LiveCIDRQuarantineGameplayScreen extends Scene.Base {
 
     _directionWeightLine() {
         const w = this.directionWeights || {};
-        return 'Move bits: R +' + (w.R || 0) + '  L +' + (w.L || 0) + '  U +' + (w.U || 0) + '  D +' + (w.D || 0);
+        return 'Host-power moves: R +' + (w.R || 0) + '  L +' + (w.L || 0) + '  U +' + (w.U || 0) + '  D +' + (w.D || 0);
     }
 
     _maxDirectionWeight() {
@@ -1311,13 +1447,13 @@ class IP2LiveCIDRQuarantineGameplayScreen extends Scene.Base {
         const questIndex = Number(profile.index || 1) || 1;
         this.directionWeights = { R: 1, L: 2, U: 3, D: 4 };
         const classInfo = { ipClass: 'C', originalCIDR: 24, minAddedBits: 3, maxAddedBits: 6 };
-        const targetAddedBits = Math.min(classInfo.maxAddedBits, Math.max(classInfo.minAddedBits, difficulty.minAddedBits));
-        const targetCIDR = classInfo.originalCIDR + targetAddedBits;
+        const borrowedBits = Math.min(classInfo.maxAddedBits, Math.max(classInfo.minAddedBits, difficulty.minAddedBits));
+        const targetCIDR = classInfo.originalCIDR + borrowedBits;
         const optimizedHostBits = Math.max(0, 32 - targetCIDR);
         const ipAddress = this._randomIPForClass(classInfo.ipClass);
         const ipInt = this.tools && typeof this.tools.ipToInt === 'function' ? this.tools.ipToInt(ipAddress) : null;
         const start = { col: 2, row: 4 };
-        const route = this._routeFromMoves(start, this._movesForAddedBits(targetAddedBits));
+        const route = this._routeFromMoves(start, this._movesForAddedBits(optimizedHostBits));
         const end = route.path[route.path.length - 1];
         const blockedKeys = {};
         for (let i = 0; i < route.path.length; i++) blockedKeys[this._tileKey(route.path[i])] = true;
@@ -1340,7 +1476,9 @@ class IP2LiveCIDRQuarantineGameplayScreen extends Scene.Base {
             ipClass: classInfo.ipClass,
             originalCIDR: classInfo.originalCIDR,
             requiredHosts: this._randomRequiredHosts(optimizedHostBits),
-            targetAddedBits,
+            targetAddedBits: optimizedHostBits,
+            targetHostBits: optimizedHostBits,
+            borrowedBits,
             targetCIDR,
             optimizedHostBits,
             optimizedCapacity: this._capacityForHostBits(optimizedHostBits),
@@ -1389,13 +1527,13 @@ class IP2LiveCIDRQuarantineGameplayScreen extends Scene.Base {
         const bits = Math.max(1, Number(hostBits) || 1);
         const capacity = this._capacityForHostBits(bits);
         const minimum = Math.max(1, this._capacityForHostBits(bits - 1) + 1);
-        const maximum = Math.max(minimum, capacity - 1);
+        const maximum = Math.max(minimum, capacity);
         return this._randomInt(minimum, maximum);
     }
 
     _capacityForHostBits(hostBits) {
         const bits = Math.max(0, Number(hostBits) || 0);
-        if (bits <= 52) return Math.pow(2, bits);
+        if (bits <= 52) return Math.max(0, Math.pow(2, bits) - 2);
         return '2^' + bits;
     }
 

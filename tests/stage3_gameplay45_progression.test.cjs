@@ -129,12 +129,117 @@ function testLoaderAndTutorialPlacement() {
     assert.ok(hostGameplay < hostTutorial && hostTutorial < hostTool, 'Host-Power rules must load before its tutorial and tool');
     assert.ok(hostTool < loader.indexOf("'ip_cidr_quarantine_gameplay.js'"), 'Gameplay 4.5 must be ready before Gameplay 5');
 
+    const hostPowerTutorial = read('gameplay/gameplay4_5/HostPowerReactor/ip_host_power_tutorial.js');
+    assert.match(hostPowerTutorial, /five fixed lanes/i);
+    assert.match(hostPowerTutorial, /bursts with one accurate bullet/i);
+    assert.match(hostPowerTutorial, /Press SPACE once to fire one bullet/i);
+    assert.match(hostPowerTutorial, /click CALCULATE CAPACITY/i);
+    assert.match(hostPowerTutorial, /\+1, \+3, and \+2 form/);
+    assert.match(hostPowerTutorial, /showReactorGuide/);
+    assert.match(hostPowerTutorial, /showFormulaGuide/);
+    assert.match(hostPowerTutorial, /showIntakeGuide/);
+    assert.match(hostPowerTutorial, /showShellGuide/);
+    assert.match(hostPowerTutorial, /showControlsGuide/);
+    assert.match(hostPowerTutorial, /showTimerGuide/);
+
     const gameplay5Tutorial = read('gameplay/gameplay5/CIDRQuarantine/ip_cidr_quarantine_tutorial.js');
     const gameplay6Tutorial = read('gameplay/gameplay6/CIDRQuarantineMatrix/ip_cidr_quarantine_matrix_tutorial.js');
     assert.match(gameplay5Tutorial, /STAGE 3 LEVEL 2 - CIDR Quarantine/);
     assert.doesNotMatch(gameplay5Tutorial, /mapId:\s*11/);
     assert.match(gameplay6Tutorial, /STAGE 3 LEVEL 3 - CIDR Quarantine Matrix/);
     assert.doesNotMatch(gameplay6Tutorial, /mapId:\s*12/);
+}
+
+function testFirstHostPowerQuestLaunchesTutorial() {
+    const pushes = [];
+    const tutorialIntros = [];
+    const IP2Live = {
+        IPHostPowerReactorTutorial: {
+            showIntro(scenario, onComplete) {
+                tutorialIntros.push(scenario);
+                onComplete();
+                return true;
+            },
+        },
+        MusicManager: {
+            ZONE: { GAMEPLAY_1: 'gameplay', STAGE_3: 'stage3', STAGE_1: 'stage1' },
+            play() { return true; },
+        },
+        QuestManager: {},
+        GameManager: {
+            handleGameplayCompleted() {},
+            handleGameplayFailed() {},
+            handleGameplayCancelled() {},
+            handleGameplayMistake() {},
+        },
+    };
+    const Manager = {
+        Stack: {
+            push(screen) { pushes.push(screen); },
+            pop() {},
+            requestPaintHUD: false,
+        },
+        GL: {},
+    };
+    const load = new Function(
+        'Common', 'Core', 'Data', 'Graphic', 'Manager', 'Scene', 'Model', 'Main', 'THREE', 'IP2Live', 'inject', 'window',
+        read('gameplay/gameplay4_5/HostPowerReactor/ip_host_power_gameplay.js') + '\nreturn IP2Live.HostPowerReactorGameplayManager;'
+    );
+    const manager = load(
+        { ScreenResolution: { SCREEN_X: 1280, SCREEN_Y: 720 } },
+        { Game: { current: { currentMapID: 11 } } },
+        { Keyboards: {}, Systems: {} },
+        {},
+        Manager,
+        { Base: class {} },
+        {},
+        {},
+        {},
+        IP2Live,
+        function () {},
+        {}
+    );
+    const tutorialSpec = {
+        id: 'stage.11.host_power.01.tutorial',
+        gameplayId: 'ip_host_power_reactor',
+        objectiveId: 'stabilize_host_power_11_01',
+        mapId: 11,
+        sequence: 1,
+        tutorial: true,
+        targetClass: 'C',
+        requiredHosts: 50,
+    };
+    assert.equal(manager.launchHostPowerReactorGameplay({
+        spec: tutorialSpec,
+        questId: tutorialSpec.id,
+        objectiveId: tutorialSpec.objectiveId,
+        mapId: 11,
+    }), true);
+    assert.equal(tutorialIntros.length, 1, 'the first Map 11 quest must open the Host-Power tutorial');
+    assert.equal(pushes.length, 1, 'the gameplay should open exactly once after tutorial completion');
+    assert.equal(pushes[0].guidedTutorial, true, 'the first reactor screen must remain visibly marked as training');
+    assert.equal(pushes[0].options.guidedTutorial, true);
+    assert.equal(manager._tutorialShownKeys[tutorialSpec.id + ':' + tutorialSpec.objectiveId], true);
+
+    pushes[0].options.onCancel({ cancelled: true });
+    const regularSpec = {
+        id: 'stage.11.host_power.02',
+        gameplayId: 'ip_host_power_reactor',
+        objectiveId: 'stabilize_host_power_11_02',
+        mapId: 11,
+        sequence: 2,
+        targetClass: 'C',
+        requiredHosts: 100,
+    };
+    assert.equal(manager.launchHostPowerReactorGameplay({
+        spec: regularSpec,
+        questId: regularSpec.id,
+        objectiveId: regularSpec.objectiveId,
+        mapId: 11,
+    }), true);
+    assert.equal(tutorialIntros.length, 1, 'the second Map 11 quest must remain regular gameplay');
+    assert.equal(pushes.length, 2);
+    assert.equal(pushes[1].guidedTutorial, false);
 }
 
 function testHostPowerQuestLifecycle() {
@@ -218,6 +323,7 @@ function testHostPowerQuestLifecycle() {
 try {
     testStageProgressionCatalog();
     testLoaderAndTutorialPlacement();
+    testFirstHostPowerQuestLaunchesTutorial();
     testHostPowerQuestLifecycle();
     console.log('stage3_gameplay45_progression.test.cjs: PASS');
 } catch (error) {
