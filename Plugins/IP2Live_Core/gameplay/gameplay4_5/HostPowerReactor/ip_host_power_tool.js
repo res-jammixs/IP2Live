@@ -183,7 +183,7 @@ class IP2LiveHostPowerToolScreen extends Scene.Base {
         this._playConfirm();
         if (this.evaluation.valid && !this.correctReported) {
             this.correctReported = true;
-            if (typeof this.options.onCorrect === 'function') {
+            if (this.options.neutralFeedback !== true && typeof this.options.onCorrect === 'function') {
                 this.options.onCorrect({
                     gameplayId: 'ip_host_power_tool',
                     className: this.scenario.className,
@@ -210,6 +210,7 @@ class IP2LiveHostPowerToolScreen extends Scene.Base {
     }
 
     _newScenario(forcedClass) {
+        if (this.options.lockScenario === true) return false;
         const targetClass = forcedClass || this.options.targetClass;
         this.scenario = this.rules.createScenario({
             targetClass,
@@ -228,16 +229,23 @@ class IP2LiveHostPowerToolScreen extends Scene.Base {
     }
 
     draw3D() {
-        // Keep the map or previous scene visually present behind the compact tool.
+        const background = this.options.backgroundScene;
+        if (background && background !== this && typeof background.draw3D === 'function') {
+            background.draw3D();
+        }
     }
 
     drawHUD() {
         const ctx = Common.Platform.ctx;
+        const background = this.options.backgroundScene;
+        if (this.options.preserveBackground === true && background && background !== this && typeof background.drawHUD === 'function') {
+            background.drawHUD();
+        }
         const m = this._metrics();
         this.lastMetrics = m;
         this._buildHitRects(m);
         ctx.save();
-        this._drawBackdrop(ctx, m);
+        if (this.options.preserveBackground !== true) this._drawBackdrop(ctx, m);
         this._drawPanel(ctx, m);
         this._drawHeader(ctx, m);
         this._drawGenerator(ctx, m);
@@ -292,7 +300,9 @@ class IP2LiveHostPowerToolScreen extends Scene.Base {
     _drawGenerator(ctx, m) {
         const b = m.reactor;
         const color = this._statusColor();
-        const ratio = Math.max(0, Math.min(1.2, this.exponent / Math.max(1, this.scenario.targetExponent)));
+        const neutral = this.options.neutralFeedback === true;
+        const ratioBase = neutral ? this.scenario.classConfig.maxHostBits : this.scenario.targetExponent;
+        const ratio = Math.max(0, Math.min(1.2, this.exponent / Math.max(1, ratioBase)));
         this._section(ctx, b, m, 'MINI REACTOR');
         const cx = b.x + b.w * 0.5;
         const cy = b.y + b.h * 0.57;
@@ -319,7 +329,7 @@ class IP2LiveHostPowerToolScreen extends Scene.Base {
         ctx.fillText(String(this.exponent), cx, cy - 2 * m.scale);
         ctx.fillStyle = color;
         ctx.font = 'bold ' + Math.round(8 * m.scale) + 'px monospace';
-        ctx.fillText(this.evaluation.status === 'under' ? 'LOW' : (this.evaluation.status === 'over' ? 'TOO MUCH' : 'JUST RIGHT'), cx, b.y + b.h - 14 * m.scale);
+        ctx.fillText(neutral ? 'HOST BITS' : (this.evaluation.status === 'under' ? 'LOW' : (this.evaluation.status === 'over' ? 'TOO MUCH' : 'JUST RIGHT')), cx, b.y + b.h - 14 * m.scale);
     }
 
     _drawNeeded(ctx, m) {
@@ -401,6 +411,7 @@ class IP2LiveHostPowerToolScreen extends Scene.Base {
     _drawCalculator(ctx, m) {
         const b = m.calculator;
         const color = this._statusColor();
+        const neutral = this.options.neutralFeedback === true;
         this._section(ctx, b, m, 'DROP ZONE // CALCULATOR');
         ctx.save();
         ctx.setLineDash([6 * m.scale, 5 * m.scale]);
@@ -425,11 +436,13 @@ class IP2LiveHostPowerToolScreen extends Scene.Base {
         ctx.font = 'bold ' + Math.round(13 * m.scale) + 'px monospace';
         ctx.fillText(this._formatNumber(this.evaluation.usableHosts) + ' USABLE', centerX, b.y + b.h * 0.75);
         ctx.font = 'bold ' + Math.round(8 * m.scale) + 'px monospace';
-        const direction = this.evaluation.status === 'under'
-            ? 'ADD ' + (this.scenario.targetExponent - this.exponent) + ' BIT(S)'
-            : (this.evaluation.status === 'over'
-                ? 'REMOVE ' + (this.exponent - this.scenario.targetExponent) + ' BIT(S)'
-                : 'BORROW ' + this.scenario.classConfig.maxHostBits + ' - ' + this.exponent + ' = ' + this.scenario.bitsToBorrow + ' BIT(S)');
+        const direction = neutral
+            ? 'CIDR /' + (32 - this.exponent) + '  //  BORROWED ' + Math.max(0, this.scenario.classConfig.maxHostBits - this.exponent)
+            : (this.evaluation.status === 'under'
+                ? 'ADD ' + (this.scenario.targetExponent - this.exponent) + ' BIT(S)'
+                : (this.evaluation.status === 'over'
+                    ? 'REMOVE ' + (this.exponent - this.scenario.targetExponent) + ' BIT(S)'
+                    : 'BORROW ' + this.scenario.classConfig.maxHostBits + ' - ' + this.exponent + ' = ' + this.scenario.bitsToBorrow + ' BIT(S)'));
         ctx.fillText(direction, centerX, b.y + b.h * 0.87);
     }
 
@@ -480,7 +493,7 @@ class IP2LiveHostPowerToolScreen extends Scene.Base {
         const chipW = 29 * m.scale;
         const chipGap = 5 * m.scale;
         const startX = m.needed.x + m.needed.w - (chipW * 3 + chipGap * 2) - 10 * m.scale;
-        this.classRects = ['A', 'B', 'C'].map((className, index) => ({
+        this.classRects = (this.options.lockScenario === true ? [] : ['A', 'B', 'C']).map((className, index) => ({
             x: startX + index * (chipW + chipGap),
             y: m.needed.y + 12 * m.scale,
             w: chipW,
@@ -489,15 +502,24 @@ class IP2LiveHostPowerToolScreen extends Scene.Base {
         }));
 
         const buttonGap = 6 * m.scale;
-        const buttonW = (m.footer.w - buttonGap * 2) / 3;
-        this.buttons = [
-            { x: m.footer.x, y: m.footer.y, w: buttonW, h: m.footer.h, action: 'reset', label: 'RESET (R)' },
-            { x: m.footer.x + buttonW + buttonGap, y: m.footer.y, w: buttonW, h: m.footer.h, action: 'new', label: 'NEW (N)' },
-            { x: m.footer.x + (buttonW + buttonGap) * 2, y: m.footer.y, w: buttonW, h: m.footer.h, action: 'close', label: 'CLOSE' },
-        ];
+        if (this.options.lockScenario === true) {
+            const buttonW = (m.footer.w - buttonGap) / 2;
+            this.buttons = [
+                { x: m.footer.x, y: m.footer.y, w: buttonW, h: m.footer.h, action: 'reset', label: 'RESET (R)' },
+                { x: m.footer.x + buttonW + buttonGap, y: m.footer.y, w: buttonW, h: m.footer.h, action: 'close', label: 'CLOSE' },
+            ];
+        } else {
+            const buttonW = (m.footer.w - buttonGap * 2) / 3;
+            this.buttons = [
+                { x: m.footer.x, y: m.footer.y, w: buttonW, h: m.footer.h, action: 'reset', label: 'RESET (R)' },
+                { x: m.footer.x + buttonW + buttonGap, y: m.footer.y, w: buttonW, h: m.footer.h, action: 'new', label: 'NEW (N)' },
+                { x: m.footer.x + (buttonW + buttonGap) * 2, y: m.footer.y, w: buttonW, h: m.footer.h, action: 'close', label: 'CLOSE' },
+            ];
+        }
     }
 
     _statusColor() {
+        if (this.options.neutralFeedback === true) return '#62e7f4';
         if (this.evaluation.status === 'just-right') return '#52ff8f';
         if (this.evaluation.status === 'over') return '#ff315f';
         return '#f5b942';

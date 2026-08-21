@@ -60,6 +60,7 @@
     window.Data = {
       Keyboards: { checkCancelMenu() { return false; } },
       Systems: {
+        soundCursor: { playSound() {} },
         soundCancel: { playSound() {} },
         soundConfirmation: { playSound() {} },
         soundImpossible: { playSound() {} },
@@ -87,6 +88,7 @@
       targetClass: 'C',
       requiredHosts: 50,
       durationSeconds: 60,
+      guidedTutorial: window.location.hash.indexOf('#tutorial-') === 0,
     });
     window.hostPowerPreview = preview;
 
@@ -105,6 +107,13 @@
         (event.clientY - rect.top) * canvas.height / rect.height
       );
     });
+    window.addEventListener('mousedown', (event) => {
+      const rect = canvas.getBoundingClientRect();
+      preview.onMouseDown(
+        (event.clientX - rect.left) * canvas.width / rect.width,
+        (event.clientY - rect.top) * canvas.height / rect.height
+      );
+    });
 
     if (window.location.hash === '#showcase') {
       preview.update();
@@ -118,13 +127,23 @@
         preview.entities[index].y = showcaseMetrics.arena.y + (92 + index * 78) * showcaseMetrics.scale;
       }
       preview.nextSpawnAt = Date.now() + 10000;
-      preview.nextShotAt = Date.now() + 10000;
       preview.bullets = [{
         x: showcaseMetrics.arena.x + showcaseMetrics.arena.w * 0.5,
         y: showcaseMetrics.arena.y + showcaseMetrics.arena.h - 115 * showcaseMetrics.scale,
         radius: 3.4 * showcaseMetrics.scale,
         speed: 390 * showcaseMetrics.scale,
       }];
+    }
+
+    if (window.location.hash.indexOf('#tutorial-') === 0) {
+      preview.tutorialStep = 'preview_hold';
+      preview.tutorialPaused = true;
+      preview.tutorialComplete = false;
+      preview.roundState = 'tutorial';
+      preview.tutorialHighlight = {
+        type: window.location.hash.slice('#tutorial-'.length) || 'shell',
+        label: '04 // ONE SHOT BURSTS TARGET',
+      };
     }
 
     function frame() {

@@ -4,7 +4,8 @@
  * A one-minute bridge lesson for analytical subnetting:
  *   1. Read the required usable host count.
  *   2. Build the smallest exponent h where 2^h - 2 >= required hosts.
- *   3. Shoot +1..+5 capsules or -1/-2 viruses to adjust h.
+ *   3. Step between five lanes and press Space to shoot a value into h.
+ *   4. Click CALCULATE to reveal 2^h - 2 and submit the answer.
  *
  * The left third is the falling-object shooter. The right two thirds contain
  * the reactor, live capacity calculator, required-host display, and timer.
@@ -144,10 +145,11 @@ const IP_HOST_POWER_PLAYFIELD = Object.freeze({
         5: '#b88aff',
     }),
     SPAWN_INTERVAL_MS: 1500,
-    SHOT_INTERVAL_MS: 1000,
     FALL_SPEED_PX_PER_SECOND: 48,
     BULLET_SPEED_PX_PER_SECOND: 390,
-    GUN_SPEED_PX_PER_SECOND: 270,
+    SHOT_COOLDOWN_MS: 160,
+    LANE_HOLD_DELAY_MS: 330,
+    LANE_REPEAT_INTERVAL_MS: 190,
 });
 
 class IP2LiveHostPowerReactorGameplayScreen extends Scene.Base {
@@ -164,10 +166,21 @@ class IP2LiveHostPowerReactorGameplayScreen extends Scene.Base {
 
     _configure() {
         this.scenario = this.options.scenario || IPHostPowerRules.createScenario(this.options);
+        this.guidedTutorial = this.options.guidedTutorial === true ||
+            this.options.tutorial === true ||
+            !!(this.options.spec && this.options.spec.tutorial);
+        this.tutorialActive = this.guidedTutorial;
+        this.tutorialComplete = !this.guidedTutorial;
+        this.tutorialPaused = this.guidedTutorial;
+        this.tutorialStep = this.guidedTutorial ? 'reactor_intro' : 'done';
+        this.tutorialDialogueOpen = false;
+        this.tutorialHighlight = null;
+        this.tutorialSpotlightTimer = 0;
+        this.tutorialSpotlightComplete = null;
         this.durationMs = Math.max(10000, (Number(this.options.durationSeconds) || 60) * 1000);
         this.animTick = 0;
         this.finished = false;
-        this.roundState = 'ready';
+        this.roundState = this.guidedTutorial ? 'tutorial' : 'ready';
         this.exponent = Math.max(0, Math.min(this.scenario.classConfig.maxHostBits, Number(this.options.startExponent) || 0));
         this.evaluation = IPHostPowerRules.evaluate(this.scenario.requiredHosts, this.exponent);
         this.entities = [];
@@ -175,16 +188,21 @@ class IP2LiveHostPowerReactorGameplayScreen extends Scene.Base {
         this.hits = [];
         this.overshoots = 0;
         this.spawnIntervalMs = IP_HOST_POWER_PLAYFIELD.SPAWN_INTERVAL_MS;
-        this.shotIntervalMs = IP_HOST_POWER_PLAYFIELD.SHOT_INTERVAL_MS;
         this.nextSpawnAt = null;
-        this.nextShotAt = null;
         this.lastUpdateAt = null;
         this.laneCursor = 0;
         this.dropCursor = 0;
         this.nextEntityId = 1;
+        this.gunLaneIndex = Math.floor(IP_HOST_POWER_PLAYFIELD.LANE_COUNT / 2);
         this.gunX = null;
         this.heldLeft = false;
         this.heldRight = false;
+        this.laneHoldElapsedMs = 0;
+        this.laneHoldRepeating = false;
+        this.shootHeld = false;
+        this.lastShotAt = -Infinity;
+        this.calculatedEvaluation = null;
+        this.calculationAttempts = [];
         this.startedAt = null;
         this.endsAt = null;
         this.stabilizeStartedAt = null;
@@ -197,7 +215,11 @@ class IP2LiveHostPowerReactorGameplayScreen extends Scene.Base {
 
     async load() {
         this.loading = false;
-        this._startRoundClock();
+        // The guided version owns the screen before the timed round begins.
+        // Scene.Base may call load() before the derived constructor has its
+        // options, so _configure() remains the final authority on whether the
+        // clock should be held for training.
+        if (!this.guidedTutorial) this._startRoundClock();
         if (Manager && Manager.Stack) Manager.Stack.requestPaintHUD = true;
     }
 
@@ -208,7 +230,6 @@ class IP2LiveHostPowerReactorGameplayScreen extends Scene.Base {
         this.startedAt = now;
         this.endsAt = now + this.durationMs;
         this.nextSpawnAt = now;
-        this.nextShotAt = now;
         this.lastUpdateAt = now;
         this.roundState = 'active';
         return true;
@@ -220,15 +241,16 @@ class IP2LiveHostPowerReactorGameplayScreen extends Scene.Base {
         if (IP2Live.GameplayCompletionPopup && typeof IP2Live.GameplayCompletionPopup.update === 'function') {
             IP2Live.GameplayCompletionPopup.update(this, now);
         }
+        if (this.tutorialActive && !this.tutorialComplete) this._updateGuidedTutorial();
         const dialogueActive = this._dialogueActive();
-        if (!this.finished && !dialogueActive && this.roundState === 'ready') {
+        if (!this.finished && !dialogueActive && !this.tutorialPaused && this.roundState === 'ready') {
             // RPG Paper Maker can invoke async load() from Scene.Base before
             // the derived constructor finishes. _configure() then restores
             // the initial "ready" state. Starting again on the first live
             // update makes the lifecycle deterministic in editor and export.
             this._startRoundClock(now);
         }
-        if (this.finished || dialogueActive) {
+        if (this.finished || dialogueActive || this.tutorialPaused) {
             if (Manager && Manager.Stack) Manager.Stack.requestPaintHUD = true;
             return;
         }
@@ -244,7 +266,6 @@ class IP2LiveHostPowerReactorGameplayScreen extends Scene.Base {
             } else {
                 this._updateHeldMovement(metrics, deltaSeconds);
                 this._updateSpawner(metrics, now);
-                this._updateGun(metrics, now);
                 this._updateEntities(metrics, deltaSeconds);
                 this._updateBullets(metrics, deltaSeconds);
                 this._resolveCollisions();
@@ -262,6 +283,123 @@ class IP2LiveHostPowerReactorGameplayScreen extends Scene.Base {
             typeof IP2Live.DialogueManager.isActive === 'function' &&
             IP2Live.DialogueManager.isActive()
         );
+    }
+
+    _updateGuidedTutorial() {
+        if (!this.tutorialActive || this.tutorialComplete) return;
+
+        if (this.tutorialSpotlightTimer > 0) {
+            this.tutorialSpotlightTimer--;
+            if (this.tutorialSpotlightTimer <= 0) {
+                const complete = this.tutorialSpotlightComplete;
+                this.tutorialSpotlightComplete = null;
+                this.tutorialHighlight = null;
+                if (typeof complete === 'function') complete();
+            }
+            return;
+        }
+        if (this.tutorialDialogueOpen || this._dialogueActive()) return;
+
+        if (this.tutorialStep === 'reactor_intro') {
+            this._showGuidedDialogue(
+                'showReactorGuide',
+                { type: 'reactor', label: '01 // TARGET CAPACITY CORE' },
+                'formula_intro',
+                92
+            );
+            return;
+        }
+        if (this.tutorialStep === 'formula_intro') {
+            this._showGuidedDialogue(
+                'showFormulaGuide',
+                { type: 'formula', label: '02 // 2^H - 2 CAPACITY CHECK' },
+                'intake_intro',
+                100
+            );
+            return;
+        }
+        if (this.tutorialStep === 'intake_intro') {
+            this._showGuidedDialogue(
+                'showIntakeGuide',
+                { type: 'intake', label: '03 // FIVE FIXED INTAKE LANES' },
+                'shell_intro',
+                100
+            );
+            return;
+        }
+        if (this.tutorialStep === 'shell_intro') {
+            this._showGuidedDialogue(
+                'showShellGuide',
+                { type: 'shell', label: '04 // ONE SHOT BURSTS TARGET' },
+                'controls_intro',
+                105
+            );
+            return;
+        }
+        if (this.tutorialStep === 'controls_intro') {
+            this._showGuidedDialogue(
+                'showControlsGuide',
+                { type: 'controls', label: '05 // STEP LANES // SPACE FIRE' },
+                'timer_intro',
+                100
+            );
+            return;
+        }
+        if (this.tutorialStep === 'timer_intro') {
+            this._showGuidedDialogue(
+                'showTimerGuide',
+                { type: 'timer', label: '06 // 60-SECOND REACTOR WINDOW' },
+                'done',
+                100
+            );
+            return;
+        }
+        if (this.tutorialStep === 'done') this._finishGuidedTutorial();
+    }
+
+    _showGuidedDialogue(methodName, highlight, nextStep, spotlightFrames) {
+        this.tutorialPaused = true;
+        this.tutorialDialogueOpen = true;
+        this.tutorialHighlight = Object.assign({}, highlight || {});
+        let completed = false;
+        const done = () => {
+            if (completed) return;
+            completed = true;
+            this.tutorialDialogueOpen = false;
+            this._showTutorialSpotlight(highlight, spotlightFrames, () => {
+                this.tutorialStep = nextStep;
+                if (nextStep === 'done') this._finishGuidedTutorial();
+            });
+        };
+        const tutorial = IP2Live.IPHostPowerReactorTutorial;
+        if (tutorial && typeof tutorial[methodName] === 'function') {
+            const shown = tutorial[methodName](this.scenario, done);
+            if (shown !== false) return true;
+        }
+        done();
+        return false;
+    }
+
+    _showTutorialSpotlight(highlight, duration, onComplete) {
+        this.tutorialPaused = true;
+        this.tutorialHighlight = Object.assign({}, highlight || {});
+        this.tutorialSpotlightTimer = Math.max(45, Number(duration) || 90);
+        this.tutorialSpotlightComplete = typeof onComplete === 'function' ? onComplete : null;
+        if (Manager && Manager.Stack) Manager.Stack.requestPaintHUD = true;
+    }
+
+    _finishGuidedTutorial() {
+        if (this.tutorialComplete) return;
+        this.tutorialComplete = true;
+        this.tutorialPaused = false;
+        this.tutorialDialogueOpen = false;
+        this.tutorialHighlight = null;
+        this.tutorialSpotlightTimer = 0;
+        this.tutorialSpotlightComplete = null;
+        this.tutorialStep = 'done';
+        this.roundState = 'ready';
+        this.lastUpdateAt = null;
+        if (Manager && Manager.Stack) Manager.Stack.requestPaintHUD = true;
     }
 
     _frameDeltaSeconds(now) {
@@ -308,8 +446,26 @@ class IP2LiveHostPowerReactorGameplayScreen extends Scene.Base {
 
     _ensureGun(m) {
         const arena = m.arena;
-        if (!Number.isFinite(this.gunX)) this.gunX = arena.x + arena.w * 0.5;
-        this.gunX = Math.max(arena.x + 20 * m.scale, Math.min(arena.x + arena.w - 20 * m.scale, this.gunX));
+        const laneCount = IP_HOST_POWER_PLAYFIELD.LANE_COUNT;
+        const laneWidth = arena.w / laneCount;
+        if (!Number.isInteger(this.gunLaneIndex)) {
+            const sourceX = Number.isFinite(this.gunX) ? this.gunX : arena.x + arena.w * 0.5;
+            this.gunLaneIndex = Math.floor((sourceX - arena.x) / laneWidth);
+        }
+        this.gunLaneIndex = Math.max(0, Math.min(laneCount - 1, this.gunLaneIndex));
+        this.gunX = arena.x + laneWidth * (this.gunLaneIndex + 0.5);
+    }
+
+    _moveGunLane(direction, m) {
+        const step = direction < 0 ? -1 : (direction > 0 ? 1 : 0);
+        if (!step) return false;
+        this._ensureGun(m);
+        const nextLane = Math.max(0, Math.min(IP_HOST_POWER_PLAYFIELD.LANE_COUNT - 1, this.gunLaneIndex + step));
+        if (nextLane === this.gunLaneIndex) return false;
+        this.gunLaneIndex = nextLane;
+        this._ensureGun(m);
+        this._playLaneMove();
+        return true;
     }
 
     _updateSpawner(m, now) {
@@ -339,19 +495,20 @@ class IP2LiveHostPowerReactorGameplayScreen extends Scene.Base {
             radius,
             speed: IP_HOST_POWER_PLAYFIELD.FALL_SPEED_PX_PER_SECOND * m.scale,
             spin: isVirus ? (this.nextEntityId % 8) * Math.PI / 4 : 0,
-            maxHits: 3,
-            hitsRemaining: 3,
+            maxHits: 1,
+            hitsRemaining: 1,
             hitFlashUntil: 0,
         });
         return true;
     }
 
-    _updateGun(m, now) {
+    _fireBullet(m, now) {
+        if (this.roundState !== 'active' || this.finished || this.tutorialPaused) return false;
         const numericNow = Number(now);
         const current = Number.isFinite(numericNow) ? numericNow : Date.now();
-        if (!Number.isFinite(this.nextShotAt)) this.nextShotAt = current;
-        if (current < this.nextShotAt) return false;
-        this.nextShotAt = current + this.shotIntervalMs;
+        if (current - this.lastShotAt < IP_HOST_POWER_PLAYFIELD.SHOT_COOLDOWN_MS) return false;
+        this._ensureGun(m);
+        this.lastShotAt = current;
         this.bullets.push({
             x: this.gunX,
             y: m.arena.y + m.arena.h - 40 * m.scale,
@@ -364,9 +521,19 @@ class IP2LiveHostPowerReactorGameplayScreen extends Scene.Base {
 
     _updateHeldMovement(m, deltaSeconds) {
         const direction = (this.heldRight ? 1 : 0) - (this.heldLeft ? 1 : 0);
-        if (!direction || deltaSeconds <= 0) return;
-        this.gunX += direction * IP_HOST_POWER_PLAYFIELD.GUN_SPEED_PX_PER_SECOND * m.scale * deltaSeconds;
-        this._ensureGun(m);
+        if (!direction || deltaSeconds <= 0) {
+            this.laneHoldElapsedMs = 0;
+            this.laneHoldRepeating = false;
+            return false;
+        }
+        this.laneHoldElapsedMs += deltaSeconds * 1000;
+        const threshold = this.laneHoldRepeating
+            ? IP_HOST_POWER_PLAYFIELD.LANE_REPEAT_INTERVAL_MS
+            : IP_HOST_POWER_PLAYFIELD.LANE_HOLD_DELAY_MS;
+        if (this.laneHoldElapsedMs < threshold) return false;
+        this.laneHoldElapsedMs = 0;
+        this.laneHoldRepeating = true;
+        return this._moveGunLane(direction, m);
     }
 
     _updateEntities(m, deltaSeconds) {
@@ -405,8 +572,8 @@ class IP2LiveHostPowerReactorGameplayScreen extends Scene.Base {
             const entity = this.entities[hitIndex];
             this.bullets.splice(b, 1);
             const storedHits = Number(entity.hitsRemaining);
-            const currentHits = Number.isFinite(storedHits) ? storedHits : 3;
-            entity.maxHits = 3;
+            const currentHits = Number.isFinite(storedHits) ? storedHits : 1;
+            entity.maxHits = 1;
             entity.hitsRemaining = Math.max(0, currentHits - 1);
             entity.hitFlashUntil = Date.now() + 180;
             if (entity.hitsRemaining > 0) {
@@ -423,30 +590,49 @@ class IP2LiveHostPowerReactorGameplayScreen extends Scene.Base {
         const previous = this.exponent;
         const maximum = this.scenario.classConfig.maxHostBits;
         this.exponent = Math.max(0, Math.min(maximum, this.exponent + Number(delta || 0)));
-        this.evaluation = IPHostPowerRules.evaluate(this.scenario.requiredHosts, this.exponent);
+        // Changing h invalidates the previously submitted calculation. The
+        // capacity result stays concealed until CALCULATE is clicked again.
+        this.calculatedEvaluation = null;
         this.hits.push({
             value: Number(delta || 0),
             source: source || 'unknown',
             previousExponent: previous,
             exponent: this.exponent,
-            status: this.evaluation.status,
+            status: 'pending-calculation',
             atMs: Math.max(0, Date.now() - this.startedAt),
         });
 
-        if (this.evaluation.status === 'over' && this._lastStatus !== 'over') {
-            this.overshoots++;
-            this._notifyMistake('over-capacity');
-        }
-        this._lastStatus = this.evaluation.status;
+        this._lastStatus = 'pending-calculation';
         this._playHit(source === 'virus');
+    }
 
-        if (this.evaluation.valid) {
+    _calculateCurrentPower() {
+        if (this.roundState !== 'active' || this.finished || this.tutorialPaused) return false;
+        if (this.calculatedEvaluation && this.calculatedEvaluation.exponent === this.exponent) return false;
+        const evaluation = IPHostPowerRules.evaluate(this.scenario.requiredHosts, this.exponent);
+        this.evaluation = evaluation;
+        this.calculatedEvaluation = Object.assign({}, evaluation);
+        this.calculationAttempts.push({
+            exponent: this.exponent,
+            totalAddresses: evaluation.totalAddresses,
+            usableHosts: evaluation.usableHosts,
+            status: evaluation.status,
+            atMs: this.startedAt ? Math.max(0, Date.now() - this.startedAt) : 0,
+        });
+
+        if (evaluation.valid) {
             this.roundState = 'stabilizing';
             this.stabilizeStartedAt = Date.now();
             this.entities = [];
             this.bullets = [];
             this._playSuccess();
+            return true;
         }
+
+        if (evaluation.status === 'over') this.overshoots++;
+        this._notifyMistake('calculation-' + evaluation.status);
+        this._playError();
+        return false;
     }
 
     _notifyMistake(reason) {
@@ -470,6 +656,7 @@ class IP2LiveHostPowerReactorGameplayScreen extends Scene.Base {
         this.roundState = 'failed';
         this.heldLeft = false;
         this.heldRight = false;
+        this.shootHeld = false;
         this.failureReason = 'timeout';
         this.entities = [];
         this.bullets = [];
@@ -485,12 +672,19 @@ class IP2LiveHostPowerReactorGameplayScreen extends Scene.Base {
         this.hits = [];
         this.overshoots = 0;
         this.nextSpawnAt = null;
-        this.nextShotAt = null;
         this.lastUpdateAt = null;
         this.laneCursor = 0;
         this.dropCursor = 0;
+        this.gunLaneIndex = Math.floor(IP_HOST_POWER_PLAYFIELD.LANE_COUNT / 2);
+        this.gunX = null;
         this.heldLeft = false;
         this.heldRight = false;
+        this.laneHoldElapsedMs = 0;
+        this.laneHoldRepeating = false;
+        this.shootHeld = false;
+        this.lastShotAt = -Infinity;
+        this.calculatedEvaluation = null;
+        this.calculationAttempts = [];
         this.failureReason = null;
         this._lastStatus = this.evaluation.status;
         this._startRoundClock();
@@ -513,6 +707,7 @@ class IP2LiveHostPowerReactorGameplayScreen extends Scene.Base {
             elapsedMs: this.startedAt ? Math.max(0, now - this.startedAt) : 0,
             timeRemainingMs: this.endsAt ? Math.max(0, this.endsAt - now) : 0,
             overshoots: this.overshoots,
+            calculationAttempts: this.calculationAttempts.slice(),
             hits: this.hits.slice(),
         }, extra || {});
     }
@@ -523,6 +718,7 @@ class IP2LiveHostPowerReactorGameplayScreen extends Scene.Base {
         this.roundState = 'complete';
         this.heldLeft = false;
         this.heldRight = false;
+        this.shootHeld = false;
         const result = this._result({ success: true });
         const finish = () => {
             if (typeof this.options.onComplete === 'function') this.options.onComplete(result);
@@ -543,6 +739,7 @@ class IP2LiveHostPowerReactorGameplayScreen extends Scene.Base {
         this.finished = true;
         this.heldLeft = false;
         this.heldRight = false;
+        this.shootHeld = false;
         const result = this._result({ success: false, cancelled: !failed, failed: !!failed, reason: this.failureReason });
         if (failed && typeof this.options.onFailed === 'function') this.options.onFailed(result);
         else if (typeof this.options.onCancel === 'function') this.options.onCancel(result);
@@ -567,17 +764,30 @@ class IP2LiveHostPowerReactorGameplayScreen extends Scene.Base {
             if (upper === 'ENTER' || upper === 'SPACE' || upper === 'SPACEBAR' || upper === 'R' || upper === 'KEYR') this._restart();
             return true;
         }
+        if (this._isShootKey(upper)) {
+            if (this.roundState === 'active' && !this.shootHeld) {
+                this.shootHeld = true;
+                this._fireBullet(this.lastMetrics || this._metrics(), Date.now());
+            }
+            return true;
+        }
         const direction = this._directionForKey(upper);
-        if (direction) {
+        if (direction && this.roundState === 'active') {
             const m = this.lastMetrics || this._metrics();
             this._ensureGun(m);
             const wasHeld = direction < 0 ? this.heldLeft : this.heldRight;
-            if (direction < 0) this.heldLeft = true;
-            else this.heldRight = true;
-            // Keep quick taps useful while continuous motion is handled from
-            // update() for as long as RPG Paper Maker reports the key held.
-            if (!wasHeld) this.gunX += direction * 8 * m.scale;
-            this._ensureGun(m);
+            if (direction < 0) {
+                this.heldLeft = true;
+                this.heldRight = false;
+            } else {
+                this.heldRight = true;
+                this.heldLeft = false;
+            }
+            if (!wasHeld) {
+                this.laneHoldElapsedMs = 0;
+                this.laneHoldRepeating = false;
+                this._moveGunLane(direction, m);
+            }
         }
         return true;
     }
@@ -591,9 +801,15 @@ class IP2LiveHostPowerReactorGameplayScreen extends Scene.Base {
     }
 
     onKeyReleased(key) {
-        const direction = this._directionForKey(this._keyToken(key));
+        const token = this._keyToken(key);
+        if (this._isShootKey(token)) this.shootHeld = false;
+        const direction = this._directionForKey(token);
         if (direction < 0) this.heldLeft = false;
         else if (direction > 0) this.heldRight = false;
+        if (!this.heldLeft && !this.heldRight) {
+            this.laneHoldElapsedMs = 0;
+            this.laneHoldRepeating = false;
+        }
         return true;
     }
 
@@ -608,13 +824,23 @@ class IP2LiveHostPowerReactorGameplayScreen extends Scene.Base {
         return 0;
     }
 
+    _isShootKey(token) {
+        return token === 'SPACE' || token === 'SPACEBAR' || token === ' ';
+    }
+
     onMouseMove(x, y) {
         if (this.finished || this.roundState !== 'active') return true;
         const m = this.lastMetrics || this._metrics();
         if (x >= m.arena.x && x <= m.arena.x + m.arena.w && y >= m.arena.y && y <= m.arena.y + m.arena.h) {
             this.heldLeft = false;
             this.heldRight = false;
-            this.gunX = x;
+            this.laneHoldElapsedMs = 0;
+            this.laneHoldRepeating = false;
+            const laneWidth = m.arena.w / IP_HOST_POWER_PLAYFIELD.LANE_COUNT;
+            this.gunLaneIndex = Math.max(0, Math.min(
+                IP_HOST_POWER_PLAYFIELD.LANE_COUNT - 1,
+                Math.floor((x - m.arena.x) / laneWidth)
+            ));
             this.lastMouseX = x;
             this._ensureGun(m);
         }
@@ -627,8 +853,15 @@ class IP2LiveHostPowerReactorGameplayScreen extends Scene.Base {
             return true;
         }
         if (this.finished) return true;
-        this.buttons = [];
         const m = this.lastMetrics || this._metrics();
+        if (this.roundState === 'active') {
+            const calculateButton = this._calculateButtonRect(m);
+            if (this._pointInRect(x, y, calculateButton)) {
+                this._calculateCurrentPower();
+                return true;
+            }
+        }
+        this.buttons = [];
         if (this.roundState === 'failed') this._buildFailureButtons(m);
         for (let i = 0; i < this.buttons.length; i++) {
             const button = this.buttons[i];
@@ -657,9 +890,13 @@ class IP2LiveHostPowerReactorGameplayScreen extends Scene.Base {
         this._drawArena(ctx, m);
         this._drawRightPanel(ctx, m);
         if (this.roundState === 'failed') this._drawFailure(ctx, m);
+        this._drawTutorialHighlight(ctx, m);
         ctx.restore();
         if (IP2Live.GameplayCompletionPopup && typeof IP2Live.GameplayCompletionPopup.drawFor === 'function') {
             IP2Live.GameplayCompletionPopup.drawFor(this, ctx, { tick: this.animTick });
+        }
+        if (IP2Live.DialogueManager && typeof IP2Live.DialogueManager.drawOverlay === 'function') {
+            IP2Live.DialogueManager.drawOverlay(ctx);
         }
     }
 
@@ -796,18 +1033,22 @@ class IP2LiveHostPowerReactorGameplayScreen extends Scene.Base {
 
         const chipY = m.y + 13 * m.scale;
         const chipH = 20 * m.scale;
-        const liveColor = this.roundState === 'failed' ? '#ff315f' : (this.roundState === 'ready' ? '#ffe600' : '#00f0ff');
-        const statusText = this.roundState === 'failed' ? 'OFFLINE' : (this.roundState === 'ready' ? 'SYNC' : 'LIVE');
+        const liveColor = this.roundState === 'failed'
+            ? '#ff315f'
+            : (this.guidedTutorial ? '#ffe600' : (this.roundState === 'ready' ? '#ffe600' : '#00f0ff'));
+        const statusText = this.roundState === 'failed'
+            ? 'OFFLINE'
+            : (this.guidedTutorial ? 'TRAINING' : (this.roundState === 'ready' ? 'SYNC' : 'LIVE'));
         let chipRight = m.x + m.w - 20 * m.scale;
         chipRight = this._drawStatusChip(ctx, chipRight, chipY, 'SYS ' + statusText, liveColor, m);
-        chipRight = this._drawStatusChip(ctx, chipRight - 7 * m.scale, chipY, 'TARGET H=' + this.scenario.targetExponent, '#ffe600', m);
+        chipRight = this._drawStatusChip(ctx, chipRight - 7 * m.scale, chipY, 'HOSTS ' + this._formatNumber(this.scenario.requiredHosts), '#ffe600', m);
         this._drawStatusChip(ctx, chipRight - 7 * m.scale, chipY, 'CLASS ' + this.scenario.className + ' /' + this.scenario.classConfig.defaultPrefix, '#00f0ff', m);
 
         ctx.textAlign = 'right';
         ctx.textBaseline = 'middle';
         ctx.fillStyle = 'rgba(173, 205, 216, 0.62)';
         ctx.font = 'bold ' + Math.round(7 * m.scale) + 'px monospace';
-        ctx.fillText('HOLD A/D OR ←/→  //  1 SHOT/SEC  //  ESC EXIT', m.x + m.w - 22 * m.scale, m.y + 52 * m.scale);
+        ctx.fillText('A/D OR LEFT/RIGHT STEP LANES  //  SPACE FIRE  //  ESC EXIT', m.x + m.w - 22 * m.scale, m.y + 52 * m.scale);
     }
 
     _drawArena(ctx, m) {
@@ -828,6 +1069,15 @@ class IP2LiveHostPowerReactorGameplayScreen extends Scene.Base {
                 ctx.fillStyle = 'rgba(0, 174, 199, 0.025)';
                 ctx.fillRect(a.x + lane * laneWidth, a.y, laneWidth, a.h);
             }
+        }
+        if (Number.isInteger(this.gunLaneIndex)) {
+            const selectedX = a.x + laneWidth * this.gunLaneIndex;
+            const selectedGlow = ctx.createLinearGradient(selectedX, a.y, selectedX + laneWidth, a.y);
+            selectedGlow.addColorStop(0, 'rgba(0, 240, 255, 0.015)');
+            selectedGlow.addColorStop(0.5, 'rgba(0, 240, 255, 0.09)');
+            selectedGlow.addColorStop(1, 'rgba(0, 240, 255, 0.015)');
+            ctx.fillStyle = selectedGlow;
+            ctx.fillRect(selectedX, a.y + 30 * m.scale, laneWidth, a.h - 54 * m.scale);
         }
         ctx.strokeStyle = 'rgba(35, 171, 190, 0.22)';
         ctx.lineWidth = Math.max(0.8, m.scale);
@@ -867,6 +1117,8 @@ class IP2LiveHostPowerReactorGameplayScreen extends Scene.Base {
         ctx.fillStyle = scan;
         ctx.fillRect(a.x, scanY - 18 * m.scale, a.w, 36 * m.scale);
 
+        const tutorialSamples = this._tutorialSampleEntities(m);
+        for (let i = 0; i < tutorialSamples.length; i++) this._drawEntity(ctx, tutorialSamples[i], m);
         for (let i = 0; i < this.entities.length; i++) this._drawEntity(ctx, this.entities[i], m);
         for (let i = 0; i < this.bullets.length; i++) this._drawBullet(ctx, this.bullets[i], m);
         this._drawGun(ctx, m);
@@ -877,7 +1129,7 @@ class IP2LiveHostPowerReactorGameplayScreen extends Scene.Base {
         ctx.font = 'bold ' + Math.round(8 * m.scale) + 'px monospace';
         ctx.textAlign = 'left';
         ctx.textBaseline = 'middle';
-        ctx.fillText('CAPSULE INTAKE // 5 LANES // 3-HIT SHELLS', a.x + 13 * m.scale, a.y + 15 * m.scale);
+        ctx.fillText('CAPSULE INTAKE // 5 LANES // 1-HIT TARGETS', a.x + 13 * m.scale, a.y + 15 * m.scale);
         ctx.textAlign = 'right';
         ctx.fillStyle = '#ffe600';
         ctx.fillText('+1..+5', a.x + a.w - 74 * m.scale, a.y + 15 * m.scale);
@@ -889,11 +1141,185 @@ class IP2LiveHostPowerReactorGameplayScreen extends Scene.Base {
         ctx.textAlign = 'left';
         ctx.fillStyle = 'rgba(183, 218, 227, 0.64)';
         ctx.font = 'bold ' + Math.round(7 * m.scale) + 'px monospace';
-        ctx.fillText('AUTO-PULSE // 1 SHOT PER SEC', a.x + 13 * m.scale, a.y + a.h - 12 * m.scale);
+        ctx.fillText('MANUAL PULSE // TAP SPACE TO FIRE', a.x + 13 * m.scale, a.y + a.h - 12 * m.scale);
         ctx.textAlign = 'right';
         ctx.fillStyle = this.roundState === 'active' ? '#55ff91' : '#ffe600';
-        ctx.fillText(this.roundState === 'active' ? 'TRACKING // FIRE ENABLED' : 'REACTOR SYNC', a.x + a.w - 13 * m.scale, a.y + a.h - 12 * m.scale);
+        const arenaStatus = this.guidedTutorial
+            ? 'STEP LANES // ONE SHOT BURSTS TARGET'
+            : (this.roundState === 'active' ? 'LANE L' + (this.gunLaneIndex + 1) + ' // READY' : 'REACTOR SYNC');
+        ctx.fillText(arenaStatus, a.x + a.w - 13 * m.scale, a.y + a.h - 12 * m.scale);
         ctx.restore();
+    }
+
+    _tutorialSampleEntities(m) {
+        if (!this.tutorialActive || this.tutorialComplete || !this.tutorialHighlight) return [];
+        if (this.tutorialHighlight.type !== 'intake' && this.tutorialHighlight.type !== 'shell') return [];
+        const laneWidth = m.arena.w / IP_HOST_POWER_PLAYFIELD.LANE_COUNT;
+        const y = m.arena.y + Math.min(m.arena.h * 0.26, 118 * m.scale);
+        return [
+            {
+                id: 'tutorial-capsule',
+                type: 'capsule',
+                value: 2,
+                laneIndex: 1,
+                x: m.arena.x + laneWidth * 1.5,
+                y,
+                radius: 20 * m.scale,
+                spin: 0,
+                maxHits: 1,
+                hitsRemaining: 1,
+                hitFlashUntil: 0,
+            },
+            {
+                id: 'tutorial-virus',
+                type: 'virus',
+                value: -1,
+                laneIndex: 3,
+                x: m.arena.x + laneWidth * 3.5,
+                y,
+                radius: 19 * m.scale,
+                spin: Math.PI / 8,
+                maxHits: 1,
+                hitsRemaining: 1,
+                hitFlashUntil: 0,
+            },
+        ];
+    }
+
+    _drawTutorialHighlight(ctx, m) {
+        if (!this.tutorialHighlight || (!this.tutorialPaused && !this.tutorialDialogueOpen)) return;
+        const focus = this._tutorialHighlightRects(m);
+        if (!focus || !focus.rects || !focus.rects.length) return;
+        const rects = focus.rects;
+        const pulse = 0.55 + 0.45 * Math.sin((this.animTick || 0) * 0.15);
+        const cut = Math.max(5, 8 * m.scale);
+
+        ctx.save();
+        ctx.beginPath();
+        ctx.rect(m.x + 8 * m.scale, m.y + 8 * m.scale, m.w - 16 * m.scale, m.h - 16 * m.scale);
+        for (let i = 0; i < rects.length; i++) {
+            const rect = rects[i];
+            this._appendChamferPath(ctx, rect.x, rect.y, rect.w, rect.h, cut);
+        }
+        ctx.fillStyle = 'rgba(0, 3, 9, 0.76)';
+        try { ctx.fill('evenodd'); } catch (e) { ctx.fill(); }
+
+        for (let i = 0; i < rects.length; i++) {
+            const rect = rects[i];
+            const accent = i === 0 ? '#ffe600' : '#00f0ff';
+            ctx.save();
+            this._chamferPath(ctx, rect.x, rect.y, rect.w, rect.h, cut);
+            ctx.fillStyle = i === 0 ? 'rgba(255, 230, 0, 0.08)' : 'rgba(0, 240, 255, 0.07)';
+            ctx.fill();
+            ctx.strokeStyle = accent;
+            ctx.lineWidth = (2.1 + pulse * 1.2) * m.scale;
+            ctx.shadowColor = accent;
+            ctx.shadowBlur = (10 + pulse * 12) * m.scale;
+            ctx.stroke();
+            ctx.clip();
+            const sweepH = Math.max(2, 3 * m.scale);
+            const sweepY = rect.y + ((this.animTick * 2.2 + i * 31) % Math.max(1, rect.h - sweepH));
+            ctx.fillStyle = i === 0 ? 'rgba(255, 230, 0, 0.28)' : 'rgba(0, 240, 255, 0.24)';
+            ctx.fillRect(rect.x + cut, sweepY, Math.max(0, rect.w - cut * 2), sweepH);
+            ctx.restore();
+        }
+
+        const anchor = rects[0];
+        const label = String(focus.label || this.tutorialHighlight.label || 'SYSTEM FOCUS');
+        const labelH = 20 * m.scale;
+        const labelW = Math.min(
+            Math.max(176 * m.scale, label.length * 6.6 * m.scale),
+            Math.max(176 * m.scale, m.w * 0.46)
+        );
+        const labelX = Math.max(m.x + 18 * m.scale, Math.min(anchor.x, m.x + m.w - labelW - 18 * m.scale));
+        const labelY = Math.max(m.y + 48 * m.scale, anchor.y - labelH - 7 * m.scale);
+        this._chamferPath(ctx, labelX, labelY, labelW, labelH, 5 * m.scale);
+        ctx.fillStyle = '#ffe600';
+        ctx.shadowColor = '#ffe600';
+        ctx.shadowBlur = 9 * m.scale;
+        ctx.fill();
+        ctx.shadowBlur = 0;
+        ctx.fillStyle = '#05070a';
+        ctx.font = 'bold ' + Math.max(7, Math.round(8 * m.scale)) + 'px monospace';
+        ctx.textAlign = 'left';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(label, labelX + 10 * m.scale, labelY + labelH * 0.54);
+        ctx.restore();
+    }
+
+    _tutorialHighlightRects(m) {
+        const highlight = this.tutorialHighlight || {};
+        const pad = 7 * m.scale;
+        const clamp = (rect) => {
+            const minX = m.x + 14 * m.scale;
+            const minY = m.y + 62 * m.scale;
+            const maxX = m.x + m.w - 14 * m.scale;
+            const maxY = m.y + m.h - 14 * m.scale;
+            const x = Math.max(minX, rect.x - pad);
+            const y = Math.max(minY, rect.y - pad);
+            return {
+                x,
+                y,
+                w: Math.max(24 * m.scale, Math.min(maxX, rect.x + rect.w + pad) - x),
+                h: Math.max(24 * m.scale, Math.min(maxY, rect.y + rect.h + pad) - y),
+            };
+        };
+        const r = m.right;
+        const reactorH = r.h * 0.55;
+        const cardsY = r.y + reactorH + 10 * m.scale;
+        const cardsH = r.h * 0.25;
+        const cardGap = 12 * m.scale;
+        const cardW = (r.w - cardGap) * 0.5;
+        const timerY = cardsY + cardsH + 13 * m.scale;
+        const result = { label: highlight.label || '', rects: [] };
+
+        if (highlight.type === 'reactor') {
+            result.rects.push(clamp({ x: r.x, y: r.y, w: r.w, h: reactorH }));
+            result.rects.push(clamp({ x: r.x + cardW + cardGap, y: cardsY, w: cardW, h: cardsH }));
+        } else if (highlight.type === 'formula') {
+            result.rects.push(clamp({ x: r.x, y: cardsY, w: cardW, h: cardsH }));
+            result.rects.push(clamp({ x: r.x + cardW + cardGap, y: cardsY, w: cardW, h: cardsH }));
+        } else if (highlight.type === 'intake') {
+            result.rects.push(clamp({
+                x: m.arena.x,
+                y: m.arena.y,
+                w: m.arena.w,
+                h: Math.min(m.arena.h * 0.43, 205 * m.scale),
+            }));
+        } else if (highlight.type === 'shell') {
+            const samples = this._tutorialSampleEntities(m);
+            for (let i = 0; i < samples.length; i++) {
+                const sample = samples[i];
+                result.rects.push(clamp({
+                    x: sample.x - 38 * m.scale,
+                    y: sample.y - 34 * m.scale,
+                    w: 76 * m.scale,
+                    h: 72 * m.scale,
+                }));
+            }
+        } else if (highlight.type === 'controls') {
+            const gunY = m.arena.y + m.arena.h - 42 * m.scale;
+            result.rects.push(clamp({
+                x: this.gunX - 31 * m.scale,
+                y: gunY - 34 * m.scale,
+                w: 62 * m.scale,
+                h: 58 * m.scale,
+            }));
+            result.rects.push(clamp({
+                x: m.arena.x,
+                y: m.arena.y + m.arena.h - 28 * m.scale,
+                w: m.arena.w,
+                h: 28 * m.scale,
+            }));
+        } else if (highlight.type === 'timer') {
+            result.rects.push(clamp({
+                x: r.x,
+                y: timerY,
+                w: r.w,
+                h: Math.max(38 * m.scale, r.y + r.h - timerY),
+            }));
+        }
+        return result.rects.length ? result : null;
     }
 
     _drawEntity(ctx, entity, m) {
@@ -967,7 +1393,8 @@ class IP2LiveHostPowerReactorGameplayScreen extends Scene.Base {
         ctx.font = 'bold ' + Math.max(10, Math.round(15 * m.scale)) + 'px monospace';
         ctx.fillText((entity.value > 0 ? '+' : '') + entity.value, 0, 0);
 
-        const maximumHits = 3;
+        const storedMaximumHits = Number(entity.maxHits);
+        const maximumHits = Math.max(1, Number.isFinite(storedMaximumHits) ? storedMaximumHits : 1);
         const storedHits = Number(entity.hitsRemaining);
         const hitsRemaining = Math.max(0, Math.min(maximumHits, Number.isFinite(storedHits) ? storedHits : maximumHits));
         const pipW = 7 * m.scale;
@@ -1008,33 +1435,64 @@ class IP2LiveHostPowerReactorGameplayScreen extends Scene.Base {
         ctx.fillRect(this.gunX - 4 * m.scale, gunY - 24 * m.scale, 8 * m.scale, 17 * m.scale);
         ctx.fillStyle = '#ff315f';
         ctx.fillRect(this.gunX - 8 * m.scale, gunY + 8 * m.scale, 16 * m.scale, 3 * m.scale);
+        ctx.shadowBlur = 0;
+        ctx.fillStyle = '#dffcff';
+        ctx.font = 'bold ' + Math.round(7 * m.scale) + 'px monospace';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText('L' + (this.gunLaneIndex + 1), this.gunX, gunY + 18 * m.scale);
         ctx.restore();
     }
 
     _drawRightPanel(ctx, m) {
+        const layout = this._rightPanelLayout(m);
+        this._drawReactor(ctx, layout.reactor, m);
+        this._drawCalculatorCard(ctx, layout.calculator, m);
+        this._drawNeededCard(ctx, layout.needed, m);
+        this._drawTimer(ctx, layout.timer, m);
+    }
+
+    _rightPanelLayout(m) {
         const r = m.right;
         const reactorH = r.h * 0.55;
-        this._drawReactor(ctx, { x: r.x, y: r.y, w: r.w, h: reactorH }, m);
         const cardsY = r.y + reactorH + 10 * m.scale;
         const cardsH = r.h * 0.25;
         const cardGap = 12 * m.scale;
         const cardW = (r.w - cardGap) * 0.5;
-        this._drawCalculatorCard(ctx, { x: r.x, y: cardsY, w: cardW, h: cardsH }, m);
-        this._drawNeededCard(ctx, { x: r.x + cardW + cardGap, y: cardsY, w: cardW, h: cardsH }, m);
         const timerY = cardsY + cardsH + 13 * m.scale;
-        this._drawTimer(ctx, { x: r.x, y: timerY, w: r.w, h: Math.max(38 * m.scale, r.y + r.h - timerY) }, m);
+        return {
+            reactor: { x: r.x, y: r.y, w: r.w, h: reactorH },
+            calculator: { x: r.x, y: cardsY, w: cardW, h: cardsH },
+            needed: { x: r.x + cardW + cardGap, y: cardsY, w: cardW, h: cardsH },
+            timer: { x: r.x, y: timerY, w: r.w, h: Math.max(38 * m.scale, r.y + r.h - timerY) },
+        };
+    }
+
+    _calculateButtonRect(m, calculatorBox) {
+        const box = calculatorBox || this._rightPanelLayout(m).calculator;
+        const margin = 12 * m.scale;
+        const h = 24 * m.scale;
+        return {
+            x: box.x + margin,
+            y: box.y + box.h - h - 9 * m.scale,
+            w: box.w - margin * 2,
+            h,
+        };
     }
 
     _reactorColor() {
-        if (this.evaluation.status === 'just-right') return '#52ff8f';
-        if (this.evaluation.status === 'over') return '#ff315f';
+        const checked = this.calculatedEvaluation;
+        if (this.roundState === 'stabilizing' || (checked && checked.valid)) return '#52ff8f';
+        if (!checked) return '#00eaff';
+        if (checked.status === 'over') return '#ff315f';
         return '#f6b73c';
     }
 
     _drawReactor(ctx, box, m) {
         const color = this._reactorColor();
+        const checked = this.calculatedEvaluation;
         const target = Math.max(1, this.scenario.targetExponent);
-        const ratio = Math.max(0, Math.min(1.25, this.exponent / target));
+        const ratio = checked ? Math.max(0, Math.min(1.25, this.exponent / target)) : 0.08;
         const cx = box.x + box.w * 0.5;
         const cy = box.y + box.h * 0.54;
         const radius = Math.min(box.w * 0.22, box.h * 0.35);
@@ -1058,7 +1516,10 @@ class IP2LiveHostPowerReactorGameplayScreen extends Scene.Base {
         ctx.fillText('REACTOR CAPACITY CORE', box.x + 16 * m.scale, box.y + 18 * m.scale);
         ctx.textAlign = 'right';
         ctx.fillStyle = color;
-        ctx.fillText(this.evaluation.status === 'under' ? 'LOW POWER' : (this.evaluation.status === 'over' ? 'OVER-ALLOCATED' : 'OPTIMAL'), box.x + box.w - 16 * m.scale, box.y + 18 * m.scale);
+        const statusLabel = !checked
+            ? 'AWAITING CALC'
+            : (checked.status === 'under' ? 'INSUFFICIENT' : (checked.status === 'over' ? 'OVER-ALLOCATED' : 'OPTIMAL'));
+        ctx.fillText(statusLabel, box.x + box.w - 16 * m.scale, box.y + 18 * m.scale);
 
         ctx.translate(cx, cy);
         ctx.scale(pulse, pulse);
@@ -1102,30 +1563,39 @@ class IP2LiveHostPowerReactorGameplayScreen extends Scene.Base {
         ctx.font = 'bold ' + Math.round(10 * m.scale) + 'px monospace';
         const footer = this.roundState === 'stabilizing'
             ? 'STABILIZING // BORROW ' + this.scenario.bitsToBorrow + ' BIT(S)'
-            : (this.evaluation.status === 'under'
-                ? 'ADD ' + (this.scenario.targetExponent - this.exponent) + ' HOST BIT(S)'
-                : (this.evaluation.status === 'over'
-                    ? 'REMOVE ' + (this.exponent - this.scenario.targetExponent) + ' HOST BIT(S)'
-                    : 'SMALLEST VALID EXPONENT ACQUIRED'));
+            : (!checked
+                ? 'SET H // CLICK CALCULATE'
+                : (checked.status === 'under'
+                    ? 'INSUFFICIENT CAPACITY // ADJUST H'
+                    : (checked.status === 'over'
+                        ? 'EXCESS CAPACITY // ADJUST H'
+                        : 'SMALLEST VALID EXPONENT ACQUIRED')));
         ctx.fillText(footer, cx, box.y + box.h - 16 * m.scale);
         ctx.restore();
     }
 
     _drawCalculatorCard(ctx, box, m) {
-        this._card(ctx, box, m, 'LIVE POWER CALCULATOR');
-        const total = this.evaluation.totalAddresses;
-        const usable = this.evaluation.usableHosts;
+        this._card(ctx, box, m, 'MANUAL POWER CALCULATOR');
+        const checked = this.calculatedEvaluation;
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
         ctx.fillStyle = '#f1fbff';
-        ctx.font = 'bold ' + Math.round(20 * m.scale) + 'px monospace';
-        ctx.fillText('2^' + this.exponent + ' = ' + this._formatNumber(total), box.x + box.w * 0.5, box.y + box.h * 0.47);
-        ctx.fillStyle = '#8db5be';
-        ctx.font = 'bold ' + Math.round(8 * m.scale) + 'px monospace';
-        ctx.fillText(this._formatNumber(total) + ' - 2 RESERVED', box.x + box.w * 0.5, box.y + box.h * 0.70);
-        ctx.fillStyle = this._reactorColor();
-        ctx.font = 'bold ' + Math.round(10 * m.scale) + 'px monospace';
-        ctx.fillText(this._formatNumber(usable) + ' USABLE HOSTS', box.x + box.w * 0.5, box.y + box.h * 0.84);
+        ctx.font = 'bold ' + Math.round(17 * m.scale) + 'px monospace';
+        if (checked) {
+            ctx.fillText('2^' + this.exponent + ' = ' + this._formatNumber(checked.totalAddresses), box.x + box.w * 0.5, box.y + box.h * 0.34);
+            ctx.fillStyle = '#8db5be';
+            ctx.font = 'bold ' + Math.round(7.5 * m.scale) + 'px monospace';
+            ctx.fillText(this._formatNumber(checked.totalAddresses) + ' - 2 RESERVED', box.x + box.w * 0.5, box.y + box.h * 0.52);
+            ctx.fillStyle = this._reactorColor();
+            ctx.font = 'bold ' + Math.round(9 * m.scale) + 'px monospace';
+            ctx.fillText(this._formatNumber(checked.usableHosts) + ' USABLE HOSTS', box.x + box.w * 0.5, box.y + box.h * 0.66);
+        } else {
+            ctx.fillText('h = ' + this.exponent, box.x + box.w * 0.5, box.y + box.h * 0.38);
+            ctx.fillStyle = '#8db5be';
+            ctx.font = 'bold ' + Math.round(8 * m.scale) + 'px monospace';
+            ctx.fillText('CAPACITY RESULT LOCKED', box.x + box.w * 0.5, box.y + box.h * 0.59);
+        }
+        this._drawCalculateButton(ctx, this._calculateButtonRect(m, box), m);
     }
 
     _drawNeededCard(ctx, box, m) {
@@ -1139,7 +1609,26 @@ class IP2LiveHostPowerReactorGameplayScreen extends Scene.Base {
         ctx.font = 'bold ' + Math.round(8 * m.scale) + 'px monospace';
         ctx.fillText('ADDRESS DEMAND: ' + this._formatNumber(this.scenario.addressDemand), box.x + box.w * 0.5, box.y + box.h * 0.76);
         ctx.fillStyle = '#789ca6';
-        ctx.fillText('BORROW AT TARGET: ' + this.scenario.classConfig.maxHostBits + ' - ' + this.scenario.targetExponent + ' = ' + this.scenario.bitsToBorrow + ' BITS', box.x + box.w * 0.5, box.y + box.h * 0.89);
+        ctx.fillText('CLASS ' + this.scenario.className + ' STARTS WITH ' + this.scenario.classConfig.maxHostBits + ' HOST BITS', box.x + box.w * 0.5, box.y + box.h * 0.89);
+    }
+
+    _drawCalculateButton(ctx, button, m) {
+        const enabled = this.roundState === 'active' && !this.finished && !this.tutorialPaused;
+        const accent = enabled ? '#ffe600' : '#66747c';
+        this._chamferPath(ctx, button.x, button.y, button.w, button.h, 5 * m.scale);
+        ctx.fillStyle = enabled ? 'rgba(99, 82, 0, 0.92)' : 'rgba(25, 32, 37, 0.9)';
+        ctx.fill();
+        ctx.strokeStyle = accent;
+        ctx.lineWidth = 1.2 * m.scale;
+        ctx.shadowColor = accent;
+        ctx.shadowBlur = enabled ? 7 * m.scale : 0;
+        ctx.stroke();
+        ctx.shadowBlur = 0;
+        ctx.fillStyle = enabled ? '#fff6a5' : '#839198';
+        ctx.font = 'bold ' + Math.round(8 * m.scale) + 'px monospace';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText('CALCULATE CAPACITY', button.x + button.w * 0.5, button.y + button.h * 0.54);
     }
 
     _card(ctx, box, m, label) {
@@ -1315,6 +1804,11 @@ class IP2LiveHostPowerReactorGameplayScreen extends Scene.Base {
     _chamferPath(ctx, x, y, w, h, cut) {
         const c = Math.max(0, Math.min(cut || 0, w * 0.2, h * 0.2));
         ctx.beginPath();
+        this._appendChamferPath(ctx, x, y, w, h, c);
+    }
+
+    _appendChamferPath(ctx, x, y, w, h, cut) {
+        const c = Math.max(0, Math.min(cut || 0, w * 0.2, h * 0.2));
         ctx.moveTo(x + c, y);
         ctx.lineTo(x + w - c, y);
         ctx.lineTo(x + w, y + c);
@@ -1331,8 +1825,19 @@ class IP2LiveHostPowerReactorGameplayScreen extends Scene.Base {
     }
 
     _playShot() {
-        // Intentionally quiet when no dedicated effect is registered; the
-        // automatic fire rate would make menu cursor sounds overwhelming.
+        try {
+            if (Data.Systems.soundCursor && typeof Data.Systems.soundCursor.playSound === 'function') {
+                Data.Systems.soundCursor.playSound();
+            }
+        } catch (e) { }
+    }
+
+    _playLaneMove() {
+        try {
+            if (Data.Systems.soundCursor && typeof Data.Systems.soundCursor.playSound === 'function') {
+                Data.Systems.soundCursor.playSound();
+            }
+        } catch (e) { }
     }
 
     _playHit(isVirus) {
@@ -1360,10 +1865,12 @@ class IP2LiveHostPowerReactorGameplayScreen extends Scene.Base {
 }
 
 const HostPowerReactorGameplayManager = {
-    VERSION: 'ip-host-power-reactor-manager-20260821-02',
+    VERSION: 'ip-host-power-reactor-manager-20260821-03',
     _active: false,
     _activeAttempt: null,
     _introShown: false,
+    _tutorialOwnerGame: null,
+    _tutorialShownKeys: {},
     _triggerLocks: {},
 
     createScenario(options) {
@@ -1374,6 +1881,26 @@ const HostPowerReactorGameplayManager = {
         const opts = options || {};
         const spec = opts.spec || {};
         return (opts.questId || spec.id || 'quest') + ':' + (opts.objectiveId || spec.objectiveId || 'objective');
+    },
+
+    _syncTutorialState() {
+        const currentGame = Core && Core.Game ? Core.Game.current : null;
+        if (this._tutorialOwnerGame === currentGame) return;
+        this._tutorialOwnerGame = currentGame;
+        this._tutorialShownKeys = {};
+        this._introShown = false;
+    },
+
+    _isGuidedTutorialSpec(spec) {
+        const source = spec || {};
+        if (source.tutorial === true) return true;
+        // Identity fallback protects the introductory quest if a future quest
+        // adapter copies only selected fields and accidentally drops tutorial.
+        return Number(source.mapId) === 11 && (
+            Number(source.sequence) === 1 ||
+            source.id === 'stage.11.host_power.01.tutorial' ||
+            source.objectiveId === 'stabilize_host_power_11_01'
+        );
     },
 
     _refreshTriggerLock(spec, distance, radius) {
@@ -1392,6 +1919,7 @@ const HostPowerReactorGameplayManager = {
     },
 
     _handleObjective(spec, context, questManager) {
+        this._syncTutorialState();
         const qm = questManager || IP2Live.QuestManager;
         if (!qm || !qm.currentObjective || !qm.distanceToObjective) return false;
         const objective = qm.currentObjective();
@@ -1404,6 +1932,7 @@ const HostPowerReactorGameplayManager = {
         const attemptKey = this._resolveAttemptKey({ spec, questId: spec.id, objectiveId: spec.objectiveId });
         if (this._activeAttempt === attemptKey || this._active) return false;
         this._activeAttempt = attemptKey;
+        const guidedTutorial = this._isGuidedTutorialSpec(spec);
         const launchOptions = {
             spec,
             questId: spec.id,
@@ -1411,7 +1940,10 @@ const HostPowerReactorGameplayManager = {
             mapId: Number(spec.mapId) || 11,
             _fromObjective: true,
             _reservedAttempt: attemptKey,
-            showIntro: !!spec.tutorial && !this._introShown,
+            guidedTutorial,
+            tutorial: guidedTutorial,
+            tutorialKey: attemptKey,
+            showIntro: guidedTutorial && !this._tutorialShownKeys[attemptKey],
         };
         if (IP2Live.GameManager && typeof IP2Live.GameManager.startGameplayNode === 'function') {
             IP2Live.GameManager.startGameplayNode('ip_host_power_reactor', launchOptions);
@@ -1433,6 +1965,7 @@ const HostPowerReactorGameplayManager = {
     },
 
     launchHostPowerReactorGameplay(options) {
+        this._syncTutorialState();
         const opts = options || {};
         const attemptKey = this._resolveAttemptKey(opts);
         const isReservedAttempt = !!(opts._reservedAttempt && opts._reservedAttempt === attemptKey);
@@ -1452,9 +1985,9 @@ const HostPowerReactorGameplayManager = {
             return false;
         }
 
-        const guidedTutorial = opts.guidedTutorial === true || opts.tutorial === true || !!(opts.spec && opts.spec.tutorial);
-        const shouldShowIntro = guidedTutorial && opts.showIntro !== false;
-        if (shouldShowIntro) this._introShown = true;
+        const guidedTutorial = opts.guidedTutorial === true || opts.tutorial === true || this._isGuidedTutorialSpec(opts.spec);
+        const tutorialKey = String(opts.tutorialKey || attemptKey);
+        const shouldShowIntro = guidedTutorial && opts.showIntro !== false && !this._tutorialShownKeys[tutorialKey];
 
         const openGameplay = () => {
             const screen = new IP2LiveHostPowerReactorGameplayScreen(Object.assign({}, opts, {
@@ -1486,8 +2019,18 @@ const HostPowerReactorGameplayManager = {
 
         const tutorial = IP2Live.IPHostPowerReactorTutorial;
         if (shouldShowIntro && tutorial && typeof tutorial.showIntro === 'function') {
-            const shown = tutorial.showIntro(scenario, openGameplay);
-            if (shown) return true;
+            let openedFromTutorial = false;
+            const openFromTutorial = () => {
+                if (openedFromTutorial) return true;
+                openedFromTutorial = true;
+                return openGameplay();
+            };
+            const shown = tutorial.showIntro(scenario, openFromTutorial);
+            if (shown || openedFromTutorial) {
+                this._tutorialShownKeys[tutorialKey] = true;
+                this._introShown = true;
+                return true;
+            }
         }
         return openGameplay();
     },
