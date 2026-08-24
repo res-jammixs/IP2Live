@@ -756,6 +756,7 @@ class IP2LiveCIDRQuarantineMatrixConnectorScreen extends Scene.Base {
         const profile = spec && spec.profile ? spec.profile : {};
         const questIndex = Number(profile.index || 1) || 1;
         const difficulty = this._difficultyProfile(questIndex);
+        if (spec && spec.tutorial === true && questIndex === 1) return this._createDefaultTutorialProblem(difficulty);
 
         for (let attempt = 0; attempt < 90; attempt++) {
             const directionWeights = this._randomDirectionWeights(questIndex, !!spec.tutorial);
@@ -846,6 +847,36 @@ class IP2LiveCIDRQuarantineMatrixConnectorScreen extends Scene.Base {
         }
 
         return this._fallbackProblem(spec, difficulty);
+    }
+
+    _createDefaultTutorialProblem(difficulty) {
+        const directionWeights = { R: 1, L: 2, U: 3, D: 4 };
+        const routes = [
+            { start: { col: 2, row: 3 }, moves: ['R', 'U'], ipAddress: '172.20.18.44', ipClass: 'B', originalCIDR: 16, targetAddedBits: 4, requiredHosts: 900 },
+            { start: { col: 2, row: 11 }, moves: ['R', 'R', 'U'], ipAddress: '192.168.60.12', ipClass: 'C', originalCIDR: 24, targetAddedBits: 5, requiredHosts: 4 },
+        ];
+        this.directionWeights = directionWeights;
+        const pairs = routes.map((entry, index) => {
+            const solutionPath = this._routeFromMoves(entry.start, entry.moves).path;
+            const targetCIDR = entry.originalCIDR + entry.targetAddedBits;
+            const ipInt = this.tools && typeof this.tools.ipToInt === 'function' ? this.tools.ipToInt(entry.ipAddress) : null;
+            return {
+                id: 'pair-' + (index + 1), label: 'PAIR ' + (index + 1), startLabel: 'A' + (index + 1), endLabel: 'B' + (index + 1),
+                start: this._cloneTile(solutionPath[0]), end: this._cloneTile(solutionPath[solutionPath.length - 1]),
+                solutionMoves: entry.moves.slice(), solutionPath: solutionPath.map((tile) => this._cloneTile(tile)),
+                ipAddress: entry.ipAddress, ipInt, ipClass: entry.ipClass, originalCIDR: entry.originalCIDR,
+                targetAddedBits: entry.targetAddedBits, targetCIDR,
+                optimizedHostBits: 32 - targetCIDR, optimizedCapacity: this._capacityForHostBits(32 - targetCIDR),
+                requiredHosts: entry.requiredHosts, allocatedCIDR: this._allocatedCIDR(ipInt, targetCIDR),
+            };
+        });
+        const solutionBufferKeys = this._buildMultiPathBufferKeys(pairs.map((pair) => pair.solutionPath));
+        return {
+            id: 'cidr-matrix-tutorial-default-v1', questIndex: 1, difficulty, directionWeights,
+            baseCIDR: pairs.map((pair) => pair.allocatedCIDR).join(' + '), zoneCount: 2, pairCount: 2, pairs,
+            viruses: [{ col: 7, row: 2 }, { col: 11, row: 4 }, { col: 14, row: 7 }, { col: 7, row: 10 }, { col: 10, row: 12 }, { col: 14, row: 14 }],
+            solutionBufferKeys,
+        };
     }
 
     async load() {
@@ -1389,10 +1420,54 @@ class IP2LiveCIDRQuarantineMatrixConnectorScreen extends Scene.Base {
         this._drawInfo(ctx, m);
         this._drawControls(ctx, m);
         this._drawVirusAlert(ctx, m);
+        this._drawTutorialFocus(ctx, m);
         if (IP2Live.DialogueManager && typeof IP2Live.DialogueManager.drawOverlay === 'function') IP2Live.DialogueManager.drawOverlay(ctx);
         if (IP2Live.GameplayCompletionPopup && typeof IP2Live.GameplayCompletionPopup.drawFor === 'function') {
             IP2Live.GameplayCompletionPopup.drawFor(this, ctx, { tick: this.animTick || 0 });
         }
+    }
+
+    _drawTutorialFocus(ctx, m) {
+        if (!this.tutorialMode) return;
+        const dialogue = IP2Live.DialogueManager && IP2Live.DialogueManager._active;
+        if (!dialogue || String(dialogue.id || '').indexOf('stage3.cidrmatrix.') !== 0) return;
+        const slide = Number(dialogue.slideIndex) || 0;
+        const sideX = m.panelX + m.panelW * 0.57;
+        const pairCount = this.problem && this.problem.pairs ? this.problem.pairs.length : 2;
+        const detailY = m.panelY + (pairCount > 2 ? 270 : 244) * m.sY;
+        const deckRect = { x: sideX, y: detailY + 12 * m.sY, w: 330 * m.sX, h: 206 * m.sY };
+        const focus = (type) => {
+            if (type === 'grid') return { label: 'FOCUS // MATRIX ROUTES', rects: [this._gridRect] };
+            if (type === 'pairs') return { label: 'FOCUS // PAIR SELECTOR', rects: this.pairRects.slice() };
+            if (type === 'target') return { label: 'FOCUS // ACTIVE HOST TARGET', rects: [deckRect] };
+            if (type === 'actions') return { label: 'FOCUS // ROUTE ACTIONS', rects: this.buttonRects.concat(this.confirmRect ? [this.confirmRect] : []) };
+            return { label: 'FOCUS // ACTIVE ROUTE', rects: [this._gridRect, deckRect] };
+        };
+        const id = String(dialogue.id);
+        let selected = focus('deck');
+        if (id.indexOf('.intro.') !== -1) selected = focus(slide === 0 ? 'grid' : (slide === 1 ? 'pairs' : (slide === 2 ? 'actions' : 'target')));
+        else if (id.indexOf('.step.') !== -1) selected = focus(id.indexOf('.submit.') !== -1 ? 'actions' : 'deck');
+        else if (id.indexOf('.feedback.') !== -1) selected = focus('grid');
+
+        const rects = selected.rects.filter(Boolean);
+        if (!rects.length) return;
+        ctx.save();
+        ctx.fillStyle = 'rgba(1, 7, 13, 0.56)';
+        ctx.fillRect(m.panelX + 4 * m.sX, m.panelY + 64 * m.sY, m.panelW - 8 * m.sX, m.panelH - 72 * m.sY);
+        for (let i = 0; i < rects.length; i++) {
+            const r = rects[i];
+            ctx.fillStyle = 'rgba(104, 143, 155, 0.16)';
+            ctx.fillRect(r.x - 5 * m.sX, r.y - 5 * m.sY, r.w + 10 * m.sX, r.h + 10 * m.sY);
+            ctx.strokeStyle = i === 0 ? '#D2B75C' : '#79CFE0';
+            ctx.lineWidth = 2 * m.sX;
+            ctx.strokeRect(r.x - 5 * m.sX, r.y - 5 * m.sY, r.w + 10 * m.sX, r.h + 10 * m.sY);
+        }
+        const first = rects[0];
+        ctx.fillStyle = '#D2B75C';
+        ctx.font = 'bold ' + Math.round(10 * m.sY) + 'px monospace';
+        ctx.textAlign = 'left';
+        ctx.fillText(selected.label, first.x, Math.max(m.panelY + 82 * m.sY, first.y - 12 * m.sY));
+        ctx.restore();
     }
 
     _metrics() {
@@ -1416,12 +1491,13 @@ class IP2LiveCIDRQuarantineMatrixConnectorScreen extends Scene.Base {
         for (let i = 0; i < pairCount; i++) {
             this.pairRects.push({ x: sideX, y: pairY + i * gap, w: 300 * m.sX, h: pairH });
         }
-        const y = m.panelY + m.panelH - 88 * m.sY;
+        const railX = m.panelX + m.panelW - 92 * m.sX;
+        const railY = m.panelY + 140 * m.sY;
         this.buttonRects = [
-            { action: 'undo', label: 'UNDO', x: sideX, y, w: 120 * m.sX, h: 42 * m.sY },
-            { action: 'clear', label: 'CLEAR', x: sideX + 138 * m.sX, y, w: 120 * m.sX, h: 42 * m.sY },
+            { action: 'undo', label: 'UNDO', icon: '↶', x: railX, y: railY, w: 64 * m.sX, h: 52 * m.sY },
+            { action: 'clear', label: 'CLEAR', icon: '×', x: railX, y: railY + 66 * m.sY, w: 64 * m.sX, h: 52 * m.sY },
         ];
-        this.confirmRect = { action: 'confirm', label: 'CONFIRM ALL', x: m.panelX + m.panelW - 246 * m.sX, y, w: 198 * m.sX, h: 42 * m.sY };
+        this.confirmRect = { action: 'confirm', label: 'CONFIRM', icon: '✓', x: railX, y: railY + 132 * m.sY, w: 64 * m.sX, h: 52 * m.sY };
     }
 
     _drawBackdrop(ctx, m) {
@@ -1488,6 +1564,7 @@ class IP2LiveCIDRQuarantineMatrixConnectorScreen extends Scene.Base {
 
     _drawInfo(ctx, m) {
         const sideX = m.panelX + m.panelW * 0.57;
+        const deckW = 330 * m.sX;
         ctx.font = 'bold ' + Math.round(14 * m.sY) + 'px monospace';
         ctx.textAlign = 'left';
         for (let i = 0; i < this.pairRects.length; i++) {
@@ -1498,30 +1575,45 @@ class IP2LiveCIDRQuarantineMatrixConnectorScreen extends Scene.Base {
             this._fillChamferRect(ctx, r.x, r.y, r.w, r.h, 7 * m.sX, selected ? 'rgba(255,216,74,0.24)' : 'rgba(35,55,75,0.72)');
             this._strokeChamferRect(ctx, r.x, r.y, r.w, r.h, 7 * m.sX, selected ? '#FFE600' : '#70E9FF', 1.3 * m.sX);
             ctx.fillStyle = selected ? '#FFFFFF' : '#D8F7FF';
-            ctx.fillText('PAIR ' + (i + 1) + '  /' + pair.originalCIDR + ' +' + stats.addedBits + ' = /' + stats.currentCIDR, r.x + 12 * m.sX, r.y + 20 * m.sY);
-            ctx.fillStyle = stats.connected ? '#96FFB8' : '#BDEEFF';
-            ctx.fillText((stats.connected ? 'LINKED' : 'OPEN') + '  ' + pair.ipClass + '  hosts ' + this._formatHosts(pair.requiredHosts), r.x + 12 * m.sX, r.y + (this.problem.pairCount > 2 ? 36 : 38) * m.sY);
+            ctx.fillText('PAIR ' + (i + 1) + '  ' + (stats.connected ? 'LINKED' : 'OPEN') + '  /' + stats.currentCIDR, r.x + 12 * m.sX, r.y + 20 * m.sY);
+            ctx.fillStyle = selected ? '#FFE600' : '#BDEEFF';
+            ctx.fillText('NEEDED HOSTS  ' + this._formatHosts(pair.requiredHosts), r.x + 12 * m.sX, r.y + (this.problem.pairCount > 2 ? 36 : 38) * m.sY);
         }
         const activeIndex = this.trace ? this._traceActivePairIndex() : this.activePairIndex;
         const activePair = this.problem.pairs[activeIndex] || this._activePair();
         const activeStats = this.trace ? this._traceStats(activeIndex) : this._pathStats(activeIndex);
-        ctx.fillStyle = '#BDEEFF';
-        ctx.font = Math.round(12 * m.sY) + 'px monospace';
+        ctx.fillStyle = '#8FF8FF';
+        ctx.font = 'bold ' + Math.round(12 * m.sY) + 'px monospace';
         const detailY = m.panelY + (this.problem.pairCount > 2 ? 270 : 244) * m.sY;
-        ctx.fillText(this.trace ? 'MATRIX CONNECTION REPLAY' : this._directionWeightLine(), sideX, detailY);
-        ctx.fillText('Active: ' + activePair.ipAddress + '/' + activePair.originalCIDR + '  Class ' + activePair.ipClass, sideX, detailY + 26 * m.sY);
-        ctx.fillText(this.tutorialMode ? 'Path bits: +' + activeStats.addedBits + '  CIDR /' + activeStats.currentCIDR + '  Capacity: ' + this._formatHosts(activeStats.currentCapacity) + ' / needed ' + this._formatHosts(activePair.requiredHosts) : 'Path bits: +' + activeStats.addedBits + '  CIDR /' + activeStats.currentCIDR + '  Required hosts: ' + this._formatHosts(activePair.requiredHosts), sideX, detailY + 52 * m.sY);
+        ctx.fillText('ACTIVE PAIR // ROUTE TARGET', sideX, detailY);
+        this._fillChamferRect(ctx, sideX, detailY + 12 * m.sY, deckW, 58 * m.sY, 7 * m.sX, 'rgba(32, 51, 61, 0.82)');
+        this._strokeChamferRect(ctx, sideX, detailY + 12 * m.sY, deckW, 58 * m.sY, 7 * m.sX, '#C7A94C', 1.2 * m.sX);
+        ctx.fillStyle = '#E0C66A';
+        ctx.font = 'bold ' + Math.round(11 * m.sY) + 'px monospace';
+        ctx.fillText('NEEDED USABLE HOSTS', sideX + 12 * m.sX, detailY + 31 * m.sY);
+        ctx.font = 'bold ' + Math.round(22 * m.sY) + 'px monospace';
+        ctx.fillText(this._formatHosts(activePair.requiredHosts), sideX + 12 * m.sX, detailY + 59 * m.sY);
+        ctx.font = 'bold ' + Math.round(12 * m.sY) + 'px monospace';
+        ctx.fillStyle = '#BDEEFF';
+        ctx.fillText('IP ADDRESS  ' + activePair.ipAddress, sideX, detailY + 96 * m.sY);
+        ctx.fillText('START CIDR  /' + activePair.originalCIDR + '     CLASS ' + activePair.ipClass, sideX, detailY + 120 * m.sY);
+        ctx.fillStyle = '#FFFFFF';
+        ctx.fillText('GOAL  BORROW BITS  +' + activeStats.addedBits + ' / +' + activePair.targetAddedBits, sideX, detailY + 150 * m.sY);
+        ctx.fillStyle = '#8FF8FF';
+        ctx.fillText('→ +' + this.directionWeights.R + '    ← +' + this.directionWeights.L + '    ↑ +' + this.directionWeights.U + '    ↓ +' + this.directionWeights.D, sideX, detailY + 176 * m.sY);
+        ctx.fillStyle = '#FFE600';
+        ctx.font = 'bold ' + Math.round(15 * m.sY) + 'px monospace';
+        ctx.fillText('PATH TOTAL  +' + activeStats.addedBits + '    CIDR /' + activeStats.currentCIDR, sideX, detailY + 206 * m.sY);
         if (this.trace) {
             ctx.fillStyle = '#FFFFFF';
-            ctx.fillText(this._traceCalculationLine(activeIndex), sideX, detailY + 78 * m.sY);
-            ctx.fillText(this._traceCIDRLine(activeIndex, activeStats), sideX, detailY + 102 * m.sY);
-            ctx.fillStyle = this.trace.result.ok ? '#96FFB8' : '#FF8AA8';
-            ctx.fillText(this.trace.finished ? this._finalTraceLine() : 'Replaying pair ' + (activeIndex + 1) + ' of ' + this.problem.pairCount + '.', sideX, detailY + 126 * m.sY);
+            ctx.font = 'bold ' + Math.round(11 * m.sY) + 'px monospace';
+            ctx.fillText(this._traceCalculationLine(activeIndex), sideX, detailY + 234 * m.sY);
             return;
         }
-        this._drawVirusMeter(ctx, m, sideX, detailY + 76 * m.sY, 420 * m.sX, 18 * m.sY);
+        this._drawVirusMeter(ctx, m, sideX, detailY + 228 * m.sY, deckW, 18 * m.sY);
         ctx.fillStyle = this.statusTone === 'bad' ? '#FF8AA8' : (this.statusTone === 'good' ? '#96FFB8' : '#DAEEFF');
-        ctx.fillText(this.statusText, sideX, detailY + 124 * m.sY);
+        ctx.font = 'bold ' + Math.round(10 * m.sY) + 'px monospace';
+        ctx.fillText(this.statusText, sideX, detailY + 274 * m.sY);
     }
 
     _drawControls(ctx, m) {
@@ -1530,7 +1622,7 @@ class IP2LiveCIDRQuarantineMatrixConnectorScreen extends Scene.Base {
         ctx.font = 'bold ' + Math.round(11 * m.sY) + 'px monospace';
         ctx.fillStyle = '#DAEEFF';
         ctx.textAlign = 'left';
-        ctx.fillText('TRIES ' + this.attemptsUsed + '/' + this._attemptLimitLabel() + '   TAB pair   Drag/click path   Z undo   R clear   ENTER confirm', m.panelX + 28 * m.sX, m.panelY + m.panelH - 24 * m.sY);
+        ctx.fillText('TRIES ' + this.attemptsUsed + '/' + this._attemptLimitLabel() + '   TAB: SWITCH PAIR   DRAG / CLICK: BUILD PATH', m.panelX + 28 * m.sX, m.panelY + m.panelH - 24 * m.sY);
     }
 
     _drawVirusMeter(ctx, m, x, y, w, h) {
@@ -1823,9 +1915,11 @@ class IP2LiveCIDRQuarantineMatrixConnectorScreen extends Scene.Base {
         this._fillChamferRect(ctx, b.x, b.y, b.w, b.h, 7 * m.sX);
         this._strokeChamferRect(ctx, b.x, b.y, b.w, b.h, 7 * m.sX, '#FFE600', 1.4 * m.sX);
         ctx.fillStyle = '#FFFFFF';
-        ctx.font = 'bold ' + Math.round(13 * m.sY) + 'px monospace';
+        ctx.font = 'bold ' + Math.round(20 * m.sY) + 'px monospace';
         ctx.textAlign = 'center';
-        ctx.fillText(label, b.x + b.w * 0.5, b.y + b.h * 0.63);
+        ctx.fillText(b.icon || label, b.x + b.w * 0.5, b.y + b.h * 0.48);
+        ctx.font = 'bold ' + Math.round(7 * m.sY) + 'px monospace';
+        ctx.fillText(label, b.x + b.w * 0.5, b.y + b.h * 0.79);
     }
 
     _drawPath(ctx, m, path, color, alpha, visibleMoves) {

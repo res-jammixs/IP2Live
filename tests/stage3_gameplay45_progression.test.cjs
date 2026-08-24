@@ -219,6 +219,7 @@ function testFirstHostPowerQuestLaunchesTutorial() {
     assert.equal(pushes.length, 1, 'the gameplay should open exactly once after tutorial completion');
     assert.equal(pushes[0].guidedTutorial, true, 'the first reactor screen must remain visibly marked as training');
     assert.equal(pushes[0].options.guidedTutorial, true);
+    assert.equal(pushes[0].scenario.requiredHosts, 50, 'the guided tutorial must retain its configured host requirement');
     assert.equal(manager._tutorialShownKeys[tutorialSpec.id + ':' + tutorialSpec.objectiveId], true);
 
     pushes[0].options.onCancel({ cancelled: true });
@@ -240,6 +241,17 @@ function testFirstHostPowerQuestLaunchesTutorial() {
     assert.equal(tutorialIntros.length, 1, 'the second Map 11 quest must remain regular gameplay');
     assert.equal(pushes.length, 2);
     assert.equal(pushes[1].guidedTutorial, false);
+    const firstRegularHosts = pushes[1].scenario.requiredHosts;
+    assert.ok(firstRegularHosts >= 2 && firstRegularHosts <= 254, 'regular Class C quests must use a valid randomized target');
+
+    pushes[1].options.onCancel({ cancelled: true });
+    assert.equal(manager.launchHostPowerReactorGameplay({
+        spec: regularSpec,
+        questId: regularSpec.id,
+        objectiveId: regularSpec.objectiveId,
+        mapId: 11,
+    }), true);
+    assert.notEqual(pushes[2].scenario.requiredHosts, firstRegularHosts, 'replaying a regular Host-Power quest must draw a new host target');
 }
 
 function testHostPowerQuestLifecycle() {
@@ -305,7 +317,7 @@ function testHostPowerQuestLifecycle() {
     }), true);
     assert.equal(pushes.length, 1);
     assert.equal(pushes[0].scenario.className, 'C', 'the scenario must consume its quest specification');
-    assert.equal(pushes[0].scenario.requiredHosts, 126);
+    assert.ok(pushes[0].scenario.requiredHosts >= 2 && pushes[0].scenario.requiredHosts <= 254, 'regular quest host targets must be randomized within their class limits');
 
     pushes[0].options.onComplete({ success: true, exponent: 7, targetExponent: 7 });
     assert.deepEqual(questEvents.slice(0, 3), [

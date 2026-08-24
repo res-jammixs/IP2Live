@@ -28,6 +28,7 @@ class IP2LiveVLSMAllocatorGameplayScreen extends Scene.Base {
         this.successTimer = 0;
         this.selectedControl = 0;
         this.buttonRects = [];
+        this.tutorialMode = !!this.options.tutorialMode;
 
         this.spec = this.options.spec || {};
         this.terminalType = this.spec.terminalType || 'branch';
@@ -151,7 +152,9 @@ class IP2LiveVLSMAllocatorGameplayScreen extends Scene.Base {
         if (this.terminalType === 'core') this._drawCoreTerminal(ctx, m);
         else this._drawBranchTerminal(ctx, m);
         this._drawFooter(ctx, m);
+        this._drawTutorialFocus(ctx, m);
         ctx.restore();
+        if (IP2Live.DialogueManager && typeof IP2Live.DialogueManager.drawOverlay === 'function') IP2Live.DialogueManager.drawOverlay(ctx);
         if (IP2Live.GameplayCompletionPopup && typeof IP2Live.GameplayCompletionPopup.drawFor === 'function') {
             IP2Live.GameplayCompletionPopup.drawFor(this, ctx, { tick: this.animTick || 0 });
         }
@@ -673,6 +676,33 @@ class IP2LiveVLSMAllocatorGameplayScreen extends Scene.Base {
         complete();
     }
 
+    _drawTutorialFocus(ctx, m) {
+        if (!this.tutorialMode) return;
+        const dialogue = IP2Live.DialogueManager && IP2Live.DialogueManager._active;
+        if (!dialogue || String(dialogue.id || '').indexOf('stage4.ipvlsm.') !== 0) return;
+        const slide = Number(dialogue.slideIndex) || 0;
+        const mission = { x: m.x + 34 * m.sX, y: m.y + 82 * m.sY, w: m.w * 0.40, h: 188 * m.sY };
+        const controls = { x: m.x + m.w * 0.49, y: m.y + 92 * m.sY, w: m.w * 0.43, h: 176 * m.sY };
+        const table = { x: m.x + 34 * m.sX, y: m.y + 300 * m.sY, w: m.w - 68 * m.sX, h: 158 * m.sY };
+        const rects = slide === 0 ? [mission] : (slide === 1 ? [mission, table] : [controls]);
+        ctx.save();
+        ctx.fillStyle = 'rgba(1, 8, 12, 0.54)';
+        ctx.fillRect(m.x + 6 * m.sX, m.y + 58 * m.sY, m.w - 12 * m.sX, m.h - 72 * m.sY);
+        for (let i = 0; i < rects.length; i++) {
+            const r = rects[i];
+            ctx.fillStyle = 'rgba(92, 136, 121, 0.15)';
+            ctx.fillRect(r.x - 5 * m.sX, r.y - 5 * m.sY, r.w + 10 * m.sX, r.h + 10 * m.sY);
+            ctx.strokeStyle = i === 0 ? '#C8AE63' : '#79C9B3';
+            ctx.lineWidth = 2 * m.sX;
+            ctx.strokeRect(r.x - 5 * m.sX, r.y - 5 * m.sY, r.w + 10 * m.sX, r.h + 10 * m.sY);
+        }
+        ctx.fillStyle = '#C8AE63';
+        ctx.font = 'bold ' + Math.round(10 * m.sX) + 'px monospace';
+        ctx.textAlign = 'left';
+        ctx.fillText(slide === 0 ? 'FOCUS // BRANCH HOST TARGET' : (slide === 1 ? 'FOCUS // VLSM PLAN' : 'FOCUS // CIDR + BLOCK CONTROLS'), rects[0].x, Math.max(m.y + 72 * m.sY, rects[0].y - 12 * m.sY));
+        ctx.restore();
+    }
+
     _cancel() {
         if (this.finished) return;
         this.finished = true;
@@ -1040,6 +1070,7 @@ const VLSMAllocatorGameplayManager = {
                 spec: spec,
                 scenario: self.scenario(),
                 state: self.state(),
+                tutorialMode: !!spec.tutorial,
                 onMistake: function (mistake, done) { return self._onMistake(opts, mistake, done); },
                 onComplete: function (result) { return self._onComplete(opts, result); },
                 onCancel: function () { return self._onCancel(opts); },
@@ -1049,6 +1080,9 @@ const VLSMAllocatorGameplayManager = {
                 self._playMusicZone('GAMEPLAY_1');
                 if (Manager && Manager.Stack && typeof Manager.Stack.replace === 'function') Manager.Stack.replace(screen);
                 else if (Manager && Manager.Stack && typeof Manager.Stack.push === 'function') Manager.Stack.push(screen);
+                if (shouldShowIntro && IP2Live.IPVLSMAllocatorTutorial && typeof IP2Live.IPVLSMAllocatorTutorial.showIntro === 'function') {
+                    IP2Live.IPVLSMAllocatorTutorial.showIntro(screen.scenario, function () {});
+                }
             };
 
             if (opts.useLoading !== false && self._showLoadingScreen2({
@@ -1070,13 +1104,9 @@ const VLSMAllocatorGameplayManager = {
             }
         };
 
-        const shouldShowIntro = opts.showIntro !== false && !this._introShown;
-        if (shouldShowIntro && IP2Live.IPVLSMAllocatorTutorial && typeof IP2Live.IPVLSMAllocatorTutorial.showIntro === 'function') {
-            this._introShown = true;
-            IP2Live.IPVLSMAllocatorTutorial.showIntro(this.scenario(), openSafely);
-        } else {
-            openSafely();
-        }
+        const shouldShowIntro = !!spec.tutorial && opts.showIntro !== false && !this._introShown;
+        if (shouldShowIntro) this._introShown = true;
+        openSafely();
         return true;
     },
 

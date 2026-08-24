@@ -30,6 +30,7 @@ class IP2LiveNetworkRepairGameplayScreen extends Scene.Base {
         this.errorTimer = 0;
         this.chances = 3;
         this.maxChances = 3;
+        this.tutorialMode = !!this.options.tutorialMode;
         this.particles = [];
         this.scenario = this.options.scenario || this._fallbackScenario();
         if (!Array.isArray(this.scenario.targetTokens) || !this.scenario.targetTokens.length) {
@@ -500,7 +501,37 @@ class IP2LiveNetworkRepairGameplayScreen extends Scene.Base {
         this._drawBackground(ctx, m);
         this._drawPanel(ctx, m);
         this._drawParticles(ctx);
+        this._drawTutorialFocus(ctx, m);
         if (this.phase === 'success') this._drawSuccess(ctx, m);
+        ctx.restore();
+        if (IP2Live.DialogueManager && typeof IP2Live.DialogueManager.drawOverlay === 'function') IP2Live.DialogueManager.drawOverlay(ctx);
+    }
+
+    _drawTutorialFocus(ctx, m) {
+        if (!this.tutorialMode) return;
+        var dialogue = IP2Live.DialogueManager && IP2Live.DialogueManager._active;
+        if (!dialogue || String(dialogue.id || '').indexOf('stage4.ipnetworkrepair.') !== 0) return;
+        var slide = Number(dialogue.slideIndex) || 0;
+        var rects = slide === 0
+            ? [this.gameAreaRect]
+            : (slide === 1 ? this.laneRects.slice() : (this.formulaSlotRects.length ? this.formulaSlotRects.slice() : [this.gameAreaRect]));
+        rects = rects.filter(Boolean);
+        if (!rects.length) return;
+        ctx.save();
+        ctx.fillStyle = 'rgba(1, 6, 13, 0.54)';
+        ctx.fillRect(m.panelX + 4 * m.sX, m.panelY + 96 * m.sY, m.panelW - 8 * m.sX, m.panelH - 104 * m.sY);
+        for (var i = 0; i < rects.length; i++) {
+            var r = rects[i];
+            ctx.fillStyle = 'rgba(91, 141, 156, 0.15)';
+            ctx.fillRect(r.x - 4 * m.sX, r.y - 4 * m.sY, r.w + 8 * m.sX, r.h + 8 * m.sY);
+            ctx.strokeStyle = i === 0 ? '#D2B75C' : '#79CFE0';
+            ctx.lineWidth = 2 * m.sX;
+            ctx.strokeRect(r.x - 4 * m.sX, r.y - 4 * m.sY, r.w + 8 * m.sX, r.h + 8 * m.sY);
+        }
+        ctx.fillStyle = '#D2B75C';
+        ctx.font = 'bold ' + Math.round(10 * m.sY) + 'px monospace';
+        ctx.textAlign = 'left';
+        ctx.fillText(slide === 0 ? 'FOCUS // CATCH ZONE' : (slide === 1 ? 'FOCUS // RECEPTOR LANES' : 'FOCUS // FORMULA SLOTS'), rects[0].x, Math.max(m.panelY + 110 * m.sY, rects[0].y - 12 * m.sY));
         ctx.restore();
     }
 
@@ -1187,6 +1218,7 @@ const NetworkRepairGameplayManager = {
                 spec: spec,
                 questLabel: spec.label,
                 scenario: self._scenarioForSpec(spec),
+                tutorialMode: !!spec.tutorial,
                 tutorialFeedback: !!spec.tutorial,
                 onMistake: function (mistake, done) { return self._onMistake(opts, mistake, done); },
                 onComplete: function (result) { return self._onComplete(opts, result); },
@@ -1198,6 +1230,9 @@ const NetworkRepairGameplayManager = {
                 self._playMusicZone('GAMEPLAY_1');
                 if (Manager && Manager.Stack && typeof Manager.Stack.replace === 'function') Manager.Stack.replace(screen);
                 else if (Manager && Manager.Stack && typeof Manager.Stack.push === 'function') Manager.Stack.push(screen);
+                if (shouldShowIntro && IP2Live.IPNetworkRepairTutorial && typeof IP2Live.IPNetworkRepairTutorial.showIntro === 'function') {
+                    IP2Live.IPNetworkRepairTutorial.showIntro(screen.scenario, function () {});
+                }
             };
 
             if (opts.useLoading !== false && self._showLoadingScreen2({
@@ -1219,13 +1254,9 @@ const NetworkRepairGameplayManager = {
             }
         };
 
-        var shouldShowIntro = opts.showIntro !== false && !this._introShown;
-        if (shouldShowIntro && IP2Live.IPNetworkRepairTutorial && typeof IP2Live.IPNetworkRepairTutorial.showIntro === 'function') {
-            this._introShown = true;
-            IP2Live.IPNetworkRepairTutorial.showIntro(spec, openSafely);
-        } else {
-            openSafely();
-        }
+        var shouldShowIntro = !!spec.tutorial && opts.showIntro !== false && !this._introShown;
+        if (shouldShowIntro) this._introShown = true;
+        openSafely();
         return true;
     },
 
@@ -1387,10 +1418,30 @@ const NetworkRepairGameplayManager = {
 
     _scenarioForSpec(spec) {
         var key = spec && spec.id ? spec.id : 'default';
+        if (spec && spec.tutorial) return this._tutorialScenario();
         if (this._scenarioCacheByQuest[key]) return this._clonePlain(this._scenarioCacheByQuest[key]);
         var scenario = this._buildScenario(spec || {});
         this._scenarioCacheByQuest[key] = this._clonePlain(scenario);
         return scenario;
+    },
+
+    _tutorialScenario() {
+        var base = {
+            cidr: 26, mask: '255.255.255.192', blockSize: 64, subnetIndex: 2, subnetNumber: 3,
+            parentNetworkAddress: '192.168.42.0', networkInt: this._ipToInt('192.168.42.128'),
+            networkAddress: '192.168.42.128', broadcastAddress: '192.168.42.191', firstUsable: '192.168.42.129', lastUsable: '192.168.42.190',
+        };
+        base.broadcastInt = this._ipToInt(base.broadcastAddress);
+        base.parentNetworkInt = this._ipToInt(base.parentNetworkAddress);
+        var ip = '192.168.42.150';
+        var formula = this._formulaForRole('gateway', base, ip);
+        return {
+            id: 'network-repair-tutorial-default-v1', ip: ip, cidr: 26, mask: base.mask, taskType: 'gateway', corruptedRole: 'gateway',
+            prompt: 'PC Repair Node: Catch variables for the FIRST USABLE IP.', formula: formula.formula, formulaTemplate: formula.formulaTemplate,
+            networkAddress: base.networkAddress, broadcastAddress: base.broadcastAddress, firstUsable: base.firstUsable, lastUsable: base.lastUsable,
+            expected: { value: base.firstUsable, role: 'gateway' }, expectedText: base.firstUsable, expectedFormulaText: formula.expectedFormulaText,
+            targetTokens: formula.targetTokens, decoyTokens: this._generateDecoyTokens(base, formula.targetTokens, ip), secretRow: 2, taskHelp: this._helpForRole('gateway'),
+        };
     },
 
     _buildScenario(spec) {

@@ -1872,6 +1872,10 @@ const HostPowerReactorGameplayManager = {
     _tutorialOwnerGame: null,
     _tutorialShownKeys: {},
     _triggerLocks: {},
+    // Normal quest nodes deliberately retain their class but draw a new host
+    // requirement on every launch. Keeping the last draw lets a replay never
+    // repeat the immediately preceding value by chance.
+    _regularQuestHostCounts: {},
 
     createScenario(options) {
         return IPHostPowerRules.createScenario(options || {});
@@ -1889,6 +1893,7 @@ const HostPowerReactorGameplayManager = {
         this._tutorialOwnerGame = currentGame;
         this._tutorialShownKeys = {};
         this._introShown = false;
+        this._regularQuestHostCounts = {};
     },
 
     _isGuidedTutorialSpec(spec) {
@@ -1974,10 +1979,32 @@ const HostPowerReactorGameplayManager = {
         this._active = true;
         if (opts.questId) this._activeAttempt = attemptKey;
 
+        const guidedTutorial = opts.guidedTutorial === true || opts.tutorial === true || this._isGuidedTutorialSpec(opts.spec);
         let scenario;
         try {
             const scenarioOptions = Object.assign({}, opts.spec || {}, opts);
-            scenario = opts.scenario || this.createScenario(scenarioOptions);
+            const isRegularQuest = !guidedTutorial && !!opts.spec && !opts.scenario;
+
+            if (isRegularQuest) {
+                // Quest definitions provide a class and an original balancing
+                // value. Omit that value for normal play so restarting a floor
+                // creates a fresh, valid host-capacity puzzle. Tutorial specs
+                // never enter this branch and therefore remain fixed.
+                delete scenarioOptions.requiredHosts;
+                const previousHosts = this._regularQuestHostCounts[attemptKey];
+                scenario = this.createScenario(scenarioOptions);
+                for (let draw = 0; draw < 8 && scenario.requiredHosts === previousHosts; draw++) {
+                    scenario = this.createScenario(scenarioOptions);
+                }
+                if (scenario.requiredHosts === previousHosts) {
+                    const limits = IPHostPowerRules.classConfig(scenario.className);
+                    const alternateHosts = previousHosts < limits.maxHosts ? previousHosts + 1 : previousHosts - 1;
+                    scenario = this.createScenario({ targetClass: scenario.className, requiredHosts: alternateHosts });
+                }
+                this._regularQuestHostCounts[attemptKey] = scenario.requiredHosts;
+            } else {
+                scenario = opts.scenario || this.createScenario(scenarioOptions);
+            }
         } catch (error) {
             this._active = false;
             this._activeAttempt = null;
@@ -1985,7 +2012,6 @@ const HostPowerReactorGameplayManager = {
             return false;
         }
 
-        const guidedTutorial = opts.guidedTutorial === true || opts.tutorial === true || this._isGuidedTutorialSpec(opts.spec);
         const tutorialKey = String(opts.tutorialKey || attemptKey);
         const shouldShowIntro = guidedTutorial && opts.showIntro !== false && !this._tutorialShownKeys[tutorialKey];
 

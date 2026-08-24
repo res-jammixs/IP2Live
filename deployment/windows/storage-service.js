@@ -15,7 +15,7 @@ export const DEFAULT_STORAGE_LIMITS = Object.freeze({
 const APPLICATION_ID = 'IP2Live';
 const SAVE_SCHEMA_VERSION = 2;
 const TELEMETRY_SCHEMA_VERSION = 1;
-const REPORT_EXTENSIONS = new Set(['.pdf', '.xls', '.xlsx', '.csv', '.json', '.bin']);
+const REPORT_EXTENSIONS = new Set(['.pdf', '.xls', '.xlsx', '.csv', '.json', '.zip', '.bin']);
 const WINDOWS_RESERVED_NAMES = /^(con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\.|$)/i;
 
 /**
