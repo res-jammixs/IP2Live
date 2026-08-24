@@ -55,7 +55,9 @@ const IP2LiveGameManager = {
     _checkpointDebounceTimer: null,
     _checkpointInFlight: false,
     _shutdownListenerInstalled: false,
-    enableQuestSkipButton: true,
+    enableQuestSkipButton: false,
+    // Set false to hide the Debug Map Jump entry from the pause menu.
+    enableDebugMapJumpButton: false,
     _skipQuestButtonRect: null,
 
     flowConfig: {

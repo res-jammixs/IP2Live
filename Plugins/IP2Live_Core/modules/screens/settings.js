@@ -209,10 +209,12 @@ class IP2LiveSettingsMenu extends Scene.Base {
         if (type === 'music') {
             this.musicVolume = next;
             this._applyMusicVolumeSetting();
+            this._saveAudioSettings();
             return;
         }
         this.sfxVolume = next;
         this._applySfxVolumeSetting();
+        this._saveAudioSettings();
     }
 
     _applySfxVolumeSetting() {
@@ -228,6 +230,20 @@ class IP2LiveSettingsMenu extends Scene.Base {
         IP2Live.musicVolume = volume;
         if (IP2Live.MusicManager && typeof IP2Live.MusicManager.setVolume === 'function') {
             IP2Live.MusicManager.setVolume(volume);
+        }
+    }
+
+    _saveAudioSettings() {
+        try {
+            if (typeof localStorage === 'undefined') return false;
+            localStorage.setItem('IP2Live.audio-settings.v1', JSON.stringify({
+                musicVolume: this.musicVolume / 100,
+                sfxVolume: this.sfxVolume / 100,
+            }));
+            return true;
+        } catch (error) {
+            console.warn('[IP2Live] Audio settings could not be saved:', error);
+            return false;
         }
     }
 
