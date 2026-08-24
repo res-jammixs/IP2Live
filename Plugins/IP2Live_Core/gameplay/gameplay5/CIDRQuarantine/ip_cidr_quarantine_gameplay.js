@@ -54,6 +54,7 @@ class IP2LiveCIDRQuarantineGameplayScreen extends Scene.Base {
         const profile = spec && spec.profile ? spec.profile : {};
         const questIndex = Number(profile.index || 1) || 1;
         const difficulty = this._difficultyProfile(questIndex);
+        if (spec && spec.tutorial === true && questIndex === 1) return this._createDefaultTutorialProblem(difficulty);
 
         for (let attempt = 0; attempt < 80; attempt++) {
             const directionWeights = this._randomDirectionWeights(questIndex, !!spec.tutorial);
@@ -114,6 +115,38 @@ class IP2LiveCIDRQuarantineGameplayScreen extends Scene.Base {
         }
 
         return this._fallbackProblem(spec, difficulty);
+    }
+
+    _createDefaultTutorialProblem(difficulty) {
+        const start = { col: 3, row: 11 };
+        const solutionPath = [start, { col: 4, row: 11 }, { col: 5, row: 11 }, { col: 6, row: 11 }, { col: 6, row: 10 }];
+        const ipAddress = '192.168.42.10';
+        const ipInt = this.tools && typeof this.tools.ipToInt === 'function' ? this.tools.ipToInt(ipAddress) : null;
+        const solutionBufferKeys = this._buildSolutionBufferKeys(solutionPath);
+        return {
+            id: 'cidr-quarantine-tutorial-default-v1',
+            questIndex: 1,
+            difficulty,
+            directionWeights: { R: 1, L: 2, U: 3, D: 4 },
+            start: this._cloneTile(start),
+            end: this._cloneTile(solutionPath[solutionPath.length - 1]),
+            viruses: [{ col: 1, row: 2 }, { col: 8, row: 2 }, { col: 11, row: 4 }, { col: 13, row: 8 }, { col: 1, row: 13 }, { col: 10, row: 13 }],
+            solutionPath: solutionPath.map((tile) => this._cloneTile(tile)),
+            solutionMoves: ['R', 'R', 'R', 'U'],
+            solutionBufferKeys,
+            ipAddress,
+            ipInt,
+            ipClass: 'C',
+            originalCIDR: 24,
+            requiredHosts: 50,
+            targetAddedBits: 6,
+            targetHostBits: 6,
+            borrowedBits: 2,
+            targetCIDR: 26,
+            optimizedHostBits: 6,
+            optimizedCapacity: 62,
+            allocatedCIDR: this._allocatedCIDR(ipInt, 26),
+        };
     }
 
     _normalizeHostPowerProblem() {
@@ -514,12 +547,57 @@ class IP2LiveCIDRQuarantineGameplayScreen extends Scene.Base {
         this._drawControls(ctx, m);
         this._drawStatus(ctx, m);
         this._drawVirusAlert(ctx, m);
+        this._drawTutorialFocus(ctx, m);
         if (IP2Live.DialogueManager && typeof IP2Live.DialogueManager.drawOverlay === 'function') {
             IP2Live.DialogueManager.drawOverlay(ctx);
         }
         if (IP2Live.GameplayCompletionPopup && typeof IP2Live.GameplayCompletionPopup.drawFor === 'function') {
             IP2Live.GameplayCompletionPopup.drawFor(this, ctx, { tick: this.animTick || 0 });
         }
+    }
+
+    _drawTutorialFocus(ctx, m) {
+        if (!this.tutorialMode) return;
+        const dialogue = IP2Live.DialogueManager && IP2Live.DialogueManager._active;
+        if (!dialogue || !dialogue.id) return;
+        const id = String(dialogue.id);
+        if (id.indexOf('stage3.cidrquarantine.') !== 0) return;
+        const slide = Number(dialogue.slideIndex) || 0;
+        const infoX = m.panelX + m.panelW * 0.56;
+        const infoY = m.panelY + 106 * m.sY;
+        const deckW = 350 * m.sX;
+        const focus = (type) => {
+            if (type === 'grid') return { label: 'FOCUS // ROUTE GRID', rects: [this._gridRect] };
+            if (type === 'target') return { label: 'FOCUS // GIVEN HOST TARGET', rects: [{ x: infoX, y: infoY + 14 * m.sY, w: deckW, h: 122 * m.sY }] };
+            if (type === 'moves') return { label: 'FOCUS // DIRECTION VALUES', rects: [{ x: infoX, y: infoY + 158 * m.sY, w: deckW, h: 74 * m.sY }] };
+            if (type === 'actions') return { label: 'FOCUS // PATH ACTIONS', rects: this.buttonRects.concat(this.hostPowerToolRect ? [this.hostPowerToolRect] : []) };
+            return { label: 'FOCUS // SAFE ROUTE', rects: [this._gridRect, { x: infoX, y: infoY + 14 * m.sY, w: deckW, h: 234 * m.sY }] };
+        };
+        let selected = focus('deck');
+        if (id.indexOf('.intro.') !== -1) selected = focus(slide === 0 ? 'grid' : (slide === 1 ? 'moves' : 'target'));
+        else if (id.indexOf('.step.') !== -1) selected = focus(slide === 0 && id.indexOf('.step.1.') !== -1 ? 'grid' : (id.indexOf('.step.4.') !== -1 ? 'actions' : 'deck'));
+        else if (id.indexOf('.feedback.') !== -1) selected = focus('grid');
+
+        const rects = selected.rects.filter(Boolean);
+        if (!rects.length) return;
+        ctx.save();
+        ctx.fillStyle = 'rgba(1, 7, 13, 0.56)';
+        ctx.fillRect(m.panelX + 4 * m.sX, m.panelY + 64 * m.sY, m.panelW - 8 * m.sX, m.panelH - 72 * m.sY);
+        ctx.globalCompositeOperation = 'source-over';
+        for (let i = 0; i < rects.length; i++) {
+            const r = rects[i];
+            ctx.fillStyle = 'rgba(104, 143, 155, 0.16)';
+            ctx.fillRect(r.x - 5 * m.sX, r.y - 5 * m.sY, r.w + 10 * m.sX, r.h + 10 * m.sY);
+            ctx.strokeStyle = i === 0 ? '#D2B75C' : '#79CFE0';
+            ctx.lineWidth = 2 * m.sX;
+            ctx.strokeRect(r.x - 5 * m.sX, r.y - 5 * m.sY, r.w + 10 * m.sX, r.h + 10 * m.sY);
+        }
+        const first = rects[0];
+        ctx.fillStyle = '#D2B75C';
+        ctx.font = 'bold ' + Math.round(10 * m.sY) + 'px monospace';
+        ctx.textAlign = 'left';
+        ctx.fillText(selected.label, first.x, Math.max(m.panelY + 82 * m.sY, first.y - 12 * m.sY));
+        ctx.restore();
     }
 
     _openHostPowerTool() {
@@ -579,7 +657,8 @@ class IP2LiveCIDRQuarantineGameplayScreen extends Scene.Base {
     }
 
     _buildInteractionRects(m) {
-        const baseY = m.panelY + m.panelH - 92 * m.sY;
+        const railX = m.panelX + m.panelW - 100 * m.sX;
+        const railY = m.panelY + 142 * m.sY;
         this.hostPowerToolRect = {
             action: 'host_power_tool',
             x: m.panelX + m.panelW - 186 * m.sX,
@@ -588,9 +667,9 @@ class IP2LiveCIDRQuarantineGameplayScreen extends Scene.Base {
             h: 36 * m.sY,
         };
         this.buttonRects = [
-            { action: 'undo', label: 'UNDO', x: m.panelX + 575 * m.sX, y: baseY, w: 116 * m.sX, h: 42 * m.sY },
-            { action: 'clear', label: 'CLEAR', x: m.panelX + 713 * m.sX, y: baseY, w: 116 * m.sX, h: 42 * m.sY },
-            { action: 'confirm', label: 'CONFIRM PATH', x: m.panelX + 916 * m.sX, y: baseY, w: 214 * m.sX, h: 42 * m.sY },
+            { action: 'undo', label: 'UNDO', icon: '↶', x: railX, y: railY, w: 72 * m.sX, h: 52 * m.sY },
+            { action: 'clear', label: 'CLEAR', icon: '×', x: railX, y: railY + 66 * m.sY, w: 72 * m.sX, h: 52 * m.sY },
+            { action: 'confirm', label: 'CONFIRM', icon: '✓', x: railX, y: railY + 132 * m.sY, w: 72 * m.sX, h: 52 * m.sY },
         ];
         this.controlRects = {};
         for (let i = 0; i < this.buttonRects.length; i++) this.controlRects[this.buttonRects[i].action] = this.buttonRects[i];
@@ -707,47 +786,49 @@ class IP2LiveCIDRQuarantineGameplayScreen extends Scene.Base {
     _drawControls(ctx, m) {
         const stats = this.trace ? this._traceStats() : this._pathStats();
         const infoX = m.panelX + m.panelW * 0.56;
-        const infoY = m.panelY + 118 * m.sY;
-        ctx.font = 'bold ' + Math.round(16 * m.sY) + 'px monospace';
-        ctx.fillStyle = '#FFFFFF';
+        const infoY = m.panelY + 106 * m.sY;
+        const deckW = 350 * m.sX;
         ctx.textAlign = 'left';
-        ctx.fillText(this.trace ? 'ANIMATED CIDR CALCULATION' : 'CIDR ROUTE PREVIEW', infoX, infoY);
-        ctx.font = 'bold ' + Math.round(24 * m.sY) + 'px monospace';
-        ctx.fillStyle = '#FFE600';
-        ctx.fillText('HOST POWER h = ' + stats.currentHostBits + '  ->  CIDR /' + stats.currentCIDR, infoX, infoY + 42 * m.sY);
-        ctx.font = Math.round(13 * m.sY) + 'px monospace';
+        ctx.font = 'bold ' + Math.round(12 * m.sY) + 'px monospace';
+        ctx.fillStyle = '#8FF8FF';
+        ctx.fillText('MISSION // BUILD A SAFE CIDR ROUTE', infoX, infoY);
+        this._fillChamferRect(ctx, infoX, infoY + 14 * m.sY, deckW, 72 * m.sY, 8 * m.sX, 'rgba(32, 51, 61, 0.82)');
+        this._strokeChamferRect(ctx, infoX, infoY + 14 * m.sY, deckW, 72 * m.sY, 8 * m.sX, '#C7A94C', 1.2 * m.sX);
+        ctx.fillStyle = '#E0C66A';
+        ctx.font = 'bold ' + Math.round(11 * m.sY) + 'px monospace';
+        ctx.fillText('NEEDED USABLE HOSTS', infoX + 14 * m.sX, infoY + 34 * m.sY);
+        ctx.font = 'bold ' + Math.round(28 * m.sY) + 'px monospace';
+        ctx.fillText(this._formatHosts(this.problem.requiredHosts), infoX + 14 * m.sX, infoY + 67 * m.sY);
         ctx.fillStyle = '#BDEEFF';
-        ctx.fillText('Relay: ' + this.problem.ipAddress + '/' + this.problem.originalCIDR + '   Class ' + this.problem.ipClass, infoX, infoY + 76 * m.sY);
-        ctx.fillText('Needed hosts: ' + this._formatHosts(this.problem.requiredHosts), infoX, infoY + 100 * m.sY);
-        ctx.fillText(this.tutorialMode ? 'Usable hosts: 2^' + stats.currentHostBits + ' - 2 = ' + this._formatHosts(stats.currentCapacity) : 'Build the smallest h where 2^h - 2 covers the needed hosts.', infoX, infoY + 124 * m.sY);
-        if (this.trace) {
-            ctx.fillStyle = '#FFFFFF';
-            ctx.fillText(this._traceCalculationLine(), infoX, infoY + 154 * m.sY);
-            ctx.fillText(this._traceCIDRLine(stats), infoX, infoY + 184 * m.sY);
-            ctx.fillStyle = this.trace.result.ok ? '#79FFB6' : '#FF4D7D';
-            ctx.fillText(this.trace.finished ? this._finalTraceLine() : (this.tutorialMode ? 'Capacity preview: ' + this._formatHosts(stats.currentCapacity) + ' / optimized ' + this._formatHosts(this.problem.optimizedCapacity) : 'Replaying connector route.'), infoX, infoY + 214 * m.sY);
-        } else {
-            ctx.fillStyle = this.statusTone === 'bad' ? '#FF4D7D' : (this.statusTone === 'good' ? '#79FFB6' : '#FFFFFF');
-            ctx.fillText('Path tiles: ' + this.path.length + '   Connected: ' + (this._pathStats().connected ? 'YES' : 'NO'), infoX, infoY + 154 * m.sY);
-            ctx.fillText(this.statusText, infoX, infoY + 184 * m.sY);
-            ctx.fillStyle = '#BDEEFF';
-            ctx.fillText(this._directionWeightLine(), infoX, infoY + 214 * m.sY);
-        }
-        this._drawVirusMeter(ctx, m, infoX, infoY + 242 * m.sY, 430 * m.sX, 18 * m.sY);
+        ctx.font = 'bold ' + Math.round(13 * m.sY) + 'px monospace';
+        ctx.fillText('IP ADDRESS  ' + this.problem.ipAddress, infoX, infoY + 112 * m.sY);
+        ctx.fillText('START CIDR  /' + this.problem.originalCIDR + '     CLASS ' + this.problem.ipClass, infoX, infoY + 136 * m.sY);
+        ctx.fillStyle = '#FFFFFF';
+        ctx.fillText('GOAL  HOST POWER h  ' + stats.currentHostBits + ' / ' + this.problem.targetHostBits, infoX, infoY + 170 * m.sY);
+        ctx.fillStyle = '#BDEEFF';
+        ctx.fillText('BORROWED BITS  +' + stats.borrowedBits + ' / +' + this.problem.borrowedBits, infoX, infoY + 194 * m.sY);
+        ctx.fillStyle = '#8FF8FF';
+        ctx.fillText('→ +' + this.directionWeights.R + '    ← +' + this.directionWeights.L + '    ↑ +' + this.directionWeights.U + '    ↓ +' + this.directionWeights.D, infoX, infoY + 220 * m.sY);
+        ctx.fillStyle = '#FFE600';
+        ctx.font = 'bold ' + Math.round(16 * m.sY) + 'px monospace';
+        ctx.fillText('PATH TOTAL h=' + stats.addedBits + '    CIDR /' + stats.currentCIDR, infoX, infoY + 248 * m.sY);
+        this._drawVirusMeter(ctx, m, infoX, infoY + 274 * m.sY, deckW, 18 * m.sY);
+        ctx.font = 'bold ' + Math.round(11 * m.sY) + 'px monospace';
+        ctx.fillStyle = this.statusTone === 'bad' ? '#FF4D7D' : (this.statusTone === 'good' ? '#79FFB6' : '#BDEEFF');
+        ctx.fillText(this.trace ? this._traceCalculationLine() : this.statusText, infoX, infoY + 324 * m.sY);
 
         for (let i = 0; i < this.buttonRects.length; i++) this._drawButton(ctx, this.buttonRects[i], m, this.buttonRects[i].label);
         ctx.font = 'bold ' + Math.round(11 * m.sY) + 'px monospace';
         ctx.fillStyle = '#DAEEFF';
         ctx.textAlign = 'center';
-        ctx.fillText('PATH TOOLS', this.buttonRects[0].x + 128 * m.sX, this.buttonRects[0].y - 12 * m.sY);
-        ctx.fillText('VALIDATION', this.buttonRects[2].x + 107 * m.sX, this.buttonRects[2].y - 12 * m.sY);
+        ctx.fillText('ACTIONS', this.buttonRects[0].x + 36 * m.sX, this.buttonRects[0].y - 12 * m.sY);
     }
 
     _drawStatus(ctx, m) {
         ctx.font = 'bold ' + Math.round(12 * m.sY) + 'px monospace';
         ctx.fillStyle = '#8FF8FF';
         ctx.textAlign = 'left';
-        ctx.fillText('TRIES ' + this.attemptsUsed + '/' + this._attemptLimitLabel() + '   Drag/click path   H: host tool   Z: undo   R: clear   ENTER: confirm', m.panelX + 30 * m.sX, m.panelY + m.panelH - 28 * m.sY);
+        ctx.fillText('TRIES ' + this.attemptsUsed + '/' + this._attemptLimitLabel() + '   DRAG / CLICK TO BUILD PATH   H: HOST CALC', m.panelX + 30 * m.sX, m.panelY + m.panelH - 28 * m.sY);
     }
 
     _drawVirusAlert(ctx, m) {
@@ -794,9 +875,11 @@ class IP2LiveCIDRQuarantineGameplayScreen extends Scene.Base {
         this._fillChamferRect(ctx, b.x, b.y, b.w, b.h, 7 * m.sX);
         this._strokeChamferRect(ctx, b.x, b.y, b.w, b.h, 7 * m.sX, '#70E9FF', 1.5 * m.sX);
         ctx.fillStyle = '#FFFFFF';
-        ctx.font = 'bold ' + Math.round(13 * m.sY) + 'px monospace';
+        ctx.font = 'bold ' + Math.round(20 * m.sY) + 'px monospace';
         ctx.textAlign = 'center';
-        ctx.fillText(label, b.x + b.w * 0.5, b.y + b.h * 0.63);
+        ctx.fillText(b.icon || label, b.x + b.w * 0.5, b.y + b.h * 0.48);
+        ctx.font = 'bold ' + Math.round(8 * m.sY) + 'px monospace';
+        ctx.fillText(label, b.x + b.w * 0.5, b.y + b.h * 0.79);
     }
 
     _handlePathTile(tile) {

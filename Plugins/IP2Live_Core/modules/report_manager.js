@@ -6,7 +6,10 @@
  */
 
 const IP2LiveReportManager = {
-    VERSION: 'report-manager-20260821-05',
+    VERSION: 'report-manager-20260824-06',
+    // This is the required recipient password for every report package.  Keeping
+    // it in one place makes a future credential rotation deliberate and auditable.
+    EXPORT_PASSWORD: '2627-IT228-G0102',
     _failedTelemetry: [],
 
     async boot() {
@@ -98,35 +101,37 @@ const IP2LiveReportManager = {
         });
 
         const exported = [];
-        const archivedPaths = [];
+        const packageEntries = [];
         if (format === 'pdf' || format === 'both') {
             const pdfBlob = await this._buildPdfBlob(dto);
-            const archivedPdf = await this._archiveReportBlob(pdfBlob, baseName + '.pdf');
-            if (archivedPdf && archivedPdf.path) archivedPaths.push(archivedPdf.path);
-            this._downloadBlob(pdfBlob, baseName + '.pdf');
+            packageEntries.push({ name: baseName + '.pdf', blob: pdfBlob });
             exported.push('pdf');
         }
         if (format === 'excel' || format === 'both' || format === 'xlsx') {
             const xlsBlob = this._buildExcelXmlBlob(dto);
-            const archivedXls = await this._archiveReportBlob(xlsBlob, baseName + '.xls');
-            if (archivedXls && archivedXls.path) archivedPaths.push(archivedXls.path);
-            this._downloadBlob(xlsBlob, baseName + '.xls');
+            // Excel 2003 XML has no interoperable in-file password option. It is
+            // therefore only ever delivered inside the encrypted ZIP package.
+            packageEntries.push({ name: baseName + '.xls', blob: xlsBlob });
             exported.push('excel');
         }
         if (!exported.length) {
             const fallback = this._buildExcelXmlBlob(dto);
-            const archivedFallback = await this._archiveReportBlob(fallback, baseName + '.xls');
-            if (archivedFallback && archivedFallback.path) archivedPaths.push(archivedFallback.path);
-            this._downloadBlob(fallback, baseName + '.xls');
+            packageEntries.push({ name: baseName + '.xls', blob: fallback });
             exported.push('excel');
         }
         const evidenceBlob = new Blob([JSON.stringify(dto, null, 2)], { type: 'application/json' });
-        const archivedEvidence = await this._archiveReportBlob(evidenceBlob, baseName + '.json');
-        if (archivedEvidence && archivedEvidence.path) archivedPaths.push(archivedEvidence.path);
+        packageEntries.push({ name: baseName + '_evidence.json', blob: evidenceBlob });
+        const packageName = baseName + '_PASSWORD_PROTECTED.zip';
+        const packageBlob = await this._buildPasswordProtectedZipBlob(packageEntries, this.EXPORT_PASSWORD);
+        const archivedPackage = await this._archiveReportBlob(packageBlob, packageName);
+        const archivedPaths = archivedPackage && archivedPackage.path ? [archivedPackage.path] : [];
+        this._downloadBlob(packageBlob, packageName);
         return {
             ok: true,
             exported: exported,
             archivedPaths: archivedPaths,
+            passwordProtected: true,
+            packageFilename: packageName,
             report: dto,
         };
     },
@@ -225,6 +230,174 @@ const IP2LiveReportManager = {
         const result = await desktopStorage.saveReportBlob(blob, filename);
         if (!result || result.ok === false) throw new Error('The report could not be archived to local system files.');
         return result;
+    },
+
+    /** @private Build a standard, password-protected ZIP package for report delivery. */
+    async _buildPasswordProtectedZipBlob(entries, password) {
+        const sourceEntries = Array.isArray(entries) ? entries.filter(Boolean) : [];
+        if (!sourceEntries.length) throw new Error('A protected report package needs at least one file.');
+        const prepared = [];
+        for (let i = 0; i < sourceEntries.length; i++) {
+            const source = sourceEntries[i];
+            const name = this._safeZipEntryName(source.name, 'IP2Live_Report_' + (i + 1) + '.bin');
+            const bytes = await this._blobOrBytesToUint8Array(source.blob || source.bytes || source.data);
+            prepared.push({ name: name, nameBytes: this._asciiBytes(name), bytes: bytes });
+        }
+
+        const now = new Date();
+        const dosTime = ((now.getHours() << 11) | (now.getMinutes() << 5) | Math.floor(now.getSeconds() / 2)) & 0xFFFF;
+        const dosDate = (((Math.max(1980, now.getFullYear()) - 1980) << 9) | ((now.getMonth() + 1) << 5) | now.getDate()) & 0xFFFF;
+        const localChunks = [];
+        const centralChunks = [];
+        let offset = 0;
+
+        for (let i = 0; i < prepared.length; i++) {
+            const entry = prepared[i];
+            const crc = this._zipCrc32(entry.bytes);
+            const encryptedBytes = this._zipEncryptTraditional(entry.bytes, password, (crc >>> 24) & 0xFF);
+            const compressedSize = encryptedBytes.length;
+            const localHeader = new Uint8Array(30);
+            this._zipWriteUint32(localHeader, 0, 0x04034B50);
+            this._zipWriteUint16(localHeader, 4, 20);
+            this._zipWriteUint16(localHeader, 6, 0x0001);
+            this._zipWriteUint16(localHeader, 8, 0);
+            this._zipWriteUint16(localHeader, 10, dosTime);
+            this._zipWriteUint16(localHeader, 12, dosDate);
+            this._zipWriteUint32(localHeader, 14, crc);
+            this._zipWriteUint32(localHeader, 18, compressedSize);
+            this._zipWriteUint32(localHeader, 22, entry.bytes.length);
+            this._zipWriteUint16(localHeader, 26, entry.nameBytes.length);
+            this._zipWriteUint16(localHeader, 28, 0);
+            localChunks.push(localHeader, entry.nameBytes, encryptedBytes);
+
+            const centralHeader = new Uint8Array(46);
+            this._zipWriteUint32(centralHeader, 0, 0x02014B50);
+            this._zipWriteUint16(centralHeader, 4, 20);
+            this._zipWriteUint16(centralHeader, 6, 20);
+            this._zipWriteUint16(centralHeader, 8, 0x0001);
+            this._zipWriteUint16(centralHeader, 10, 0);
+            this._zipWriteUint16(centralHeader, 12, dosTime);
+            this._zipWriteUint16(centralHeader, 14, dosDate);
+            this._zipWriteUint32(centralHeader, 16, crc);
+            this._zipWriteUint32(centralHeader, 20, compressedSize);
+            this._zipWriteUint32(centralHeader, 24, entry.bytes.length);
+            this._zipWriteUint16(centralHeader, 28, entry.nameBytes.length);
+            this._zipWriteUint16(centralHeader, 30, 0);
+            this._zipWriteUint16(centralHeader, 32, 0);
+            this._zipWriteUint16(centralHeader, 34, 0);
+            this._zipWriteUint16(centralHeader, 36, 0);
+            this._zipWriteUint32(centralHeader, 38, 0);
+            this._zipWriteUint32(centralHeader, 42, offset);
+            centralChunks.push(centralHeader, entry.nameBytes);
+            offset += localHeader.length + entry.nameBytes.length + encryptedBytes.length;
+        }
+
+        const centralBytes = this._concatBytes(centralChunks);
+        const end = new Uint8Array(22);
+        this._zipWriteUint32(end, 0, 0x06054B50);
+        this._zipWriteUint16(end, 4, 0);
+        this._zipWriteUint16(end, 6, 0);
+        this._zipWriteUint16(end, 8, prepared.length);
+        this._zipWriteUint16(end, 10, prepared.length);
+        this._zipWriteUint32(end, 12, centralBytes.length);
+        this._zipWriteUint32(end, 16, offset);
+        this._zipWriteUint16(end, 20, 0);
+        return new Blob([this._concatBytes(localChunks.concat([centralBytes, end]))], { type: 'application/zip' });
+    },
+
+    /** @private Convert a Blob or typed array to the byte representation used in ZIP records. */
+    async _blobOrBytesToUint8Array(value) {
+        if (value instanceof Uint8Array) return new Uint8Array(value);
+        if (value instanceof ArrayBuffer) return new Uint8Array(value.slice(0));
+        if (ArrayBuffer.isView(value)) return new Uint8Array(value.buffer.slice(value.byteOffset, value.byteOffset + value.byteLength));
+        if (value && typeof value.arrayBuffer === 'function') return new Uint8Array(await value.arrayBuffer());
+        throw new Error('The report package contains an invalid file payload.');
+    },
+
+    /** @private Keep ZIP entry names portable and prevent folder traversal inside the package. */
+    _safeZipEntryName(value, fallback) {
+        let name = String(value || '').replace(/[\\/]+/g, '_').replace(/[\x00-\x1F<>:"|?*]/g, '_');
+        name = name.replace(/[^\x20-\x7E]/g, '_').replace(/^\.+/, '').slice(0, 120);
+        return name || fallback;
+    },
+
+    /** @private Apply traditional PKZIP encryption; supported by common archive utilities without extra dependencies. */
+    _zipEncryptTraditional(bytes, password, checkByte) {
+        const plain = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes || []);
+        const keys = [0x12345678, 0x23456789, 0x34567890];
+        const passwordBytes = this._asciiBytes(String(password || ''));
+        for (let i = 0; i < passwordBytes.length; i++) this._zipUpdateKeys(keys, passwordBytes[i]);
+        const header = this._randomBytes(12);
+        header[11] = Number(checkByte || 0) & 0xFF;
+        const output = new Uint8Array(header.length + plain.length);
+        const encryptByte = function (byte) {
+            const temp = (keys[2] | 2) >>> 0;
+            const mask = (Math.imul(temp, (temp ^ 1) >>> 0) >>> 8) & 0xFF;
+            const encrypted = (Number(byte) & 0xFF) ^ mask;
+            this._zipUpdateKeys(keys, Number(byte) & 0xFF);
+            return encrypted;
+        }.bind(this);
+        for (let i = 0; i < header.length; i++) output[i] = encryptByte(header[i]);
+        for (let i = 0; i < plain.length; i++) output[header.length + i] = encryptByte(plain[i]);
+        return output;
+    },
+
+    /** @private Update the three CRC-derived keys used by traditional PKZIP encryption. */
+    _zipUpdateKeys(keys, plainByte) {
+        keys[0] = this._zipCrc32Update(keys[0], plainByte);
+        keys[1] = (Math.imul((keys[1] + (keys[0] & 0xFF)) >>> 0, 134775813) + 1) >>> 0;
+        keys[2] = this._zipCrc32Update(keys[2], (keys[1] >>> 24) & 0xFF);
+    },
+
+    /** @private Compute a CRC-32 checksum for a ZIP record. */
+    _zipCrc32(bytes) {
+        const data = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes || []);
+        let crc = 0xFFFFFFFF;
+        for (let i = 0; i < data.length; i++) crc = this._zipCrc32Update(crc, data[i]);
+        return (crc ^ 0xFFFFFFFF) >>> 0;
+    },
+
+    /** @private Update a CRC-32 value with one byte. */
+    _zipCrc32Update(crc, byte) {
+        let value = (Number(crc) ^ (Number(byte) & 0xFF)) >>> 0;
+        for (let i = 0; i < 8; i++) value = (value & 1) ? ((value >>> 1) ^ 0xEDB88320) >>> 0 : (value >>> 1);
+        return value >>> 0;
+    },
+
+    /** @private Write unsigned little-endian numbers for ZIP structures. */
+    _zipWriteUint16(target, offset, value) {
+        const n = Number(value) >>> 0;
+        target[offset] = n & 0xFF;
+        target[offset + 1] = (n >>> 8) & 0xFF;
+    },
+
+    /** @private Write unsigned little-endian numbers for ZIP structures. */
+    _zipWriteUint32(target, offset, value) {
+        const n = Number(value) >>> 0;
+        target[offset] = n & 0xFF;
+        target[offset + 1] = (n >>> 8) & 0xFF;
+        target[offset + 2] = (n >>> 16) & 0xFF;
+        target[offset + 3] = (n >>> 24) & 0xFF;
+    },
+
+    /** @private Concatenate typed byte arrays without converting encrypted data to text. */
+    _concatBytes(chunks) {
+        const source = Array.isArray(chunks) ? chunks : [];
+        const normalized = source.map(function (part) {
+            if (part instanceof Uint8Array) return part;
+            if (part instanceof ArrayBuffer) return new Uint8Array(part);
+            if (ArrayBuffer.isView(part)) return new Uint8Array(part.buffer, part.byteOffset, part.byteLength);
+            return new Uint8Array(0);
+        });
+        let total = 0;
+        for (let i = 0; i < normalized.length; i++) total += normalized[i].length;
+        const output = new Uint8Array(total);
+        let cursor = 0;
+        for (let i = 0; i < normalized.length; i++) {
+            output.set(normalized[i], cursor);
+            cursor += normalized[i].length;
+        }
+        return output;
     },
 
     _buildReportDTO(input) {
@@ -3023,7 +3196,72 @@ const IP2LiveReportManager = {
             polyline: function (points, options) { const pts = Array.isArray(points) ? points : []; if (!pts.length) return; const opts = options || {}; const commands = []; if (opts.stroke) commands.push(manager._colorOperator(opts.stroke, false)); if (opts.lineWidth !== undefined) commands.push(Number(opts.lineWidth).toFixed(2) + ' w'); commands.push(Number(pts[0].x).toFixed(2) + ' ' + Number(pts[0].y).toFixed(2) + ' m'); for (let i = 1; i < pts.length; i++) commands.push(Number(pts[i].x).toFixed(2) + ' ' + Number(pts[i].y).toFixed(2) + ' l'); commands.push('S'); writer.raw(commands.join('\n')); },
             polygon: function (points, options) { const pts = Array.isArray(points) ? points : []; if (!pts.length) return; const opts = options || {}; const commands = []; if (opts.fill) commands.push(manager._colorOperator(opts.fill, true)); if (opts.stroke) commands.push(manager._colorOperator(opts.stroke, false)); if (opts.lineWidth !== undefined) commands.push(Number(opts.lineWidth).toFixed(2) + ' w'); commands.push(Number(pts[0].x).toFixed(2) + ' ' + Number(pts[0].y).toFixed(2) + ' m'); for (let i = 1; i < pts.length; i++) commands.push(Number(pts[i].x).toFixed(2) + ' ' + Number(pts[i].y).toFixed(2) + ' l'); commands.push('h'); if (opts.fill && opts.stroke) commands.push('B'); else if (opts.fill) commands.push('f'); else commands.push('S'); writer.raw(commands.join('\n')); },
             text: function (x, y, size, value, options) { const opts = options || {}; const font = opts.font || 'F1'; const color = opts.color || [0, 0, 0]; const text = manager._escapePdfText(value); const commands = ['BT', manager._colorOperator(color, true), '/' + font + ' ' + Number(size || 10).toFixed(2) + ' Tf', Number(x).toFixed(2) + ' ' + Number(y).toFixed(2) + ' Td', '(' + text + ') Tj', 'ET']; writer.raw(commands.join('\n')); },
-            blob: function () { const objects = []; const catalogObj = 1; const pagesObj = 2; const gStateObj = 3; const fontRegularObj = 4; const fontBoldObj = 5; const fontMonoObj = 6; const pageStartObj = 7; const pageCount = pages.length; const kidRefs = []; const pageObjects = []; for (let i = 0; i < pageCount; i++) { const pageObj = pageStartObj + i * 2; const contentObj = pageObj + 1; kidRefs.push(pageObj + ' 0 R'); pageObjects.push({ pageObj: pageObj, contentObj: contentObj, page: pages[i] }); } objects.push({ id: catalogObj, text: catalogObj + ' 0 obj << /Type /Catalog /Pages ' + pagesObj + ' 0 R >> endobj' }); objects.push({ id: pagesObj, text: pagesObj + ' 0 obj << /Type /Pages /Kids [' + kidRefs.join(' ') + '] /Count ' + pageCount + ' >> endobj' }); objects.push({ id: gStateObj, text: gStateObj + ' 0 obj << /Type /ExtGState /ca 0.08 /CA 0.08 >> endobj' }); objects.push({ id: fontRegularObj, text: fontRegularObj + ' 0 obj << /Type /Font /Subtype /Type1 /BaseFont /Helvetica >> endobj' }); objects.push({ id: fontBoldObj, text: fontBoldObj + ' 0 obj << /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold >> endobj' }); objects.push({ id: fontMonoObj, text: fontMonoObj + ' 0 obj << /Type /Font /Subtype /Type1 /BaseFont /Courier >> endobj' }); for (let i = 0; i < pageObjects.length; i++) { const entry = pageObjects[i]; const content = entry.page.ops.join('\n'); const resources = '<< /Font << /F1 ' + fontRegularObj + ' 0 R /F2 ' + fontBoldObj + ' 0 R /F3 ' + fontMonoObj + ' 0 R >> /ExtGState << /GS1 ' + gStateObj + ' 0 R >> >>'; objects.push({ id: entry.pageObj, text: entry.pageObj + ' 0 obj << /Type /Page /Parent ' + pagesObj + ' 0 R /MediaBox [0 0 ' + state.pageWidth + ' ' + state.pageHeight + '] /Resources ' + resources + ' /Contents ' + entry.contentObj + ' 0 R >> endobj' }); objects.push({ id: entry.contentObj, text: entry.contentObj + ' 0 obj << /Length ' + content.length + ' >> stream\n' + content + '\nendstream endobj' }); } objects.sort(function (a, b) { return a.id - b.id; }); let pdf = '%PDF-1.4\n'; const offsets = [0]; for (let i = 0; i < objects.length; i++) { offsets.push(pdf.length); pdf += objects[i].text + '\n'; } const xrefOffset = pdf.length; pdf += 'xref\n0 ' + (objects.length + 1) + '\n'; pdf += '0000000000 65535 f \n'; for (let i = 1; i < offsets.length; i++) pdf += String(offsets[i]).padStart(10, '0') + ' 00000 n \n'; pdf += 'trailer << /Size ' + (objects.length + 1) + ' /Root ' + catalogObj + ' 0 R >>\nstartxref\n' + xrefOffset + '\n%%EOF'; return new Blob([pdf], { type: 'application/pdf' }); },
+            blob: function () {
+                const objects = [];
+                const catalogObj = 1;
+                const pagesObj = 2;
+                const gStateObj = 3;
+                const fontRegularObj = 4;
+                const fontBoldObj = 5;
+                const fontMonoObj = 6;
+                const pageStartObj = 7;
+                const pageCount = pages.length;
+                const encryptionObj = pageStartObj + pageCount * 2;
+                const encryption = manager._buildPdfEncryptionContext({
+                    userPassword: manager.EXPORT_PASSWORD,
+                    ownerPassword: manager._randomPdfPassword(),
+                    permissions: { print: true, modify: false, copy: false, annotate: false },
+                });
+                const kidRefs = [];
+                const pageObjects = [];
+                const object = function (id, text) {
+                    objects.push({ id: id, bytes: manager._rawAsciiBytes(text) });
+                };
+                for (let i = 0; i < pageCount; i++) {
+                    const pageObj = pageStartObj + i * 2;
+                    const contentObj = pageObj + 1;
+                    kidRefs.push(pageObj + ' 0 R');
+                    pageObjects.push({ pageObj: pageObj, contentObj: contentObj, page: pages[i] });
+                }
+                object(catalogObj, catalogObj + ' 0 obj << /Type /Catalog /Pages ' + pagesObj + ' 0 R >> endobj');
+                object(pagesObj, pagesObj + ' 0 obj << /Type /Pages /Kids [' + kidRefs.join(' ') + '] /Count ' + pageCount + ' >> endobj');
+                object(gStateObj, gStateObj + ' 0 obj << /Type /ExtGState /ca 0.08 /CA 0.08 >> endobj');
+                object(fontRegularObj, fontRegularObj + ' 0 obj << /Type /Font /Subtype /Type1 /BaseFont /Helvetica >> endobj');
+                object(fontBoldObj, fontBoldObj + ' 0 obj << /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold >> endobj');
+                object(fontMonoObj, fontMonoObj + ' 0 obj << /Type /Font /Subtype /Type1 /BaseFont /Courier >> endobj');
+                for (let i = 0; i < pageObjects.length; i++) {
+                    const entry = pageObjects[i];
+                    const content = entry.page.ops.join('\n');
+                    const resources = '<< /Font << /F1 ' + fontRegularObj + ' 0 R /F2 ' + fontBoldObj + ' 0 R /F3 ' + fontMonoObj + ' 0 R >> /ExtGState << /GS1 ' + gStateObj + ' 0 R >> >>';
+                    object(entry.pageObj, entry.pageObj + ' 0 obj << /Type /Page /Parent ' + pagesObj + ' 0 R /MediaBox [0 0 ' + state.pageWidth + ' ' + state.pageHeight + '] /Resources ' + resources + ' /Contents ' + entry.contentObj + ' 0 R >> endobj');
+                    const encryptedContent = manager._encryptPdfStream(content, encryption, entry.contentObj);
+                    objects.push({
+                        id: entry.contentObj,
+                        bytes: manager._concatBytes([
+                            manager._rawAsciiBytes(entry.contentObj + ' 0 obj << /Length ' + encryptedContent.length + ' >> stream\n'),
+                            encryptedContent,
+                            manager._rawAsciiBytes('\nendstream endobj'),
+                        ]),
+                    });
+                }
+                object(encryptionObj, encryptionObj + ' 0 obj << /Filter /Standard /V 1 /R 2 /Length 40 /O <' + encryption.O + '> /U <' + encryption.U + '> /P ' + encryption.P + ' >> endobj');
+                objects.sort(function (a, b) { return a.id - b.id; });
+
+                const chunks = [manager._rawAsciiBytes('%PDF-1.4\n')];
+                const offsets = new Array(encryptionObj + 1).fill(0);
+                let position = chunks[0].length;
+                for (let i = 0; i < objects.length; i++) {
+                    offsets[objects[i].id] = position;
+                    chunks.push(objects[i].bytes, manager._rawAsciiBytes('\n'));
+                    position += objects[i].bytes.length + 1;
+                }
+                const xrefOffset = position;
+                let xref = 'xref\n0 ' + (encryptionObj + 1) + '\n0000000000 65535 f \n';
+                for (let i = 1; i <= encryptionObj; i++) xref += String(offsets[i]).padStart(10, '0') + ' 00000 n \n';
+                xref += 'trailer << /Size ' + (encryptionObj + 1) + ' /Root ' + catalogObj + ' 0 R /Encrypt ' + encryptionObj + ' 0 R /ID [<' + encryption.fileId + '><' + encryption.fileId + '>] >>\nstartxref\n' + xrefOffset + '\n%%EOF';
+                chunks.push(manager._rawAsciiBytes(xref));
+                return new Blob([manager._concatBytes(chunks)], { type: 'application/pdf' });
+            },
             _colorOperator: function (color, fill) { const input = Array.isArray(color) ? color : [0, 0, 0]; const rgb = [Math.max(0, Math.min(1, Number(input[0] || 0) || 0)), Math.max(0, Math.min(1, Number(input[1] || 0) || 0)), Math.max(0, Math.min(1, Number(input[2] || 0) || 0))]; return rgb.map(function (v) { return Number(v).toFixed(3); }).join(' ') + (fill ? ' rg' : ' RG'); }.bind(this),
         };
         return writer;
@@ -3041,7 +3279,9 @@ const IP2LiveReportManager = {
         const ownerKey = this._pdfMd5Bytes(ownerPad).slice(0, 5);
         const oValue = this._pdfRc4(ownerKey, userPad);
         const permissionBytes = this._pdfInt32ToBytes(pValue);
-        const fileIdBytes = this._asciiBytes(fileId);
+        // The trailer serializes the identifier as a hexadecimal PDF string, so
+        // the encryption key must use those decoded bytes (not the hex text).
+        const fileIdBytes = this._hexToBytes(fileId);
         const keyMaterial = new Uint8Array(userPad.length + oValue.length + permissionBytes.length + fileIdBytes.length);
         keyMaterial.set(userPad, 0);
         keyMaterial.set(oValue, userPad.length);
@@ -3153,11 +3393,31 @@ const IP2LiveReportManager = {
     /** @private Convert a byte array to a hexadecimal string. */
     _bytesToHex(bytes) { let hex = ''; const list = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes || []); for (let i = 0; i < list.length; i++) hex += ('0' + list[i].toString(16)).slice(-2); return hex.toUpperCase(); },
 
+    /** @private Decode the hexadecimal form used by PDF trailer identifiers. */
+    _hexToBytes(value) {
+        const normalized = String(value || '').replace(/[^0-9A-Fa-f]/g, '');
+        const padded = normalized.length % 2 ? normalized + '0' : normalized;
+        const output = new Uint8Array(Math.max(1, padded.length / 2));
+        for (let i = 0; i < output.length; i++) output[i] = parseInt(padded.slice(i * 2, i * 2 + 2) || '00', 16) || 0;
+        return output;
+    },
+
     /** @private Convert a byte array to a Latin-1 string for raw PDF stream concatenation. */
     _latin1FromBytes(bytes) { const list = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes || []); let out = ''; for (let i = 0; i < list.length; i++) out += String.fromCharCode(list[i]); return out; },
 
     /** @private Convert ASCII text into bytes for PDF serialization and encryption. */
     _asciiBytes(text) { const value = this._sanitizePdfText(text); const out = new Uint8Array(value.length); for (let i = 0; i < value.length; i++) out[i] = value.charCodeAt(i) & 0x7F; return out; },
+
+    /** @private Serialize PDF structure bytes without normalizing required newlines. */
+    _rawAsciiBytes(text) {
+        const value = String(text === null || text === undefined ? '' : text);
+        const out = new Uint8Array(value.length);
+        for (let i = 0; i < value.length; i++) {
+            const code = value.charCodeAt(i);
+            out[i] = code >= 0x20 && code <= 0x7E || code === 0x0A || code === 0x0D || code === 0x09 ? code : 0x3F;
+        }
+        return out;
+    },
 
     /** @private Compute an MD5 digest, using native crypto when available and a small fallback otherwise. */
     _pdfMd5Bytes(bytes) {

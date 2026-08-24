@@ -19,7 +19,7 @@ class IP2LiveExportReportMenu extends Scene.Base {
         this.formatIndex = 2;
         this.filename = this._defaultFilename();
         this.editFilename = false;
-        this.statusLine = 'SELECT OPTIONS TO EXPORT REPORT';
+        this.statusLine = 'SELECT OPTIONS // PASSWORD-PROTECTED EXPORT';
         this.outputPaths = [];
         this.busy = false;
         this.animTick = 0;
@@ -170,7 +170,7 @@ class IP2LiveExportReportMenu extends Scene.Base {
             });
             if (result && result.ok) {
                 this.outputPaths = Array.isArray(result.archivedPaths) ? result.archivedPaths.slice() : [];
-                this.statusLine = 'EXPORT COMPLETE: ' + (result.exported || []).join(' + ').toUpperCase() +
+                this.statusLine = 'EXPORT COMPLETE: PASSWORD-PROTECTED ' + (result.exported || []).join(' + ').toUpperCase() +
                     (this.outputPaths.length ? ' // ARCHIVED IN IP2LIVE\\REPORTS' : '');
                 if (this.outputPaths.length) console.log('[IP2Live] Report archive files:', this.outputPaths);
                 Data.Systems.soundConfirmation.playSound();
@@ -274,7 +274,7 @@ class IP2LiveExportReportMenu extends Scene.Base {
 
         ctx.font = Math.round(10 * l.sX) + 'px ' + bodyFont;
         ctx.fillStyle = 'rgba(191, 247, 255, 0.86)';
-        ctx.fillText('GENERATE OPERATIONAL ARCHIVE PACKETS', (l.x + l.w * 0.5) * l.sX, (l.y + 102) * l.sY);
+        ctx.fillText('GENERATE PASSWORD-PROTECTED ARCHIVE PACKETS', (l.x + l.w * 0.5) * l.sX, (l.y + 102) * l.sY);
         ctx.fillStyle = '#FFFFFF';
         ctx.textAlign = 'left';
 
