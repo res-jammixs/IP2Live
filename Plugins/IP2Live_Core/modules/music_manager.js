@@ -23,6 +23,33 @@ var MUSIC_TRACKS = {
     GAMEPLAY_56:{ id: 17, name: 'Gameplay 5 & 6.mp3', volume: 0.58 },
 };
 
+var AUDIO_SETTINGS_STORAGE_KEY = 'IP2Live.audio-settings.v1';
+
+function _clampVolume(value, fallback) {
+    if (value === null || value === undefined || value === '') return fallback;
+    var parsed = Number(value);
+    if (!isFinite(parsed)) return fallback;
+    return Math.max(0, Math.min(1, parsed));
+}
+
+function _readSavedAudioSettings() {
+    try {
+        if (typeof localStorage === 'undefined') return null;
+        var raw = localStorage.getItem(AUDIO_SETTINGS_STORAGE_KEY);
+        if (!raw) return null;
+        var saved = JSON.parse(raw);
+        if (!saved || typeof saved !== 'object') return null;
+        return {
+            musicVolume: _clampVolume(saved.musicVolume, null),
+            sfxVolume: _clampVolume(saved.sfxVolume, null),
+        };
+    } catch (error) {
+        return null;
+    }
+}
+
+var SAVED_AUDIO_SETTINGS = _readSavedAudioSettings();
+
 var EFFECT_TRACKS = {
     TYPING: { id: 2, name: 'Typing.mp3',   volume: 0.35, halfOnly: true },
     GLITCH: { id: 3, name: 'Glitch01.mp3', volume: 0.10, halfOnly: false },
@@ -180,7 +207,9 @@ var MusicManager = {
     _requestedZone: null,
     _lastRequestedZone: null,
     _requestToken: 0,
-    _masterVolume: 0.55,
+    _masterVolume: SAVED_AUDIO_SETTINGS && SAVED_AUDIO_SETTINGS.musicVolume !== null
+        ? SAVED_AUDIO_SETTINGS.musicVolume
+        : 0.55,
     _muted: false,
     _fadeDuration: 1200,
     _registryAuditScheduled: false,
@@ -455,6 +484,10 @@ var MusicManager = {
             attachListeners(listeningHowl);
 
             try {
+                // Keep the registered Howl at the requested channel level
+                // before the engine starts it. This prevents a full-volume
+                // frame when a persisted setting has music muted.
+                if (typeof howl.volume === 'function') howl.volume(targetVolume);
                 Manager.Songs.playMusic(kind, track.id, targetVolume, 0, null);
             } catch (error) {
                 finish(false, null, error && error.message ? error.message : error);
@@ -473,6 +506,9 @@ var MusicManager = {
                 howl = nativeHowl;
                 attachListeners(listeningHowl);
             }
+            try {
+                if (typeof howl.volume === 'function') howl.volume(targetVolume);
+            } catch (e) { }
 
             // Howler emits play asynchronously. The immediate check also
             // supports lightweight editor/test shims that omit that event.
@@ -771,7 +807,9 @@ var MusicManager = {
 
 var SoundFX = {
     _registry: EFFECT_TRACKS,
-    _masterVolume: 1,
+    _masterVolume: SAVED_AUDIO_SETTINGS && SAVED_AUDIO_SETTINGS.sfxVolume !== null
+        ? SAVED_AUDIO_SETTINGS.sfxVolume
+        : 1,
     _engineAdapterInstalled: false,
 
     /**
@@ -885,6 +923,8 @@ var SoundFX = {
 
 IP2Live.MusicManager = MusicManager;
 IP2Live.SoundFX = SoundFX;
+IP2Live.musicVolume = MusicManager.getVolume();
+IP2Live.sfxVolume = SoundFX.getMasterVolume();
 SoundFX.installEngineAdapter();
 MusicManager.installGestureRetry();
 window.IP2LiveMusic = MusicManager;

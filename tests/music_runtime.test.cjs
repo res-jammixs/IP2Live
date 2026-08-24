@@ -122,6 +122,10 @@ async function main() {
     const quietConsole = {
         log() {}, info() {}, warn() {}, error() {}, table() {},
     };
+    const audioSettings = new Map([[
+        'IP2Live.audio-settings.v1',
+        JSON.stringify({ musicVolume: 0, sfxVolume: 0 }),
+    ]]);
     const context = vm.createContext({
         Common: { SONG_KIND: { MUSIC: 1, MUSIC_EFFECT: 4 } },
         Core: { Game: { current: null } },
@@ -133,6 +137,9 @@ async function main() {
         Scene: { Map: { current: null } },
         IP2Live: {},
         Howler: howler,
+        localStorage: {
+            getItem(key) { return audioSettings.get(key) || null; },
+        },
         window: {},
         console: quietConsole,
         setTimeout,
@@ -151,6 +158,8 @@ async function main() {
     vm.runInContext(source, context, { filename: 'music_manager.js' });
     const musicManager = context.IP2Live.MusicManager;
 
+    assert.equal(musicManager.getVolume(), 0, 'saved music mute must load before any zone plays');
+    assert.equal(context.IP2Live.SoundFX.getMasterVolume(), 0, 'saved SFX mute must load before any sound plays');
     assert.equal(await musicManager.play(musicManager.ZONE.MAIN_MENU), true);
     assert.equal(nativeCalls.at(-1).id, 9);
     assert.equal(nativeCalls.at(-1).kind, 1);
@@ -158,6 +167,7 @@ async function main() {
     assert.equal(musicManager.currentZone(), musicManager.ZONE.MAIN_MENU);
     assert.equal(musicManager.isPlaying(), true);
     assert.equal(howler.ctx.state, 'running');
+    assert.equal(nativeCalls.at(-1).volume, 0, 'native playback must receive the saved muted volume');
 
     assert.equal(await musicManager.play(musicManager.ZONE.TUTORIAL), true);
     assert.equal(nativeCalls.at(-1).id, 10);

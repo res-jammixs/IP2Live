@@ -11,8 +11,9 @@ class IP2LivePauseMenu extends Scene.Base {
 
     initialize() {
         this.selectedIndex = 0;
-        this.menuItems = ["RESUME", "SAVE GAME", "EXPORT REPORT", "DEBUG MAP JUMP", "MAIN MENU", "QUIT GAME"];
+        this.menuItems = this._getMenuItems();
         this.hoverIndex = -1;
+        this.settingsHover = false;
         this.animTick = 0;
         this.glitchActive = false;
         this.glitchTimer = 0;
@@ -29,6 +30,16 @@ class IP2LivePauseMenu extends Scene.Base {
         this.debugItemRects = [];
     }
 
+    _getMenuItems() {
+        const items = ["RESUME", "SAVE GAME", "EXPORT REPORT"];
+        const gameManager = IP2Live.GameManager;
+        if (!gameManager || gameManager.enableDebugMapJumpButton !== false) {
+            items.push("DEBUG MAP JUMP");
+        }
+        items.push("MAIN MENU", "QUIT GAME");
+        return items;
+    }
+
     _getLayout(SW, SH) {
         const panelW = 440;
         const panelH = 520;
@@ -38,7 +49,8 @@ class IP2LivePauseMenu extends Scene.Base {
         const btnH = 46;
         const btnGap = 10;
         const bx = panelX + (panelW - btnW) / 2;
-        const startY = panelY + 84;
+        const buttonGroupH = this.menuItems.length * btnH + Math.max(0, this.menuItems.length - 1) * btnGap;
+        const startY = panelY + (panelH - buttonGroupH) / 2;
         return { panelW, panelH, panelX, panelY, btnW, btnH, btnGap, bx, startY };
     }
 
@@ -105,6 +117,13 @@ class IP2LivePauseMenu extends Scene.Base {
             }
             return;
         }
+        const isSettingsHover = this._isSettingsButtonAt(x, y);
+        if (isSettingsHover !== this.settingsHover) {
+            this.settingsHover = isSettingsHover;
+            if (isSettingsHover) this.hoverIndex = -1;
+            Manager.Stack.requestPaintHUD = true;
+        }
+        if (isSettingsHover) return;
         const newHover = this._getButtonAt(x, y);
         if (newHover !== this.hoverIndex) {
             this.hoverIndex = newHover;
@@ -124,6 +143,10 @@ class IP2LivePauseMenu extends Scene.Base {
                 Data.Systems.soundConfirmation.playSound();
                 this._jumpToDebugStage();
             }
+            return;
+        }
+        if (this._isSettingsButtonAt(x, y)) {
+            this._openSettings();
             return;
         }
         const idx = this._getButtonAt(x, y);
@@ -150,6 +173,37 @@ class IP2LivePauseMenu extends Scene.Base {
                 y >= by * scaleY && y <= (by + layout.btnH) * scaleY) return i;
         }
         return -1;
+    }
+
+    _settingsButtonLayout(SW, SH) {
+        const layout = this._getLayout(SW, SH);
+        return {
+            x: layout.panelX + layout.panelW - 48,
+            y: layout.panelY + 16,
+            w: 28,
+            h: 28,
+        };
+    }
+
+    _isSettingsButtonAt(x, y) {
+        const SW = Common.ScreenResolution.SCREEN_X;
+        const SH = Common.ScreenResolution.SCREEN_Y;
+        const cW = Common.Platform.ctx.canvas.width;
+        const cH = Common.Platform.ctx.canvas.height;
+        const scaleX = cW / SW;
+        const scaleY = cH / SH;
+        const r = this._settingsButtonLayout(SW, SH);
+        return x >= r.x * scaleX && x <= (r.x + r.w) * scaleX &&
+            y >= r.y * scaleY && y <= (r.y + r.h) * scaleY;
+    }
+
+    _openSettings() {
+        if (!window.IP2LiveSettingsMenu) {
+            Data.Systems.soundImpossible.playSound();
+            return;
+        }
+        Data.Systems.soundConfirmation.playSound();
+        Manager.Stack.push(new IP2LiveSettingsMenu());
     }
 
     _confirmSelection() {
@@ -209,14 +263,14 @@ class IP2LivePauseMenu extends Scene.Base {
     }
 
     async _executeAction(idx) {
-        switch (idx) {
-            case 0:
+        switch (this.menuItems[idx]) {
+            case "RESUME":
                 this._resume();
                 break;
-            case 1:
+            case "SAVE GAME":
                 await this._saveGameProgress();
                 break;
-            case 2:
+            case "EXPORT REPORT":
                 if (window.IP2LiveExportReportMenu) {
                     Manager.Stack.push(new IP2LiveExportReportMenu());
                 } else if (IP2Live.GameManager && typeof IP2Live.GameManager.exportProgressReport === 'function') {
@@ -226,10 +280,10 @@ class IP2LivePauseMenu extends Scene.Base {
                     Data.Systems.soundImpossible.playSound();
                 }
                 break;
-            case 3:
+            case "DEBUG MAP JUMP":
                 this._enterDebugMode();
                 break;
-            case 4:
+            case "MAIN MENU":
                 if (IP2Live.LoadingScreen && typeof IP2Live.LoadingScreen.show === 'function') {
                     IP2Live.LoadingScreen.show({
                         mode: 'replace',
@@ -245,7 +299,7 @@ class IP2LivePauseMenu extends Scene.Base {
                     Manager.Stack.pushTitleScreen(true);
                 }
                 break;
-            case 5:
+            case "QUIT GAME":
                 this._openQuitConfirmation();
                 break;
         }
@@ -276,6 +330,7 @@ class IP2LivePauseMenu extends Scene.Base {
     }
 
     _enterDebugMode() {
+        if (IP2Live.GameManager && IP2Live.GameManager.enableDebugMapJumpButton === false) return;
         this.debugStages = this._buildDebugStages();
         this.debugIndex = Math.min(this.debugIndex, Math.max(0, this.debugStages.length - 1));
         this.debugMode = true;
@@ -696,6 +751,7 @@ class IP2LivePauseMenu extends Scene.Base {
         this._drawPauseContainer(ctx, px, py, pw, ph, scaleX, scaleY);
 
         this._drawPausedTitle(ctx, scaleX, scaleY, SW, SH, layout.panelX, layout.panelY, layout.panelW);
+        this._drawPauseSettingsIcon(ctx, scaleX, scaleY, SW, SH);
 
         const divY = (layout.panelY + 68) * scaleY;
         ctx.strokeStyle = 'rgba(0,255,255,0.25)';
@@ -976,9 +1032,49 @@ class IP2LivePauseMenu extends Scene.Base {
         ctx.textAlign = 'left';
     }
 
+    _drawPauseSettingsIcon(ctx, scaleX, scaleY, SW, SH) {
+        const r = this._settingsButtonLayout(SW, SH);
+        const x = r.x * scaleX;
+        const y = r.y * scaleY;
+        const w = r.w * scaleX;
+        const h = r.h * scaleY;
+        const cx = x + w / 2;
+        const cy = y + h / 2;
+        const radius = Math.min(w, h) * 0.28;
+
+        ctx.save();
+        ctx.fillStyle = this.settingsHover ? 'rgba(0,229,244,0.20)' : 'rgba(0,20,28,0.72)';
+        ctx.strokeStyle = this.settingsHover ? '#FFE600' : 'rgba(0,230,241,0.75)';
+        ctx.lineWidth = 1.2 * scaleX;
+        ctx.beginPath();
+        ctx.rect(x, y, w, h);
+        ctx.fill();
+        ctx.stroke();
+
+        ctx.strokeStyle = this.settingsHover ? '#FFE600' : '#00E5F4';
+        ctx.lineWidth = 1.8 * scaleX;
+        for (let i = 0; i < 8; i++) {
+            const angle = (Math.PI * 2 * i) / 8;
+            const inner = radius * 1.15;
+            const outer = radius * 1.55;
+            ctx.beginPath();
+            ctx.moveTo(cx + Math.cos(angle) * inner, cy + Math.sin(angle) * inner);
+            ctx.lineTo(cx + Math.cos(angle) * outer, cy + Math.sin(angle) * outer);
+            ctx.stroke();
+        }
+        ctx.beginPath();
+        ctx.arc(cx, cy, radius, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.arc(cx, cy, radius * 0.34, 0, Math.PI * 2);
+        ctx.fillStyle = this.settingsHover ? '#FFE600' : '#00E5F4';
+        ctx.fill();
+        ctx.restore();
+    }
+
     _drawButton(ctx, scaleX, scaleY, bx, by, bw, bh, label, isSelected, isHover, index) {
         const isActive = isSelected || isHover;
-        const isDanger = (index === 5); // 5=Quit
+        const isDanger = (label === 'QUIT GAME');
         
         IP2Live.UI.drawCyberButton({
             ctx,
