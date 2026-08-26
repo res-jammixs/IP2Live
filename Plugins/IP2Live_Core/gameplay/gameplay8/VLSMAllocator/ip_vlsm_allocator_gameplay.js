@@ -29,6 +29,10 @@ class IP2LiveVLSMAllocatorGameplayScreen extends Scene.Base {
         this.selectedControl = 0;
         this.buttonRects = [];
         this.tutorialMode = !!this.options.tutorialMode;
+        this.validationFailures = 0;
+        this.maxAttempts = this.tutorialMode
+            ? Number.MAX_SAFE_INTEGER
+            : Math.max(1, Number(this.options.maxAttempts) || 3);
 
         this.spec = this.options.spec || {};
         this.terminalType = this.spec.terminalType || 'branch';
@@ -711,34 +715,62 @@ class IP2LiveVLSMAllocatorGameplayScreen extends Scene.Base {
     }
 
     _reportMistake(branch, candidate, validation) {
-        this.state.mistakeCount = (this.state.mistakeCount || 0) + 1;
-        if (this.options && typeof this.options.onMistake === 'function') {
-            this.options.onMistake({
-                stepKey: validation.stepKey || 'vlsm_allocation',
-                issueType: validation.issueType || 'invalid_allocation',
-                expectedText: validation.expectedText || 'Valid VLSM allocation',
-                submittedText: this._formatCIDR(candidate.start, candidate.prefix),
-                branchId: branch.id,
-                branchLabel: branch.label,
-                requiredHosts: branch.hosts,
-                detail: validation.reason,
-                hint: validation.hint,
-            }, function () {});
-        }
+        this._recordValidationFailure({
+            stepKey: validation.stepKey || 'vlsm_allocation',
+            issueType: validation.issueType || 'invalid_allocation',
+            expectedText: validation.expectedText || 'Valid VLSM allocation',
+            submittedText: this._formatCIDR(candidate.start, candidate.prefix),
+            branchId: branch.id,
+            branchLabel: branch.label,
+            requiredHosts: branch.hosts,
+            detail: validation.reason,
+            hint: validation.hint,
+        });
     }
 
     _reportCoreMistake(validation) {
+        this._recordValidationFailure({
+            stepKey: 'vlsm_final_validation',
+            issueType: 'route_table_rejected',
+            expectedText: 'All branches configured with valid non-overlapping VLSM subnets',
+            submittedText: validation.reason,
+            detail: validation.reason,
+            hint: 'Visit every branch terminal and repair each subnet before committing the core gateway.',
+        });
+    }
+
+    _recordValidationFailure(mistake) {
         this.state.mistakeCount = (this.state.mistakeCount || 0) + 1;
+        this.validationFailures++;
+        const terminal = !this.tutorialMode && this.validationFailures >= this.maxAttempts;
+        const reportedMistake = Object.assign({}, mistake, this.tutorialMode ? {} : {
+            attemptsRemaining: Math.max(0, this.maxAttempts - this.validationFailures),
+        });
+        const afterFeedback = () => {
+            if (terminal) this._finishFailure(reportedMistake);
+        };
         if (this.options && typeof this.options.onMistake === 'function') {
-            this.options.onMistake({
-                stepKey: 'vlsm_final_validation',
-                issueType: 'route_table_rejected',
-                expectedText: 'All branches configured with valid non-overlapping VLSM subnets',
-                submittedText: validation.reason,
-                detail: validation.reason,
-                hint: 'Visit every branch terminal and repair each subnet before committing the core gateway.',
-            }, function () {});
-        }
+            this.options.onMistake(reportedMistake, afterFeedback);
+        } else afterFeedback();
+    }
+
+    _finishFailure(mistake) {
+        if (this.finished) return;
+        this.finished = true;
+        this.errorText = 'VALIDATION BUDGET EXHAUSTED. APEX HAS RECLAIMED THIS TERMINAL.';
+        this.errorTimer = 90;
+        const result = {
+            gameplayId: 'ip_vlsm_allocator',
+            passed: false,
+            reason: 'attempts_exhausted',
+            attemptsUsed: this.validationFailures,
+            maxAttempts: this.maxAttempts,
+            retries: this.validationFailures,
+            mistakeCount: this.state.mistakeCount || 0,
+            lastMistake: this._clone(mistake),
+        };
+        if (this.options && typeof this.options.onFailed === 'function') this.options.onFailed(result);
+        else if (this.options && typeof this.options.onCancel === 'function') this.options.onCancel();
     }
 
     _candidateAllocation(branch) {
@@ -1070,9 +1102,11 @@ const VLSMAllocatorGameplayManager = {
                 spec: spec,
                 scenario: self.scenario(),
                 state: self.state(),
-                tutorialMode: !!spec.tutorial,
+                tutorialMode: !!(opts.tutorialMode || spec.tutorial),
+                maxAttempts: opts.maxAttempts || 3,
                 onMistake: function (mistake, done) { return self._onMistake(opts, mistake, done); },
                 onComplete: function (result) { return self._onComplete(opts, result); },
+                onFailed: function (result) { return self._onFailed(opts, result); },
                 onCancel: function () { return self._onCancel(opts); },
             });
 
@@ -1120,6 +1154,7 @@ const VLSMAllocatorGameplayManager = {
                 objectiveId: opts.objectiveId || (spec && spec.objectiveId),
                 mapId: opts.mapId || 17,
                 mistakes: [mistake],
+                attemptsRemaining: Number(mistake && mistake.attemptsRemaining) || 0,
                 scenario: this.scenario(),
                 onComplete: done,
             });
@@ -1170,6 +1205,38 @@ const VLSMAllocatorGameplayManager = {
             mode: 'replace',
             status: 'Returning to Stage',
             detail: 'VLSM terminal synchronized',
+            onComplete: finalizeExit,
+        })) finalizeExit();
+    },
+
+    _onFailed(options, result) {
+        const opts = options || {};
+        const spec = opts.spec || this._defaultQuestSpec();
+        this._active = false;
+        this._activeAttempt = null;
+        this._lockUntilStepOff(spec);
+        const self = this;
+        const finalizeExit = function () {
+            if (Manager && Manager.Stack && typeof Manager.Stack.pop === 'function') Manager.Stack.pop();
+            self._restoreStageMusic();
+            if (typeof opts.onFailed === 'function') opts.onFailed(result);
+            if (IP2Live.GameManager && typeof IP2Live.GameManager.handleGameplayFailed === 'function') {
+                IP2Live.GameManager.handleGameplayFailed('ip_vlsm_allocator', {
+                    gameplayId: 'ip_vlsm_allocator',
+                    spec: spec,
+                    questId: opts.questId || (spec && spec.id),
+                    objectiveId: opts.objectiveId || (spec && spec.objectiveId),
+                    mapId: opts.mapId || (spec && spec.mapId) || 17,
+                    result: result,
+                });
+            }
+            self.resetState();
+            if (Manager && Manager.Stack) Manager.Stack.requestPaintHUD = true;
+        };
+        if (!this._showLoadingScreen2({
+            mode: 'replace',
+            status: 'VLSM Terminal Lockout',
+            detail: 'Validation budget exhausted',
             onComplete: finalizeExit,
         })) finalizeExit();
     },

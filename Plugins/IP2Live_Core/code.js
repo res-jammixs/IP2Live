@@ -837,6 +837,7 @@ IP2Live.GameStateManagerReady = (async function () {
         'game_state_manager.js',
         'darklights_state.js',
         'security_light_state.js',
+        'neural_life_force_manager.js',
     ];
     try {
         for (let i = 0; i < files.length; i++) {
@@ -1410,6 +1411,7 @@ IP2Live.ScreenModulesReady = (async function () {
         'loading-screen.js',
         'loading-screen-2.js',
         'ar-diagnostic-rewind.js',
+        'neural-life-force-game-over.js',
         'world-title.js',
         'background-screen.js',
         'confir-popup.js',

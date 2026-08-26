@@ -1007,7 +1007,8 @@ class IP2LiveQuestManager {
         const sX = cW / SW;
         const sY = cH / SH;
         const marginX = 18 * sX;
-        const marginY = 18 * sY;
+        // Neural Life Force occupies the upper-left HUD strip.
+        const marginY = 88 * sY;
         return {
             x: marginX,
             y: marginY,

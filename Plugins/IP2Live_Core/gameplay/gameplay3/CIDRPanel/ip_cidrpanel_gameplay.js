@@ -2348,7 +2348,7 @@ const CIDRPanelGameplayManager = {
             handoffKey: spec.handoffKey,
             _fromObjective: true,
             tutorialMode: isCIDRTutorial,
-            enforceAttemptLimit: mapId === 7,
+            enforceAttemptLimit: !isCIDRTutorial,
             maxAttempts: 3,
         };
 
@@ -2516,7 +2516,6 @@ const CIDRPanelGameplayManager = {
         const finalizeExit = () => {
             if (Manager && Manager.Stack && typeof Manager.Stack.pop === 'function') Manager.Stack.pop();
             this._restoreStageMusic();
-            if (Number(opts.mapId || spec.mapId) === 7) this._sendBackToCIDRTutorial(spec);
             if (typeof opts.onFailed === 'function') opts.onFailed(result);
             if (IP2Live.GameManager && typeof IP2Live.GameManager.handleGameplayFailed === 'function') {
                 IP2Live.GameManager.handleGameplayFailed('ip_cidr_binary_panel', {
