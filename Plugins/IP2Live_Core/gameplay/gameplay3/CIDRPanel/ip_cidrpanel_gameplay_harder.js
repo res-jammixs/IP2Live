@@ -377,6 +377,7 @@
                     guidedTutorial: tutorialMode && shouldShowIntro,
                     enforceAttemptLimit: !tutorialMode,
                     maxAttempts: opts.maxAttempts || 3,
+                    allowGameplayEscape: opts.allowGameplayEscape !== false,
                     mapId,
                     questId: opts.questId || spec.id,
                     objectiveId: opts.objectiveId || spec.objectiveId,

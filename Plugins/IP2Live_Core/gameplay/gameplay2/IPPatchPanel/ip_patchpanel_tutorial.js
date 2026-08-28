@@ -180,7 +180,7 @@ const IPPatchPanelTutorial = {
         const value = String(data.text || 'UNKNOWN SIGNAL');
         const isMask = String(data.kind || '').toUpperCase() === 'MASK';
         const classRanges = {
-            A: 'first octet 1-126',
+            A: 'first octet 0-127',
             B: 'first octet 128-191',
             C: 'first octet 192-223',
             D: 'first octet 224-239',

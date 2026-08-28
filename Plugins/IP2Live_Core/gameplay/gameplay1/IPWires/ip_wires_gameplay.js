@@ -1901,7 +1901,22 @@
             }
         }
 
+        _isGameplayEscapeAllowed() {
+            return !this.options || this.options.allowGameplayEscape !== false;
+        }
+
+        _rejectGameplayEscape() {
+            try {
+                if (Data && Data.Systems && Data.Systems.soundImpossible) Data.Systems.soundImpossible.playSound();
+            } catch (e) {}
+            if (Manager && Manager.Stack) Manager.Stack.requestPaintHUD = true;
+        }
+
         _cancel() {
+            if (!this._isGameplayEscapeAllowed()) {
+                this._rejectGameplayEscape();
+                return;
+            }
             if (typeof this.options.onCancel === 'function') this.options.onCancel();
         }
 
@@ -2115,6 +2130,7 @@
                 allowDuplicateTargets: false,
                 tutorialFeedback: !!opts.tutorialFeedback,
                 guidedTutorial: !!spec.tutorial,
+                allowGameplayEscape: opts.allowGameplayEscape !== false,
                 questLabel: spec.label,
                 questId: opts.questId || spec.id,
                 objectiveId: opts.objectiveId || spec.objectiveId,

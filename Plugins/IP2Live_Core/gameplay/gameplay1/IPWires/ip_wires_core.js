@@ -6,8 +6,8 @@
 
 (function () {
     const CLASS_SPECS = [
-        { className: 'A', min: 1, max: 126, color: '#FFE600', rangeText: '1.0.0.0 to 126.255.255.255', shortRange: '001-126' },
-        { className: 'B', min: 127, max: 191, color: '#2455FF', rangeText: '127.0.0.0 to 191.255.255.255', shortRange: '127-191' },
+        { className: 'A', min: 0, max: 127, color: '#FFE600', rangeText: '0.0.0.0 to 127.255.255.255', shortRange: '000-127' },
+        { className: 'B', min: 128, max: 191, color: '#2455FF', rangeText: '128.0.0.0 to 191.255.255.255', shortRange: '128-191' },
         { className: 'C', min: 192, max: 223, color: '#FF003C', rangeText: '192.0.0.0 to 223.255.255.255', shortRange: '192-223' },
         { className: 'D', min: 224, max: 239, color: '#FF3CFF', rangeText: '224.0.0.0 to 239.255.255.255', shortRange: '224-239' },
         { className: 'E', min: 240, max: 255, color: '#00FF9D', rangeText: '240.0.0.0 to 255.255.255.255', shortRange: '240-255' },

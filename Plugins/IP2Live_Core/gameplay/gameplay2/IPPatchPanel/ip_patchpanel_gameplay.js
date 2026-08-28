@@ -108,10 +108,10 @@ class IP2LivePatchPanelGameplayScreen extends Scene.Base {
 
     _buildPacketPools() {
         this.ipPool = [
-            { text: '10.4.18.77', className: 'A', kind: 'IP' },
+            { text: '0.4.18.77', className: 'A', kind: 'IP' },
             { text: '25.31.88.201', className: 'A', kind: 'IP' },
             { text: '88.200.7.19', className: 'A', kind: 'IP' },
-            { text: '126.22.44.90', className: 'A', kind: 'IP' },
+            { text: '127.22.44.90', className: 'A', kind: 'IP' },
             { text: '140.16.99.2', className: 'B', kind: 'IP' },
             { text: '172.21.8.254', className: 'B', kind: 'IP' },
             { text: '189.2.91.12', className: 'B', kind: 'IP' },
@@ -868,8 +868,23 @@ class IP2LivePatchPanelGameplayScreen extends Scene.Base {
         return true;
     }
 
+    _isGameplayEscapeAllowed() {
+        return !this.options || this.options.allowGameplayEscape !== false;
+    }
+
+    _rejectGameplayEscape() {
+        try {
+            if (Data && Data.Systems && Data.Systems.soundImpossible) Data.Systems.soundImpossible.playSound();
+        } catch (e) {}
+        if (Manager && Manager.Stack) Manager.Stack.requestPaintHUD = true;
+    }
+
     _cancel() {
         if (this.finished) return;
+        if (!this._isGameplayEscapeAllowed()) {
+            this._rejectGameplayEscape();
+            return;
+        }
         this.finished = true;
         this._playCancel();
         if (typeof this.options.onCancel === 'function') {
@@ -2581,6 +2596,7 @@ const PatchPanelGameplayManager = {
                 speedMultiplier: opts.speedMultiplier,
                 baseSpeed: opts.baseSpeed,
                 guidedTutorial: guidedTutorial,
+                allowGameplayEscape: opts.allowGameplayEscape !== false,
                 mapId: opts.mapId || (opts.spec && opts.spec.mapId) || 4,
                 questId: opts.questId || (opts.spec && opts.spec.id),
                 objectiveId: opts.objectiveId || (opts.spec && opts.spec.objectiveId),

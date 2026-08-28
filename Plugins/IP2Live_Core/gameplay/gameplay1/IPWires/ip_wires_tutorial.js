@@ -29,8 +29,8 @@
         _dialogueSerial: 0,
 
         classRanges: {
-            A: '1 to 126',
-            B: '127 to 191',
+            A: '0 to 127',
+            B: '128 to 191',
             C: '192 to 223',
             D: '224 to 239',
             E: '240 to 255',
@@ -237,8 +237,8 @@
                     '',
                     'Remember again this:',
                     '',
-                    'Class A: IP ranges from 1.0.0.0 to 126.255.255.255',
-                    'Class B: IP ranges from 127.0.0.0 to 191.255.255.255',
+                    'Class A: IP ranges from 0.0.0.0 to 127.255.255.255',
+                    'Class B: IP ranges from 128.0.0.0 to 191.255.255.255',
                     'Class C: IP ranges from 192.0.0.0 to 223.255.255.255',
                     'Class D: IP ranges from 224.0.0.0 to 239.255.255.255',
                     'Class E: IP ranges from 240.0.0.0 to 255.255.255.255',

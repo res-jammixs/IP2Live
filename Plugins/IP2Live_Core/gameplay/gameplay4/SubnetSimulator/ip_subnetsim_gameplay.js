@@ -1038,8 +1038,23 @@ class IP2LiveSubnetSimulatorGameplayScreen extends Scene.Base {
         if (typeof this.options.onCancel === 'function') this.options.onCancel();
     }
 
+    _isGameplayEscapeAllowed() {
+        return !this.options || this.options.allowGameplayEscape !== false;
+    }
+
+    _rejectGameplayEscape() {
+        try {
+            if (Data && Data.Systems && Data.Systems.soundImpossible) Data.Systems.soundImpossible.playSound();
+        } catch (e) {}
+        if (Manager && Manager.Stack) Manager.Stack.requestPaintHUD = true;
+    }
+
     _cancel() {
         if (this.finished) return;
+        if (!this._isGameplayEscapeAllowed()) {
+            this._rejectGameplayEscape();
+            return;
+        }
         this.finished = true;
         this._playCancel();
         if (typeof this.options.onCancel === 'function') {
@@ -2247,6 +2262,7 @@ const SubnetSimulatorGameplayManager = {
                 guidedTutorial: shouldShowIntro,
                 enforceAttemptLimit: !!opts.enforceAttemptLimit,
                 maxAttempts: opts.maxAttempts || 3,
+                allowGameplayEscape: opts.allowGameplayEscape !== false,
                 onComplete: (result) => this._onComplete(opts, result),
                 onFailed: (result) => this._onFailed(opts, result),
                 onCancel: () => this._onCancel(opts),

@@ -2494,7 +2494,7 @@ class IP2LiveCIDRQuarantineMatrixConnectorScreen extends Scene.Base {
             const generated = core.generateIPForClass(ipClass);
             if (generated && generated.ip) return generated.ip;
         }
-        const ranges = { A: [1, 126], B: [128, 191], C: [192, 223] };
+        const ranges = { A: [0, 127], B: [128, 191], C: [192, 223] };
         const range = ranges[ipClass] || ranges.C;
         return [this._randomInt(range[0], range[1]), this._randomInt(0, 255), this._randomInt(0, 255), this._randomInt(1, 254)].join('.');
     }

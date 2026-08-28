@@ -474,6 +474,7 @@
                 wireCount: wireCount,
                 resolvedWireCount: wireCount,
                 harderPuzzleEntries: harderPuzzleEntries.map((entry) => Object.assign({}, entry)),
+                allowGameplayEscape: opts.allowGameplayEscape !== false,
                 questLabel: spec.label,
                 questId: opts.questId || spec.id,
                 objectiveId: opts.objectiveId || spec.objectiveId,

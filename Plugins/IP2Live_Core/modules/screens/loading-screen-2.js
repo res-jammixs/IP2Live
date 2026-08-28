@@ -446,7 +446,7 @@ class IP2LiveLoadingScreen2 extends Scene.Base {
 
     _createSubnetFacts() {
         return [
-            'Class A addresses start with 1-126 in the first octet and default to /8.',
+            'Class A addresses start with 0-127 in the first octet and default to /8.',
             'Class B addresses start with 128-191 in the first octet and default to /16.',
             'Class C addresses start with 192-223 in the first octet and default to /24.',
             'To find a block size, subtract the interesting mask octet from 256.',

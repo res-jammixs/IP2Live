@@ -734,8 +734,23 @@ class IP2LiveHostPowerReactorGameplayScreen extends Scene.Base {
         } else finish();
     }
 
+    _isGameplayEscapeAllowed() {
+        return !this.options || this.options.allowGameplayEscape !== false;
+    }
+
+    _rejectGameplayEscape() {
+        try {
+            if (Data && Data.Systems && Data.Systems.soundImpossible) Data.Systems.soundImpossible.playSound();
+        } catch (e) {}
+        if (Manager && Manager.Stack) Manager.Stack.requestPaintHUD = true;
+    }
+
     _cancel(failed) {
         if (this.finished) return;
+        if (!failed && !this._isGameplayEscapeAllowed()) {
+            this._rejectGameplayEscape();
+            return;
+        }
         this.finished = true;
         this.heldLeft = false;
         this.heldRight = false;

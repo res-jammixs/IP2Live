@@ -888,8 +888,23 @@ class IP2LiveCIDRPanelGameplayScreen extends Scene.Base {
         if (Manager && Manager.Stack) Manager.Stack.pop();
     }
 
+    _isGameplayEscapeAllowed() {
+        return !this.options || this.options.allowGameplayEscape !== false;
+    }
+
+    _rejectGameplayEscape() {
+        try {
+            if (Data && Data.Systems && Data.Systems.soundImpossible) Data.Systems.soundImpossible.playSound();
+        } catch (e) {}
+        if (Manager && Manager.Stack) Manager.Stack.requestPaintHUD = true;
+    }
+
     _cancel() {
         if (this.finished) return;
+        if (!this._isGameplayEscapeAllowed()) {
+            this._rejectGameplayEscape();
+            return;
+        }
         this.finished = true;
         this._playCancel();
         if (typeof this.options.onCancel === 'function') {
@@ -2417,6 +2432,7 @@ const CIDRPanelGameplayManager = {
                 guidedTutorial: shouldShowIntro && !!opts.tutorialMode,
                 enforceAttemptLimit: !!opts.enforceAttemptLimit,
                 maxAttempts: opts.maxAttempts || 3,
+                allowGameplayEscape: opts.allowGameplayEscape !== false,
                 mapId: opts.mapId,
                 questId: opts.questId,
                 objectiveId: opts.objectiveId,

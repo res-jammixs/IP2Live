@@ -1593,7 +1593,7 @@ class IP2LiveCIDRQuarantineGameplayScreen extends Scene.Base {
             if (generated && generated.ip) return generated.ip;
         }
         const ranges = {
-            A: [1, 126],
+            A: [0, 127],
             B: [128, 191],
             C: [192, 223],
         };
