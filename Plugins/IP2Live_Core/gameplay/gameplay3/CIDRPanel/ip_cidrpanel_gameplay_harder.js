@@ -14,10 +14,11 @@
 
     class IP2LiveCIDRPanelHarderGameplayScreen extends BaseScreen {
         constructor(options) {
-            super(Object.assign({}, options || {}, {
+            const opts = options || {};
+            super(Object.assign({}, opts, {
                 gameplayId: 'ip_cidr_binary_panel_harder',
-                tutorialMode: false,
-                guidedTutorial: false,
+                tutorialMode: !!opts.tutorialMode,
+                guidedTutorial: !!opts.guidedTutorial,
             }));
         }
 
@@ -121,6 +122,10 @@
         }
 
         _resolveFailureReset() {
+            if (this.attemptsExhausted) {
+                this._failOut();
+                return;
+            }
             if (this.failCorrectionActive) return;
             this.failCorrectionActive = true;
             const rekey = this._adaptiveRekey(this.adaptiveFailureKind || 'wrong_answer');
@@ -151,7 +156,7 @@
                 questId: this.options.questId,
                 objectiveId: this.options.objectiveId,
                 mistakes: [mistake],
-                attemptsRemaining: 0,
+                attemptsRemaining: this._attemptsRemaining(),
             });
             return true;
         }
@@ -356,6 +361,7 @@
             this._active = true;
             this._activeAttempt = attemptKey;
             const mapId = Number(opts.mapId || spec.mapId) || 9;
+            const tutorialMode = !!(opts.tutorialMode || spec.tutorial || spec.harderIntro);
             const shouldShowIntro = opts.showIntro !== false && !this._introShownMaps[mapId];
             if (shouldShowIntro) this._introShownMaps[mapId] = true;
 
@@ -367,10 +373,15 @@
                     handoffKey: opts.handoffKey || spec.handoffKey,
                     adaptiveMinCIDR: opts.adaptiveMinCIDR,
                     adaptiveMaxCIDR: opts.adaptiveMaxCIDR,
+                    tutorialMode,
+                    guidedTutorial: tutorialMode && shouldShowIntro,
+                    enforceAttemptLimit: !tutorialMode,
+                    maxAttempts: opts.maxAttempts || 3,
                     mapId,
                     questId: opts.questId || spec.id,
                     objectiveId: opts.objectiveId || spec.objectiveId,
                     onComplete: (result) => this._onComplete(opts, result),
+                    onFailed: (result) => this._onFailed(opts, result),
                     onCancel: () => this._onCancel(opts),
                 });
                 const openGameplay = () => {
@@ -430,6 +441,36 @@
                 if (Manager && Manager.Stack) Manager.Stack.requestPaintHUD = true;
             };
             if (!this._showLoadingScreen2({ mode: 'replace', status: 'Loading Stage', detail: 'Returning to adaptive CIDR sector', onComplete: finalizeExit })) finalizeExit();
+        },
+
+        _onFailed(options, result) {
+            const opts = options || {};
+            const spec = opts.spec || this._defaultQuestSpec();
+            this._active = false;
+            this._activeAttempt = null;
+            this._lockUntilStepOff(spec);
+            const finalizeExit = () => {
+                if (Manager && Manager.Stack && typeof Manager.Stack.pop === 'function') Manager.Stack.pop();
+                this._restoreStageMusic();
+                if (typeof opts.onFailed === 'function') opts.onFailed(result);
+                if (IP2Live.GameManager && typeof IP2Live.GameManager.handleGameplayFailed === 'function') {
+                    IP2Live.GameManager.handleGameplayFailed('ip_cidr_binary_panel_harder', {
+                        gameplayId: 'ip_cidr_binary_panel_harder',
+                        spec,
+                        questId: opts.questId || spec.id,
+                        objectiveId: opts.objectiveId || spec.objectiveId,
+                        mapId: opts.mapId || spec.mapId || 9,
+                        result,
+                    });
+                }
+                if (Manager && Manager.Stack) Manager.Stack.requestPaintHUD = true;
+            };
+            if (!this._showLoadingScreen2({
+                mode: 'replace',
+                status: 'Adaptive CIDR Lockout',
+                detail: 'Validation budget exhausted',
+                onComplete: finalizeExit,
+            })) finalizeExit();
         },
 
         _onCancel(options) {

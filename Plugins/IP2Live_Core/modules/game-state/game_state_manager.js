@@ -352,7 +352,6 @@
 
             const events = gm.EVENT || {};
             this._unsubscribers.push(gm.on(events.MAP_ENTERED || 'map.entered', (payload) => this._onMapEntered(payload)));
-            this._unsubscribers.push(gm.on(events.GAMEPLAY_FAILED || 'gameplay.failed', (payload) => this._onGameplayFailed(payload)));
             this._unsubscribers.push(gm.on(events.GAMEPLAY_COMPLETED || 'gameplay.completed', (payload) => this._onGameplayCompleted(payload)));
             this._unsubscribers.push(gm.on(events.QUEST_OBJECTIVE_COMPLETED || 'quest.objectiveCompleted', (payload) => this._onQuestObjectiveCompleted(payload)));
             return true;
@@ -423,48 +422,11 @@
         },
 
         _onGameplayFailed(payload) {
-            const data = payload || {};
-            if (data.gameplayId !== 'ip_class_wires') return;
-
-            const spec = data.spec || {};
-            const mapId = Number(data.mapId || spec.mapId || this._currentMapId());
-            const result = data.result || {};
-            if (String(result.reason || '') !== 'attempts_exhausted') return;
-
-            if (mapId === STAGE_ONE_LEVEL_TWO_MAP_ID) {
-                const rollbackTarget = this._latestCompletedDarklightsQuestBefore(
-                    mapId,
-                    data.questId || spec.id
-                );
-                data.rollbackQuestId = rollbackTarget
-                    ? rollbackTarget.questId
-                    : (data.questId || spec.id || null);
-                data.rollbackObjectiveId = rollbackTarget
-                    ? rollbackTarget.objectiveId
-                    : (data.objectiveId || spec.objectiveId || null);
-                data.rollbackQuestLabel = rollbackTarget ? rollbackTarget.label : (spec.label || null);
-                data.darklightsDimmed = !!rollbackTarget;
-                if (rollbackTarget) {
-                    this.recordDarklightsRollback(
-                        'stage-one-level-two-wire-failure',
-                        mapId,
-                        rollbackTarget.objectiveId
-                    );
-                }
-                const security = this.recordSecurityFailure(mapId, data);
-                data.securityStrikeCount = Number(security.strikes) || 0;
-                if (security.triggered) {
-                    data.securityTriggered = this.activate(SECURITY_LIGHT_KEY, {
-                        mapId,
-                        strikeCount: data.securityStrikeCount,
-                        failedQuestId: data.questId || spec.id || null,
-                    });
-                }
-                return;
-            }
-
-            if (mapId !== STAGE_ONE_LEVEL_ONE_MAP_ID || spec.tutorial) return;
-            this.recordTutorialReturn('stage-one-wire-failure', STAGE_ONE_LEVEL_ONE_MAP_ID);
+            // Terminal quest failures are centralized in NeuralLifeForce.
+            // Keep this no-op hook for third-party states that may still call
+            // it directly, but do not apply the legacy five-strike Stage 1
+            // Security Light / map-return path.
+            return false;
         },
 
         _onGameplayCompleted(payload) {

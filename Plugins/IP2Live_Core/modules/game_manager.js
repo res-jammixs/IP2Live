@@ -57,7 +57,7 @@ const IP2LiveGameManager = {
     _shutdownListenerInstalled: false,
     enableQuestSkipButton: false,
     // Set false to hide the Debug Map Jump entry from the pause menu.
-    enableDebugMapJumpButton: false,
+    enableDebugMapJumpButton: true,
     _skipQuestButtonRect: null,
 
     flowConfig: {
@@ -94,7 +94,7 @@ const IP2LiveGameManager = {
                 level: 3,
                 spawn: { x: 6, y: 0, z: 17 },
                 worldTitle: true,
-                gameplayNodes: ['ip_class_wires_harder', 'ip_cidr_binary_panel', 'ip_subnet_simulator'],
+                gameplayNodes: ['ip_class_wires', 'ip_patch_panel_classes', 'ip_class_wires_harder'],
             },
             6: {
                 id: 6,
@@ -276,6 +276,8 @@ const IP2LiveGameManager = {
                 { id: 'stage.4.mixed.04.ip_wires', gameplayId: 'ip_class_wires', objectiveId: 'repair_stage4_ip_wires_04', title: 'REPAIR IP WIRES 04', label: 'Wire Node 04', mapId: 4, sequence: 4, targetTile: { x: 21, y: 0, z: 17 } },
                 { id: 'stage.4.mixed.05.ip_wires', gameplayId: 'ip_class_wires', objectiveId: 'repair_stage4_ip_wires_05', title: 'REPAIR IP WIRES 05', label: 'Wire Node 05', mapId: 4, sequence: 5, targetTile: { x: 12, y: 0, z: 6 } },
                 { id: 'stage.4.mixed.07.ip_wires', gameplayId: 'ip_class_wires', objectiveId: 'repair_stage4_ip_wires_07', title: 'REPAIR IP WIRES 07', label: 'Wire Node 07', mapId: 4, sequence: 7, targetTile: { x: 33, y: 0, z: 1 } },
+                { id: 'stage.5.mixed.01.ip_wires', gameplayId: 'ip_class_wires', objectiveId: 'repair_stage5_ip_wires_01', title: 'REPAIR IP WIRES 01', label: 'Wire Relay 01', mapId: 5, sequence: 1, targetTile: { x: 6, y: 0, z: 29 } },
+                { id: 'stage.5.mixed.05.ip_wires', gameplayId: 'ip_class_wires', objectiveId: 'repair_stage5_ip_wires_05', title: 'REPAIR IP WIRES 05', label: 'Wire Relay 05', mapId: 5, sequence: 5, targetTile: { x: 21, y: 0, z: 16 } },
                 { id: 'stage.6.ultimate.01.ip_wires', gameplayId: 'ip_class_wires', objectiveId: 'stage6_ultimate_01_ip_wires', title: 'ULTIMATE IP WIRES 01', label: 'Ultimate Wires 01', mapId: 6, targetTile: { x: 4, y: 0, z: 28 } },
                 { id: 'stage.6.ultimate.02.patch_panel', gameplayId: 'ip_patch_panel_classes', objectiveId: 'stage6_ultimate_02_patch_panel', title: 'ULTIMATE PATCH PANEL 02', label: 'Ultimate Patch 02', mapId: 6, targetTile: { x: 12, y: 0, z: 30 } },
                 { id: 'stage.6.ultimate.03.ip_wires_harder', gameplayId: 'ip_class_wires_harder', objectiveId: 'stage6_ultimate_03_ip_wires_harder', title: 'ULTIMATE STRICT WIRES 03', label: 'Ultimate Strict 03', mapId: 6, targetTile: { x: 21, y: 0, z: 27 }, wireCount: 6 },
@@ -295,10 +297,10 @@ const IP2LiveGameManager = {
             targetClearMs: 150000,
             objectiveHandler: { manager: 'HarderWiresGameplayManager', method: '_handleWireObjective' },
             quests: [
-                { id: 'stage.5.ip_wires_harder.01.tutorial', objectiveId: 'repair_ip_wires_harder_01_tutorial', title: 'ADAPTIVE RE-KEY BRIEFING', label: 'Adaptive Wires Tutorial', targetTile: { x: 2, y: 0, z: 32 }, tutorial: true, wireCount: 5 },
-                { id: 'stage.5.ip_wires_harder.02', objectiveId: 'repair_ip_wires_harder_02', title: 'STRICT IP WIRES CHALLENGE', label: 'Strict Gameplay Lever', targetTile: { x: 4, y: 0, z: 32 }, wireCount: 6 },
-                { id: 'stage.5.ip_wires_harder.03', objectiveId: 'repair_ip_wires_harder_03', title: 'STRICT IP WIRES CHALLENGE', label: 'Strict Gameplay Lever', targetTile: { x: 28, y: 0, z: 25 }, wireCount: 7 },
-                { id: 'stage.5.ip_wires_harder.04', objectiveId: 'repair_ip_wires_harder_04', title: 'STRICT IP WIRES CHALLENGE', label: 'Strict Gameplay Lever', targetTile: { x: 32, y: 0, z: 25 }, wireCount: 8 },
+                { id: 'stage.5.mixed.04.ip_wires_harder.tutorial', objectiveId: 'repair_stage5_ip_wires_harder_04_tutorial', title: 'ADAPTIVE RE-KEY BRIEFING', label: 'Adaptive Wires Tutorial', mapId: 5, sequence: 4, targetTile: { x: 18, y: 0, z: 18 }, tutorial: true, wireCount: 5 },
+                { id: 'stage.5.mixed.06.ip_wires_harder', objectiveId: 'repair_stage5_ip_wires_harder_06', title: 'STRICT IP WIRES CHALLENGE', label: 'Strict Wire Relay 06', mapId: 5, sequence: 6, targetTile: { x: 28, y: 0, z: 18 }, wireCount: 6 },
+                { id: 'stage.5.mixed.09.ip_wires_harder', objectiveId: 'repair_stage5_ip_wires_harder_09', title: 'STRICT IP WIRES CHALLENGE', label: 'Strict Wire Relay 09', mapId: 5, sequence: 9, targetTile: { x: 21, y: 0, z: 31 }, wireCount: 7 },
+                { id: 'stage.5.mixed.10.ip_wires_harder', objectiveId: 'repair_stage5_ip_wires_harder_10', title: 'STRICT IP WIRES CHALLENGE', label: 'Strict Wire Relay 10', mapId: 5, sequence: 10, targetTile: { x: 4, y: 0, z: 32 }, wireCount: 8 },
             ],
         },
         ip_patch_panel_classes: {
@@ -313,6 +315,10 @@ const IP2LiveGameManager = {
             quests: [
                 { id: 'stage.4.mixed.03.ip_patch_panel.tutorial', objectiveId: 'route_stage4_ip_patch_panel_03', title: 'LEARN PATCH PANEL ROUTING', label: 'Patch Panel Tutorial', mapId: 4, sequence: 3, targetTile: { x: 21, y: 0, z: 26 }, tutorial: true },
                 { id: 'stage.4.mixed.06.ip_patch_panel', objectiveId: 'route_stage4_ip_patch_panel_06', title: 'SECURE PATCH PANEL NODE 06', label: 'Patch Panel Node 06', mapId: 4, sequence: 6, targetTile: { x: 19, y: 0, z: 6 } },
+                { id: 'stage.5.mixed.02.ip_patch_panel', objectiveId: 'route_stage5_ip_patch_panel_02', title: 'SECURE PATCH PANEL NODE 02', label: 'Patch Relay 02', mapId: 5, sequence: 2, targetTile: { x: 14, y: 0, z: 27 } },
+                { id: 'stage.5.mixed.03.ip_patch_panel', objectiveId: 'route_stage5_ip_patch_panel_03', title: 'SECURE PATCH PANEL NODE 03', label: 'Patch Relay 03', mapId: 5, sequence: 3, targetTile: { x: 16, y: 0, z: 25 } },
+                { id: 'stage.5.mixed.07.ip_patch_panel', objectiveId: 'route_stage5_ip_patch_panel_07', title: 'SECURE PATCH PANEL NODE 07', label: 'Patch Relay 07', mapId: 5, sequence: 7, targetTile: { x: 31, y: 0, z: 21 } },
+                { id: 'stage.5.mixed.08.ip_patch_panel', objectiveId: 'route_stage5_ip_patch_panel_08', title: 'SECURE PATCH PANEL NODE 08', label: 'Patch Relay 08', mapId: 5, sequence: 8, targetTile: { x: 30, y: 0, z: 30 } },
             ],
         },
         ip_cidr_binary_panel: {
@@ -486,6 +492,9 @@ const IP2LiveGameManager = {
     async boot() {
         this._injectMapHooks();
         this._setState(this.STATE.BOOT, { source: 'GameManager.boot' });
+        if (IP2Live.NeuralLifeForce && typeof IP2Live.NeuralLifeForce.boot === 'function') {
+            IP2Live.NeuralLifeForce.boot();
+        }
         if (IP2Live.GameStateManager && typeof IP2Live.GameStateManager.bindGameManager === 'function') {
             IP2Live.GameStateManager.bindGameManager(this);
         }
@@ -756,6 +765,10 @@ const IP2LiveGameManager = {
             rollbackQuestId: data.rollbackQuestId || null,
             rollbackObjectiveId: data.rollbackObjectiveId || null,
             darklightsDimmed: !!data.darklightsDimmed,
+            neuralLifeForce: Number.isFinite(Number(data.neuralLifeForce)) ? Number(data.neuralLifeForce) : null,
+            neuralLifeForceDelta: Number.isFinite(Number(data.neuralLifeForceDelta)) ? Number(data.neuralLifeForceDelta) : null,
+            neuralCritical: !!data.neuralCritical,
+            neuralRecovery: data.neuralRecovery || null,
             recoveryAction: data.recoveryAction || null,
             payload: this._clonePlain(data.payload || null),
             notes: data.notes || null,
@@ -822,10 +835,7 @@ const IP2LiveGameManager = {
         const retries = Math.max(Number(open.retries || 0) || 0, Number(metrics.retries || 0) || 0);
         const mistakeCount = Math.max(Number(open.mistakeCount || 0) || 0, Number(metrics.mistakeCount || 0) || 0);
         const failureReason = cancelled ? 'cancelled' : (!passed ? (rawResult.reason || data.reason || 'failed') : null);
-        let recoveryAction = data.recoveryAction || null;
-        if (!recoveryAction && data.securityTriggered) recoveryAction = 'security_alert_return_to_stage_1_level_1';
-        else if (!recoveryAction && !passed && open.mapId === 4 && gameplayId === 'ip_class_wires') recoveryAction = 'reactivate_previous_solved_wire';
-        else if (!recoveryAction && !passed && open.mapId === 4 && gameplayId === 'ip_patch_panel_classes') recoveryAction = 'return_to_patch_panel_tutorial';
+        const recoveryAction = data.recoveryAction || null;
 
         const completion = {
             sessionId: open.sessionId,
@@ -862,6 +872,10 @@ const IP2LiveGameManager = {
             rollbackQuestId: data.rollbackQuestId || null,
             rollbackObjectiveId: data.rollbackObjectiveId || null,
             darklightsDimmed: !!data.darklightsDimmed,
+            neuralLifeForce: Number.isFinite(Number(data.neuralLifeForce)) ? Number(data.neuralLifeForce) : null,
+            neuralLifeForceDelta: Number.isFinite(Number(data.neuralLifeForceDelta)) ? Number(data.neuralLifeForceDelta) : null,
+            neuralCritical: !!data.neuralCritical,
+            neuralRecovery: data.neuralRecovery || null,
             recoveryAction: recoveryAction,
             payload: Object.assign({}, metrics.payload || {}, {
                 result: this._clonePlain(rawResult || {}),
@@ -1082,13 +1096,19 @@ const IP2LiveGameManager = {
         }
         if (gameplayId === 'ip_vlsm_allocator') {
             const passed = r.passed !== false;
+            const attemptsUsed = Number(r.attemptsUsed || 1) || 1;
+            const maxAttempts = Number(r.maxAttempts || 1) || 1;
+            const retries = Number(r.retries || Math.max(0, attemptsUsed - 1)) || 0;
+            const mistakeCount = Number(r.mistakeCount || 0) || 0;
             return {
-                attemptsUsed: 1,
-                maxAttempts: 1,
-                retries: 0,
-                mistakeCount: Number(r.mistakeCount || 0) || 0,
-                mistakeRate: Number(r.mistakeCount || 0) > 0 ? 1 : 0,
-                accuracy: passed ? (Number(r.mistakeCount || 0) > 0 ? 0.85 : 1) : 0,
+                attemptsUsed: attemptsUsed,
+                maxAttempts: maxAttempts,
+                retries: retries,
+                mistakeCount: mistakeCount,
+                mistakeRate: maxAttempts > 0
+                    ? Math.max(0, Math.min(1, mistakeCount / maxAttempts))
+                    : 0,
+                accuracy: passed ? (mistakeCount > 0 ? 0.85 : 1) : 0,
                 payload: {
                     terminalType: r.terminalType || null,
                     parentCIDR: r.parentCIDR || null,
@@ -1098,6 +1118,7 @@ const IP2LiveGameManager = {
                     awards: this._clonePlain(r.awards || []),
                     allocatedAddresses: Number(r.allocatedAddresses || 0) || 0,
                     waste: Number(r.waste || 0) || 0,
+                    lastMistake: this._clonePlain(r.lastMistake || null),
                 },
             };
         }
@@ -1114,6 +1135,9 @@ const IP2LiveGameManager = {
 
     startNewGameFlow(playerName) {
         this.clearActiveSaveSlot();
+        if (IP2Live.NeuralLifeForce && typeof IP2Live.NeuralLifeForce.reset === 'function') {
+            IP2Live.NeuralLifeForce.reset();
+        }
         return this.startTutorialFlow({
             playerName,
             useLoading: false,
@@ -1272,13 +1296,26 @@ const IP2LiveGameManager = {
             trigger: 'gameplay.before',
         });
 
+        const launchOpts = IP2Live.NeuralLifeForce && typeof IP2Live.NeuralLifeForce.prepareLaunchOptions === 'function'
+            ? IP2Live.NeuralLifeForce.prepareLaunchOptions(node.id, Object.assign({}, opts, {
+                spec,
+                mapId: payload.mapId,
+                questId: payload.questId,
+                objectiveId: payload.objectiveId,
+            }))
+            : opts;
+        if (launchOpts.neuralRunBlocked) {
+            this._activeGameplayNode = null;
+            return false;
+        }
+
         const openGameplay = () => {
             this._ensureQuestMinimap();
             this._setState(this.STATE.GAMEPLAY_ACTIVE, payload);
             this.emit(this.EVENT.GAMEPLAY_STARTED, payload);
             this._openReportAttempt(node.id, payload);
             if (node.id === 'ip_class_wires' && IP2Live.GameplayManager && typeof IP2Live.GameplayManager.launchWireGameplay === 'function') {
-                return IP2Live.GameplayManager.launchWireGameplay(Object.assign({}, opts, {
+                return IP2Live.GameplayManager.launchWireGameplay(Object.assign({}, launchOpts, {
                     mapId: payload.mapId,
                     questId: payload.questId,
                     objectiveId: payload.objectiveId,
@@ -1287,7 +1324,7 @@ const IP2LiveGameManager = {
                 }));
             }
             if (node.id === 'ip_patch_panel_classes' && IP2Live.PatchPanelGameplayManager && typeof IP2Live.PatchPanelGameplayManager.launchPatchPanelGameplay === 'function') {
-                return IP2Live.PatchPanelGameplayManager.launchPatchPanelGameplay(Object.assign({}, opts, {
+                return IP2Live.PatchPanelGameplayManager.launchPatchPanelGameplay(Object.assign({}, launchOpts, {
                     mapId: payload.mapId,
                     questId: payload.questId,
                     objectiveId: payload.objectiveId,
@@ -1297,63 +1334,63 @@ const IP2LiveGameManager = {
                 }));
             }
             if (node.id === 'ip_cidr_binary_panel' && IP2Live.CIDRPanelGameplayManager && typeof IP2Live.CIDRPanelGameplayManager.launchCIDRGameplay === 'function') {
-                return IP2Live.CIDRPanelGameplayManager.launchCIDRGameplay(Object.assign({}, opts, {
+                return IP2Live.CIDRPanelGameplayManager.launchCIDRGameplay(Object.assign({}, launchOpts, {
                     _fromGameManager: true,
                     showIntro: opts.showIntro,
                     mode: 'replace',
                 }));
             }
             if (node.id === 'ip_cidr_binary_panel_harder' && IP2Live.CIDRPanelHarderGameplayManager && typeof IP2Live.CIDRPanelHarderGameplayManager.launchHarderCIDRGameplay === 'function') {
-                return IP2Live.CIDRPanelHarderGameplayManager.launchHarderCIDRGameplay(Object.assign({}, opts, {
+                return IP2Live.CIDRPanelHarderGameplayManager.launchHarderCIDRGameplay(Object.assign({}, launchOpts, {
                     _fromGameManager: true,
                     showIntro: opts.showIntro,
                     mode: 'replace',
                 }));
             }
             if (node.id === 'ip_subnet_simulator' && IP2Live.SubnetSimulatorGameplayManager && typeof IP2Live.SubnetSimulatorGameplayManager.launchSubnetSimulatorGameplay === 'function') {
-                return IP2Live.SubnetSimulatorGameplayManager.launchSubnetSimulatorGameplay(Object.assign({}, opts, {
+                return IP2Live.SubnetSimulatorGameplayManager.launchSubnetSimulatorGameplay(Object.assign({}, launchOpts, {
                     _fromGameManager: true,
                     showIntro: opts.showIntro,
                     mode: 'replace',
                 }));
             }
             if (node.id === 'ip_host_power_reactor' && IP2Live.HostPowerReactorGameplayManager && typeof IP2Live.HostPowerReactorGameplayManager.launchHostPowerReactorGameplay === 'function') {
-                return IP2Live.HostPowerReactorGameplayManager.launchHostPowerReactorGameplay(Object.assign({}, opts, {
+                return IP2Live.HostPowerReactorGameplayManager.launchHostPowerReactorGameplay(Object.assign({}, launchOpts, {
                     _fromGameManager: true,
                     showIntro: opts.showIntro,
-                    mode: opts.mode || 'push',
+                    mode: launchOpts.mode || 'push',
                 }));
             }
             if (node.id === 'ip_cidr_quarantine' && IP2Live.CIDRQuarantineGameplayManager && typeof IP2Live.CIDRQuarantineGameplayManager.launchCIDRQuarantineGameplay === 'function') {
-                return IP2Live.CIDRQuarantineGameplayManager.launchCIDRQuarantineGameplay(Object.assign({}, opts, {
+                return IP2Live.CIDRQuarantineGameplayManager.launchCIDRQuarantineGameplay(Object.assign({}, launchOpts, {
                     _fromGameManager: true,
                     showIntro: opts.showIntro,
-                    mode: opts.mode || 'push',
+                    mode: launchOpts.mode || 'push',
                 }));
             }
             if (node.id === 'ip_cidr_quarantine_matrix' && IP2Live.CIDRQuarantineMatrixGameplayManager && typeof IP2Live.CIDRQuarantineMatrixGameplayManager.launchCIDRQuarantineMatrixGameplay === 'function') {
-                return IP2Live.CIDRQuarantineMatrixGameplayManager.launchCIDRQuarantineMatrixGameplay(Object.assign({}, opts, {
+                return IP2Live.CIDRQuarantineMatrixGameplayManager.launchCIDRQuarantineMatrixGameplay(Object.assign({}, launchOpts, {
                     _fromGameManager: true,
                     showIntro: opts.showIntro,
-                    mode: opts.mode || 'push',
+                    mode: launchOpts.mode || 'push',
                 }));
             }
             if (node.id === 'ip_class_wires_harder' && IP2Live.HarderWiresGameplayManager && typeof IP2Live.HarderWiresGameplayManager.launchHarderWireGameplay === 'function') {
-                return IP2Live.HarderWiresGameplayManager.launchHarderWireGameplay(Object.assign({}, opts, {
+                return IP2Live.HarderWiresGameplayManager.launchHarderWireGameplay(Object.assign({}, launchOpts, {
                     _fromGameManager: true,
                     _reservedAttempt: (questId || spec.id) + ':' + (objectiveId || spec.objectiveId),
-                    wireCount: opts.wireCount !== undefined ? opts.wireCount : spec.wireCount,
+                    wireCount: launchOpts.wireCount !== undefined ? launchOpts.wireCount : spec.wireCount,
                 }));
             }
             if (node.id === 'ip_network_repair' && IP2Live.NetworkRepairGameplayManager && typeof IP2Live.NetworkRepairGameplayManager.launchNetworkRepairGameplay === 'function') {
-                return IP2Live.NetworkRepairGameplayManager.launchNetworkRepairGameplay(Object.assign({}, opts, {
+                return IP2Live.NetworkRepairGameplayManager.launchNetworkRepairGameplay(Object.assign({}, launchOpts, {
                     _fromGameManager: true,
                     showIntro: opts.showIntro,
                     mode: 'replace',
                 }));
             }
             if (node.id === 'ip_vlsm_allocator' && IP2Live.VLSMAllocatorGameplayManager && typeof IP2Live.VLSMAllocatorGameplayManager.launchVLSMAllocatorGameplay === 'function') {
-                return IP2Live.VLSMAllocatorGameplayManager.launchVLSMAllocatorGameplay(Object.assign({}, opts, {
+                return IP2Live.VLSMAllocatorGameplayManager.launchVLSMAllocatorGameplay(Object.assign({}, launchOpts, {
                     _fromGameManager: true,
                     showIntro: opts.showIntro,
                     mode: 'replace',
@@ -1469,6 +1506,9 @@ const IP2LiveGameManager = {
             gameplayId,
             trigger: 'gameplay.completed',
         });
+        if (IP2Live.NeuralLifeForce && typeof IP2Live.NeuralLifeForce.handleCompletion === 'function') {
+            IP2Live.NeuralLifeForce.handleCompletion(data);
+        }
         this._ensureQuestMinimap();
         this._activeGameplayNode = null;
         this.emit(this.EVENT.GAMEPLAY_COMPLETED, data);
@@ -1488,15 +1528,18 @@ const IP2LiveGameManager = {
             trigger: 'gameplay.failed',
         });
         const spec = data.spec || {};
+        if (IP2Live.NeuralLifeForce && typeof IP2Live.NeuralLifeForce.handleTerminalFailure === 'function') {
+            IP2Live.NeuralLifeForce.handleTerminalFailure(data);
+        }
         this._activeGameplayNode = null;
         this.emit(this.EVENT.GAMEPLAY_FAILED, data);
         this._closeReportAttempt(gameplayId, data, false);
         this._setState(this.STATE.DIALOGUE_AFTER, data);
 
-        // A game-state listener marks the fifth Stage 1 Level 2 wire failure.
-        // The Security Light state owns the warning/dialogue/map transition, so
-        // no normal quest rollback or failure dialogue should race it.
-        if (data.securityTriggered) return true;
+        if (data.neuralGameOver || data.neuralRecoveryHandled) {
+            if (!data.neuralGameOver) this._queueCheckpoint('neural_life_force_failure');
+            return true;
+        }
 
         const catalog = gameplayId && this.gameplayCatalog ? this.gameplayCatalog[gameplayId] : null;
         const failureHandler = catalog && catalog.failureHandler ? catalog.failureHandler : null;
@@ -1588,6 +1631,10 @@ const IP2LiveGameManager = {
 
         this._prepareTransitionState(resolvedMapId, stage && stage.tutorial ? 'tutorial' : 'stage', { onLoad: true });
 
+        if (IP2Live.NeuralLifeForce && typeof IP2Live.NeuralLifeForce.handleMapEntered === 'function') {
+            IP2Live.NeuralLifeForce.handleMapEntered(resolvedMapId, context || {});
+        }
+
         this.emit(this.EVENT.MAP_ENTERED, {
             mapId: resolvedMapId,
             stage,
@@ -1623,6 +1670,17 @@ const IP2LiveGameManager = {
         const stage = this._stageFor(mapId);
         const scope = this._mapScope(mapId, context || {});
         this._setState(this.STATE.DIALOGUE_AFTER, scope);
+
+        // Neural Life Force has already reset the relevant quest segment as
+        // the destination map was loaded. Do not let an ordinary map-entry
+        // briefing interrupt that recovery handoff.
+        if (scope.neuralTutorialRecovery) {
+            this.prepareLoadedMapScene(scope.scene, mapId);
+            this._setState(this.STATE.NEXT_NODE, Object.assign({}, scope, {
+                source: 'GameManager.neuralTutorialRecovery',
+            }));
+            return true;
+        }
 
         const skipEntryDialogue = this.isResumingMapFromSave(mapId, scope.scene) ||
             this.hasSeenMapEntryDialogue(mapId);
@@ -1827,6 +1885,8 @@ const IP2LiveGameManager = {
                         title: objectiveSpec.title || spec.title || 'SOLVE OBJECTIVE',
                         detail: this._targetDetail(target),
                         targetTile: target,
+                        neuralGameplayId: objectiveGameplayId,
+                        neuralTutorial: !!(objectiveSpec.tutorial || spec.tutorial || spec.harderIntro),
                         completionRadiusTiles: typeof objectiveSpec.completionRadiusTiles === 'number' ? objectiveSpec.completionRadiusTiles : 0.55,
                         isComplete: (context, activeQuestManager) => {
                             return this._runGameplayObjectiveHandler(gameplayForSpec, objectiveSpec, context, activeQuestManager);
