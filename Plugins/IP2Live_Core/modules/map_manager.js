@@ -75,6 +75,7 @@ const MapManager = {
             name: 'Stage 2 Level 4',
             stage: 2,
             level: 4,
+            exit: { x: 15, y: 0, z: 4 },
             introLines: [
                 'Congratulations, Hacker. You reached the final CIDR sector of Stage 2.',
                 '',
