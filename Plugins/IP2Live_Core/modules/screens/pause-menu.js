@@ -14,6 +14,7 @@ class IP2LivePauseMenu extends Scene.Base {
         this.menuItems = this._getMenuItems();
         this.hoverIndex = -1;
         this.settingsHover = false;
+        this.gameplayTestHover = false;
         this.animTick = 0;
         this.glitchActive = false;
         this.glitchTimer = 0;
@@ -28,6 +29,10 @@ class IP2LivePauseMenu extends Scene.Base {
         this.debugIndex = 0;
         this.debugStages = this._buildDebugStages();
         this.debugItemRects = [];
+        this.gameplayTestMode = false;
+        this.gameplayTestIndex = 0;
+        this.gameplayTests = this._buildGameplayTests();
+        this.gameplayTestItemRects = [];
     }
 
     _getMenuItems() {
@@ -64,6 +69,14 @@ class IP2LivePauseMenu extends Scene.Base {
     }
 
     onKeyPressed(key) {
+        if (this.gameplayTestMode) {
+            if (Data.Keyboards.checkActionMenu(key)) {
+                this._launchGameplayTest();
+            } else if (Data.Keyboards.checkCancelMenu(key)) {
+                this._exitGameplayTestMode();
+            }
+            return;
+        }
         if (this.debugMode) {
             if (Data.Keyboards.checkActionMenu(key)) {
                 this._jumpToDebugStage();
@@ -80,6 +93,19 @@ class IP2LivePauseMenu extends Scene.Base {
     }
 
     onKeyPressedAndRepeat(key) {
+        if (this.gameplayTestMode) {
+            const prev = this.gameplayTestIndex;
+            if (Data.Keyboards.isKeyEqual(key, Data.Keyboards.menuControls.Up)) {
+                this.gameplayTestIndex = (this.gameplayTestIndex - 1 + this.gameplayTests.length) % Math.max(1, this.gameplayTests.length);
+            } else if (Data.Keyboards.isKeyEqual(key, Data.Keyboards.menuControls.Down)) {
+                this.gameplayTestIndex = (this.gameplayTestIndex + 1) % Math.max(1, this.gameplayTests.length);
+            }
+            if (this.gameplayTestIndex !== prev) {
+                Data.Systems.soundCursor.playSound();
+                Manager.Stack.requestPaintHUD = true;
+            }
+            return true;
+        }
         if (this.debugMode) {
             const prev = this.debugIndex;
             if (Data.Keyboards.isKeyEqual(key, Data.Keyboards.menuControls.Up)) {
@@ -108,6 +134,15 @@ class IP2LivePauseMenu extends Scene.Base {
     }
 
     onMouseMove(x, y) {
+        if (this.gameplayTestMode) {
+            const idx = this._getGameplayTestItemAt(x, y);
+            if (idx >= 0 && idx !== this.gameplayTestIndex) {
+                this.gameplayTestIndex = idx;
+                Data.Systems.soundCursor.playSound();
+                Manager.Stack.requestPaintHUD = true;
+            }
+            return;
+        }
         if (this.debugMode) {
             const idx = this._getDebugItemAt(x, y);
             if (idx >= 0 && idx !== this.debugIndex) {
@@ -120,10 +155,20 @@ class IP2LivePauseMenu extends Scene.Base {
         const isSettingsHover = this._isSettingsButtonAt(x, y);
         if (isSettingsHover !== this.settingsHover) {
             this.settingsHover = isSettingsHover;
-            if (isSettingsHover) this.hoverIndex = -1;
+            if (isSettingsHover) {
+                this.hoverIndex = -1;
+                this.gameplayTestHover = false;
+            }
             Manager.Stack.requestPaintHUD = true;
         }
         if (isSettingsHover) return;
+        const isGameplayTestHover = this._isGameplayTestButtonAt(x, y);
+        if (isGameplayTestHover !== this.gameplayTestHover) {
+            this.gameplayTestHover = isGameplayTestHover;
+            if (isGameplayTestHover) this.hoverIndex = -1;
+            Manager.Stack.requestPaintHUD = true;
+        }
+        if (isGameplayTestHover) return;
         const newHover = this._getButtonAt(x, y);
         if (newHover !== this.hoverIndex) {
             this.hoverIndex = newHover;
@@ -136,6 +181,15 @@ class IP2LivePauseMenu extends Scene.Base {
     }
 
     onMouseUp(x, y) {
+        if (this.gameplayTestMode) {
+            const idx = this._getGameplayTestItemAt(x, y);
+            if (idx >= 0) {
+                this.gameplayTestIndex = idx;
+                Data.Systems.soundConfirmation.playSound();
+                this._launchGameplayTest();
+            }
+            return;
+        }
         if (this.debugMode) {
             const idx = this._getDebugItemAt(x, y);
             if (idx >= 0) {
@@ -147,6 +201,10 @@ class IP2LivePauseMenu extends Scene.Base {
         }
         if (this._isSettingsButtonAt(x, y)) {
             this._openSettings();
+            return;
+        }
+        if (this._isGameplayTestButtonAt(x, y)) {
+            this._enterGameplayTestMode();
             return;
         }
         const idx = this._getButtonAt(x, y);
@@ -185,6 +243,16 @@ class IP2LivePauseMenu extends Scene.Base {
         };
     }
 
+    _gameplayTestButtonLayout(SW, SH) {
+        const layout = this._getLayout(SW, SH);
+        return {
+            x: layout.panelX + 20,
+            y: layout.panelY + 16,
+            w: 70,
+            h: 28,
+        };
+    }
+
     _isSettingsButtonAt(x, y) {
         const SW = Common.ScreenResolution.SCREEN_X;
         const SH = Common.ScreenResolution.SCREEN_Y;
@@ -193,6 +261,20 @@ class IP2LivePauseMenu extends Scene.Base {
         const scaleX = cW / SW;
         const scaleY = cH / SH;
         const r = this._settingsButtonLayout(SW, SH);
+        return x >= r.x * scaleX && x <= (r.x + r.w) * scaleX &&
+            y >= r.y * scaleY && y <= (r.y + r.h) * scaleY;
+    }
+
+    _isGameplayTestButtonAt(x, y) {
+        const gameManager = IP2Live.GameManager;
+        if (gameManager && gameManager.enableGameplayTestingButton === false) return false;
+        const SW = Common.ScreenResolution.SCREEN_X;
+        const SH = Common.ScreenResolution.SCREEN_Y;
+        const cW = Common.Platform.ctx.canvas.width;
+        const cH = Common.Platform.ctx.canvas.height;
+        const scaleX = cW / SW;
+        const scaleY = cH / SH;
+        const r = this._gameplayTestButtonLayout(SW, SH);
         return x >= r.x * scaleX && x <= (r.x + r.w) * scaleX &&
             y >= r.y * scaleY && y <= (r.y + r.h) * scaleY;
     }
@@ -329,6 +411,44 @@ class IP2LivePauseMenu extends Scene.Base {
         return output;
     }
 
+    _buildGameplayTests() {
+        const gameManager = IP2Live.GameManager;
+        if (!gameManager || typeof gameManager.getGameplayTestCatalog !== 'function') return [];
+        return gameManager.getGameplayTestCatalog();
+    }
+
+    _enterGameplayTestMode() {
+        const gameManager = IP2Live.GameManager;
+        if (gameManager && gameManager.enableGameplayTestingButton === false) return;
+        this.gameplayTests = this._buildGameplayTests();
+        this.gameplayTestIndex = Math.min(this.gameplayTestIndex, Math.max(0, this.gameplayTests.length - 1));
+        this.gameplayTestMode = true;
+        this.debugMode = false;
+        this.hoverIndex = -1;
+        this.gameplayTestHover = false;
+        Data.Systems.soundConfirmation.playSound();
+        Manager.Stack.requestPaintHUD = true;
+    }
+
+    _exitGameplayTestMode() {
+        this.gameplayTestMode = false;
+        this.gameplayTestItemRects = [];
+        Manager.Stack.requestPaintHUD = true;
+    }
+
+    _launchGameplayTest() {
+        const entry = this.gameplayTests[this.gameplayTestIndex];
+        const gameManager = IP2Live.GameManager;
+        if (!entry || !gameManager || typeof gameManager.launchGameplayTest !== 'function') {
+            Data.Systems.soundImpossible.playSound();
+            return false;
+        }
+        this._exitGameplayTestMode();
+        const launched = gameManager.launchGameplayTest(entry.id);
+        if (!launched) Data.Systems.soundImpossible.playSound();
+        return launched;
+    }
+
     _enterDebugMode() {
         if (IP2Live.GameManager && IP2Live.GameManager.enableDebugMapJumpButton === false) return;
         this.debugStages = this._buildDebugStages();
@@ -443,6 +563,171 @@ class IP2LivePauseMenu extends Scene.Base {
             if (x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h) return r.index;
         }
         return -1;
+    }
+
+    _getGameplayTestItemAt(x, y) {
+        for (let i = 0; i < this.gameplayTestItemRects.length; i++) {
+            const r = this.gameplayTestItemRects[i];
+            if (x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h) return r.index;
+        }
+        return -1;
+    }
+
+    _drawGameplayTestOverlay(ctx, cW, cH) {
+        const layout = this._debugListLayout(cW, cH);
+        const panelX = layout.panelX;
+        const panelY = layout.panelY;
+        const panelW = layout.panelW;
+        const panelH = layout.panelH;
+        const s = layout.scale;
+        const listX = panelX + layout.padX;
+        const listY = layout.listY;
+        const listW = panelW - layout.padX * 2;
+        const rowH = layout.rowH;
+        const maxRows = Math.max(1, Math.floor(layout.listH / rowH));
+        const tests = this.gameplayTests || [];
+        const selected = tests[this.gameplayTestIndex] || null;
+        const titleFont = IP2Live.Assets.abnesLoaded ? 'Abnes' : 'Arial Black';
+        const uiFont = IP2Live.Assets.nebulaLoaded ? 'Nebula-Regular' : 'monospace';
+        const tick = this.animTick || 0;
+
+        this.gameplayTestItemRects = [];
+        ctx.save();
+        ctx.fillStyle = 'rgba(0, 2, 10, 0.76)';
+        ctx.fillRect(0, 0, cW, cH);
+
+        this._traceDebugPanelPath(ctx, panelX, panelY, panelW, panelH, 20 * s);
+        const shell = ctx.createLinearGradient(panelX, panelY, panelX + panelW, panelY + panelH);
+        shell.addColorStop(0, 'rgba(8,20,27,0.99)');
+        shell.addColorStop(0.5, 'rgba(2,7,13,0.99)');
+        shell.addColorStop(1, 'rgba(18,4,13,0.99)');
+        ctx.fillStyle = shell;
+        ctx.fill();
+        ctx.shadowColor = '#00D9E7';
+        ctx.shadowBlur = 12 * s;
+        ctx.strokeStyle = 'rgba(0,224,236,0.88)';
+        ctx.lineWidth = 1.5 * s;
+        ctx.stroke();
+        ctx.shadowBlur = 0;
+
+        ctx.save();
+        this._traceDebugPanelPath(ctx, panelX + 7 * s, panelY + 7 * s, panelW - 14 * s, panelH - 14 * s, 15 * s);
+        ctx.clip();
+        const headerGlow = ctx.createLinearGradient(panelX, panelY, panelX + panelW, panelY);
+        headerGlow.addColorStop(0, 'rgba(0,240,255,0.20)');
+        headerGlow.addColorStop(0.55, 'rgba(255,0,60,0.07)');
+        headerGlow.addColorStop(1, 'rgba(0,0,0,0)');
+        ctx.fillStyle = headerGlow;
+        ctx.fillRect(panelX, panelY, panelW, layout.headerH + 16 * s);
+        for (let sy = panelY + ((tick * 0.42) % (7 * s)); sy < panelY + panelH; sy += 7 * s) {
+            ctx.fillStyle = 'rgba(0,220,230,0.028)';
+            ctx.fillRect(panelX, sy, panelW, Math.max(1, s * 0.75));
+        }
+        ctx.restore();
+
+        const tagW = 134 * s;
+        this._traceDebugRowPath(ctx, panelX + 1 * s, panelY + 1 * s, tagW, 36 * s, 9 * s);
+        ctx.fillStyle = '#00D9E7';
+        ctx.fill();
+        ctx.fillStyle = '#02070A';
+        ctx.font = 'bold ' + (8 * s).toFixed(1) + 'px monospace';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText('SYS // TEST HARNESS', panelX + tagW * 0.5, panelY + 18 * s);
+
+        ctx.textAlign = 'left';
+        ctx.fillStyle = '#F5FAFF';
+        ctx.font = 'bold ' + (23 * s).toFixed(1) + 'px ' + titleFont;
+        ctx.fillText('GAMEPLAY TESTING', panelX + 28 * s, panelY + 54 * s);
+        ctx.fillStyle = '#00E6F0';
+        ctx.font = 'bold ' + (7.5 * s).toFixed(1) + 'px ' + uiFont;
+        ctx.fillText('SELECT AN ISOLATED GAMEPLAY INSTANCE', panelX + 29 * s, panelY + 69 * s);
+
+        ctx.textAlign = 'right';
+        ctx.fillStyle = selected && selected.tutorial ? '#FFE600' : '#A8F8FF';
+        ctx.font = 'bold ' + (8 * s).toFixed(1) + 'px monospace';
+        ctx.fillText(selected ? (selected.tutorial ? 'TUTORIAL MODE' : 'STANDARD MODE') : 'NO TARGET', panelX + panelW - 25 * s, panelY + 31 * s);
+        ctx.fillStyle = '#718B96';
+        ctx.font = 'bold ' + (6.8 * s).toFixed(1) + 'px monospace';
+        ctx.fillText(selected ? selected.gameplayId.toUpperCase() : 'UNAVAILABLE', panelX + panelW - 25 * s, panelY + 49 * s);
+
+        const start = Math.max(0, Math.min(
+            Math.max(0, tests.length - maxRows),
+            Math.min(Math.max(0, tests.length - 1), this.gameplayTestIndex) - Math.floor(maxRows / 2)
+        ));
+        const end = Math.min(tests.length, start + maxRows);
+        for (let i = start, row = 0; i < end; i++, row++) {
+            const entry = tests[i];
+            const rowX = listX;
+            const rowY = listY + row * rowH + 2 * s;
+            const rowW = listW - 10 * s;
+            const rowDrawH = rowH - 5 * s;
+            const active = i === this.gameplayTestIndex;
+
+            this._traceDebugRowPath(ctx, rowX, rowY, rowW, rowDrawH, 10 * s);
+            ctx.fillStyle = active ? 'rgba(6,34,40,0.98)' : 'rgba(3,10,16,0.90)';
+            ctx.shadowColor = active ? '#00E5F4' : 'transparent';
+            ctx.shadowBlur = active ? 10 * s : 0;
+            ctx.fill();
+            ctx.shadowBlur = 0;
+            ctx.strokeStyle = active ? '#00E5F4' : 'rgba(0,207,220,0.28)';
+            ctx.lineWidth = (active ? 1.7 : 1) * s;
+            ctx.stroke();
+
+            ctx.fillStyle = active ? '#00E5F4' : '#557D86';
+            ctx.font = 'bold ' + (8 * s).toFixed(1) + 'px monospace';
+            ctx.textAlign = 'center';
+            ctx.fillText(String(i + 1).padStart(2, '0'), rowX + 40 * s, rowY + rowDrawH * 0.5);
+            ctx.textAlign = 'left';
+            ctx.fillStyle = '#F4F8FF';
+            ctx.font = 'bold ' + (11 * s).toFixed(1) + 'px ' + uiFont;
+            ctx.fillText(entry.name.toUpperCase(), rowX + 78 * s, rowY + 14 * s);
+            ctx.fillStyle = entry.tutorial ? '#FFE600' : '#6E9BA7';
+            ctx.font = 'bold ' + (6.5 * s).toFixed(1) + 'px monospace';
+            ctx.fillText((entry.gameplayLabel || entry.gameplayId).toUpperCase(), rowX + 78 * s, rowY + 29 * s);
+            ctx.textAlign = 'right';
+            ctx.fillStyle = entry.tutorial ? '#FFE600' : '#73919A';
+            ctx.font = 'bold ' + (7.2 * s).toFixed(1) + 'px monospace';
+            ctx.fillText(entry.tutorial ? 'TUTORIAL' : 'STANDARD', rowX + rowW - 25 * s, rowY + rowDrawH * 0.5);
+            this.gameplayTestItemRects.push({ index: i, x: rowX, y: rowY, w: rowW, h: rowDrawH });
+        }
+
+        if (!tests.length) {
+            ctx.fillStyle = '#FFE600';
+            ctx.font = 'bold ' + (12 * s).toFixed(1) + 'px monospace';
+            ctx.textAlign = 'left';
+            ctx.fillText('NO GAMEPLAY TARGETS REGISTERED', listX, listY + 28 * s);
+        }
+
+        if (tests.length > maxRows) {
+            const railX = panelX + panelW - 20 * s;
+            const railY = listY + 3 * s;
+            const railH = Math.min(layout.listH, maxRows * rowH) - 8 * s;
+            const thumbH = Math.max(22 * s, railH * (maxRows / tests.length));
+            const thumbTravel = Math.max(0, railH - thumbH);
+            const thumbP = tests.length <= 1 ? 0 : this.gameplayTestIndex / (tests.length - 1);
+            ctx.fillStyle = 'rgba(48,78,87,0.55)';
+            ctx.fillRect(railX, railY, 3 * s, railH);
+            ctx.fillStyle = '#00E0EC';
+            ctx.fillRect(railX - 1 * s, railY + thumbTravel * thumbP, 5 * s, thumbH);
+        }
+
+        const footerY = panelY + panelH - layout.footerH;
+        ctx.fillStyle = 'rgba(1,6,11,0.94)';
+        ctx.fillRect(panelX + 8 * s, footerY, panelW - 16 * s, layout.footerH - 8 * s);
+        ctx.strokeStyle = 'rgba(0,225,235,0.28)';
+        ctx.beginPath();
+        ctx.moveTo(panelX + 20 * s, footerY);
+        ctx.lineTo(panelX + panelW - 20 * s, footerY);
+        ctx.stroke();
+        ctx.textAlign = 'left';
+        ctx.fillStyle = '#00D9E7';
+        ctx.font = 'bold ' + (7.2 * s).toFixed(1) + 'px monospace';
+        ctx.fillText('UP/DOWN  SELECT     ENTER  LAUNCH     ESC  BACK', panelX + 26 * s, footerY + 26 * s);
+        ctx.fillStyle = '#66838D';
+        ctx.font = 'bold ' + (6.4 * s).toFixed(1) + 'px monospace';
+        ctx.fillText('TEST COMPLETION DOES NOT ADVANCE THE ACTIVE QUEST', panelX + 26 * s, footerY + 41 * s);
+        ctx.restore();
     }
 
     _drawDebugJumpOverlay(ctx, cW, cH) {
@@ -751,6 +1036,7 @@ class IP2LivePauseMenu extends Scene.Base {
         this._drawPauseContainer(ctx, px, py, pw, ph, scaleX, scaleY);
 
         this._drawPausedTitle(ctx, scaleX, scaleY, SW, SH, layout.panelX, layout.panelY, layout.panelW);
+        this._drawGameplayTestButton(ctx, scaleX, scaleY, SW, SH);
         this._drawPauseSettingsIcon(ctx, scaleX, scaleY, SW, SH);
 
         const divY = (layout.panelY + 68) * scaleY;
@@ -777,6 +1063,8 @@ class IP2LivePauseMenu extends Scene.Base {
 
         if (this.debugMode) {
             this._drawDebugJumpOverlay(ctx, cW, cH);
+        } else if (this.gameplayTestMode) {
+            this._drawGameplayTestOverlay(ctx, cW, cH);
         }
     }
 
@@ -1069,6 +1357,43 @@ class IP2LivePauseMenu extends Scene.Base {
         ctx.arc(cx, cy, radius * 0.34, 0, Math.PI * 2);
         ctx.fillStyle = this.settingsHover ? '#FFE600' : '#00E5F4';
         ctx.fill();
+        ctx.restore();
+    }
+
+    _drawGameplayTestButton(ctx, scaleX, scaleY, SW, SH) {
+        const gameManager = IP2Live.GameManager;
+        if (gameManager && gameManager.enableGameplayTestingButton === false) return;
+        const r = this._gameplayTestButtonLayout(SW, SH);
+        const x = r.x * scaleX;
+        const y = r.y * scaleY;
+        const w = r.w * scaleX;
+        const h = r.h * scaleY;
+        const activeColor = this.gameplayTestHover ? '#FFE600' : '#00E5F4';
+
+        ctx.save();
+        ctx.fillStyle = this.gameplayTestHover ? 'rgba(255,230,0,0.14)' : 'rgba(0,20,28,0.72)';
+        ctx.strokeStyle = this.gameplayTestHover ? '#FFE600' : 'rgba(0,230,241,0.75)';
+        ctx.lineWidth = 1.2 * scaleX;
+        ctx.beginPath();
+        ctx.rect(x, y, w, h);
+        ctx.fill();
+        ctx.stroke();
+
+        const iconX = x + 12 * scaleX;
+        const iconY = y + h * 0.5;
+        ctx.fillStyle = activeColor;
+        ctx.beginPath();
+        ctx.moveTo(iconX - 3 * scaleX, iconY - 5 * scaleY);
+        ctx.lineTo(iconX + 6 * scaleX, iconY);
+        ctx.lineTo(iconX - 3 * scaleX, iconY + 5 * scaleY);
+        ctx.closePath();
+        ctx.fill();
+
+        ctx.fillStyle = activeColor;
+        ctx.font = 'bold ' + (7.5 * scaleX) + 'px monospace';
+        ctx.textAlign = 'left';
+        ctx.textBaseline = 'middle';
+        ctx.fillText('TEST', x + 27 * scaleX, iconY);
         ctx.restore();
     }
 
