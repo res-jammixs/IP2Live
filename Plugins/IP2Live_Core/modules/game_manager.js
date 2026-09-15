@@ -8,7 +8,7 @@
  */
 
 const IP2LiveGameManager = {
-    VERSION: 'game-manager-20260821-10',
+    VERSION: 'game-manager-20260915-11',
 
     STATE: {
         BOOT: 'BOOT',
@@ -56,9 +56,36 @@ const IP2LiveGameManager = {
     _checkpointInFlight: false,
     _shutdownListenerInstalled: false,
     enableQuestSkipButton: false,
+    // Set false to hide the Gameplay Testing button from the pause-menu header.
+    enableGameplayTestingButton: true,
     // Set false to hide the Debug Map Jump entry from the pause menu.
     enableDebugMapJumpButton: true,
     _skipQuestButtonRect: null,
+
+    gameplayTestDefinitions: [
+        { id: 'gameplay-1-tutorial', name: 'Gameplay 1 Tutorial', gameplayId: 'ip_class_wires', tutorial: true },
+        { id: 'gameplay-1', name: 'Gameplay 1', gameplayId: 'ip_class_wires', tutorial: false },
+        { id: 'gameplay-1-harder-tutorial', name: 'Gameplay 1 Harder Tutorial', gameplayId: 'ip_class_wires_harder', tutorial: true, dialogueObjectiveId: 'repair_ip_wires_harder_01_tutorial' },
+        { id: 'gameplay-1-harder', name: 'Gameplay 1 Harder', gameplayId: 'ip_class_wires_harder', tutorial: false },
+        { id: 'gameplay-2-tutorial', name: 'Gameplay 2 Tutorial', gameplayId: 'ip_patch_panel_classes', tutorial: true },
+        { id: 'gameplay-2', name: 'Gameplay 2', gameplayId: 'ip_patch_panel_classes', tutorial: false },
+        { id: 'gameplay-3-tutorial', name: 'Gameplay 3 Tutorial', gameplayId: 'ip_cidr_binary_panel', tutorial: true },
+        { id: 'gameplay-3', name: 'Gameplay 3', gameplayId: 'ip_cidr_binary_panel', tutorial: false },
+        { id: 'gameplay-3-harder-tutorial', name: 'Gameplay 3 Harder Tutorial', gameplayId: 'ip_cidr_binary_panel_harder', tutorial: true },
+        { id: 'gameplay-3-harder', name: 'Gameplay 3 Harder', gameplayId: 'ip_cidr_binary_panel_harder', tutorial: false },
+        { id: 'gameplay-4-tutorial', name: 'Gameplay 4 Tutorial', gameplayId: 'ip_subnet_simulator', tutorial: true },
+        { id: 'gameplay-4', name: 'Gameplay 4', gameplayId: 'ip_subnet_simulator', tutorial: false },
+        { id: 'gameplay-4-5-tutorial', name: 'Gameplay 4.5 Tutorial', gameplayId: 'ip_host_power_reactor', tutorial: true },
+        { id: 'gameplay-4-5', name: 'Gameplay 4.5', gameplayId: 'ip_host_power_reactor', tutorial: false },
+        { id: 'gameplay-5-tutorial', name: 'Gameplay 5 Tutorial', gameplayId: 'ip_cidr_quarantine', tutorial: true },
+        { id: 'gameplay-5', name: 'Gameplay 5', gameplayId: 'ip_cidr_quarantine', tutorial: false },
+        { id: 'gameplay-6-tutorial', name: 'Gameplay 6 Tutorial', gameplayId: 'ip_cidr_quarantine_matrix', tutorial: true },
+        { id: 'gameplay-6', name: 'Gameplay 6', gameplayId: 'ip_cidr_quarantine_matrix', tutorial: false },
+        { id: 'gameplay-7-tutorial', name: 'Gameplay 7 Tutorial', gameplayId: 'ip_network_repair', tutorial: true },
+        { id: 'gameplay-7', name: 'Gameplay 7', gameplayId: 'ip_network_repair', tutorial: false },
+        { id: 'gameplay-8-tutorial', name: 'Gameplay 8 Tutorial', gameplayId: 'ip_vlsm_allocator', tutorial: true },
+        { id: 'gameplay-8', name: 'Gameplay 8', gameplayId: 'ip_vlsm_allocator', tutorial: false },
+    ],
 
     flowConfig: {
         maps: {
@@ -1280,6 +1307,7 @@ const IP2LiveGameManager = {
 
         const opts = context || {};
         const spec = opts.spec || {};
+        const isDeveloperTest = !!(opts.developerTest || spec.developerTest);
         const objectiveId = opts.objectiveId || spec.objectiveId || null;
         const questId = opts.questId || spec.id || null;
         const attemptKey = nodeId + ':' + (questId || 'quest') + ':' + (objectiveId || 'objective');
@@ -1293,10 +1321,11 @@ const IP2LiveGameManager = {
             mapId: Number(opts.mapId || spec.mapId) || node.mapId,
             questId,
             objectiveId,
+            developerTest: isDeveloperTest,
             trigger: 'gameplay.before',
         });
 
-        const launchOpts = IP2Live.NeuralLifeForce && typeof IP2Live.NeuralLifeForce.prepareLaunchOptions === 'function'
+        const launchOpts = !isDeveloperTest && IP2Live.NeuralLifeForce && typeof IP2Live.NeuralLifeForce.prepareLaunchOptions === 'function'
             ? IP2Live.NeuralLifeForce.prepareLaunchOptions(node.id, Object.assign({}, opts, {
                 spec,
                 mapId: payload.mapId,
@@ -1312,8 +1341,10 @@ const IP2LiveGameManager = {
         const openGameplay = () => {
             this._ensureQuestMinimap();
             this._setState(this.STATE.GAMEPLAY_ACTIVE, payload);
-            this.emit(this.EVENT.GAMEPLAY_STARTED, payload);
-            this._openReportAttempt(node.id, payload);
+            if (!isDeveloperTest) {
+                this.emit(this.EVENT.GAMEPLAY_STARTED, payload);
+                this._openReportAttempt(node.id, payload);
+            }
             if (node.id === 'ip_class_wires' && IP2Live.GameplayManager && typeof IP2Live.GameplayManager.launchWireGameplay === 'function') {
                 return IP2Live.GameplayManager.launchWireGameplay(Object.assign({}, launchOpts, {
                     mapId: payload.mapId,
@@ -1416,8 +1447,9 @@ const IP2LiveGameManager = {
             gameplayId,
             trigger: 'gameplay.mistake',
         });
-        this.emit('gameplay.mistake', data);
-        const active = this._reportActiveAttempt(gameplayId) || this._openReportAttempt(gameplayId, data);
+        const isDeveloperTest = !!(data.developerTest || (data.spec && data.spec.developerTest));
+        if (!isDeveloperTest) this.emit('gameplay.mistake', data);
+        const active = isDeveloperTest ? null : (this._reportActiveAttempt(gameplayId) || this._openReportAttempt(gameplayId, data));
         if (active) {
             const mistakesThisTry = Array.isArray(data.mistakes) ? data.mistakes.length : 0;
             const tryNumber = (active.mistakeEvents ? active.mistakeEvents.length : 0) + 1;
@@ -1506,6 +1538,15 @@ const IP2LiveGameManager = {
             gameplayId,
             trigger: 'gameplay.completed',
         });
+        if (data.developerTest || (data.spec && data.spec.developerTest)) {
+            this._activeGameplayNode = null;
+            this._setState(this.STATE.DIALOGUE_AFTER, data);
+            const hadTestDialogue = this._runTimingDialogues(data, 'after', () => {
+                this._setState(this.STATE.NEXT_NODE, data);
+            });
+            if (!hadTestDialogue) this._setState(this.STATE.NEXT_NODE, data);
+            return true;
+        }
         if (IP2Live.NeuralLifeForce && typeof IP2Live.NeuralLifeForce.handleCompletion === 'function') {
             IP2Live.NeuralLifeForce.handleCompletion(data);
         }
@@ -1527,6 +1568,15 @@ const IP2LiveGameManager = {
             gameplayId,
             trigger: 'gameplay.failed',
         });
+        if (data.developerTest || (data.spec && data.spec.developerTest)) {
+            this._activeGameplayNode = null;
+            this._setState(this.STATE.DIALOGUE_AFTER, data);
+            const hadTestDialogue = this._runTimingDialogues(data, 'after', () => {
+                this._setState(this.STATE.NEXT_NODE, data);
+            });
+            if (!hadTestDialogue) this._setState(this.STATE.NEXT_NODE, data);
+            return true;
+        }
         const spec = data.spec || {};
         if (IP2Live.NeuralLifeForce && typeof IP2Live.NeuralLifeForce.handleTerminalFailure === 'function') {
             IP2Live.NeuralLifeForce.handleTerminalFailure(data);
@@ -1596,6 +1646,11 @@ const IP2LiveGameManager = {
             gameplayId,
             trigger: 'gameplay.cancelled',
         });
+        if (data.developerTest || (data.spec && data.spec.developerTest)) {
+            this._activeGameplayNode = null;
+            this._setState(this.STATE.NEXT_NODE, data);
+            return true;
+        }
         this._ensureQuestMinimap();
         this._activeGameplayNode = null;
         this.emit('gameplay.cancelled', data);
@@ -1840,6 +1895,117 @@ const IP2LiveGameManager = {
         const entry = this.gameplayCatalog[key];
         if (!entry || !Array.isArray(entry.quests)) return [];
         return this._clonePlain(entry.quests);
+    },
+
+    _gameplayTestSpecsFor(gameplayId) {
+        const wanted = String(gameplayId || '');
+        const matches = [];
+        const catalogKeys = Object.keys(this.gameplayCatalog || {});
+        for (let c = 0; c < catalogKeys.length; c++) {
+            const catalog = this.gameplayCatalog[catalogKeys[c]] || {};
+            const quests = Array.isArray(catalog.quests) ? catalog.quests : [];
+            for (let q = 0; q < quests.length; q++) {
+                const quest = quests[q] || {};
+                if (Array.isArray(quest.objectives) && quest.objectives.length) {
+                    for (let o = 0; o < quest.objectives.length; o++) {
+                        const objective = quest.objectives[o] || {};
+                        const resolvedId = String(objective.gameplayId || quest.gameplayId || catalog.gameplayId || '');
+                        if (resolvedId !== wanted) continue;
+                        matches.push(Object.assign({}, quest, objective, {
+                            id: quest.id,
+                            gameplayId: resolvedId,
+                            mapId: Number(objective.mapId || quest.mapId || catalog.mapId) || 0,
+                            tutorial: !!(objective.tutorial || quest.tutorial),
+                        }));
+                    }
+                    continue;
+                }
+                const resolvedId = String(quest.gameplayId || catalog.gameplayId || '');
+                if (resolvedId !== wanted || !quest.objectiveId) continue;
+                matches.push(Object.assign({}, quest, {
+                    gameplayId: resolvedId,
+                    mapId: Number(quest.mapId || catalog.mapId) || 0,
+                }));
+            }
+        }
+        return matches;
+    },
+
+    getGameplayTestCatalog() {
+        const definitions = Array.isArray(this.gameplayTestDefinitions) ? this.gameplayTestDefinitions : [];
+        return definitions.map((definition) => {
+            const catalog = this.gameplayCatalog[definition.gameplayId] || {};
+            const specs = this._gameplayTestSpecsFor(definition.gameplayId);
+            const tutorialSpecs = specs.filter((spec) => !!(spec.tutorial || spec.harderIntro));
+            const standardSpecs = specs.filter((spec) => !(spec.tutorial || spec.harderIntro));
+            const sourceSpec = (definition.tutorial ? tutorialSpecs[0] : standardSpecs[0]) || specs[0] || {
+                id: 'developer.' + definition.id,
+                objectiveId: 'developer_' + String(definition.id).replace(/-/g, '_'),
+                mapId: Number(catalog.mapId) || 0,
+                label: catalog.label || definition.name,
+            };
+            const spec = this._clonePlain(sourceSpec) || {};
+            spec.gameplayId = definition.gameplayId;
+            spec.mapId = Number(spec.mapId || catalog.mapId) || 0;
+            spec.tutorial = !!definition.tutorial;
+            if (!definition.tutorial) delete spec.harderIntro;
+            return {
+                id: definition.id,
+                name: definition.name,
+                gameplayId: definition.gameplayId,
+                gameplayLabel: catalog.label || definition.gameplayId,
+                tutorial: !!definition.tutorial,
+                mapId: spec.mapId,
+                dialogueObjectiveId: definition.dialogueObjectiveId || null,
+                spec,
+            };
+        });
+    },
+
+    launchGameplayTest(testId) {
+        if (this.enableGameplayTestingButton === false) return false;
+        const tests = this.getGameplayTestCatalog();
+        const selected = tests.find((entry) => entry.id === String(testId || ''));
+        if (!selected || !this.flowConfig.gameplayNodes[selected.gameplayId]) return false;
+
+        const spec = this._clonePlain(selected.spec) || {};
+        const testToken = String(selected.id).replace(/[^a-z0-9]+/gi, '_').toLowerCase();
+        const sourceQuestId = spec.id || null;
+        const sourceObjectiveId = spec.objectiveId || null;
+        spec.id = 'developer.gameplay_test.' + testToken;
+        spec.objectiveId = selected.dialogueObjectiveId || sourceObjectiveId || ('developer_gameplay_test_' + testToken);
+        spec.gameplayId = selected.gameplayId;
+        spec.tutorial = !!selected.tutorial;
+        spec.developerTest = true;
+        spec.developerTestSourceQuestId = sourceQuestId;
+        spec.developerTestSourceObjectiveId = sourceObjectiveId;
+        if (!selected.tutorial) delete spec.harderIntro;
+
+        const node = this.flowConfig.gameplayNodes[selected.gameplayId];
+        const gameplayManager = node && IP2Live[node.manager];
+        if (selected.tutorial && gameplayManager) {
+            if (Object.prototype.hasOwnProperty.call(gameplayManager, '_introShown')) gameplayManager._introShown = false;
+            if (gameplayManager._introShownMaps) delete gameplayManager._introShownMaps[spec.mapId];
+            if (gameplayManager._tutorialShownKeys) gameplayManager._tutorialShownKeys = {};
+        }
+
+        this._activeGameplayNode = null;
+        return this.startGameplayNode(selected.gameplayId, {
+            spec,
+            mapId: spec.mapId,
+            questId: spec.id,
+            objectiveId: spec.objectiveId,
+            tutorialFeedback: !!selected.tutorial,
+            guidedTutorial: !!selected.tutorial,
+            tutorialMode: !!selected.tutorial,
+            showIntro: !!selected.tutorial,
+            // Use the source objective binding so the same pre-gameplay
+            // dialogue shown in normal play is included in the test run.
+            skipBeforeDialogues: false,
+            useLoading: true,
+            source: 'PauseMenu.gameplayTest',
+            developerTest: true,
+        });
     },
 
     registerStageGameplayQuests(questManager, mapManager, stage) {
