@@ -64,16 +64,20 @@
             baselineBrightnessStep: 1,
             gameplayIds: ['ip_class_wires', 'ip_class_wires_harder'],
             objectives: [
-                'repair_ip_wires_harder_01_tutorial',
-                'repair_ip_wires_harder_02',
-                'repair_ip_wires_harder_03',
-                'repair_ip_wires_harder_04',
+                'repair_stage5_ip_wires_01',
+                'repair_stage5_ip_wires_harder_04_tutorial',
+                'repair_stage5_ip_wires_05',
+                'repair_stage5_ip_wires_harder_06',
+                'repair_stage5_ip_wires_harder_09',
+                'repair_stage5_ip_wires_harder_10',
             ],
             quests: [
-                { questId: 'stage.5.ip_wires_harder.01.tutorial', objectiveId: 'repair_ip_wires_harder_01_tutorial' },
-                { questId: 'stage.5.ip_wires_harder.02', objectiveId: 'repair_ip_wires_harder_02' },
-                { questId: 'stage.5.ip_wires_harder.03', objectiveId: 'repair_ip_wires_harder_03' },
-                { questId: 'stage.5.ip_wires_harder.04', objectiveId: 'repair_ip_wires_harder_04' },
+                { questId: 'stage.5.mixed.01.ip_wires', objectiveId: 'repair_stage5_ip_wires_01' },
+                { questId: 'stage.5.mixed.04.ip_wires_harder.tutorial', objectiveId: 'repair_stage5_ip_wires_harder_04_tutorial' },
+                { questId: 'stage.5.mixed.05.ip_wires', objectiveId: 'repair_stage5_ip_wires_05' },
+                { questId: 'stage.5.mixed.06.ip_wires_harder', objectiveId: 'repair_stage5_ip_wires_harder_06' },
+                { questId: 'stage.5.mixed.09.ip_wires_harder', objectiveId: 'repair_stage5_ip_wires_harder_09' },
+                { questId: 'stage.5.mixed.10.ip_wires_harder', objectiveId: 'repair_stage5_ip_wires_harder_10' },
             ],
             entryReason: 'stage-one-level-three-entry',
             successReason: 'stage-one-level-three-wire-success',
@@ -82,7 +86,7 @@
     };
 
     const GameStateManager = {
-        VERSION: 'game-state-manager-20260821-05',
+        VERSION: 'game-state-manager-20260915-06',
         states: {},
         activeStates: {},
         _boundGameManager: null,
@@ -536,15 +540,9 @@
 
         _darklightsQuestLabel(questId) {
             const gm = IP2Live.GameManager;
-            const catalog = gm && gm.gameplayCatalog ? gm.gameplayCatalog : {};
-            const keys = Object.keys(catalog);
-            for (let i = 0; i < keys.length; i++) {
-                const quests = Array.isArray(catalog[keys[i]] && catalog[keys[i]].quests)
-                    ? catalog[keys[i]].quests
-                    : [];
-                for (let q = 0; q < quests.length; q++) {
-                    if (quests[q] && quests[q].id === questId) return quests[q].label || quests[q].title || questId;
-                }
+            if (gm && typeof gm.getQuestSpec === 'function') {
+                const spec = gm.getQuestSpec(questId);
+                if (spec) return spec.questLabel || spec.label || spec.title || questId;
             }
             return questId;
         },
@@ -574,33 +572,58 @@
                 clearReason: base.clearReason || 'darklights-cleared',
             };
 
-            this._augmentDarklightsConfigFromCatalog(config);
+            const gm = IP2Live.GameManager;
+            if (gm && typeof gm.getMapQuestSpecs === 'function') {
+                // Static rows above are only an early-load fallback. Once the
+                // GameManager is ready, the map-first curriculum is authoritative.
+                config.objectives = [];
+                config.quests = [];
+            }
+            this._augmentDarklightsConfigFromAssignments(config);
             config.maxBrightnessStep = Math.max(1, config.baselineBrightnessStep + config.objectives.length);
             return config;
         },
 
-        _augmentDarklightsConfigFromCatalog(config) {
+        _augmentDarklightsConfigFromAssignments(config) {
             if (!config || !config.gameplayIds || !config.gameplayIds.length) return config;
 
             const gm = IP2Live.GameManager;
-            const catalog = gm && gm.gameplayCatalog ? gm.gameplayCatalog : {};
+            if (gm && typeof gm.getMapQuestSpecs === 'function') {
+                const quests = gm.getMapQuestSpecs(config.mapId);
+                for (let q = 0; q < quests.length; q++) {
+                    const quest = quests[q] || {};
+                    const objectives = Array.isArray(quest.objectives) && quest.objectives.length
+                        ? quest.objectives
+                        : [quest];
+                    for (let o = 0; o < objectives.length; o++) {
+                        const objective = objectives[o] || {};
+                        const objectiveGameplayId = String(objective.gameplayId || quest.gameplayId || '');
+                        if (!this._darklightsGameplayMatches(config, objectiveGameplayId)) continue;
+                        this._addDarklightsObjective(config, {
+                            mapId: Number(objective.mapId || quest.mapId),
+                            questId: quest.id,
+                            objectiveId: objective.objectiveId || quest.objectiveId,
+                        });
+                    }
+                }
+                return config;
+            }
+
             for (let i = 0; i < config.gameplayIds.length; i++) {
                 const gameplayId = config.gameplayIds[i];
-                const catalogEntry = catalog[gameplayId] || {};
                 const specs = gm && typeof gm.getGameplayQuestSpecs === 'function'
                     ? gm.getGameplayQuestSpecs(gameplayId)
                     : [];
                 for (let s = 0; s < specs.length; s++) {
-                    this._addDarklightsSpec(config, gameplayId, specs[s], catalogEntry);
+                    this._addDarklightsSpec(config, gameplayId, specs[s]);
                 }
             }
             return config;
         },
 
-        _addDarklightsSpec(config, gameplayId, spec, catalogEntry) {
+        _addDarklightsSpec(config, gameplayId, spec) {
             if (!config || !spec) return false;
-            const fallbackMapId = Number((catalogEntry && catalogEntry.mapId) || 0);
-            const specMapId = Number(spec.mapId || fallbackMapId);
+            const specMapId = Number(spec.mapId || 0);
 
             if (Array.isArray(spec.objectives) && spec.objectives.length) {
                 for (let i = 0; i < spec.objectives.length; i++) {

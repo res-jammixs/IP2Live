@@ -62,15 +62,15 @@ function createHarness() {
             recordDarklightsRollback() { return {}; },
         },
         GameManager: {
-            getGameplayCatalog() {
-                return [{
-                    gameplayId: 'ip_class_wires',
-                    mapId: 4,
-                    quests: [
-                        { id: 'wire.tutorial', mapId: 4, tutorial: true, objectiveId: 'tutorial' },
-                        { id: 'wire.one', mapId: 4, objectiveId: 'one' },
-                    ],
-                }];
+            gameplayAssignments: [
+                { id: 'wire.tutorial', gameplayId: 'ip_class_wires', mapId: 4, tutorial: true, objectiveId: 'tutorial' },
+                { id: 'wire.one', gameplayId: 'ip_class_wires', mapId: 4, objectiveId: 'one' },
+            ],
+            getAllGameplayAssignments() {
+                return this.gameplayAssignments;
+            },
+            getGameplayQuestSpecs(gameplayId) {
+                return this.gameplayAssignments.filter((spec) => spec.gameplayId === gameplayId);
             },
             startMapFlow() { return true; },
         },
@@ -138,7 +138,7 @@ function terminalFailure() {
 {
     // Regression: map 4 interleaves wires and patch-panel objectives. Even
     // if a stale launcher reports the wire gameplay id, recovery must use the
-    // catalog entry for the failed patch-panel quest and never roll back to a
+    // map assignment for the failed patch-panel quest and never roll back to a
     // completed wire quest.
     const { manager, questManager, starts, IP2Live } = createHarness();
     questManager.mapQuestQueues[4] = {
@@ -154,29 +154,15 @@ function terminalFailure() {
     };
     questManager.completedObjectives['patch.tutorial'] = { 'patch.learn': true };
     questManager.completedObjectives['patch.normal'] = { 'patch.secure': true };
-    IP2Live.GameManager.getGameplayCatalog = function () {
-        return [
-            {
-                gameplayId: 'ip_class_wires',
-                mapId: 4,
-                quests: [
-                    { id: 'wire.one', mapId: 4, objectiveId: 'one' },
-                    { id: 'wire.two', mapId: 4, objectiveId: 'two' },
-                ],
-            },
-            {
-                gameplayId: 'ip_patch_panel_classes',
-                mapId: 4,
-                quests: [
-                    { id: 'patch.tutorial', mapId: 4, objectiveId: 'patch.learn', tutorial: true },
-                    { id: 'patch.normal', mapId: 4, objectiveId: 'patch.secure' },
-                ],
-            },
-        ];
-    };
+    IP2Live.GameManager.gameplayAssignments = [
+        { id: 'wire.one', gameplayId: 'ip_class_wires', mapId: 4, objectiveId: 'one' },
+        { id: 'wire.two', gameplayId: 'ip_class_wires', mapId: 4, objectiveId: 'two' },
+        { id: 'patch.tutorial', gameplayId: 'ip_patch_panel_classes', mapId: 4, objectiveId: 'patch.learn', tutorial: true },
+        { id: 'patch.normal', gameplayId: 'ip_patch_panel_classes', mapId: 4, objectiveId: 'patch.secure' },
+    ];
 
     const result = manager.handleTerminalFailure({
-        // This intentionally conflicts with the catalog to verify that the
+        // This intentionally conflicts with the assignment to verify that the
         // quest/objective mapping, not the source payload, selects rollback.
         gameplayId: 'ip_class_wires',
         mapId: 4,
