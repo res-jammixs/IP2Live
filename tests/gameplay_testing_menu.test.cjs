@@ -71,7 +71,7 @@ function testCatalogCoverageAndNames() {
     assert.equal(
         tests.find((entry) => entry.id === 'gameplay-1-harder-tutorial').dialogueObjectiveId,
         'repair_ip_wires_harder_01_tutorial',
-        'the harder tutorial should retain its authored dialogue binding'
+        'the map assignment should retain the harder tutorial dialogue binding'
     );
 }
 
@@ -94,10 +94,27 @@ function testLaunchIsIsolatedFromQuestProgress() {
     assert.equal(captured.options.tutorialMode, true);
     assert.equal(IP2Live.GameplayManager._introShown, false, 'tutorial launches should reset one-time intro guards');
 
+    assert.equal(manager.launchGameplayTest('gameplay-1-harder-tutorial'), true);
+    assert.equal(captured.options.objectiveId, 'repair_stage5_ip_wires_harder_04_tutorial');
+    assert.equal(captured.options.spec.dialogueObjectiveId, 'repair_ip_wires_harder_01_tutorial');
+
     manager.enableGameplayTestingButton = false;
     captured = null;
     assert.equal(manager.launchGameplayTest('gameplay-1'), false);
     assert.equal(captured, null);
+}
+
+function testDialogueAliasResolution() {
+    const { manager, IP2Live } = loadGameManager();
+    let resolvedScope = null;
+    IP2Live.DialogueManager = {
+        queueByTiming(scope) { resolvedScope = scope; return []; },
+    };
+    manager._runTimingDialogues({
+        objectiveId: 'repair_stage5_ip_wires_harder_04_tutorial',
+        spec: { dialogueObjectiveId: 'repair_ip_wires_harder_01_tutorial' },
+    }, 'before');
+    assert.equal(resolvedScope.objectiveId, 'repair_ip_wires_harder_01_tutorial');
 }
 
 function testDeveloperRunsBypassPersistentSystems() {
@@ -191,6 +208,7 @@ function testPauseHeaderButtonPlacementAndFlag() {
 
 testCatalogCoverageAndNames();
 testLaunchIsIsolatedFromQuestProgress();
+testDialogueAliasResolution();
 testDeveloperRunsBypassPersistentSystems();
 testPauseHeaderButtonPlacementAndFlag();
 console.log('gameplay testing menu tests passed');

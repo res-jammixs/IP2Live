@@ -8,7 +8,7 @@
  */
 
 const IP2LiveGameManager = {
-    VERSION: 'game-manager-20260915-11',
+    VERSION: 'game-manager-20260915-12',
 
     STATE: {
         BOOT: 'BOOT',
@@ -65,7 +65,7 @@ const IP2LiveGameManager = {
     gameplayTestDefinitions: [
         { id: 'gameplay-1-tutorial', name: 'Gameplay 1 Tutorial', gameplayId: 'ip_class_wires', tutorial: true },
         { id: 'gameplay-1', name: 'Gameplay 1', gameplayId: 'ip_class_wires', tutorial: false },
-        { id: 'gameplay-1-harder-tutorial', name: 'Gameplay 1 Harder Tutorial', gameplayId: 'ip_class_wires_harder', tutorial: true, dialogueObjectiveId: 'repair_ip_wires_harder_01_tutorial' },
+        { id: 'gameplay-1-harder-tutorial', name: 'Gameplay 1 Harder Tutorial', gameplayId: 'ip_class_wires_harder', tutorial: true },
         { id: 'gameplay-1-harder', name: 'Gameplay 1 Harder', gameplayId: 'ip_class_wires_harder', tutorial: false },
         { id: 'gameplay-2-tutorial', name: 'Gameplay 2 Tutorial', gameplayId: 'ip_patch_panel_classes', tutorial: true },
         { id: 'gameplay-2', name: 'Gameplay 2', gameplayId: 'ip_patch_panel_classes', tutorial: false },
@@ -103,7 +103,6 @@ const IP2LiveGameManager = {
                 level: 1,
                 spawn: { x: 6, y: 0, z: 17 },
                 worldTitle: true,
-                gameplayNodes: ['ip_class_wires'],
             },
             4: {
                 id: 4,
@@ -112,7 +111,6 @@ const IP2LiveGameManager = {
                 level: 2,
                 spawn: { x: 6, y: 0, z: 17 },
                 worldTitle: true,
-                gameplayNodes: ['ip_patch_panel_classes'],
             },
             5: {
                 id: 5,
@@ -121,7 +119,6 @@ const IP2LiveGameManager = {
                 level: 3,
                 spawn: { x: 6, y: 0, z: 17 },
                 worldTitle: true,
-                gameplayNodes: ['ip_class_wires', 'ip_patch_panel_classes', 'ip_class_wires_harder'],
             },
             6: {
                 id: 6,
@@ -130,7 +127,6 @@ const IP2LiveGameManager = {
                 level: 4,
                 spawn: { x: 6, y: 0, z: 17 },
                 worldTitle: true,
-                gameplayNodes: ['ip_class_wires', 'ip_class_wires_harder', 'ip_patch_panel_classes'],
             },
             7: {
                 id: 7,
@@ -139,7 +135,6 @@ const IP2LiveGameManager = {
                 level: 1,
                 spawn: { x: 6, y: 0, z: 17 },
                 worldTitle: true,
-                gameplayNodes: ['ip_cidr_binary_panel'],
             },
             8: {
                 id: 8,
@@ -148,7 +143,6 @@ const IP2LiveGameManager = {
                 level: 2,
                 spawn: { x: 6, y: 0, z: 17 },
                 worldTitle: true,
-                gameplayNodes: ['ip_cidr_binary_panel', 'ip_subnet_simulator'],
             },
             9: {
                 id: 9,
@@ -157,7 +151,6 @@ const IP2LiveGameManager = {
                 level: 3,
                 spawn: { x: 6, y: 0, z: 17 },
                 worldTitle: true,
-                gameplayNodes: ['ip_cidr_binary_panel_harder', 'ip_subnet_simulator'],
             },
             10: {
                 id: 10,
@@ -166,25 +159,6 @@ const IP2LiveGameManager = {
                 level: 4,
                 spawn: { x: 6, y: 0, z: 17 },
                 worldTitle: true,
-                gameplayNodes: ['ip_cidr_binary_panel_harder'],
-            },
-            15: {
-                id: 15,
-                name: 'Stage 4 Level 1',
-                stage: 4,
-                level: 1,
-                spawn: { x: 6, y: 0, z: 17 },
-                worldTitle: true,
-                gameplayNodes: ['ip_network_repair'],
-            },
-            17: {
-                id: 17,
-                name: 'Stage 4 Level 3',
-                stage: 4,
-                level: 3,
-                spawn: { x: 6, y: 0, z: 17 },
-                worldTitle: true,
-                gameplayNodes: ['ip_vlsm_allocator'],
             },
             11: {
                 id: 11,
@@ -193,7 +167,6 @@ const IP2LiveGameManager = {
                 level: 1,
                 spawn: { x: 6, y: 0, z: 17 },
                 worldTitle: true,
-                gameplayNodes: ['ip_host_power_reactor'],
             },
             12: {
                 id: 12,
@@ -202,7 +175,6 @@ const IP2LiveGameManager = {
                 level: 2,
                 spawn: { x: 6, y: 0, z: 17 },
                 worldTitle: true,
-                gameplayNodes: ['ip_host_power_reactor', 'ip_cidr_quarantine'],
             },
             13: {
                 id: 13,
@@ -211,7 +183,46 @@ const IP2LiveGameManager = {
                 level: 3,
                 spawn: { x: 8, y: 0, z: 17 },
                 worldTitle: true,
-                gameplayNodes: ['ip_host_power_reactor', 'ip_cidr_quarantine', 'ip_cidr_quarantine_matrix'],
+            },
+            14: {
+                id: 14,
+                name: 'Stage 3 Level 4',
+                stage: 3,
+                level: 4,
+                spawn: { x: 6, y: 0, z: 17 },
+                worldTitle: true,
+            },
+            15: {
+                id: 15,
+                name: 'Stage 4 Level 1',
+                stage: 4,
+                level: 1,
+                spawn: { x: 6, y: 0, z: 17 },
+                worldTitle: true,
+            },
+            16: {
+                id: 16,
+                name: 'Stage 4 Level 2',
+                stage: 4,
+                level: 2,
+                spawn: { x: 6, y: 0, z: 17 },
+                worldTitle: true,
+            },
+            17: {
+                id: 17,
+                name: 'Stage 4 Level 3',
+                stage: 4,
+                level: 3,
+                spawn: { x: 6, y: 0, z: 17 },
+                worldTitle: true,
+            },
+            18: {
+                id: 18,
+                name: 'Stage 4 Level 4',
+                stage: 4,
+                level: 4,
+                spawn: { x: 6, y: 0, z: 17 },
+                worldTitle: true,
             },
         },
         gameplayNodes: {
@@ -284,252 +295,207 @@ const IP2LiveGameManager = {
         },
     },
 
+    // Reusable gameplay metadata only. Map placement belongs exclusively in
+    // mapGameplayAssignments below so one gameplay can safely appear on many maps.
     gameplayCatalog: {
-        ip_class_wires: {
-            gameplayId: 'ip_class_wires',
-            mapId: 3,
-            label: 'IP Class Wires',
-            competencyKey: 'ip_classification',
-            competencyLabel: 'IP class identification',
-            targetClearMs: 120000,
-            objectiveHandler: { manager: 'GameplayManager', method: '_handleWireObjective' },
-            quests: [
-                { id: 'stage.3.ip_wires.01.tutorial', objectiveId: 'repair_ip_wires_01', title: 'REPAIR IP WIRES 01', label: 'Lever 01', targetTile: { x: 6, y: 0, z: 21 }, tutorial: true },
-                { id: 'stage.3.ip_wires.02', objectiveId: 'repair_ip_wires_02', title: 'REPAIR IP WIRES 02', label: 'Lever 02', targetTile: { x: 27, y: 0, z: 10 } },
-                { id: 'stage.3.ip_wires.03', objectiveId: 'repair_ip_wires_03', title: 'REPAIR IP WIRES 03', label: 'Lever 03', targetTile: { x: 13, y: 0, z: 6 } },
-                { id: 'stage.3.ip_wires.04', objectiveId: 'repair_ip_wires_04', title: 'REPAIR IP WIRES 04', label: 'Lever 04', targetTile: { x: 19, y: 0, z: 27 } },
-                { id: 'stage.4.mixed.01.ip_wires', gameplayId: 'ip_class_wires', objectiveId: 'repair_stage4_ip_wires_01', title: 'REPAIR IP WIRES 01', label: 'Wire Node 01', mapId: 4, sequence: 1, targetTile: { x: 3, y: 0, z: 29 } },
-                { id: 'stage.4.mixed.02.ip_wires', gameplayId: 'ip_class_wires', objectiveId: 'repair_stage4_ip_wires_02', title: 'REPAIR IP WIRES 02', label: 'Wire Node 02', mapId: 4, sequence: 2, targetTile: { x: 21, y: 0, z: 31 } },
-                { id: 'stage.4.mixed.04.ip_wires', gameplayId: 'ip_class_wires', objectiveId: 'repair_stage4_ip_wires_04', title: 'REPAIR IP WIRES 04', label: 'Wire Node 04', mapId: 4, sequence: 4, targetTile: { x: 21, y: 0, z: 17 } },
-                { id: 'stage.4.mixed.05.ip_wires', gameplayId: 'ip_class_wires', objectiveId: 'repair_stage4_ip_wires_05', title: 'REPAIR IP WIRES 05', label: 'Wire Node 05', mapId: 4, sequence: 5, targetTile: { x: 12, y: 0, z: 6 } },
-                { id: 'stage.4.mixed.07.ip_wires', gameplayId: 'ip_class_wires', objectiveId: 'repair_stage4_ip_wires_07', title: 'REPAIR IP WIRES 07', label: 'Wire Node 07', mapId: 4, sequence: 7, targetTile: { x: 33, y: 0, z: 1 } },
-                { id: 'stage.5.mixed.01.ip_wires', gameplayId: 'ip_class_wires', objectiveId: 'repair_stage5_ip_wires_01', title: 'REPAIR IP WIRES 01', label: 'Wire Relay 01', mapId: 5, sequence: 1, targetTile: { x: 6, y: 0, z: 29 } },
-                { id: 'stage.5.mixed.05.ip_wires', gameplayId: 'ip_class_wires', objectiveId: 'repair_stage5_ip_wires_05', title: 'REPAIR IP WIRES 05', label: 'Wire Relay 05', mapId: 5, sequence: 5, targetTile: { x: 21, y: 0, z: 16 } },
-                { id: 'stage.6.ultimate.01.ip_wires', gameplayId: 'ip_class_wires', objectiveId: 'stage6_ultimate_01_ip_wires', title: 'ULTIMATE IP WIRES 01', label: 'Ultimate Wires 01', mapId: 6, targetTile: { x: 4, y: 0, z: 28 } },
-                { id: 'stage.6.ultimate.02.patch_panel', gameplayId: 'ip_patch_panel_classes', objectiveId: 'stage6_ultimate_02_patch_panel', title: 'ULTIMATE PATCH PANEL 02', label: 'Ultimate Patch 02', mapId: 6, targetTile: { x: 12, y: 0, z: 30 } },
-                { id: 'stage.6.ultimate.03.ip_wires_harder', gameplayId: 'ip_class_wires_harder', objectiveId: 'stage6_ultimate_03_ip_wires_harder', title: 'ULTIMATE STRICT WIRES 03', label: 'Ultimate Strict 03', mapId: 6, targetTile: { x: 21, y: 0, z: 27 }, wireCount: 6 },
-                { id: 'stage.6.ultimate.04.patch_panel', gameplayId: 'ip_patch_panel_classes', objectiveId: 'stage6_ultimate_04_patch_panel', title: 'ULTIMATE PATCH PANEL 04', label: 'Ultimate Patch 04', mapId: 6, targetTile: { x: 30, y: 0, z: 30 } },
-                { id: 'stage.6.ultimate.05.ip_wires', gameplayId: 'ip_class_wires', objectiveId: 'stage6_ultimate_05_ip_wires', title: 'ULTIMATE IP WIRES 05', label: 'Ultimate Wires 05', mapId: 6, targetTile: { x: 31, y: 0, z: 18 } },
-                { id: 'stage.6.ultimate.06.ip_wires_harder', gameplayId: 'ip_class_wires_harder', objectiveId: 'stage6_ultimate_06_ip_wires_harder', title: 'ULTIMATE STRICT WIRES 06', label: 'Ultimate Strict 06', mapId: 6, targetTile: { x: 23, y: 0, z: 12 }, wireCount: 8 },
-                { id: 'stage.6.ultimate.07.patch_panel', gameplayId: 'ip_patch_panel_classes', objectiveId: 'stage6_ultimate_07_patch_panel', title: 'ULTIMATE PATCH PANEL 07', label: 'Ultimate Patch 07', mapId: 6, targetTile: { x: 12, y: 0, z: 9 } },
-                { id: 'stage.6.ultimate.08.ip_wires', gameplayId: 'ip_class_wires', objectiveId: 'stage6_ultimate_08_ip_wires', title: 'ULTIMATE IP WIRES 08', label: 'Ultimate Wires 08', mapId: 6, targetTile: { x: 4, y: 0, z: 14 } },
+        ip_class_wires: { gameplayId: 'ip_class_wires', label: 'IP Class Wires', competencyKey: 'ip_classification', competencyLabel: 'IP class identification', targetClearMs: 120000, objectiveHandler: { manager: 'GameplayManager', method: '_handleWireObjective' } },
+        ip_class_wires_harder: { gameplayId: 'ip_class_wires_harder', label: 'IP Class Wires Harder', competencyKey: 'ip_classification_advanced', competencyLabel: 'Advanced IP class identification', targetClearMs: 150000, objectiveHandler: { manager: 'HarderWiresGameplayManager', method: '_handleWireObjective' } },
+        ip_patch_panel_classes: { gameplayId: 'ip_patch_panel_classes', label: 'IP Patch Panel', competencyKey: 'mask_ip_classification', competencyLabel: 'Subnet mask and IP class classification', targetClearMs: 140000, objectiveHandler: { manager: 'PatchPanelGameplayManager', method: '_handlePatchObjective' }, failureHandler: { manager: 'PatchPanelGameplayManager', method: 'recoverAfterFailure' } },
+        ip_cidr_binary_panel: { gameplayId: 'ip_cidr_binary_panel', label: 'CIDR Binary Panel', competencyKey: 'cidr_custom_mask', competencyLabel: 'CIDR and custom subnet mask understanding', targetClearMs: 120000, objectiveHandler: { manager: 'CIDRPanelGameplayManager', method: '_handleCIDRObjective' } },
+        ip_cidr_binary_panel_harder: { gameplayId: 'ip_cidr_binary_panel_harder', label: 'Adaptive CIDR Binary Panel', competencyKey: 'cidr_custom_mask_adaptive', competencyLabel: 'Adaptive CIDR and custom subnet mask understanding', targetClearMs: 150000, objectiveHandler: { manager: 'CIDRPanelHarderGameplayManager', method: '_handleCIDRObjective' } },
+        ip_subnet_simulator: { gameplayId: 'ip_subnet_simulator', label: 'Subnet Simulator', competencyKey: 'hosts_subnets_calculation', competencyLabel: 'Hosts and subnets calculation', targetClearMs: 150000, objectiveHandler: { manager: 'SubnetSimulatorGameplayManager', method: '_handleObjective' } },
+        ip_host_power_reactor: { gameplayId: 'ip_host_power_reactor', label: 'Host-Power Reactor', competencyKey: 'host_bit_power_calculation', competencyLabel: 'Host-bit exponent and usable-address capacity calculation', targetClearMs: 60000, objectiveHandler: { manager: 'HostPowerReactorGameplayManager', method: '_handleObjective' } },
+        ip_cidr_quarantine: { gameplayId: 'ip_cidr_quarantine', label: 'CIDR Quarantine', competencyKey: 'cidr_quarantine_zone', competencyLabel: 'CIDR quarantine zone construction', targetClearMs: 150000, objectiveHandler: { manager: 'CIDRQuarantineGameplayManager', method: '_handleObjective' }, failureHandler: { manager: 'CIDRQuarantineGameplayManager', method: 'recoverAfterFailure' } },
+        ip_cidr_quarantine_matrix: { gameplayId: 'ip_cidr_quarantine_matrix', label: 'CIDR Quarantine Matrix', competencyKey: 'cidr_multi_zone_quarantine', competencyLabel: 'Multi-zone CIDR quarantine construction', targetClearMs: 180000, objectiveHandler: { manager: 'CIDRQuarantineMatrixGameplayManager', method: '_handleObjective' }, failureHandler: { manager: 'CIDRQuarantineMatrixGameplayManager', method: 'recoverAfterFailure' } },
+        ip_network_repair: { gameplayId: 'ip_network_repair', label: 'Network Repair PCs', competencyKey: 'network_broadcast_usable_range', competencyLabel: 'Network, broadcast, and usable IP range calculation', targetClearMs: 180000, pcCount: 5, objectiveHandler: { manager: 'NetworkRepairGameplayManager', method: '_handleObjective' } },
+        ip_vlsm_allocator: { gameplayId: 'ip_vlsm_allocator', label: 'VLSM Infiltration Grid', competencyKey: 'vlsm_subnet_allocation', competencyLabel: 'VLSM subnet allocation and route planning', targetClearMs: 240000, objectiveHandler: { manager: 'VLSMAllocatorGameplayManager', method: '_handleObjective' } },
+    },
+
+    // Authoritative map-first curriculum. To add/remove gameplay on a map,
+    // edit only that map's gameplay bucket. Sequence controls quest ordering;
+    // shared quest IDs plus objectiveSequence create multi-gameplay chains.
+    mapGameplayAssignments: {
+        1: { mapId: 1, gameplays: {} },
+        3: { mapId: 3, gameplays: {
+            ip_class_wires: [
+                { id: 'stage.3.ip_wires.01.tutorial', sequence: 1, objectiveId: 'repair_ip_wires_01', title: 'REPAIR IP WIRES 01', label: 'Lever 01', targetTile: { x: 6, y: 0, z: 21 }, tutorial: true },
+                { id: 'stage.3.ip_wires.02', sequence: 2, objectiveId: 'repair_ip_wires_02', title: 'REPAIR IP WIRES 02', label: 'Lever 02', targetTile: { x: 27, y: 0, z: 10 } },
+                { id: 'stage.3.ip_wires.03', sequence: 3, objectiveId: 'repair_ip_wires_03', title: 'REPAIR IP WIRES 03', label: 'Lever 03', targetTile: { x: 13, y: 0, z: 6 } },
+                { id: 'stage.3.ip_wires.04', sequence: 4, objectiveId: 'repair_ip_wires_04', title: 'REPAIR IP WIRES 04', label: 'Lever 04', targetTile: { x: 19, y: 0, z: 27 } },
             ],
-        },
-        ip_class_wires_harder: {
-            gameplayId: 'ip_class_wires_harder',
-            mapId: 5,
-            label: 'IP Class Wires Harder',
-            competencyKey: 'ip_classification_advanced',
-            competencyLabel: 'Advanced IP class identification',
-            targetClearMs: 150000,
-            objectiveHandler: { manager: 'HarderWiresGameplayManager', method: '_handleWireObjective' },
-            quests: [
-                { id: 'stage.5.mixed.04.ip_wires_harder.tutorial', objectiveId: 'repair_stage5_ip_wires_harder_04_tutorial', title: 'ADAPTIVE RE-KEY BRIEFING', label: 'Adaptive Wires Tutorial', mapId: 5, sequence: 4, targetTile: { x: 18, y: 0, z: 18 }, tutorial: true, wireCount: 5 },
-                { id: 'stage.5.mixed.06.ip_wires_harder', objectiveId: 'repair_stage5_ip_wires_harder_06', title: 'STRICT IP WIRES CHALLENGE', label: 'Strict Wire Relay 06', mapId: 5, sequence: 6, targetTile: { x: 28, y: 0, z: 18 }, wireCount: 6 },
-                { id: 'stage.5.mixed.09.ip_wires_harder', objectiveId: 'repair_stage5_ip_wires_harder_09', title: 'STRICT IP WIRES CHALLENGE', label: 'Strict Wire Relay 09', mapId: 5, sequence: 9, targetTile: { x: 21, y: 0, z: 31 }, wireCount: 7 },
-                { id: 'stage.5.mixed.10.ip_wires_harder', objectiveId: 'repair_stage5_ip_wires_harder_10', title: 'STRICT IP WIRES CHALLENGE', label: 'Strict Wire Relay 10', mapId: 5, sequence: 10, targetTile: { x: 4, y: 0, z: 32 }, wireCount: 8 },
+        } },
+        4: { mapId: 4, gameplays: {
+            ip_class_wires: [
+                { id: 'stage.4.mixed.01.ip_wires', sequence: 1, objectiveId: 'repair_stage4_ip_wires_01', title: 'REPAIR IP WIRES 01', label: 'Wire Node 01', targetTile: { x: 3, y: 0, z: 29 } },
+                { id: 'stage.4.mixed.02.ip_wires', sequence: 2, objectiveId: 'repair_stage4_ip_wires_02', title: 'REPAIR IP WIRES 02', label: 'Wire Node 02', targetTile: { x: 21, y: 0, z: 31 } },
+                { id: 'stage.4.mixed.04.ip_wires', sequence: 4, objectiveId: 'repair_stage4_ip_wires_04', title: 'REPAIR IP WIRES 04', label: 'Wire Node 04', targetTile: { x: 21, y: 0, z: 17 } },
+                { id: 'stage.4.mixed.05.ip_wires', sequence: 5, objectiveId: 'repair_stage4_ip_wires_05', title: 'REPAIR IP WIRES 05', label: 'Wire Node 05', targetTile: { x: 12, y: 0, z: 6 } },
+                { id: 'stage.4.mixed.07.ip_wires', sequence: 7, objectiveId: 'repair_stage4_ip_wires_07', title: 'REPAIR IP WIRES 07', label: 'Wire Node 07', targetTile: { x: 33, y: 0, z: 1 } },
             ],
-        },
-        ip_patch_panel_classes: {
-            gameplayId: 'ip_patch_panel_classes',
-            mapId: 4,
-            label: 'IP Patch Panel',
-            competencyKey: 'mask_ip_classification',
-            competencyLabel: 'Subnet mask and IP class classification',
-            targetClearMs: 140000,
-            objectiveHandler: { manager: 'PatchPanelGameplayManager', method: '_handlePatchObjective' },
-            failureHandler: { manager: 'PatchPanelGameplayManager', method: 'recoverAfterFailure' },
-            quests: [
-                { id: 'stage.4.mixed.03.ip_patch_panel.tutorial', objectiveId: 'route_stage4_ip_patch_panel_03', title: 'LEARN PATCH PANEL ROUTING', label: 'Patch Panel Tutorial', mapId: 4, sequence: 3, targetTile: { x: 21, y: 0, z: 26 }, tutorial: true },
-                { id: 'stage.4.mixed.06.ip_patch_panel', objectiveId: 'route_stage4_ip_patch_panel_06', title: 'SECURE PATCH PANEL NODE 06', label: 'Patch Panel Node 06', mapId: 4, sequence: 6, targetTile: { x: 19, y: 0, z: 6 } },
-                { id: 'stage.5.mixed.02.ip_patch_panel', objectiveId: 'route_stage5_ip_patch_panel_02', title: 'SECURE PATCH PANEL NODE 02', label: 'Patch Relay 02', mapId: 5, sequence: 2, targetTile: { x: 14, y: 0, z: 27 } },
-                { id: 'stage.5.mixed.03.ip_patch_panel', objectiveId: 'route_stage5_ip_patch_panel_03', title: 'SECURE PATCH PANEL NODE 03', label: 'Patch Relay 03', mapId: 5, sequence: 3, targetTile: { x: 16, y: 0, z: 25 } },
-                { id: 'stage.5.mixed.07.ip_patch_panel', objectiveId: 'route_stage5_ip_patch_panel_07', title: 'SECURE PATCH PANEL NODE 07', label: 'Patch Relay 07', mapId: 5, sequence: 7, targetTile: { x: 31, y: 0, z: 21 } },
-                { id: 'stage.5.mixed.08.ip_patch_panel', objectiveId: 'route_stage5_ip_patch_panel_08', title: 'SECURE PATCH PANEL NODE 08', label: 'Patch Relay 08', mapId: 5, sequence: 8, targetTile: { x: 30, y: 0, z: 30 } },
+            ip_patch_panel_classes: [
+                { id: 'stage.4.mixed.03.ip_patch_panel.tutorial', sequence: 3, objectiveId: 'route_stage4_ip_patch_panel_03', title: 'LEARN PATCH PANEL ROUTING', label: 'Patch Panel Tutorial', targetTile: { x: 21, y: 0, z: 26 }, tutorial: true },
+                { id: 'stage.4.mixed.06.ip_patch_panel', sequence: 6, objectiveId: 'route_stage4_ip_patch_panel_06', title: 'SECURE PATCH PANEL NODE 06', label: 'Patch Panel Node 06', targetTile: { x: 19, y: 0, z: 6 } },
             ],
-        },
-        ip_cidr_binary_panel: {
-            gameplayId: 'ip_cidr_binary_panel',
-            mapId: 7,
-            label: 'CIDR Binary Panel',
-            competencyKey: 'cidr_custom_mask',
-            competencyLabel: 'CIDR and custom subnet mask understanding',
-            targetClearMs: 120000,
-            objectiveHandler: { manager: 'CIDRPanelGameplayManager', method: '_handleCIDRObjective' },
-            quests: [
-                { id: 'stage.7.ip_cidr_panel.01', objectiveId: 'solve_cidr_panel_01', title: 'SOLVE CIDR BINARY PANEL 01', label: 'CIDR Panel 01', mapId: 7, tutorial: true, randomizeTarget: true, targetClasses: ['A', 'B', 'C'], targetTile: { x: 4, y: 0, z: 28 } },
-                { id: 'stage.7.ip_cidr_panel.02', objectiveId: 'solve_cidr_panel_02', title: 'SOLVE CIDR BINARY PANEL 02', label: 'CIDR Panel 02', mapId: 7, randomizeTarget: true, targetClasses: ['A', 'B', 'C'], targetTile: { x: 10, y: 0, z: 30 } },
-                { id: 'stage.7.ip_cidr_panel.03', objectiveId: 'solve_cidr_panel_03', title: 'SOLVE CIDR BINARY PANEL 03', label: 'CIDR Panel 03', mapId: 7, randomizeTarget: true, targetClasses: ['A', 'B', 'C'], targetTile: { x: 18, y: 0, z: 27 } },
-                { id: 'stage.7.ip_cidr_panel.04', objectiveId: 'solve_cidr_panel_04', title: 'SOLVE CIDR BINARY PANEL 04', label: 'CIDR Panel 04', mapId: 7, randomizeTarget: true, targetClasses: ['A', 'B', 'C'], targetTile: { x: 27, y: 0, z: 30 } },
-                { id: 'stage.7.ip_cidr_panel.05', objectiveId: 'solve_cidr_panel_05', title: 'SOLVE CIDR BINARY PANEL 05', label: 'CIDR Panel 05', mapId: 7, randomizeTarget: true, targetClasses: ['A', 'B', 'C'], targetTile: { x: 31, y: 0, z: 21 } },
-                { id: 'stage.8.cidr_chain.01', label: 'CIDR Chain 01', handoffKey: 'stage8-cidr-chain-01', mapId: 8, targetClass: 'C', randomizeTarget: true, objectives: [
-                    { gameplayId: 'ip_cidr_binary_panel', objectiveId: 'solve_cidr_chain_01_panel', title: 'SOLVE CIDR PANEL 01', label: 'CIDR Panel 01', targetTile: { x: 5, y: 0, z: 28 } },
-                    { gameplayId: 'ip_subnet_simulator', objectiveId: 'solve_cidr_chain_01_subnet', title: 'SOLVE SUBNET SIMULATOR 01', label: 'Subnet Simulator 01', tutorial: true, targetTile: { x: 7, y: 0, z: 28 } },
-                ] },
-                { id: 'stage.8.cidr_chain.02', label: 'CIDR Chain 02', handoffKey: 'stage8-cidr-chain-02', mapId: 8, targetClass: 'C', randomizeTarget: true, objectives: [
-                    { gameplayId: 'ip_cidr_binary_panel', objectiveId: 'solve_cidr_chain_02_panel', title: 'SOLVE CIDR PANEL 02', label: 'CIDR Panel 02', targetTile: { x: 12, y: 0, z: 30 } },
-                    { gameplayId: 'ip_subnet_simulator', objectiveId: 'solve_cidr_chain_02_subnet', title: 'SOLVE SUBNET SIMULATOR 02', label: 'Subnet Simulator 02', targetTile: { x: 12, y: 0, z: 28 } },
-                ] },
-                { id: 'stage.8.cidr_chain.03', label: 'CIDR Chain 03', handoffKey: 'stage8-cidr-chain-03', mapId: 8, targetClass: 'C', randomizeTarget: true, objectives: [
-                    { gameplayId: 'ip_cidr_binary_panel', objectiveId: 'solve_cidr_chain_03_panel', title: 'SOLVE CIDR PANEL 03', label: 'CIDR Panel 03', targetTile: { x: 24, y: 0, z: 28 } },
-                    { gameplayId: 'ip_subnet_simulator', objectiveId: 'solve_cidr_chain_03_subnet', title: 'SOLVE SUBNET SIMULATOR 03', label: 'Subnet Simulator 03', targetTile: { x: 26, y: 0, z: 28 } },
-                ] },
-                { id: 'stage.8.cidr_chain.04', label: 'CIDR Chain 04', handoffKey: 'stage8-cidr-chain-04', mapId: 8, targetClass: 'C', randomizeTarget: true, objectives: [
-                    { gameplayId: 'ip_cidr_binary_panel', objectiveId: 'solve_cidr_chain_04_panel', title: 'SOLVE CIDR PANEL 04', label: 'CIDR Panel 04', targetTile: { x: 8, y: 0, z: 18 } },
-                    { gameplayId: 'ip_subnet_simulator', objectiveId: 'solve_cidr_chain_04_subnet', title: 'SOLVE SUBNET SIMULATOR 04', label: 'Subnet Simulator 04', targetTile: { x: 10, y: 0, z: 18 } },
-                ] },
-                { id: 'stage.8.cidr_chain.05', label: 'CIDR Chain 05', handoffKey: 'stage8-cidr-chain-05', mapId: 8, targetClass: 'C', randomizeTarget: true, objectives: [
-                    { gameplayId: 'ip_cidr_binary_panel', objectiveId: 'solve_cidr_chain_05_panel', title: 'SOLVE CIDR PANEL 05', label: 'CIDR Panel 05', targetTile: { x: 22, y: 0, z: 18 } },
-                    { gameplayId: 'ip_subnet_simulator', objectiveId: 'solve_cidr_chain_05_subnet', title: 'SOLVE SUBNET SIMULATOR 05', label: 'Subnet Simulator 05', targetTile: { x: 24, y: 0, z: 18 } },
-                ] },
+        } },
+        5: { mapId: 5, gameplays: {
+            ip_class_wires: [
+                { id: 'stage.5.mixed.01.ip_wires', sequence: 1, objectiveId: 'repair_stage5_ip_wires_01', title: 'REPAIR IP WIRES 01', label: 'Wire Relay 01', targetTile: { x: 6, y: 0, z: 29 } },
+                { id: 'stage.5.mixed.05.ip_wires', sequence: 5, objectiveId: 'repair_stage5_ip_wires_05', title: 'REPAIR IP WIRES 05', label: 'Wire Relay 05', targetTile: { x: 21, y: 0, z: 16 } },
             ],
-        },
-        ip_cidr_binary_panel_harder: {
-            gameplayId: 'ip_cidr_binary_panel_harder',
-            mapId: 9,
-            label: 'Adaptive CIDR Binary Panel',
-            competencyKey: 'cidr_custom_mask_adaptive',
-            competencyLabel: 'Adaptive CIDR and custom subnet mask understanding',
-            targetClearMs: 150000,
-            objectiveHandler: { manager: 'CIDRPanelHarderGameplayManager', method: '_handleCIDRObjective' },
-            quests: [
-                { id: 'stage.9.cidr_chain.01', label: 'Adaptive CIDR Chain 01', handoffKey: 'stage9-cidr-chain-01', mapId: 9, targetClass: 'C', randomizeTarget: true, harderIntro: true, objectives: [
-                    { gameplayId: 'ip_cidr_binary_panel_harder', objectiveId: 'solve_harder_cidr_chain_01_panel', title: 'BREACH ADAPTIVE CIDR PANEL 01', label: 'Adaptive CIDR Panel 01', targetTile: { x: 5, y: 0, z: 28 } },
-                    { gameplayId: 'ip_subnet_simulator', objectiveId: 'solve_harder_cidr_chain_01_subnet', title: 'SOLVE SUBNET SIMULATOR 01', label: 'Subnet Simulator 01', targetTile: { x: 7, y: 0, z: 28 } },
-                ] },
-                { id: 'stage.9.cidr_chain.02', label: 'Adaptive CIDR Chain 02', handoffKey: 'stage9-cidr-chain-02', mapId: 9, targetClass: 'C', randomizeTarget: true, objectives: [
-                    { gameplayId: 'ip_cidr_binary_panel_harder', objectiveId: 'solve_harder_cidr_chain_02_panel', title: 'BREACH ADAPTIVE CIDR PANEL 02', label: 'Adaptive CIDR Panel 02', targetTile: { x: 12, y: 0, z: 30 } },
-                    { gameplayId: 'ip_subnet_simulator', objectiveId: 'solve_harder_cidr_chain_02_subnet', title: 'SOLVE SUBNET SIMULATOR 02', label: 'Subnet Simulator 02', targetTile: { x: 12, y: 0, z: 28 } },
-                ] },
-                { id: 'stage.9.cidr_chain.03', label: 'Adaptive CIDR Chain 03', handoffKey: 'stage9-cidr-chain-03', mapId: 9, targetClass: 'C', randomizeTarget: true, objectives: [
-                    { gameplayId: 'ip_cidr_binary_panel_harder', objectiveId: 'solve_harder_cidr_chain_03_panel', title: 'BREACH ADAPTIVE CIDR PANEL 03', label: 'Adaptive CIDR Panel 03', targetTile: { x: 24, y: 0, z: 28 } },
-                    { gameplayId: 'ip_subnet_simulator', objectiveId: 'solve_harder_cidr_chain_03_subnet', title: 'SOLVE SUBNET SIMULATOR 03', label: 'Subnet Simulator 03', targetTile: { x: 26, y: 0, z: 28 } },
-                ] },
-                { id: 'stage.9.cidr_chain.04', label: 'Adaptive CIDR Chain 04', handoffKey: 'stage9-cidr-chain-04', mapId: 9, targetClass: 'C', randomizeTarget: true, objectives: [
-                    { gameplayId: 'ip_cidr_binary_panel_harder', objectiveId: 'solve_harder_cidr_chain_04_panel', title: 'BREACH ADAPTIVE CIDR PANEL 04', label: 'Adaptive CIDR Panel 04', targetTile: { x: 8, y: 0, z: 18 } },
-                    { gameplayId: 'ip_subnet_simulator', objectiveId: 'solve_harder_cidr_chain_04_subnet', title: 'SOLVE SUBNET SIMULATOR 04', label: 'Subnet Simulator 04', targetTile: { x: 10, y: 0, z: 18 } },
-                ] },
-                { id: 'stage.9.cidr_chain.05', label: 'Adaptive CIDR Chain 05', handoffKey: 'stage9-cidr-chain-05', mapId: 9, targetClass: 'C', randomizeTarget: true, objectives: [
-                    { gameplayId: 'ip_cidr_binary_panel_harder', objectiveId: 'solve_harder_cidr_chain_05_panel', title: 'BREACH ADAPTIVE CIDR PANEL 05', label: 'Adaptive CIDR Panel 05', targetTile: { x: 22, y: 0, z: 18 } },
-                    { gameplayId: 'ip_subnet_simulator', objectiveId: 'solve_harder_cidr_chain_05_subnet', title: 'SOLVE SUBNET SIMULATOR 05', label: 'Subnet Simulator 05', targetTile: { x: 24, y: 0, z: 18 } },
-                ] },
-                { id: 'stage.10.ip_cidr_harder.01', gameplayId: 'ip_cidr_binary_panel_harder', objectiveId: 'solve_harder_cidr_panel_01', title: 'BREACH ADAPTIVE CIDR PANEL 01', label: 'Adaptive CIDR Panel 01', mapId: 10, targetClass: 'C', randomizeTarget: true, harderIntro: true, targetTile: { x: 4, y: 0, z: 28 } },
-                { id: 'stage.10.ip_cidr_harder.02', gameplayId: 'ip_cidr_binary_panel_harder', objectiveId: 'solve_harder_cidr_panel_02', title: 'BREACH ADAPTIVE CIDR PANEL 02', label: 'Adaptive CIDR Panel 02', mapId: 10, targetClass: 'C', randomizeTarget: true, targetTile: { x: 10, y: 0, z: 30 } },
-                { id: 'stage.10.ip_cidr_harder.03', gameplayId: 'ip_cidr_binary_panel_harder', objectiveId: 'solve_harder_cidr_panel_03', title: 'BREACH ADAPTIVE CIDR PANEL 03', label: 'Adaptive CIDR Panel 03', mapId: 10, targetClass: 'C', randomizeTarget: true, targetTile: { x: 18, y: 0, z: 27 } },
-                { id: 'stage.10.ip_cidr_harder.04', gameplayId: 'ip_cidr_binary_panel_harder', objectiveId: 'solve_harder_cidr_panel_04', title: 'BREACH ADAPTIVE CIDR PANEL 04', label: 'Adaptive CIDR Panel 04', mapId: 10, targetClass: 'C', randomizeTarget: true, targetTile: { x: 27, y: 0, z: 30 } },
-                { id: 'stage.10.ip_cidr_harder.05', gameplayId: 'ip_cidr_binary_panel_harder', objectiveId: 'solve_harder_cidr_panel_05', title: 'BREACH ADAPTIVE CIDR PANEL 05', label: 'Adaptive CIDR Panel 05', mapId: 10, targetClass: 'C', randomizeTarget: true, targetTile: { x: 31, y: 0, z: 21 } },
+            ip_patch_panel_classes: [
+                { id: 'stage.5.mixed.02.ip_patch_panel', sequence: 2, objectiveId: 'route_stage5_ip_patch_panel_02', title: 'SECURE PATCH PANEL NODE 02', label: 'Patch Relay 02', targetTile: { x: 14, y: 0, z: 27 } },
+                { id: 'stage.5.mixed.03.ip_patch_panel', sequence: 3, objectiveId: 'route_stage5_ip_patch_panel_03', title: 'SECURE PATCH PANEL NODE 03', label: 'Patch Relay 03', targetTile: { x: 16, y: 0, z: 25 } },
+                { id: 'stage.5.mixed.07.ip_patch_panel', sequence: 7, objectiveId: 'route_stage5_ip_patch_panel_07', title: 'SECURE PATCH PANEL NODE 07', label: 'Patch Relay 07', targetTile: { x: 31, y: 0, z: 21 } },
+                { id: 'stage.5.mixed.08.ip_patch_panel', sequence: 8, objectiveId: 'route_stage5_ip_patch_panel_08', title: 'SECURE PATCH PANEL NODE 08', label: 'Patch Relay 08', targetTile: { x: 30, y: 0, z: 30 } },
             ],
-        },
-        ip_subnet_simulator: {
-            gameplayId: 'ip_subnet_simulator',
-            mapId: 8,
-            label: 'Subnet Simulator',
-            competencyKey: 'hosts_subnets_calculation',
-            competencyLabel: 'Hosts and subnets calculation',
-            targetClearMs: 150000,
-            objectiveHandler: { manager: 'SubnetSimulatorGameplayManager', method: '_handleObjective' },
-            quests: [],
-        },
-        ip_host_power_reactor: {
-            gameplayId: 'ip_host_power_reactor',
-            mapId: 11,
-            label: 'Host-Power Reactor',
-            competencyKey: 'host_bit_power_calculation',
-            competencyLabel: 'Host-bit exponent and usable-address capacity calculation',
-            targetClearMs: 60000,
-            objectiveHandler: { manager: 'HostPowerReactorGameplayManager', method: '_handleObjective' },
-            quests: [
-                { id: 'stage.11.host_power.01.tutorial', gameplayId: 'ip_host_power_reactor', objectiveId: 'stabilize_host_power_11_01', title: 'CALIBRATE HOST-POWER REACTOR', label: 'Host-Power Node 01', mapId: 11, sequence: 1, tutorial: true, targetClass: 'C', requiredHosts: 50, targetTile: { x: 6, y: 0, z: 28 } },
-                { id: 'stage.11.host_power.02', gameplayId: 'ip_host_power_reactor', objectiveId: 'stabilize_host_power_11_02', title: 'POWER CLASS C RELAY', label: 'Host-Power Node 02', mapId: 11, sequence: 2, targetClass: 'C', requiredHosts: 100, targetTile: { x: 34, y: 0, z: 17 } },
-                { id: 'stage.11.host_power.03', gameplayId: 'ip_host_power_reactor', objectiveId: 'stabilize_host_power_11_03', title: 'BALANCE CLASS C CAPACITY', label: 'Host-Power Node 03', mapId: 11, sequence: 3, targetClass: 'C', requiredHosts: 200, targetTile: { x: 3, y: 0, z: 12 } },
-                { id: 'stage.11.host_power.04', gameplayId: 'ip_host_power_reactor', objectiveId: 'stabilize_host_power_11_04', title: 'POWER CLASS B RELAY', label: 'Host-Power Node 04', mapId: 11, sequence: 4, targetClass: 'B', requiredHosts: 510, targetTile: { x: 10, y: 0, z: 25 } },
-                { id: 'stage.11.host_power.05', gameplayId: 'ip_host_power_reactor', objectiveId: 'stabilize_host_power_11_05', title: 'FINALIZE HOST-POWER GRID', label: 'Host-Power Node 05', mapId: 11, sequence: 5, targetClass: 'B', requiredHosts: 1022, targetTile: { x: 18, y: 0, z: 1 } },
-                { id: 'stage.12.mixed.01.host_power', gameplayId: 'ip_host_power_reactor', objectiveId: 'stabilize_host_power_12_01', title: 'VERIFY HOST-POWER CAPACITY', label: 'Host-Power Node 01', mapId: 12, sequence: 1, targetClass: 'C', requiredHosts: 126, targetTile: { x: 21, y: 0, z: 28 } },
-                { id: 'stage.12.mixed.02.host_power', gameplayId: 'ip_host_power_reactor', objectiveId: 'stabilize_host_power_12_02', title: 'PRIME QUARANTINE CAPACITY', label: 'Host-Power Node 02', mapId: 12, sequence: 2, targetClass: 'B', requiredHosts: 2046, targetTile: { x: 0, y: 0, z: 16 } },
-                { id: 'stage.13.mixed.01.host_power', gameplayId: 'ip_host_power_reactor', objectiveId: 'stabilize_host_power_13_01', title: 'CALCULATE CONTAINMENT POWER', label: 'Host-Power Node 01', mapId: 13, sequence: 1, targetClass: 'C', requiredHosts: 200, targetTile: { x: 6, y: 0, z: 28 } },
-                { id: 'stage.13.mixed.03.host_power', gameplayId: 'ip_host_power_reactor', objectiveId: 'stabilize_host_power_13_03', title: 'RECALCULATE HOST CAPACITY', label: 'Host-Power Node 03', mapId: 13, sequence: 3, targetClass: 'B', requiredHosts: 4094, targetTile: { x: 3, y: 0, z: 12 } },
+            ip_class_wires_harder: [
+                { id: 'stage.5.mixed.04.ip_wires_harder.tutorial', sequence: 4, objectiveId: 'repair_stage5_ip_wires_harder_04_tutorial', dialogueObjectiveId: 'repair_ip_wires_harder_01_tutorial', title: 'ADAPTIVE RE-KEY BRIEFING', label: 'Adaptive Wires Tutorial', targetTile: { x: 18, y: 0, z: 18 }, tutorial: true, wireCount: 5 },
+                { id: 'stage.5.mixed.06.ip_wires_harder', sequence: 6, objectiveId: 'repair_stage5_ip_wires_harder_06', title: 'STRICT IP WIRES CHALLENGE', label: 'Strict Wire Relay 06', targetTile: { x: 28, y: 0, z: 18 }, wireCount: 6 },
+                { id: 'stage.5.mixed.09.ip_wires_harder', sequence: 9, objectiveId: 'repair_stage5_ip_wires_harder_09', title: 'STRICT IP WIRES CHALLENGE', label: 'Strict Wire Relay 09', targetTile: { x: 21, y: 0, z: 31 }, wireCount: 7 },
+                { id: 'stage.5.mixed.10.ip_wires_harder', sequence: 10, objectiveId: 'repair_stage5_ip_wires_harder_10', title: 'STRICT IP WIRES CHALLENGE', label: 'Strict Wire Relay 10', targetTile: { x: 4, y: 0, z: 32 }, wireCount: 8 },
             ],
-        },
-        ip_cidr_quarantine: {
-            gameplayId: 'ip_cidr_quarantine',
-            mapId: 12,
-            label: 'CIDR Quarantine',
-            competencyKey: 'cidr_quarantine_zone',
-            competencyLabel: 'CIDR quarantine zone construction',
-            targetClearMs: 150000,
-            objectiveHandler: { manager: 'CIDRQuarantineGameplayManager', method: '_handleObjective' },
-            failureHandler: { manager: 'CIDRQuarantineGameplayManager', method: 'recoverAfterFailure' },
-            quests: [
-                { id: 'stage.12.mixed.03.cidr_quarantine.tutorial', gameplayId: 'ip_cidr_quarantine', objectiveId: 'solve_cidr_quarantine_12_03', title: 'CALIBRATE QUARANTINE NODE', label: 'Quarantine Node 03', mapId: 12, sequence: 3, tutorial: true, targetTile: { x: 17, y: 0, z: 0 }, profile: { index: 1, minHosts: 18, maxHosts: 34 } },
-                { id: 'stage.12.mixed.04.cidr_quarantine', gameplayId: 'ip_cidr_quarantine', objectiveId: 'solve_cidr_quarantine_12_04', title: 'TRAP ROGUE AI CLUSTER', label: 'Quarantine Node 04', mapId: 12, sequence: 4, targetTile: { x: 34, y: 0, z: 16 }, profile: { index: 2, minHosts: 26, maxHosts: 58 } },
-                { id: 'stage.12.mixed.05.cidr_quarantine', gameplayId: 'ip_cidr_quarantine', objectiveId: 'solve_cidr_quarantine_12_05', title: 'SEAL INFECTED SEGMENT', label: 'Quarantine Node 05', mapId: 12, sequence: 5, targetTile: { x: 17, y: 0, z: 19 }, profile: { index: 3, minHosts: 42, maxHosts: 92 } },
-                { id: 'stage.13.mixed.02.cidr_quarantine', gameplayId: 'ip_cidr_quarantine', objectiveId: 'solve_cidr_quarantine_13_02', title: 'BUILD SINGLE-ZONE QUARANTINE', label: 'Quarantine Node 02', mapId: 13, sequence: 2, targetTile: { x: 34, y: 0, z: 17 }, profile: { index: 4, minHosts: 70, maxHosts: 120 } },
-                { id: 'stage.13.mixed.04.cidr_quarantine', gameplayId: 'ip_cidr_quarantine', objectiveId: 'solve_cidr_quarantine_13_04', title: 'SEAL APEX RELAY AI', label: 'Quarantine Node 04', mapId: 13, sequence: 4, targetTile: { x: 10, y: 0, z: 25 }, profile: { index: 5, minHosts: 96, maxHosts: 180 } },
+        } },
+        6: { mapId: 6, gameplays: {
+            ip_class_wires: [
+                { id: 'stage.6.ultimate.01.ip_wires', sequence: 1, objectiveId: 'stage6_ultimate_01_ip_wires', title: 'ULTIMATE IP WIRES 01', label: 'Ultimate Wires 01', targetTile: { x: 4, y: 0, z: 28 } },
+                { id: 'stage.6.ultimate.05.ip_wires', sequence: 5, objectiveId: 'stage6_ultimate_05_ip_wires', title: 'ULTIMATE IP WIRES 05', label: 'Ultimate Wires 05', targetTile: { x: 31, y: 0, z: 18 } },
+                { id: 'stage.6.ultimate.08.ip_wires', sequence: 8, objectiveId: 'stage6_ultimate_08_ip_wires', title: 'ULTIMATE IP WIRES 08', label: 'Ultimate Wires 08', targetTile: { x: 4, y: 0, z: 14 } },
             ],
-        },
-        ip_cidr_quarantine_matrix: {
-            gameplayId: 'ip_cidr_quarantine_matrix',
-            mapId: 13,
-            label: 'CIDR Quarantine Matrix',
-            competencyKey: 'cidr_multi_zone_quarantine',
-            competencyLabel: 'Multi-zone CIDR quarantine construction',
-            targetClearMs: 180000,
-            objectiveHandler: { manager: 'CIDRQuarantineMatrixGameplayManager', method: '_handleObjective' },
-            failureHandler: { manager: 'CIDRQuarantineMatrixGameplayManager', method: 'recoverAfterFailure' },
-            quests: [
-                { id: 'stage.13.mixed.05.cidr_matrix.tutorial', gameplayId: 'ip_cidr_quarantine_matrix', objectiveId: 'solve_cidr_matrix_13_05', title: 'CALIBRATE MULTI-ZONE MATRIX', label: 'Matrix Node 05', mapId: 13, sequence: 5, tutorial: true, targetTile: { x: 18, y: 0, z: 1 }, profile: { index: 1, zoneCount: 2, parentPrefix: 23 } },
+            ip_patch_panel_classes: [
+                { id: 'stage.6.ultimate.02.patch_panel', sequence: 2, objectiveId: 'stage6_ultimate_02_patch_panel', title: 'ULTIMATE PATCH PANEL 02', label: 'Ultimate Patch 02', targetTile: { x: 12, y: 0, z: 30 } },
+                { id: 'stage.6.ultimate.04.patch_panel', sequence: 4, objectiveId: 'stage6_ultimate_04_patch_panel', title: 'ULTIMATE PATCH PANEL 04', label: 'Ultimate Patch 04', targetTile: { x: 30, y: 0, z: 30 } },
+                { id: 'stage.6.ultimate.07.patch_panel', sequence: 7, objectiveId: 'stage6_ultimate_07_patch_panel', title: 'ULTIMATE PATCH PANEL 07', label: 'Ultimate Patch 07', targetTile: { x: 12, y: 0, z: 9 } },
             ],
-        },
-        ip_network_repair: {
-            gameplayId: 'ip_network_repair',
-            mapId: 15,
-            label: 'Network Repair PCs',
-            competencyKey: 'network_broadcast_usable_range',
-            competencyLabel: 'Network, broadcast, and usable IP range calculation',
-            targetClearMs: 180000,
-            pcCount: 5,
-            objectiveHandler: { manager: 'NetworkRepairGameplayManager', method: '_handleObjective' },
-            quests: [
-                { id: 'stage.15.ip_network_repair.01', objectiveId: 'repair_network_pc_01', title: 'REPAIR PC 01', label: 'PC 01', targetTile: { x: 1, y: 0, z: 30 }, tutorial: true, taskType: 'networkAddress' },
-                { id: 'stage.15.ip_network_repair.02', objectiveId: 'repair_network_pc_02', title: 'REPAIR PC 02', label: 'PC 02', targetTile: { x: 1, y: 0, z: 4 }, taskType: 'broadcastAddress' },
-                { id: 'stage.15.ip_network_repair.03', objectiveId: 'repair_network_pc_03', title: 'REPAIR PC 03', label: 'PC 03', targetTile: { x: 32, y: 3, z: 2 }, taskType: 'usableRange' },
-                { id: 'stage.15.ip_network_repair.04', objectiveId: 'repair_network_pc_04', title: 'REPAIR PC 04', label: 'PC 04', targetTile: { x: 32, y: 3, z: 5 }, taskType: 'networkAddress' },
-                { id: 'stage.15.ip_network_repair.05', objectiveId: 'repair_network_pc_05', title: 'REPAIR PC 05', label: 'PC 05', targetTile: { x: 32, y: 3, z: 8 }, taskType: 'usableRange' },
+            ip_class_wires_harder: [
+                { id: 'stage.6.ultimate.03.ip_wires_harder', sequence: 3, objectiveId: 'stage6_ultimate_03_ip_wires_harder', title: 'ULTIMATE STRICT WIRES 03', label: 'Ultimate Strict 03', targetTile: { x: 21, y: 0, z: 27 }, wireCount: 6 },
+                { id: 'stage.6.ultimate.06.ip_wires_harder', sequence: 6, objectiveId: 'stage6_ultimate_06_ip_wires_harder', title: 'ULTIMATE STRICT WIRES 06', label: 'Ultimate Strict 06', targetTile: { x: 23, y: 0, z: 12 }, wireCount: 8 },
             ],
-        },
-        ip_vlsm_allocator: {
-            gameplayId: 'ip_vlsm_allocator',
-            mapId: 17,
-            label: 'VLSM Infiltration Grid',
-            competencyKey: 'vlsm_subnet_allocation',
-            competencyLabel: 'VLSM subnet allocation and route planning',
-            targetClearMs: 240000,
-            objectiveHandler: { manager: 'VLSMAllocatorGameplayManager', method: '_handleObjective' },
-            quests: [
-                { id: 'stage.17.vlsm.hq', objectiveId: 'configure_vlsm_hq', title: 'CONFIGURE HQ SUBNET', label: 'HQ Terminal', mapId: 17, targetTile: { x: 5, y: 0, z: 28 }, terminalType: 'branch', branchId: 'hq', tutorial: true },
-                { id: 'stage.17.vlsm.eugene', objectiveId: 'configure_vlsm_eugene', title: 'CONFIGURE EUGENE SUBNET', label: 'Eugene Terminal', mapId: 17, targetTile: { x: 28, y: 0, z: 26 }, terminalType: 'branch', branchId: 'eugene' },
-                { id: 'stage.17.vlsm.branch_a', objectiveId: 'configure_vlsm_branch_a', title: 'CONFIGURE BRANCH A SUBNET', label: 'Branch A Terminal', mapId: 17, targetTile: { x: 30, y: 0, z: 10 }, terminalType: 'branch', branchId: 'branch_a' },
-                { id: 'stage.17.vlsm.san_jose', objectiveId: 'configure_vlsm_san_jose', title: 'CONFIGURE SAN JOSE SUBNET', label: 'San Jose Terminal', mapId: 17, targetTile: { x: 16, y: 0, z: 6 }, terminalType: 'branch', branchId: 'san_jose' },
-                { id: 'stage.17.vlsm.seattle', objectiveId: 'configure_vlsm_seattle', title: 'CONFIGURE SEATTLE SUBNET', label: 'Seattle Terminal', mapId: 17, targetTile: { x: 4, y: 0, z: 10 }, terminalType: 'branch', branchId: 'seattle' },
-                { id: 'stage.17.vlsm.core', objectiveId: 'commit_vlsm_core', title: 'COMMIT VLSM CORE GATEWAY', label: 'Core Gateway', mapId: 17, targetTile: { x: 17, y: 0, z: 18 }, terminalType: 'core' },
+        } },
+        7: { mapId: 7, gameplays: {
+            ip_cidr_binary_panel: [
+                { id: 'stage.7.ip_cidr_panel.01', sequence: 1, objectiveId: 'solve_cidr_panel_01', title: 'SOLVE CIDR BINARY PANEL 01', label: 'CIDR Panel 01', tutorial: true, randomizeTarget: true, targetClasses: ['A', 'B', 'C'], targetTile: { x: 4, y: 0, z: 28 } },
+                { id: 'stage.7.ip_cidr_panel.02', sequence: 2, objectiveId: 'solve_cidr_panel_02', title: 'SOLVE CIDR BINARY PANEL 02', label: 'CIDR Panel 02', randomizeTarget: true, targetClasses: ['A', 'B', 'C'], targetTile: { x: 10, y: 0, z: 30 } },
+                { id: 'stage.7.ip_cidr_panel.03', sequence: 3, objectiveId: 'solve_cidr_panel_03', title: 'SOLVE CIDR BINARY PANEL 03', label: 'CIDR Panel 03', randomizeTarget: true, targetClasses: ['A', 'B', 'C'], targetTile: { x: 18, y: 0, z: 27 } },
+                { id: 'stage.7.ip_cidr_panel.04', sequence: 4, objectiveId: 'solve_cidr_panel_04', title: 'SOLVE CIDR BINARY PANEL 04', label: 'CIDR Panel 04', randomizeTarget: true, targetClasses: ['A', 'B', 'C'], targetTile: { x: 27, y: 0, z: 30 } },
+                { id: 'stage.7.ip_cidr_panel.05', sequence: 5, objectiveId: 'solve_cidr_panel_05', title: 'SOLVE CIDR BINARY PANEL 05', label: 'CIDR Panel 05', randomizeTarget: true, targetClasses: ['A', 'B', 'C'], targetTile: { x: 31, y: 0, z: 21 } },
             ],
-        },
+        } },
+        8: { mapId: 8, gameplays: {
+            ip_cidr_binary_panel: [
+                { id: 'stage.8.cidr_chain.01', sequence: 1, objectiveSequence: 1, questLabel: 'CIDR Chain 01', objectiveId: 'solve_cidr_chain_01_panel', title: 'SOLVE CIDR PANEL 01', label: 'CIDR Panel 01', handoffKey: 'stage8-cidr-chain-01', targetClass: 'C', randomizeTarget: true, targetTile: { x: 5, y: 0, z: 28 } },
+                { id: 'stage.8.cidr_chain.02', sequence: 2, objectiveSequence: 1, questLabel: 'CIDR Chain 02', objectiveId: 'solve_cidr_chain_02_panel', title: 'SOLVE CIDR PANEL 02', label: 'CIDR Panel 02', handoffKey: 'stage8-cidr-chain-02', targetClass: 'C', randomizeTarget: true, targetTile: { x: 12, y: 0, z: 30 } },
+                { id: 'stage.8.cidr_chain.03', sequence: 3, objectiveSequence: 1, questLabel: 'CIDR Chain 03', objectiveId: 'solve_cidr_chain_03_panel', title: 'SOLVE CIDR PANEL 03', label: 'CIDR Panel 03', handoffKey: 'stage8-cidr-chain-03', targetClass: 'C', randomizeTarget: true, targetTile: { x: 24, y: 0, z: 28 } },
+                { id: 'stage.8.cidr_chain.04', sequence: 4, objectiveSequence: 1, questLabel: 'CIDR Chain 04', objectiveId: 'solve_cidr_chain_04_panel', title: 'SOLVE CIDR PANEL 04', label: 'CIDR Panel 04', handoffKey: 'stage8-cidr-chain-04', targetClass: 'C', randomizeTarget: true, targetTile: { x: 8, y: 0, z: 18 } },
+                { id: 'stage.8.cidr_chain.05', sequence: 5, objectiveSequence: 1, questLabel: 'CIDR Chain 05', objectiveId: 'solve_cidr_chain_05_panel', title: 'SOLVE CIDR PANEL 05', label: 'CIDR Panel 05', handoffKey: 'stage8-cidr-chain-05', targetClass: 'C', randomizeTarget: true, targetTile: { x: 22, y: 0, z: 18 } },
+            ],
+            ip_subnet_simulator: [
+                { id: 'stage.8.cidr_chain.01', sequence: 1, objectiveSequence: 2, questLabel: 'CIDR Chain 01', objectiveId: 'solve_cidr_chain_01_subnet', title: 'SOLVE SUBNET SIMULATOR 01', label: 'Subnet Simulator 01', handoffKey: 'stage8-cidr-chain-01', targetClass: 'C', randomizeTarget: true, tutorial: true, targetTile: { x: 7, y: 0, z: 28 } },
+                { id: 'stage.8.cidr_chain.02', sequence: 2, objectiveSequence: 2, questLabel: 'CIDR Chain 02', objectiveId: 'solve_cidr_chain_02_subnet', title: 'SOLVE SUBNET SIMULATOR 02', label: 'Subnet Simulator 02', handoffKey: 'stage8-cidr-chain-02', targetClass: 'C', randomizeTarget: true, targetTile: { x: 12, y: 0, z: 28 } },
+                { id: 'stage.8.cidr_chain.03', sequence: 3, objectiveSequence: 2, questLabel: 'CIDR Chain 03', objectiveId: 'solve_cidr_chain_03_subnet', title: 'SOLVE SUBNET SIMULATOR 03', label: 'Subnet Simulator 03', handoffKey: 'stage8-cidr-chain-03', targetClass: 'C', randomizeTarget: true, targetTile: { x: 26, y: 0, z: 28 } },
+                { id: 'stage.8.cidr_chain.04', sequence: 4, objectiveSequence: 2, questLabel: 'CIDR Chain 04', objectiveId: 'solve_cidr_chain_04_subnet', title: 'SOLVE SUBNET SIMULATOR 04', label: 'Subnet Simulator 04', handoffKey: 'stage8-cidr-chain-04', targetClass: 'C', randomizeTarget: true, targetTile: { x: 10, y: 0, z: 18 } },
+                { id: 'stage.8.cidr_chain.05', sequence: 5, objectiveSequence: 2, questLabel: 'CIDR Chain 05', objectiveId: 'solve_cidr_chain_05_subnet', title: 'SOLVE SUBNET SIMULATOR 05', label: 'Subnet Simulator 05', handoffKey: 'stage8-cidr-chain-05', targetClass: 'C', randomizeTarget: true, targetTile: { x: 24, y: 0, z: 18 } },
+            ],
+        } },
+        9: { mapId: 9, gameplays: {
+            ip_cidr_binary_panel_harder: [
+                { id: 'stage.9.cidr_chain.01', sequence: 1, objectiveSequence: 1, questLabel: 'Adaptive CIDR Chain 01', objectiveId: 'solve_harder_cidr_chain_01_panel', title: 'BREACH ADAPTIVE CIDR PANEL 01', label: 'Adaptive CIDR Panel 01', handoffKey: 'stage9-cidr-chain-01', targetClass: 'C', randomizeTarget: true, harderIntro: true, targetTile: { x: 5, y: 0, z: 28 } },
+                { id: 'stage.9.cidr_chain.02', sequence: 2, objectiveSequence: 1, questLabel: 'Adaptive CIDR Chain 02', objectiveId: 'solve_harder_cidr_chain_02_panel', title: 'BREACH ADAPTIVE CIDR PANEL 02', label: 'Adaptive CIDR Panel 02', handoffKey: 'stage9-cidr-chain-02', targetClass: 'C', randomizeTarget: true, targetTile: { x: 12, y: 0, z: 30 } },
+                { id: 'stage.9.cidr_chain.03', sequence: 3, objectiveSequence: 1, questLabel: 'Adaptive CIDR Chain 03', objectiveId: 'solve_harder_cidr_chain_03_panel', title: 'BREACH ADAPTIVE CIDR PANEL 03', label: 'Adaptive CIDR Panel 03', handoffKey: 'stage9-cidr-chain-03', targetClass: 'C', randomizeTarget: true, targetTile: { x: 24, y: 0, z: 28 } },
+                { id: 'stage.9.cidr_chain.04', sequence: 4, objectiveSequence: 1, questLabel: 'Adaptive CIDR Chain 04', objectiveId: 'solve_harder_cidr_chain_04_panel', title: 'BREACH ADAPTIVE CIDR PANEL 04', label: 'Adaptive CIDR Panel 04', handoffKey: 'stage9-cidr-chain-04', targetClass: 'C', randomizeTarget: true, targetTile: { x: 8, y: 0, z: 18 } },
+                { id: 'stage.9.cidr_chain.05', sequence: 5, objectiveSequence: 1, questLabel: 'Adaptive CIDR Chain 05', objectiveId: 'solve_harder_cidr_chain_05_panel', title: 'BREACH ADAPTIVE CIDR PANEL 05', label: 'Adaptive CIDR Panel 05', handoffKey: 'stage9-cidr-chain-05', targetClass: 'C', randomizeTarget: true, targetTile: { x: 22, y: 0, z: 18 } },
+            ],
+            ip_subnet_simulator: [
+                { id: 'stage.9.cidr_chain.01', sequence: 1, objectiveSequence: 2, questLabel: 'Adaptive CIDR Chain 01', objectiveId: 'solve_harder_cidr_chain_01_subnet', title: 'SOLVE SUBNET SIMULATOR 01', label: 'Subnet Simulator 01', handoffKey: 'stage9-cidr-chain-01', targetClass: 'C', randomizeTarget: true, harderIntro: true, targetTile: { x: 7, y: 0, z: 28 } },
+                { id: 'stage.9.cidr_chain.02', sequence: 2, objectiveSequence: 2, questLabel: 'Adaptive CIDR Chain 02', objectiveId: 'solve_harder_cidr_chain_02_subnet', title: 'SOLVE SUBNET SIMULATOR 02', label: 'Subnet Simulator 02', handoffKey: 'stage9-cidr-chain-02', targetClass: 'C', randomizeTarget: true, targetTile: { x: 12, y: 0, z: 28 } },
+                { id: 'stage.9.cidr_chain.03', sequence: 3, objectiveSequence: 2, questLabel: 'Adaptive CIDR Chain 03', objectiveId: 'solve_harder_cidr_chain_03_subnet', title: 'SOLVE SUBNET SIMULATOR 03', label: 'Subnet Simulator 03', handoffKey: 'stage9-cidr-chain-03', targetClass: 'C', randomizeTarget: true, targetTile: { x: 26, y: 0, z: 28 } },
+                { id: 'stage.9.cidr_chain.04', sequence: 4, objectiveSequence: 2, questLabel: 'Adaptive CIDR Chain 04', objectiveId: 'solve_harder_cidr_chain_04_subnet', title: 'SOLVE SUBNET SIMULATOR 04', label: 'Subnet Simulator 04', handoffKey: 'stage9-cidr-chain-04', targetClass: 'C', randomizeTarget: true, targetTile: { x: 10, y: 0, z: 18 } },
+                { id: 'stage.9.cidr_chain.05', sequence: 5, objectiveSequence: 2, questLabel: 'Adaptive CIDR Chain 05', objectiveId: 'solve_harder_cidr_chain_05_subnet', title: 'SOLVE SUBNET SIMULATOR 05', label: 'Subnet Simulator 05', handoffKey: 'stage9-cidr-chain-05', targetClass: 'C', randomizeTarget: true, targetTile: { x: 24, y: 0, z: 18 } },
+            ],
+        } },
+        10: { mapId: 10, gameplays: {
+            ip_cidr_binary_panel_harder: [
+                { id: 'stage.10.ip_cidr_harder.01', sequence: 1, objectiveId: 'solve_harder_cidr_panel_01', title: 'BREACH ADAPTIVE CIDR PANEL 01', label: 'Adaptive CIDR Panel 01', targetClass: 'C', randomizeTarget: true, harderIntro: true, targetTile: { x: 4, y: 0, z: 28 } },
+                { id: 'stage.10.ip_cidr_harder.02', sequence: 2, objectiveId: 'solve_harder_cidr_panel_02', title: 'BREACH ADAPTIVE CIDR PANEL 02', label: 'Adaptive CIDR Panel 02', targetClass: 'C', randomizeTarget: true, targetTile: { x: 10, y: 0, z: 30 } },
+                { id: 'stage.10.ip_cidr_harder.03', sequence: 3, objectiveId: 'solve_harder_cidr_panel_03', title: 'BREACH ADAPTIVE CIDR PANEL 03', label: 'Adaptive CIDR Panel 03', targetClass: 'C', randomizeTarget: true, targetTile: { x: 18, y: 0, z: 27 } },
+                { id: 'stage.10.ip_cidr_harder.04', sequence: 4, objectiveId: 'solve_harder_cidr_panel_04', title: 'BREACH ADAPTIVE CIDR PANEL 04', label: 'Adaptive CIDR Panel 04', targetClass: 'C', randomizeTarget: true, targetTile: { x: 27, y: 0, z: 30 } },
+                { id: 'stage.10.ip_cidr_harder.05', sequence: 5, objectiveId: 'solve_harder_cidr_panel_05', title: 'BREACH ADAPTIVE CIDR PANEL 05', label: 'Adaptive CIDR Panel 05', targetClass: 'C', randomizeTarget: true, targetTile: { x: 31, y: 0, z: 21 } },
+            ],
+        } },
+        11: { mapId: 11, gameplays: {
+            ip_host_power_reactor: [
+                { id: 'stage.11.host_power.01.tutorial', sequence: 1, objectiveId: 'stabilize_host_power_11_01', title: 'CALIBRATE HOST-POWER REACTOR', label: 'Host-Power Node 01', tutorial: true, targetClass: 'C', requiredHosts: 50, targetTile: { x: 6, y: 0, z: 28 } },
+                { id: 'stage.11.host_power.02', sequence: 2, objectiveId: 'stabilize_host_power_11_02', title: 'POWER CLASS C RELAY', label: 'Host-Power Node 02', targetClass: 'C', requiredHosts: 100, targetTile: { x: 34, y: 0, z: 17 } },
+                { id: 'stage.11.host_power.03', sequence: 3, objectiveId: 'stabilize_host_power_11_03', title: 'BALANCE CLASS C CAPACITY', label: 'Host-Power Node 03', targetClass: 'C', requiredHosts: 200, targetTile: { x: 3, y: 0, z: 12 } },
+                { id: 'stage.11.host_power.04', sequence: 4, objectiveId: 'stabilize_host_power_11_04', title: 'POWER CLASS B RELAY', label: 'Host-Power Node 04', targetClass: 'B', requiredHosts: 510, targetTile: { x: 10, y: 0, z: 25 } },
+                { id: 'stage.11.host_power.05', sequence: 5, objectiveId: 'stabilize_host_power_11_05', title: 'FINALIZE HOST-POWER GRID', label: 'Host-Power Node 05', targetClass: 'B', requiredHosts: 1022, targetTile: { x: 18, y: 0, z: 1 } },
+            ],
+        } },
+        12: { mapId: 12, gameplays: {
+            ip_host_power_reactor: [
+                { id: 'stage.12.mixed.01.host_power', sequence: 1, objectiveId: 'stabilize_host_power_12_01', title: 'VERIFY HOST-POWER CAPACITY', label: 'Host-Power Node 01', targetClass: 'C', requiredHosts: 126, targetTile: { x: 21, y: 0, z: 28 } },
+                { id: 'stage.12.mixed.02.host_power', sequence: 2, objectiveId: 'stabilize_host_power_12_02', title: 'PRIME QUARANTINE CAPACITY', label: 'Host-Power Node 02', targetClass: 'B', requiredHosts: 2046, targetTile: { x: 0, y: 0, z: 16 } },
+            ],
+            ip_cidr_quarantine: [
+                { id: 'stage.12.mixed.03.cidr_quarantine.tutorial', sequence: 3, objectiveId: 'solve_cidr_quarantine_12_03', title: 'CALIBRATE QUARANTINE NODE', label: 'Quarantine Node 03', tutorial: true, targetTile: { x: 17, y: 0, z: 0 }, profile: { index: 1, minHosts: 18, maxHosts: 34 } },
+                { id: 'stage.12.mixed.04.cidr_quarantine', sequence: 4, objectiveId: 'solve_cidr_quarantine_12_04', title: 'TRAP ROGUE AI CLUSTER', label: 'Quarantine Node 04', targetTile: { x: 34, y: 0, z: 16 }, profile: { index: 2, minHosts: 26, maxHosts: 58 } },
+                { id: 'stage.12.mixed.05.cidr_quarantine', sequence: 5, objectiveId: 'solve_cidr_quarantine_12_05', title: 'SEAL INFECTED SEGMENT', label: 'Quarantine Node 05', targetTile: { x: 17, y: 0, z: 19 }, profile: { index: 3, minHosts: 42, maxHosts: 92 } },
+            ],
+        } },
+        13: { mapId: 13, gameplays: {
+            ip_host_power_reactor: [
+                { id: 'stage.13.mixed.01.host_power', sequence: 1, objectiveId: 'stabilize_host_power_13_01', title: 'CALCULATE CONTAINMENT POWER', label: 'Host-Power Node 01', targetClass: 'C', requiredHosts: 200, targetTile: { x: 6, y: 0, z: 28 } },
+                { id: 'stage.13.mixed.03.host_power', sequence: 3, objectiveId: 'stabilize_host_power_13_03', title: 'RECALCULATE HOST CAPACITY', label: 'Host-Power Node 03', targetClass: 'B', requiredHosts: 4094, targetTile: { x: 3, y: 0, z: 12 } },
+            ],
+            ip_cidr_quarantine: [
+                { id: 'stage.13.mixed.02.cidr_quarantine', sequence: 2, objectiveId: 'solve_cidr_quarantine_13_02', title: 'BUILD SINGLE-ZONE QUARANTINE', label: 'Quarantine Node 02', targetTile: { x: 34, y: 0, z: 17 }, profile: { index: 4, minHosts: 70, maxHosts: 120 } },
+                { id: 'stage.13.mixed.04.cidr_quarantine', sequence: 4, objectiveId: 'solve_cidr_quarantine_13_04', title: 'SEAL APEX RELAY AI', label: 'Quarantine Node 04', targetTile: { x: 10, y: 0, z: 25 }, profile: { index: 5, minHosts: 96, maxHosts: 180 } },
+            ],
+            ip_cidr_quarantine_matrix: [
+                { id: 'stage.13.mixed.05.cidr_matrix.tutorial', sequence: 5, objectiveId: 'solve_cidr_matrix_13_05', title: 'CALIBRATE MULTI-ZONE MATRIX', label: 'Matrix Node 05', tutorial: true, targetTile: { x: 18, y: 0, z: 1 }, profile: { index: 1, zoneCount: 2, parentPrefix: 23 } },
+            ],
+        } },
+        14: { mapId: 14, gameplays: {} },
+        15: { mapId: 15, gameplays: {
+            ip_network_repair: [
+                { id: 'stage.15.ip_network_repair.01', sequence: 1, objectiveId: 'repair_network_pc_01', title: 'REPAIR PC 01', label: 'PC 01', targetTile: { x: 1, y: 0, z: 30 }, tutorial: true, taskType: 'networkAddress' },
+                { id: 'stage.15.ip_network_repair.02', sequence: 2, objectiveId: 'repair_network_pc_02', title: 'REPAIR PC 02', label: 'PC 02', targetTile: { x: 1, y: 0, z: 4 }, taskType: 'broadcastAddress' },
+                { id: 'stage.15.ip_network_repair.03', sequence: 3, objectiveId: 'repair_network_pc_03', title: 'REPAIR PC 03', label: 'PC 03', targetTile: { x: 32, y: 3, z: 2 }, taskType: 'usableRange' },
+                { id: 'stage.15.ip_network_repair.04', sequence: 4, objectiveId: 'repair_network_pc_04', title: 'REPAIR PC 04', label: 'PC 04', targetTile: { x: 32, y: 3, z: 5 }, taskType: 'networkAddress' },
+                { id: 'stage.15.ip_network_repair.05', sequence: 5, objectiveId: 'repair_network_pc_05', title: 'REPAIR PC 05', label: 'PC 05', targetTile: { x: 32, y: 3, z: 8 }, taskType: 'usableRange' },
+            ],
+        } },
+        16: { mapId: 16, gameplays: {} },
+        17: { mapId: 17, gameplays: {
+            ip_vlsm_allocator: [
+                { id: 'stage.17.vlsm.hq', sequence: 1, objectiveId: 'configure_vlsm_hq', title: 'CONFIGURE HQ SUBNET', label: 'HQ Terminal', targetTile: { x: 5, y: 0, z: 28 }, terminalType: 'branch', branchId: 'hq', tutorial: true },
+                { id: 'stage.17.vlsm.eugene', sequence: 2, objectiveId: 'configure_vlsm_eugene', title: 'CONFIGURE EUGENE SUBNET', label: 'Eugene Terminal', targetTile: { x: 28, y: 0, z: 26 }, terminalType: 'branch', branchId: 'eugene' },
+                { id: 'stage.17.vlsm.branch_a', sequence: 3, objectiveId: 'configure_vlsm_branch_a', title: 'CONFIGURE BRANCH A SUBNET', label: 'Branch A Terminal', targetTile: { x: 30, y: 0, z: 10 }, terminalType: 'branch', branchId: 'branch_a' },
+                { id: 'stage.17.vlsm.san_jose', sequence: 4, objectiveId: 'configure_vlsm_san_jose', title: 'CONFIGURE SAN JOSE SUBNET', label: 'San Jose Terminal', targetTile: { x: 16, y: 0, z: 6 }, terminalType: 'branch', branchId: 'san_jose' },
+                { id: 'stage.17.vlsm.seattle', sequence: 5, objectiveId: 'configure_vlsm_seattle', title: 'CONFIGURE SEATTLE SUBNET', label: 'Seattle Terminal', targetTile: { x: 4, y: 0, z: 10 }, terminalType: 'branch', branchId: 'seattle' },
+                { id: 'stage.17.vlsm.core', sequence: 6, objectiveId: 'commit_vlsm_core', title: 'COMMIT VLSM CORE GATEWAY', label: 'Core Gateway', targetTile: { x: 17, y: 0, z: 18 }, terminalType: 'core' },
+            ],
+        } },
+        18: { mapId: 18, gameplays: {} },
     },
 
     async boot() {
         this._injectMapHooks();
         this._setState(this.STATE.BOOT, { source: 'GameManager.boot' });
+        const assignmentValidation = this.validateGameplayAssignments();
+        if (!assignmentValidation.valid) {
+            console.error('[IP2Live] Invalid map gameplay assignments:', assignmentValidation.errors);
+        }
+        if (assignmentValidation.warnings.length) {
+            console.warn('[IP2Live] Map gameplay assignment warnings:', assignmentValidation.warnings);
+        }
         if (IP2Live.NeuralLifeForce && typeof IP2Live.NeuralLifeForce.boot === 'function') {
             IP2Live.NeuralLifeForce.boot();
         }
         if (IP2Live.GameStateManager && typeof IP2Live.GameStateManager.bindGameManager === 'function') {
             IP2Live.GameStateManager.bindGameManager(this);
         }
-        // MapManager boots before GameManager is loaded, so its first quest
-        // pass can only see the older per-gameplay fallback registries. Run a
-        // second authoritative pass now that the mixed Stage 3 catalog is
-        // available; registerMapQuests(..., append:false) replaces that early
-        // map ordering with the exact Gameplay 4.5 -> 5 -> 6 curriculum.
+        // MapManager boots before GameManager is loaded. Run one authoritative
+        // map-first registration pass now that all assignments are available.
         if (IP2Live.MapManager && typeof IP2Live.MapManager.syncStageFoundation === 'function') {
             IP2Live.MapManager.syncStageFoundation();
         }
@@ -1826,12 +1792,18 @@ const IP2LiveGameManager = {
     },
 
     _runTimingDialogues(scope, timing, onComplete) {
-        const ids = this._dialogueIdsForTiming(scope, timing);
+        const sourceScope = scope || {};
+        const spec = sourceScope.spec || {};
+        const dialogueObjectiveId = sourceScope.dialogueObjectiveId || spec.dialogueObjectiveId;
+        const dialogueScope = dialogueObjectiveId
+            ? Object.assign({}, sourceScope, { objectiveId: dialogueObjectiveId })
+            : sourceScope;
+        const ids = this._dialogueIdsForTiming(dialogueScope, timing);
         if (!ids.length) {
             return false;
         }
 
-        this._startDialogueSequence(ids, Object.assign({}, scope || {}, { timing }), onComplete);
+        this._startDialogueSequence(ids, Object.assign({}, dialogueScope, { timing }), onComplete);
         return true;
     },
 
@@ -1890,45 +1862,242 @@ const IP2LiveGameManager = {
         return out;
     },
 
+    _mapGameplayRows(mapId) {
+        const resolvedMapId = Number(mapId);
+        const mapAssignment = this.mapGameplayAssignments
+            ? this.mapGameplayAssignments[resolvedMapId]
+            : null;
+        const gameplays = mapAssignment && mapAssignment.gameplays
+            ? mapAssignment.gameplays
+            : {};
+        const rows = [];
+        let assignmentIndex = 0;
+
+        Object.keys(gameplays).forEach((gameplayId) => {
+            const quests = Array.isArray(gameplays[gameplayId]) ? gameplays[gameplayId] : [];
+            for (let i = 0; i < quests.length; i++) {
+                const spec = this._clonePlain(quests[i]) || {};
+                spec.mapId = resolvedMapId;
+                spec.gameplayId = gameplayId;
+                rows.push({ spec, assignmentIndex: assignmentIndex++ });
+            }
+        });
+        return rows;
+    },
+
+    getMapGameplayIds(mapId) {
+        const resolvedMapId = Number(mapId);
+        const mapAssignment = this.mapGameplayAssignments
+            ? this.mapGameplayAssignments[resolvedMapId]
+            : null;
+        return Object.keys(mapAssignment && mapAssignment.gameplays ? mapAssignment.gameplays : {});
+    },
+
+    getMapGameplayAssignments(mapId) {
+        const resolvedMapId = Number(mapId);
+        const gameplayIds = this.getMapGameplayIds(resolvedMapId);
+        const rows = this._mapGameplayRows(resolvedMapId);
+        return {
+            mapId: resolvedMapId,
+            gameplays: gameplayIds.map((gameplayId) => {
+                const metadata = this._clonePlain(this.gameplayCatalog[gameplayId]) || { gameplayId };
+                metadata.gameplayId = gameplayId;
+                metadata.quests = rows
+                    .filter((row) => row.spec.gameplayId === gameplayId)
+                    .map((row) => row.spec);
+                return metadata;
+            }),
+        };
+    },
+
+    getAllGameplayAssignments() {
+        const mapIds = Object.keys(this.mapGameplayAssignments || {})
+            .map(Number)
+            .filter(Number.isFinite)
+            .sort((a, b) => a - b);
+        const out = [];
+        for (let i = 0; i < mapIds.length; i++) {
+            const rows = this._mapGameplayRows(mapIds[i]);
+            for (let r = 0; r < rows.length; r++) out.push(rows[r].spec);
+        }
+        return out;
+    },
+
     getGameplayQuestSpecs(gameplayId) {
-        const key = String(gameplayId || '');
-        const entry = this.gameplayCatalog[key];
-        if (!entry || !Array.isArray(entry.quests)) return [];
-        return this._clonePlain(entry.quests);
+        const wanted = String(gameplayId || '');
+        if (!wanted || !this.gameplayCatalog[wanted]) return [];
+        return this.getAllGameplayAssignments()
+            .filter((spec) => spec.gameplayId === wanted)
+            .sort((a, b) => {
+                const mapDelta = Number(a.mapId) - Number(b.mapId);
+                if (mapDelta) return mapDelta;
+                const sequenceDelta = Number(a.sequence) - Number(b.sequence);
+                if (sequenceDelta) return sequenceDelta;
+                return Number(a.objectiveSequence || 1) - Number(b.objectiveSequence || 1);
+            });
+    },
+
+    getMapQuestSpecs(mapId) {
+        const rows = this._mapGameplayRows(mapId);
+        const groups = {};
+        const orderedGroups = [];
+
+        for (let i = 0; i < rows.length; i++) {
+            const row = rows[i];
+            const spec = row.spec;
+            if (!spec.id || !spec.objectiveId) continue;
+            if (!groups[spec.id]) {
+                groups[spec.id] = {
+                    id: spec.id,
+                    sequence: Number.isFinite(Number(spec.sequence)) ? Number(spec.sequence) : Number.MAX_SAFE_INTEGER,
+                    assignmentIndex: row.assignmentIndex,
+                    objectives: [],
+                };
+                orderedGroups.push(groups[spec.id]);
+            }
+            groups[spec.id].objectives.push({
+                spec,
+                assignmentIndex: row.assignmentIndex,
+            });
+        }
+
+        orderedGroups.sort((a, b) => {
+            if (a.sequence !== b.sequence) return a.sequence - b.sequence;
+            return a.assignmentIndex - b.assignmentIndex;
+        });
+
+        return orderedGroups.map((group) => {
+            const orderedObjectives = group.objectives.slice().sort((a, b) => {
+                const objectiveDelta = Number(a.spec.objectiveSequence || 1) - Number(b.spec.objectiveSequence || 1);
+                if (objectiveDelta) return objectiveDelta;
+                return a.assignmentIndex - b.assignmentIndex;
+            });
+            if (orderedObjectives.length === 1) return orderedObjectives[0].spec;
+
+            const first = this._clonePlain(orderedObjectives[0].spec) || {};
+            first.label = first.questLabel || first.label;
+            first.objectives = orderedObjectives.map((entry) => entry.spec);
+            return first;
+        });
+    },
+
+    getQuestSpec(questId, mapId) {
+        const wanted = String(questId || '');
+        if (!wanted) return null;
+        const mapIds = Number.isFinite(Number(mapId))
+            ? [Number(mapId)]
+            : Object.keys(this.mapGameplayAssignments || {}).map(Number).sort((a, b) => a - b);
+        for (let i = 0; i < mapIds.length; i++) {
+            const match = this.getMapQuestSpecs(mapIds[i]).find((spec) => spec.id === wanted);
+            if (match) return match;
+        }
+        return null;
+    },
+
+    validateGameplayAssignments() {
+        const errors = [];
+        const warnings = [];
+        const seenObjectives = {};
+        const mapIds = Object.keys(this.mapGameplayAssignments || {});
+        let objectiveCount = 0;
+
+        for (let m = 0; m < mapIds.length; m++) {
+            const mapKey = mapIds[m];
+            const mapId = Number(mapKey);
+            const mapAssignment = this.mapGameplayAssignments[mapKey] || {};
+            if (!Number.isFinite(mapId) || Number(mapAssignment.mapId) !== mapId) {
+                errors.push('Map assignment key ' + mapKey + ' must match its numeric mapId.');
+            }
+            if (!this.flowConfig.maps[mapId]) {
+                errors.push('Map ' + mapId + ' has gameplay assignments but no flow metadata.');
+            }
+            const gameplays = mapAssignment.gameplays || {};
+            const gameplayIds = Object.keys(gameplays);
+            for (let g = 0; g < gameplayIds.length; g++) {
+                const gameplayId = gameplayIds[g];
+                const specs = gameplays[gameplayId];
+                if (!this.gameplayCatalog[gameplayId]) {
+                    errors.push('Map ' + mapId + ' references unknown gameplay metadata: ' + gameplayId + '.');
+                } else if (this.gameplayCatalog[gameplayId].gameplayId !== gameplayId) {
+                    errors.push('Gameplay metadata key does not match gameplayId: ' + gameplayId + '.');
+                }
+                if (!this.flowConfig.gameplayNodes[gameplayId]) {
+                    errors.push('Map ' + mapId + ' references an unlaunchable gameplay: ' + gameplayId + '.');
+                }
+                if (!Array.isArray(specs)) {
+                    errors.push('Map ' + mapId + ' gameplay ' + gameplayId + ' must contain a quest array.');
+                    continue;
+                }
+                for (let s = 0; s < specs.length; s++) {
+                    const spec = specs[s] || {};
+                    objectiveCount++;
+                    if (!spec.id) errors.push('Map ' + mapId + ' gameplay ' + gameplayId + ' has a quest without an id.');
+                    if (!spec.objectiveId) errors.push('Quest ' + (spec.id || '?') + ' has no objectiveId.');
+                    if (!spec.targetTile) errors.push('Objective ' + (spec.objectiveId || '?') + ' has no targetTile.');
+                    if (spec.targetTile && (!Number.isFinite(Number(spec.targetTile.x)) || !Number.isFinite(Number(spec.targetTile.z)))) {
+                        errors.push('Objective ' + (spec.objectiveId || '?') + ' needs numeric targetTile x/z coordinates.');
+                    }
+                    if (Object.prototype.hasOwnProperty.call(spec, 'mapId')) {
+                        errors.push('Quest ' + (spec.id || '?') + ' must inherit mapId from its map bucket.');
+                    }
+                    if (Object.prototype.hasOwnProperty.call(spec, 'gameplayId')) {
+                        errors.push('Quest ' + (spec.id || '?') + ' must inherit gameplayId from its gameplay bucket.');
+                    }
+                    if (!Number.isFinite(Number(spec.sequence)) || Number(spec.sequence) < 1) {
+                        errors.push('Quest ' + (spec.id || '?') + ' needs a positive numeric sequence.');
+                    }
+                    const uniqueKey = mapId + '|' + spec.id + '|' + spec.objectiveId;
+                    if (seenObjectives[uniqueKey]) errors.push('Duplicate gameplay objective assignment: ' + uniqueKey + '.');
+                    seenObjectives[uniqueKey] = true;
+                }
+            }
+
+            const questGroups = {};
+            const rows = this._mapGameplayRows(mapId);
+            for (let r = 0; r < rows.length; r++) {
+                const spec = rows[r].spec;
+                if (!questGroups[spec.id]) questGroups[spec.id] = [];
+                questGroups[spec.id].push(spec);
+            }
+            Object.keys(questGroups).forEach((questId) => {
+                const objectives = questGroups[questId];
+                if (objectives.length < 2) return;
+                const sequences = new Set(objectives.map((spec) => Number(spec.sequence)));
+                if (sequences.size !== 1) errors.push('Shared quest ' + questId + ' must use one sequence value.');
+                const objectiveSequences = objectives.map((spec) => Number(spec.objectiveSequence));
+                if (objectiveSequences.some((value) => !Number.isFinite(value))) {
+                    errors.push('Shared quest ' + questId + ' needs objectiveSequence on every gameplay objective.');
+                } else if (new Set(objectiveSequences).size !== objectiveSequences.length) {
+                    errors.push('Shared quest ' + questId + ' has duplicate objectiveSequence values.');
+                }
+            });
+        }
+
+        Object.keys(this.gameplayCatalog || {}).forEach((gameplayId) => {
+            const metadata = this.gameplayCatalog[gameplayId] || {};
+            if (Object.prototype.hasOwnProperty.call(metadata, 'mapId') || Object.prototype.hasOwnProperty.call(metadata, 'quests')) {
+                errors.push('Gameplay metadata must not own mapId or quests: ' + gameplayId + '.');
+            }
+            if (!this.flowConfig.gameplayNodes[gameplayId]) {
+                warnings.push('Gameplay metadata has no launcher node: ' + gameplayId + '.');
+            }
+            if (!this.getGameplayQuestSpecs(gameplayId).length) {
+                warnings.push('Gameplay has no map assignments: ' + gameplayId + '.');
+            }
+        });
+
+        return {
+            valid: errors.length === 0,
+            errors,
+            warnings,
+            mapCount: mapIds.length,
+            gameplayCount: Object.keys(this.gameplayCatalog || {}).length,
+            objectiveCount,
+        };
     },
 
     _gameplayTestSpecsFor(gameplayId) {
-        const wanted = String(gameplayId || '');
-        const matches = [];
-        const catalogKeys = Object.keys(this.gameplayCatalog || {});
-        for (let c = 0; c < catalogKeys.length; c++) {
-            const catalog = this.gameplayCatalog[catalogKeys[c]] || {};
-            const quests = Array.isArray(catalog.quests) ? catalog.quests : [];
-            for (let q = 0; q < quests.length; q++) {
-                const quest = quests[q] || {};
-                if (Array.isArray(quest.objectives) && quest.objectives.length) {
-                    for (let o = 0; o < quest.objectives.length; o++) {
-                        const objective = quest.objectives[o] || {};
-                        const resolvedId = String(objective.gameplayId || quest.gameplayId || catalog.gameplayId || '');
-                        if (resolvedId !== wanted) continue;
-                        matches.push(Object.assign({}, quest, objective, {
-                            id: quest.id,
-                            gameplayId: resolvedId,
-                            mapId: Number(objective.mapId || quest.mapId || catalog.mapId) || 0,
-                            tutorial: !!(objective.tutorial || quest.tutorial),
-                        }));
-                    }
-                    continue;
-                }
-                const resolvedId = String(quest.gameplayId || catalog.gameplayId || '');
-                if (resolvedId !== wanted || !quest.objectiveId) continue;
-                matches.push(Object.assign({}, quest, {
-                    gameplayId: resolvedId,
-                    mapId: Number(quest.mapId || catalog.mapId) || 0,
-                }));
-            }
-        }
-        return matches;
+        return this.getGameplayQuestSpecs(gameplayId);
     },
 
     getGameplayTestCatalog() {
@@ -1941,12 +2110,14 @@ const IP2LiveGameManager = {
             const sourceSpec = (definition.tutorial ? tutorialSpecs[0] : standardSpecs[0]) || specs[0] || {
                 id: 'developer.' + definition.id,
                 objectiveId: 'developer_' + String(definition.id).replace(/-/g, '_'),
-                mapId: Number(catalog.mapId) || 0,
+                mapId: Number(this.flowConfig.gameplayNodes[definition.gameplayId]
+                    && this.flowConfig.gameplayNodes[definition.gameplayId].mapId) || 0,
                 label: catalog.label || definition.name,
             };
             const spec = this._clonePlain(sourceSpec) || {};
             spec.gameplayId = definition.gameplayId;
-            spec.mapId = Number(spec.mapId || catalog.mapId) || 0;
+            spec.mapId = Number(spec.mapId || (this.flowConfig.gameplayNodes[definition.gameplayId]
+                && this.flowConfig.gameplayNodes[definition.gameplayId].mapId)) || 0;
             spec.tutorial = !!definition.tutorial;
             if (!definition.tutorial) delete spec.harderIntro;
             return {
@@ -1956,7 +2127,7 @@ const IP2LiveGameManager = {
                 gameplayLabel: catalog.label || definition.gameplayId,
                 tutorial: !!definition.tutorial,
                 mapId: spec.mapId,
-                dialogueObjectiveId: definition.dialogueObjectiveId || null,
+                dialogueObjectiveId: definition.dialogueObjectiveId || spec.dialogueObjectiveId || null,
                 spec,
             };
         });
@@ -1973,7 +2144,7 @@ const IP2LiveGameManager = {
         const sourceQuestId = spec.id || null;
         const sourceObjectiveId = spec.objectiveId || null;
         spec.id = 'developer.gameplay_test.' + testToken;
-        spec.objectiveId = selected.dialogueObjectiveId || sourceObjectiveId || ('developer_gameplay_test_' + testToken);
+        spec.objectiveId = sourceObjectiveId || ('developer_gameplay_test_' + testToken);
         spec.gameplayId = selected.gameplayId;
         spec.tutorial = !!selected.tutorial;
         spec.developerTest = true;
@@ -2014,67 +2185,53 @@ const IP2LiveGameManager = {
         const stageId = Number(st.id);
         if (!qm || !stageId || typeof qm.registerQuest !== 'function') return [];
 
-        const registeredQuestEntries = [];
-        let registrationIndex = 0;
-        const catalog = this.getGameplayCatalog();
-        for (let i = 0; i < catalog.length; i++) {
-            const gameplay = catalog[i];
-            if (!gameplay) continue;
-            const quests = Array.isArray(gameplay.quests) ? gameplay.quests : [];
-            for (let q = 0; q < quests.length; q++) {
-                const spec = quests[q];
-                if (!spec || !spec.id) continue;
-                const specMapId = Number(spec.mapId || gameplay.mapId);
-                if (specMapId !== stageId) continue;
-                const objectiveSpecs = Array.isArray(spec.objectives) && spec.objectives.length
-                    ? spec.objectives.map((objectiveSpec) => Object.assign({}, spec, objectiveSpec, {
-                        id: spec.id,
-                        handoffKey: objectiveSpec.handoffKey || spec.handoffKey,
-                        targetMask: objectiveSpec.targetMask || spec.targetMask,
-                    }))
-                    : (spec.objectiveId ? [spec] : []);
-                if (!objectiveSpecs.length) continue;
-                const sequence = Number(spec.sequence);
-                registeredQuestEntries.push({
-                    id: spec.id,
-                    sequence: Number.isFinite(sequence) ? sequence : Number.MAX_SAFE_INTEGER,
-                    registrationIndex: registrationIndex++,
-                });
+        const questSpecs = this.getMapQuestSpecs(stageId);
+        const registeredQuestIds = [];
+        for (let q = 0; q < questSpecs.length; q++) {
+            const spec = questSpecs[q];
+            if (!spec || !spec.id) continue;
+            const objectiveSpecs = Array.isArray(spec.objectives) && spec.objectives.length
+                ? spec.objectives
+                : (spec.objectiveId ? [spec] : []);
+            if (!objectiveSpecs.length) continue;
 
-                const objectives = objectiveSpecs.map((objectiveSpec) => {
-                    const objectiveGameplayId = objectiveSpec.gameplayId || gameplay.gameplayId;
-                    const objectiveGameplay = this.gameplayCatalog[objectiveGameplayId] || gameplay;
-                    const target = this._cloneTile(objectiveSpec.targetTile || { x: 0, y: 0, z: 0 });
-                    const gameplayForSpec = Object.assign({}, objectiveGameplay, { mapId: stageId });
-                    return {
-                        id: objectiveSpec.objectiveId,
-                        title: objectiveSpec.title || spec.title || 'SOLVE OBJECTIVE',
-                        detail: this._targetDetail(target),
-                        targetTile: target,
-                        neuralGameplayId: objectiveGameplayId,
-                        neuralTutorial: !!(objectiveSpec.tutorial || spec.tutorial || spec.harderIntro),
-                        completionRadiusTiles: typeof objectiveSpec.completionRadiusTiles === 'number' ? objectiveSpec.completionRadiusTiles : 0.55,
-                        isComplete: (context, activeQuestManager) => {
-                            return this._runGameplayObjectiveHandler(gameplayForSpec, objectiveSpec, context, activeQuestManager);
-                        },
-                    };
+            const objectives = objectiveSpecs.map((objectiveSpec) => {
+                const objectiveGameplayId = objectiveSpec.gameplayId || spec.gameplayId;
+                const objectiveGameplay = this.gameplayCatalog[objectiveGameplayId] || {
+                    gameplayId: objectiveGameplayId,
+                };
+                const target = this._cloneTile(objectiveSpec.targetTile || { x: 0, y: 0, z: 0 });
+                const gameplayForSpec = Object.assign({}, objectiveGameplay, {
+                    gameplayId: objectiveGameplayId,
+                    mapId: stageId,
                 });
+                return {
+                    id: objectiveSpec.objectiveId,
+                    title: objectiveSpec.title || spec.title || 'SOLVE OBJECTIVE',
+                    detail: this._targetDetail(target),
+                    targetTile: target,
+                    neuralGameplayId: objectiveGameplayId,
+                    neuralTutorial: !!(objectiveSpec.tutorial || spec.tutorial || spec.harderIntro),
+                    completionRadiusTiles: typeof objectiveSpec.completionRadiusTiles === 'number'
+                        ? objectiveSpec.completionRadiusTiles
+                        : 0.55,
+                    isComplete: (context, activeQuestManager) => {
+                        return this._runGameplayObjectiveHandler(gameplayForSpec, objectiveSpec, context, activeQuestManager);
+                    },
+                };
+            });
 
-                qm.registerQuest({
-                    id: spec.id,
-                    title: 'QUEST AREA',
-                    stageMapId: stageId,
-                    resetOnMapEnter: true,
-                    objectives: objectives,
-                });
-                this._registeredGameplayQuestIds[spec.id] = true;
-            }
+            qm.registerQuest({
+                id: spec.id,
+                title: 'QUEST AREA',
+                stageMapId: stageId,
+                resetOnMapEnter: true,
+                objectives,
+            });
+            this._registeredGameplayQuestIds[spec.id] = true;
+            registeredQuestIds.push(spec.id);
         }
-        registeredQuestEntries.sort(function (a, b) {
-            if (a.sequence !== b.sequence) return a.sequence - b.sequence;
-            return a.registrationIndex - b.registrationIndex;
-        });
-        return registeredQuestEntries.map(function (entry) { return entry.id; });
+        return registeredQuestIds;
     },
 
     _runGameplayObjectiveHandler(gameplay, spec, context, questManager) {

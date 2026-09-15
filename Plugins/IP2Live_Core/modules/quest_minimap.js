@@ -7,7 +7,7 @@
 
 (function () {
     const QuestMinimap = {
-        VERSION: 'quest-minimap-20260602-02',
+        VERSION: 'quest-minimap-20260915-03',
         DEBUG: false,
 
         _container: null,
@@ -506,30 +506,9 @@
         },
 
         _fallbackQuestSpecsFromGameManager(mapId) {
-            const out = [];
             const gm = IP2Live.GameManager || IP2LiveGameManager || null;
-            if (!gm) return out;
-
-            const catalog = typeof gm.getGameplayCatalog === 'function'
-                ? gm.getGameplayCatalog()
-                : Object.values(gm.gameplayCatalog || {});
-
-            const resolvedMapId = Number(mapId) || 0;
-            for (let i = 0; i < catalog.length; i++) {
-                const gameplay = catalog[i];
-                if (!gameplay) continue;
-                const gameplayMapId = Number(gameplay.mapId) || 0;
-                const quests = Array.isArray(gameplay.quests) ? gameplay.quests : [];
-                for (let q = 0; q < quests.length; q++) {
-                    const spec = quests[q];
-                    if (!spec) continue;
-                    const specMapId = Number(spec.mapId || gameplayMapId) || 0;
-                    if (specMapId !== resolvedMapId) continue;
-                    out.push(spec);
-                }
-            }
-
-            return out;
+            if (!gm || typeof gm.getMapQuestSpecs !== 'function') return [];
+            return gm.getMapQuestSpecs(Number(mapId) || 0);
         },
 
         _spawnForMap(mapId) {

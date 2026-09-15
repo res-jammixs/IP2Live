@@ -22,20 +22,12 @@ function loadGameManager() {
 }
 
 function orderedGameplayRows(manager, mapId) {
-    const rows = [];
-    let registrationIndex = 0;
-    for (const catalog of manager.getGameplayCatalog()) {
-        for (const spec of catalog.quests || []) {
-            if (Number(spec.mapId || catalog.mapId) !== mapId) continue;
-            rows.push({
-                gameplayId: spec.gameplayId || catalog.gameplayId,
-                sequence: Number(spec.sequence),
-                registrationIndex: registrationIndex++,
-                spec,
-            });
-        }
-    }
-    return rows.sort((a, b) => a.sequence - b.sequence || a.registrationIndex - b.registrationIndex);
+    return manager.getMapQuestSpecs(mapId).map((spec, registrationIndex) => ({
+        gameplayId: spec.gameplayId,
+        sequence: Number(spec.sequence),
+        registrationIndex,
+        spec,
+    }));
 }
 
 function blockedMapTiles(mapId) {
@@ -87,7 +79,7 @@ function reachableTiles(map, spawn) {
 const manager = loadGameManager();
 const rows = orderedGameplayRows(manager, 5);
 
-assert.deepEqual(manager.flowConfig.maps[5].gameplayNodes, [
+assert.deepEqual(manager.getMapGameplayIds(5), [
     'ip_class_wires',
     'ip_patch_panel_classes',
     'ip_class_wires_harder',

@@ -32,37 +32,28 @@ function loadGameManager() {
 }
 
 function orderedGameplayIds(manager, mapId) {
-    const rows = [];
-    let registrationIndex = 0;
-    for (const catalog of manager.getGameplayCatalog()) {
-        for (const spec of catalog.quests || []) {
-            if (Number(spec.mapId || catalog.mapId) !== mapId) continue;
-            rows.push({
-                gameplayId: spec.gameplayId || catalog.gameplayId,
-                sequence: Number.isFinite(Number(spec.sequence)) ? Number(spec.sequence) : Number.MAX_SAFE_INTEGER,
-                registrationIndex: registrationIndex++,
-                spec,
-            });
-        }
-    }
-    rows.sort((a, b) => a.sequence - b.sequence || a.registrationIndex - b.registrationIndex);
-    return rows;
+    return manager.getMapQuestSpecs(mapId).map((spec, registrationIndex) => ({
+        gameplayId: spec.gameplayId,
+        sequence: Number.isFinite(Number(spec.sequence)) ? Number(spec.sequence) : Number.MAX_SAFE_INTEGER,
+        registrationIndex,
+        spec,
+    }));
 }
 
 function testStageProgressionCatalog() {
     const manager = loadGameManager();
     assert.deepEqual(
-        Array.from(manager.flowConfig.maps[11].gameplayNodes),
+        Array.from(manager.getMapGameplayIds(11)),
         ['ip_host_power_reactor'],
         'Stage 3 Level 1 must contain only Gameplay 4.5'
     );
     assert.deepEqual(
-        Array.from(manager.flowConfig.maps[12].gameplayNodes),
+        Array.from(manager.getMapGameplayIds(12)),
         ['ip_host_power_reactor', 'ip_cidr_quarantine'],
         'Stage 3 Level 2 must introduce Gameplay 5 after Gameplay 4.5'
     );
     assert.deepEqual(
-        Array.from(manager.flowConfig.maps[13].gameplayNodes),
+        Array.from(manager.getMapGameplayIds(13)),
         ['ip_host_power_reactor', 'ip_cidr_quarantine', 'ip_cidr_quarantine_matrix'],
         'Stage 3 Level 3 must combine Gameplays 4.5, 5, and 6'
     );

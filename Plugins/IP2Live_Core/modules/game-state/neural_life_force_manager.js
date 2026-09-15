@@ -22,7 +22,7 @@
     }
 
     const NeuralLifeForce = {
-        VERSION: 'neural-life-force-20260826-02',
+        VERSION: 'neural-life-force-20260915-03',
         SETTINGS: {
             defaultLifeForce: DEFAULT_LIFE_FORCE,
             maxLifeForce: MAX_LIFE_FORCE,
@@ -393,24 +393,17 @@
 
         _gameplayIdForQuestObjective(questId, objectiveId) {
             const gm = IP2Live.GameManager;
-            const catalog = gm && typeof gm.getGameplayCatalog === 'function' ? gm.getGameplayCatalog() : [];
             const wantedQuestId = String(questId || '');
             const wantedObjectiveId = String(objectiveId || '');
             if (!wantedQuestId || !wantedObjectiveId) return null;
-            for (let i = 0; i < catalog.length; i++) {
-                const gameplay = catalog[i] || {};
-                const quests = Array.isArray(gameplay.quests) ? gameplay.quests : [];
-                for (let q = 0; q < quests.length; q++) {
-                    const spec = quests[q] || {};
-                    if (String(spec.id || '') !== wantedQuestId) continue;
-                    const objectives = Array.isArray(spec.objectives) && spec.objectives.length ? spec.objectives : [spec];
-                    for (let o = 0; o < objectives.length; o++) {
-                        const objective = objectives[o] || {};
-                        if (String(objective.objectiveId || spec.objectiveId || '') !== wantedObjectiveId) continue;
-                        const resolved = objective.gameplayId || spec.gameplayId || gameplay.gameplayId;
-                        return resolved ? String(resolved) : null;
-                    }
-                }
+            const assignments = gm && typeof gm.getAllGameplayAssignments === 'function'
+                ? gm.getAllGameplayAssignments()
+                : [];
+            for (let i = 0; i < assignments.length; i++) {
+                const spec = assignments[i] || {};
+                if (String(spec.id || '') !== wantedQuestId) continue;
+                if (String(spec.objectiveId || '') !== wantedObjectiveId) continue;
+                return spec.gameplayId ? String(spec.gameplayId) : null;
             }
             return null;
         },
@@ -488,34 +481,24 @@
 
         _tutorialTargetForGameplay(gameplayId) {
             const gm = IP2Live.GameManager;
-            const catalog = gm && typeof gm.getGameplayCatalog === 'function' ? gm.getGameplayCatalog() : [];
             const wanted = String(gameplayId || '');
             const candidates = [];
-            for (let i = 0; i < catalog.length; i++) {
-                const gameplay = catalog[i] || {};
-                const quests = Array.isArray(gameplay.quests) ? gameplay.quests : [];
-                for (let q = 0; q < quests.length; q++) {
-                    const spec = quests[q] || {};
-                    const objectives = Array.isArray(spec.objectives) && spec.objectives.length ? spec.objectives : [spec];
-                    for (let o = 0; o < objectives.length; o++) {
-                        const objective = objectives[o] || {};
-                        const objectiveGameplayId = String(objective.gameplayId || spec.gameplayId || gameplay.gameplayId || '');
-                        if (objectiveGameplayId !== wanted) continue;
-                        if (!(objective.tutorial || spec.tutorial || spec.harderIntro)) continue;
-                        candidates.push({
-                            gameplayId: wanted,
-                            mapId: Number(spec.mapId || gameplay.mapId),
-                            questId: spec.id,
-                            objectiveId: objective.objectiveId || spec.objectiveId,
-                            label: objective.label || spec.label || objective.title || spec.title || wanted,
-                            catalogIndex: i,
-                            questIndex: q,
-                            objectiveIndex: o,
-                        });
-                    }
-                }
+            const specs = gm && typeof gm.getGameplayQuestSpecs === 'function'
+                ? gm.getGameplayQuestSpecs(wanted)
+                : [];
+            for (let i = 0; i < specs.length; i++) {
+                const spec = specs[i] || {};
+                if (!(spec.tutorial || spec.harderIntro)) continue;
+                candidates.push({
+                    gameplayId: wanted,
+                    mapId: Number(spec.mapId),
+                    questId: spec.id,
+                    objectiveId: spec.objectiveId,
+                    label: spec.label || spec.title || wanted,
+                    specIndex: i,
+                });
             }
-            candidates.sort((a, b) => a.mapId - b.mapId || a.catalogIndex - b.catalogIndex || a.questIndex - b.questIndex || a.objectiveIndex - b.objectiveIndex);
+            candidates.sort((a, b) => a.mapId - b.mapId || a.specIndex - b.specIndex);
             return candidates[0] || null;
         },
 
