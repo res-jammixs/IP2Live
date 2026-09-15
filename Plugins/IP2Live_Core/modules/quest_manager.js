@@ -10,7 +10,7 @@
 
 class IP2LiveQuestManager {
     constructor() {
-        this.VERSION = 'quest-manager-20260815-03';
+        this.VERSION = 'quest-manager-20260915-04';
 
         this.quests = {};
         this.mapQuestQueues = {};
@@ -180,6 +180,11 @@ class IP2LiveQuestManager {
         this.suppressedByDialogue = !!isSuppressed;
         if (this.suppressedByDialogue && this._arrowGuide) this._arrowGuide.clear();
         if (Manager && Manager.Stack) Manager.Stack.requestPaintHUD = true;
+    }
+
+    isHudVisible() {
+        if (!this.visible || this.suppressedByDialogue) return false;
+        return !!((this.currentQuest() && this.currentObjective()) || this._showFinishedPanel);
     }
 
     snapshotProgress() {
@@ -419,7 +424,7 @@ class IP2LiveQuestManager {
     }
 
     drawHUD(ctx) {
-        if (!ctx || !this.visible || this.suppressedByDialogue) return;
+        if (!ctx || !this.isHudVisible()) return;
 
         const objective = this.currentObjective();
         const quest = this.currentQuest();
