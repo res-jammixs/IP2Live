@@ -14,14 +14,19 @@ const popupPath = path.join(
 
 function loadPopup() {
     const source = fs.readFileSync(popupPath, 'utf8');
+    let dialogueActive = false;
     const IP2Live = {
-        Assets: { nebulaLoaded: true, abnesLoaded: true },
-        DialogueManager: { isActive() { return false; } },
+        Assets: { nebulaLoaded: true, abnesLoaded: true, ethnocentricLoaded: true },
+        DialogueManager: { isActive() { return dialogueActive; } },
     };
     const Manager = { Stack: { requestPaintHUD: false } };
     const windowObject = {};
     new Function('IP2Live', 'Manager', 'window', source)(IP2Live, Manager, windowObject);
-    return { popup: IP2Live.GameplayCompletionPopup, Manager };
+    return {
+        popup: IP2Live.GameplayCompletionPopup,
+        Manager,
+        setDialogueActive(value) { dialogueActive = !!value; },
+    };
 }
 
 function fakeContext(width, height) {
@@ -44,6 +49,7 @@ function fakeContext(width, height) {
         moveTo() {},
         lineTo() {},
         closePath() {},
+        clip() {},
         arc() {},
         fill() {},
         stroke() {},
@@ -68,11 +74,13 @@ function testCompactSharedRenderer() {
     });
 
     assert.ok(metrics, 'the renderer should return its measured card');
-    assert.equal(metrics.w, 500, 'desktop card should stay compact');
-    assert.equal(metrics.h, 142, 'desktop card should stay compact');
+    assert.equal(metrics.w, 520, 'desktop card should stay compact');
+    assert.equal(metrics.h, 150, 'desktop card should stay compact');
     assert.equal(metrics.progress, 0.6);
-    assert.ok(canvas.text.some((entry) => entry.value === 'TASK COMPLETE'));
-    assert.ok(canvas.text.some((entry) => entry.value === 'IP class routes connected'));
+    assert.deepEqual(canvas.text.map((entry) => entry.value), ['Task Complete']);
+    assert.equal(metrics.title, 'Task Complete');
+    assert.equal('label' in metrics, false);
+    assert.equal('footer' in metrics, false);
     assert.ok(canvas.rectangles.some((rect) => rect.w === 1280 && rect.h === 720), 'a restrained focus veil should be drawn');
 
     const smallCanvas = fakeContext(640, 360);
@@ -80,6 +88,35 @@ function testCompactSharedRenderer() {
     assert.ok(smallMetrics.w < metrics.w);
     assert.ok(smallMetrics.h < metrics.h);
     assert.ok(smallMetrics.w <= 640 - 20, 'the component must remain inside a small canvas');
+}
+
+function testDialogueDefersPopupAndPausesTimer() {
+    const { popup, setDialogueActive } = loadPopup();
+    const screen = {};
+    const completions = [];
+    popup.begin(screen, {
+        startedAt: 100,
+        durationMs: 800,
+        onComplete() { completions.push('done'); },
+    });
+
+    assert.equal(popup.update(screen, 499), true);
+    setDialogueActive(true);
+    assert.equal(popup.update(screen, 500), true);
+    const hiddenCanvas = fakeContext(1280, 720);
+    assert.equal(popup.draw(hiddenCanvas.ctx, { progress: 0.5 }), false, 'direct universal draws must wait for dialogue');
+    assert.equal(popup.drawFor(screen, hiddenCanvas.ctx), false, 'stateful popup draws must wait for dialogue');
+    assert.equal(hiddenCanvas.text.length, 0);
+    assert.equal(popup.update(screen, 1000), true);
+    assert.equal(completions.length, 0);
+
+    setDialogueActive(false);
+    assert.equal(popup.update(screen, 1000), true);
+    assert.equal(popup.progressFor(screen, 1000), 0.5, 'dialogue time must not consume popup display time');
+    assert.equal(popup.update(screen, 1399), true);
+    assert.equal(completions.length, 0);
+    assert.equal(popup.update(screen, 1400), true);
+    assert.deepEqual(completions, ['done']);
 }
 
 function testTimedCompletionRunsExactlyOnce() {
@@ -130,6 +167,16 @@ function testEveryGameplayUsesTheSharedComponent() {
     assert.match(harderWires, /extends IP2Live\.WiresGameplayScreen/, 'harder Gameplay 1 should inherit the shared base popup path');
     assert.match(harderCIDR, /extends BaseScreen/, 'harder Gameplay 3 should inherit the shared base popup path');
 
+    const directTimerFiles = [
+        'gameplay/gameplay3/CIDRPanel/ip_cidrpanel_gameplay.js',
+        'gameplay/gameplay4/SubnetSimulator/ip_subnetsim_gameplay.js',
+        'gameplay/gameplay7/NetworkRepair/gameplay.js',
+    ];
+    for (const relative of directTimerFiles) {
+        const source = fs.readFileSync(path.join(root, 'Plugins', 'IP2Live_Core', relative), 'utf8');
+        assert.match(source, /isDialogueBlocking\(\)/, relative + ' must pause its direct success timer for dialogue');
+    }
+
     const loader = fs.readFileSync(path.join(root, 'Plugins', 'IP2Live_Core', 'code.js'), 'utf8');
     assert.ok(
         loader.indexOf('gameplay_completion_popup.js') < loader.indexOf('ip_wires_gameplay.js'),
@@ -140,6 +187,7 @@ function testEveryGameplayUsesTheSharedComponent() {
 try {
     testCompactSharedRenderer();
     testTimedCompletionRunsExactlyOnce();
+    testDialogueDefersPopupAndPausesTimer();
     testEveryGameplayUsesTheSharedComponent();
     console.log('gameplay_completion_popup.test.cjs: PASS');
 } catch (error) {

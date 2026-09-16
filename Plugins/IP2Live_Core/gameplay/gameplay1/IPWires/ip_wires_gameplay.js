@@ -95,7 +95,11 @@
         }
 
         async load() {
-            if (IP2Live.Assets && typeof IP2Live.Assets.loadAll === 'function' && !IP2Live.Assets.nebulaLoaded) {
+            if (
+                IP2Live.Assets &&
+                typeof IP2Live.Assets.loadAll === 'function' &&
+                (!IP2Live.Assets.nebulaLoaded || !IP2Live.Assets.oxaniumMediumLoaded)
+            ) {
                 try {
                     await IP2Live.Assets.loadAll();
                 } catch (e) {
@@ -256,6 +260,7 @@
             const sX = layout.sX;
             const sY = layout.sY;
             const font = IP2Live.Assets && IP2Live.Assets.nebulaLoaded ? 'Nebula-Regular' : 'monospace';
+            const wireFont = IP2Live.Assets && IP2Live.Assets.oxaniumMediumLoaded ? 'Oxanium-Medium' : 'sans-serif';
             const titleFont = IP2Live.Assets && IP2Live.Assets.abnesLoaded ? 'Abnes' : 'Arial Black';
 
             ctx.save();
@@ -268,7 +273,7 @@
             this._drawConnections(ctx, layout);
             this._drawFailedWire(ctx, layout);
             this._drawDragWire(ctx, layout);
-            this._drawTerminals(ctx, layout, font);
+            this._drawTerminals(ctx, layout, wireFont);
             this._drawRerollOverlay(ctx, layout, font);
             for (let i = 0; i < this.sparks.length; i++) this._drawSpark(ctx, this.sparks[i], sX);
             if (IP2Live.IPWiresTutorial && typeof IP2Live.IPWiresTutorial.drawGuidedHighlight === 'function') {
@@ -638,7 +643,7 @@
             ctx.restore();
         }
 
-        _drawTerminals(ctx, layout, font) {
+        _drawTerminals(ctx, layout, wireFont) {
             const showClassRangeHints = !this._isHarderMode();
             const expectedSourceId = IP2Live.IPWiresTutorial && typeof IP2Live.IPWiresTutorial.expectedGuidedSourceId === 'function'
                 ? IP2Live.IPWiresTutorial.expectedGuidedSourceId(this)
@@ -660,7 +665,7 @@
                     ? this.randomizingWires[item.id]
                     : null;
                 const hover = this._distance(this.mouse.x, this.mouse.y, p.x, p.y) <= p.r * 2.4;
-                this._drawTerminal(ctx, p, rerollState ? this._rerollDisplayText(rerollState) : item.ip, item.color, font, false, verified, null, {
+                this._drawTerminal(ctx, p, rerollState ? this._rerollDisplayText(rerollState) : item.ip, item.color, wireFont, false, verified, null, {
                     id: item.id,
                     index: i,
                     total: this.leftItems.length,
@@ -679,7 +684,7 @@
                 for (let n = 0; n < sourceIds.length; n++) {
                     if (this.lockedCorrect[sourceIds[n]] && this.connections[sourceIds[n]] === item.className) linkedCount++;
                 }
-                this._drawTerminal(ctx, p, 'Class ' + item.className, item.color, font, true, linkedCount > 0, showClassRangeHints ? item.shortRange : null, {
+                this._drawTerminal(ctx, p, 'Class ' + item.className, item.color, wireFont, true, linkedCount > 0, showClassRangeHints ? item.shortRange : null, {
                     index: i,
                     total: this.rightItems.length,
                     linkedCount: linkedCount,
@@ -687,7 +692,7 @@
             }
         }
 
-        _drawTerminal(ctx, point, label, color, font, rightSide, connected, subLabel, meta) {
+        _drawTerminal(ctx, point, label, color, wireFont, rightSide, connected, subLabel, meta) {
             const info = meta || {};
             const geometry = this._terminalGeometry(point, rightSide);
             const sX = point.sX;
@@ -788,7 +793,7 @@
             ctx.textBaseline = 'middle';
             ctx.fillText(rowNumber, capX + geometry.capW / 2, point.y);
 
-            ctx.font = 'bold ' + Math.round((geometry.isVeryDense ? 11 : 12.5) * sX) + 'px ' + font;
+            ctx.font = Math.round((geometry.isVeryDense ? 11 : 12.5) * sX) + 'px ' + wireFont;
             ctx.fillStyle = '#F7FCFF';
             ctx.shadowColor = 'rgba(0,0,0,0.85)';
             ctx.shadowBlur = 3 * sX;
@@ -796,7 +801,7 @@
             ctx.fillText(label, geometry.tagX + geometry.tagW / 2 + textShift, point.y - (subLabel ? 6 * sY : 0));
             ctx.shadowColor = 'transparent';
             if (subLabel) {
-                ctx.font = Math.round((geometry.isVeryDense ? 6.5 : 7.5) * sX) + 'px monospace';
+                ctx.font = Math.round((geometry.isVeryDense ? 6.5 : 7.5) * sX) + 'px ' + wireFont;
                 ctx.fillStyle = 'rgba(218,238,255,0.78)';
                 ctx.fillText('RANGE::' + subLabel, geometry.tagX + geometry.tagW / 2 + textShift, point.y + 10 * sY);
             }
@@ -1919,7 +1924,7 @@
     }
 
     const GameplayManager = {
-        VERSION: 'ip-wires-gameplay-manager-20260817-07',
+        VERSION: 'ip-wires-gameplay-manager-20260916-08',
         WIRE_QUEST_ID: 'stage.3.ip_wires.01.tutorial',
         WIRE_OBJECTIVE_ID: 'repair_ip_wires_01',
     _activeAttempt: null,

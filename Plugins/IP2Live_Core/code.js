@@ -329,6 +329,7 @@ IP2Live.Assets = {
     bgImage: null,
     abnesLoaded: false,
     nebulaLoaded: false,
+    oxaniumMediumLoaded: false,
     ethnocentricLoaded: false,
     neuropolLoaded: false,
     astronomousLoaded: false,
@@ -358,6 +359,16 @@ IP2Live.Assets = {
             console.log('[IP2Live] Nebula-Regular font loaded.');
         } catch (e) {
             console.warn('[IP2Live] Nebula-Regular font load failed, falling back.', e);
+        }
+
+        try {
+            const oxaniumMediumFace = new FontFace('Oxanium-Medium', 'url("' + root + 'Fonts/Oxanium-Medium.ttf")');
+            const loadedOxaniumMedium = await oxaniumMediumFace.load();
+            document.fonts.add(loadedOxaniumMedium);
+            this.oxaniumMediumLoaded = true;
+            console.log('[IP2Live] Oxanium-Medium font loaded.');
+        } catch (e) {
+            console.warn('[IP2Live] Oxanium-Medium font load failed, falling back.', e);
         }
 
         try {
@@ -929,14 +940,14 @@ IP2Live.GameplayManagerReady = (async function () {
     const bundles = [
         {
             baseDir: root + 'Plugins/IP2Live_Core/gameplay/common/',
-            version: '20260821_gameplay_completion_popup_01_',
+            version: '20260916_gameplay_completion_popup_02_',
             files: [
                 'gameplay_completion_popup.js',
             ],
         },
         {
             baseDir: root + 'Plugins/IP2Live_Core/gameplay/gameplay1/IPWires/',
-            version: '20260530_ip_wires_05_',
+            version: '20260916_ip_wires_06_',
             files: [
                 'ip_wires_core.js',
                 'ip_wires_tutorial.js',

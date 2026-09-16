@@ -283,7 +283,12 @@ class IP2LiveCIDRPanelGameplayScreen extends Scene.Base {
                 this.statusText = 'OCTET ICON ARCHIVED. TRANSFERRING TO NEXT GAMEPLAY...';
             }
         } else if (this.phase === 'success') {
-            this.phaseTimer--;
+            const popupBlocked = !!(
+                IP2Live.GameplayCompletionPopup &&
+                typeof IP2Live.GameplayCompletionPopup.isDialogueBlocking === 'function' &&
+                IP2Live.GameplayCompletionPopup.isDialogueBlocking()
+            );
+            if (!popupBlocked) this.phaseTimer--;
             if (this.phaseTimer <= 0) this._finishSuccess();
         } else if (this.phase === 'fail') {
             this.phaseTimer--;
