@@ -274,7 +274,12 @@ class IP2LiveSubnetSimulatorGameplayScreen extends Scene.Base {
         }
 
         if (this.phase === 'success') {
-            this.phaseTimer--;
+            const popupBlocked = !!(
+                IP2Live.GameplayCompletionPopup &&
+                typeof IP2Live.GameplayCompletionPopup.isDialogueBlocking === 'function' &&
+                IP2Live.GameplayCompletionPopup.isDialogueBlocking()
+            );
+            if (!popupBlocked) this.phaseTimer--;
             if (this.phaseTimer <= 0) this._finishSuccess();
         } else if (this.phase === 'failed') {
             this.phaseTimer--;

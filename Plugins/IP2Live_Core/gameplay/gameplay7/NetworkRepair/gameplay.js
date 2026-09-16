@@ -75,7 +75,12 @@ class IP2LiveNetworkRepairGameplayScreen extends Scene.Base {
             this._updateCatchingPhase();
         }
         if (this.phase === 'success') {
-            this.phaseTimer--;
+            var popupBlocked = !!(
+                IP2Live.GameplayCompletionPopup &&
+                typeof IP2Live.GameplayCompletionPopup.isDialogueBlocking === 'function' &&
+                IP2Live.GameplayCompletionPopup.isDialogueBlocking()
+            );
+            if (!popupBlocked) this.phaseTimer--;
             if (this.phaseTimer <= 0) this._finishSuccess();
         }
         if (this.errorTimer > 0) this.errorTimer--;

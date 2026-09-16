@@ -24,8 +24,18 @@
         return n + 'th';
     }
 
+    function highlighted(value) {
+        return '{{highlight:' + String(value == null ? '' : value) + '}}';
+    }
+
+    function atomicRange(value) {
+        // A no-space en dash keeps the complete start/end range in one layout
+        // unit, so the dialogue wrapper moves it intact instead of splitting it.
+        return String(value == null ? '' : value).trim().replace(/\s+(?:to|through)\s+/i, '–');
+    }
+
     const IPWiresTutorial = {
-        VERSION: 'ip-wires-tutorial-20260817-05',
+        VERSION: 'ip-wires-tutorial-20260916-06',
         _dialogueSerial: 0,
 
         classRanges: {
@@ -151,7 +161,8 @@
                 label: 'PATCH ROUTE // CLASS ' + item.className,
             });
             const spec = classSpec(item.className);
-            const rangeText = spec ? spec.rangeText : ('Class ' + item.className + ' range');
+            const rangeText = atomicRange(spec ? spec.rangeText : ('Class ' + item.className + ' range'));
+            const classText = 'Class ' + item.className;
             const lead = guide.stepIndex === 0 ? 'The first IP address' : ('The ' + ordinal(guide.stepIndex) + ' IP address');
 
             this._startDynamicDialogue('stage1.ipwires.guided.step.', {
@@ -160,10 +171,10 @@
                 timing: 'during',
                 bindings: { mapId: 3, gameplayId: 'ip_class_wires', trigger: 'gameplay.before' },
                 slides: [[
-                    lead + ' which is ' + item.ip + ' belongs to Class ' + item.className + '.',
-                    'Class ' + item.className + ' has a range of ' + rangeText + '.',
+                    lead + ' which is ' + highlighted(item.ip) + ' belongs to ' + highlighted(classText) + '.',
+                    highlighted(classText) + ' has a range of ' + highlighted(rangeText) + '.',
                     '',
-                    'Try dragging the connector IP address to Class ' + item.className + '.',
+                    'Try dragging the connector IP address to ' + highlighted(classText) + '.',
                 ]],
             });
         },
@@ -237,11 +248,11 @@
                     '',
                     'Remember again this:',
                     '',
-                    'Class A: IP ranges from 1.0.0.0 to 126.255.255.255',
-                    'Class B: IP ranges from 127.0.0.0 to 191.255.255.255',
-                    'Class C: IP ranges from 192.0.0.0 to 223.255.255.255',
-                    'Class D: IP ranges from 224.0.0.0 to 239.255.255.255',
-                    'Class E: IP ranges from 240.0.0.0 to 255.255.255.255',
+                    highlighted('Class A') + ': IP ranges from ' + highlighted(atomicRange('1.0.0.0 to 126.255.255.255')),
+                    highlighted('Class B') + ': IP ranges from ' + highlighted(atomicRange('127.0.0.0 to 191.255.255.255')),
+                    highlighted('Class C') + ': IP ranges from ' + highlighted(atomicRange('192.0.0.0 to 223.255.255.255')),
+                    highlighted('Class D') + ': IP ranges from ' + highlighted(atomicRange('224.0.0.0 to 239.255.255.255')),
+                    highlighted('Class E') + ': IP ranges from ' + highlighted(atomicRange('240.0.0.0 to 255.255.255.255')),
                 ]],
             });
         },

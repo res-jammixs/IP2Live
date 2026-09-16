@@ -21,7 +21,7 @@
 // ================================================================
 const Tutorial = {
 
-    VERSION: 'quest-debug-20260821-14',
+    VERSION: 'quest-debug-20260916-16',
     isActive: false,
 
     PHASE: { IDLE: -1, INTRO: 0, MOVE_FB: 1, MOVE_LR: 2, CAMERA: 3, QUEST_INFO: 4, QUEST_ACTIVE: 5, COMPLETE: 6, DONE: 7 },
@@ -44,6 +44,7 @@ const Tutorial = {
     introSlides: [],
     steps: [],
     outroSlides: [],
+    _phaseDialogueId: null,
 
     // â”€ Listener refs â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     _keyRef: null,
@@ -142,13 +143,6 @@ const Tutorial = {
         this.pressedKeys = new Set();
         this._stepTimeout = null;
         this.animTick = 0;
-        // Typing effect state
-        this.typeChars = 0;     // how many chars of body are revealed
-        this.typeTimer = 0;     // frame counter for typing speed
-        this.typeSpeed = 1;     // frames per char
-        // Binary particle pool
-        this._binaryParticles = [];
-        for (let i = 0; i < 60; i++) this._binaryParticles.push(this._makeBinParticle(1920, 120));
 
         this._questArrowMesh = null;
         this._questPathMesh = null;
@@ -168,12 +162,14 @@ const Tutorial = {
 
         this._attachListeners();
         if (resumeAtQuest) this._syncQuestManagerState();
+        else this._startPhaseDialogue();
         if (Manager && Manager.Stack) Manager.Stack.requestPaintHUD = true;
         console.log('[IP2Live] Tutorial activated.');
         console.log('[IP2Live] Tutorial version:', this.VERSION);
     },
 
     deactivate() {
+        this._closePhaseDialogue();
         this.isActive = false;
         this.phase = this.PHASE.DONE;
         this.pressedKeys.clear();
@@ -193,6 +189,7 @@ const Tutorial = {
 
     forceResetState(options) {
         const opts = options || {};
+        this._closePhaseDialogue();
         if (this._stepTimeout) {
             clearTimeout(this._stepTimeout);
             this._stepTimeout = null;
@@ -211,11 +208,6 @@ const Tutorial = {
         this.phase = this.PHASE.IDLE;
         this.slideIndex = 0;
         this.animTick = 0;
-        this.typeChars = 0;
-        this.typeTimer = 0;
-        this._introEnterTick = 0;
-        this._introSlideLastIdx = -1;
-        this._stepLastPhase = null;
         this._mapSceneRef = null;
         this._lastHeroRef = null;
         this._teleported = false;
@@ -272,17 +264,12 @@ const Tutorial = {
             return;
         }
 
-        if (this.phase === this.PHASE.INTRO) {
-            if (['Enter', 'Space', 'KeyZ'].includes(code)) {
-                e.stopPropagation();
-                this._advanceIntro();
-            }
-            return;
-        }
+        if (this.phase === this.PHASE.INTRO) return;
 
         if (this.phase === this.PHASE.MOVE_FB) {
             if (['KeyW', 'KeyS'].includes(code)) {
                 this.pressedKeys.add(code);
+                this._confirmDialogueKey(code);
                 if (this.pressedKeys.has('KeyW') && this.pressedKeys.has('KeyS')) this._scheduleNextStep();
             }
             return;
@@ -290,29 +277,23 @@ const Tutorial = {
         if (this.phase === this.PHASE.MOVE_LR) {
             if (['KeyA', 'KeyD'].includes(code)) {
                 this.pressedKeys.add(code);
+                this._confirmDialogueKey(code);
                 if (this.pressedKeys.has('KeyA') && this.pressedKeys.has('KeyD')) this._scheduleNextStep();
             }
             return;
         }
         if (this.phase === this.PHASE.CAMERA || this.phase === this.PHASE.QUEST_INFO) {
-            if (this.phase === this.PHASE.CAMERA && code.startsWith('Arrow')) {
+            if (this.phase === this.PHASE.CAMERA && ['ArrowLeft', 'ArrowRight'].includes(code)) {
                 this.pressedKeys.add(code);
-                if (this.pressedKeys.size >= 2) this._scheduleNextStep();
-            } else if (this.phase === this.PHASE.QUEST_INFO && ['Enter', 'Space', 'KeyZ'].includes(code)) {
-                e.stopPropagation();
-                this._nextStep();
+                this._confirmDialogueKey(code);
+                if (this.pressedKeys.has('ArrowLeft') && this.pressedKeys.has('ArrowRight')) this._scheduleNextStep();
             }
             return;
         }
         if (this.phase === this.PHASE.QUEST_ACTIVE) {
             return;
         }
-        if (this.phase === this.PHASE.COMPLETE) {
-            if (['Enter', 'Space', 'KeyZ'].includes(code)) {
-                e.stopPropagation();
-                this._advanceOutro();
-            }
-        }
+        if (this.phase === this.PHASE.COMPLETE) return;
     },
 
     _onClick(e) {
@@ -325,9 +306,7 @@ const Tutorial = {
         }
 
         if (!this.isActive) return;
-        if (this.phase === this.PHASE.INTRO) { this._advanceIntro(); return; }
-        if (this.phase === this.PHASE.QUEST_INFO) { this._nextStep(); return; }
-        if (this.phase === this.PHASE.COMPLETE) { this._advanceOutro(); }
+        // DialogueManager owns clicks for every tutorial dialogue phase.
     },
 
     _isClickOnReplay(e) {
@@ -366,6 +345,7 @@ const Tutorial = {
     },
 
     _nextStep() {
+        this._closePhaseDialogue();
         this.pressedKeys.clear();
         switch (this.phase) {
             case this.PHASE.MOVE_FB: this.phase = this.PHASE.MOVE_LR; break;
@@ -380,7 +360,85 @@ const Tutorial = {
                 break;
         }
         this._syncQuestManagerState();
+        this._startPhaseDialogue();
         if (Manager && Manager.Stack) Manager.Stack.requestPaintHUD = true;
+    },
+
+    _confirmDialogueKey(code) {
+        const dm = IP2Live.DialogueManager;
+        if (!dm || typeof dm.setHighlightState !== 'function') return false;
+        return dm.setHighlightState(code, 'confirmed');
+    },
+
+    _startPhaseDialogue() {
+        const dm = IP2Live.DialogueManager;
+        if (!dm || typeof dm.start !== 'function' || !this.isActive) return false;
+
+        if (this.phase === this.PHASE.INTRO) {
+            this._phaseDialogueId = 'tutorial.intro';
+            return dm.start(this._phaseDialogueId, {
+                source: 'Tutorial.phaseDialogue',
+                onComplete: () => {
+                    this._phaseDialogueId = null;
+                    if (!this.isActive || this.phase !== this.PHASE.INTRO) return;
+                    this.phase = this.PHASE.MOVE_FB;
+                    this._startPhaseDialogue();
+                },
+            });
+        }
+
+        if (this.phase >= this.PHASE.MOVE_FB && this.phase <= this.PHASE.QUEST_INFO) {
+            const step = this._currentStep();
+            if (!step) return false;
+
+            const dialogueId = 'tutorial.step.' + this.phase;
+            const waitsForTrainingInput = this.phase !== this.PHASE.QUEST_INFO;
+            const slide = [step.body || ''];
+            if (step.hint) slide.push('', step.hint);
+            dm.registerDialogue(dialogueId, {
+                title: step.header || 'Tutorial',
+                speaker: 'Training',
+                slides: [slide],
+                preserveLineBreaks: true,
+                lockMovement: !waitsForTrainingInput,
+                allowMovementDuringDialogue: waitsForTrainingInput,
+                manualAdvance: waitsForTrainingInput,
+                requiredKeyCount: waitsForTrainingInput ? step.keys.length : 0,
+                hideQuestPanel: true,
+            });
+            this._phaseDialogueId = dialogueId;
+            return dm.start(dialogueId, {
+                source: 'Tutorial.phaseDialogue',
+                onComplete: () => {
+                    this._phaseDialogueId = null;
+                    if (!this.isActive || this.phase !== this.PHASE.QUEST_INFO) return;
+                    this.phase = this.PHASE.QUEST_ACTIVE;
+                    this._syncQuestManagerState();
+                    if (Manager && Manager.Stack) Manager.Stack.requestPaintHUD = true;
+                },
+            });
+        }
+
+        if (this.phase === this.PHASE.COMPLETE) {
+            this._phaseDialogueId = 'tutorial.outro';
+            return dm.start(this._phaseDialogueId, {
+                source: 'Tutorial.phaseDialogue',
+                onComplete: () => {
+                    this._phaseDialogueId = null;
+                    if (this.isActive && this.phase === this.PHASE.COMPLETE) this.teleportToNextStage();
+                },
+            });
+        }
+
+        return false;
+    },
+
+    _closePhaseDialogue() {
+        const dialogueId = this._phaseDialogueId;
+        this._phaseDialogueId = null;
+        const dm = IP2Live.DialogueManager;
+        if (!dialogueId || !dm || typeof dm.discardActive !== 'function') return false;
+        return dm.discardActive(dialogueId);
     },
 
     _advanceOutro() {
@@ -1177,7 +1235,7 @@ const Tutorial = {
         const SH = Common.ScreenResolution.SCREEN_Y;
         const sX = cW / SW;
         const sY = cH / SH;
-        const font = IP2Live.Assets.nebulaLoaded ? 'Nebula-Regular' : 'monospace';
+        const font = IP2Live.Assets && IP2Live.Assets.oxaniumMediumLoaded ? 'Oxanium-Medium' : 'sans-serif';
         this._updateQuestWorldGuides();
 
         if (this.isFadingOut) {
@@ -1222,17 +1280,7 @@ const Tutorial = {
 
         if (this.phase === this.PHASE.DONE && !this.isFadingOut) {
             this._drawReplayBtn(ctx, cW, cH, sX, sY, font);
-        } else if (this.phase === this.PHASE.INTRO) {
-            this._drawIntroBoxV2(ctx, cW, cH, sX, sY, font, this.introSlides);
-        } else if (this.phase === this.PHASE.COMPLETE && !this.isFadingOut) {
-            this._drawIntroBoxV2(ctx, cW, cH, sX, sY, font, this.outroSlides);
-            if ((this.animTick || 0) - (this._completeAutoTick || 0) > 150) {
-                this.teleportToNextStage();
-            }
         } else if (!this.isFadingOut) {
-            if (this.phase < this.PHASE.QUEST_ACTIVE) {
-                this._drawStepHUD(ctx, cW, cH, sX, sY, font);
-            }
             const dialogueActive = IP2Live.DialogueManager && IP2Live.DialogueManager.isActive();
             if (this.phase >= this.PHASE.QUEST_ACTIVE && !dialogueActive) {
                 this._drawQuestPath2D(ctx, cW, cH);
