@@ -30,7 +30,10 @@ class IP2LivePatchPanelGameplayScreen extends Scene.Base {
 
     _ensureCoreState() {
         if (!Array.isArray(this.classOrder) || this.classOrder.length !== 5) {
-            this.classOrder = ['A', 'B', 'C', 'D', 'E'];
+            const ranges = IP2Live.IPClassRanges;
+            this.classOrder = ranges && typeof ranges.classNames === 'function'
+                ? ranges.classNames()
+                : ['A', 'B', 'C', 'D', 'E'];
         }
         this.classColors = Object.assign({
             A: '#FFE600',
@@ -107,28 +110,34 @@ class IP2LivePatchPanelGameplayScreen extends Scene.Base {
     }
 
     _buildPacketPools() {
+        const ranges = IP2Live.IPClassRanges;
+        if (!ranges || typeof ranges.classifyAddress !== 'function') {
+            throw new Error('IP2Live.IPClassRanges must load before Patch Panel gameplay.');
+        }
         this.ipPool = [
-            { text: '10.4.18.77', className: 'A', kind: 'IP' },
-            { text: '25.31.88.201', className: 'A', kind: 'IP' },
-            { text: '88.200.7.19', className: 'A', kind: 'IP' },
-            { text: '126.22.44.90', className: 'A', kind: 'IP' },
-            { text: '140.16.99.2', className: 'B', kind: 'IP' },
-            { text: '172.21.8.254', className: 'B', kind: 'IP' },
-            { text: '189.2.91.12', className: 'B', kind: 'IP' },
-            { text: '191.200.1.4', className: 'B', kind: 'IP' },
-            { text: '192.168.40.1', className: 'C', kind: 'IP' },
-            { text: '203.11.77.9', className: 'C', kind: 'IP' },
-            { text: '210.33.55.18', className: 'C', kind: 'IP' },
-            { text: '223.90.14.222', className: 'C', kind: 'IP' },
-            { text: '224.1.5.11', className: 'D', kind: 'IP' },
-            { text: '230.18.7.200', className: 'D', kind: 'IP' },
-            { text: '235.90.1.44', className: 'D', kind: 'IP' },
-            { text: '239.255.12.8', className: 'D', kind: 'IP' },
-            { text: '240.18.7.42', className: 'E', kind: 'IP' },
-            { text: '246.90.14.201', className: 'E', kind: 'IP' },
-            { text: '251.44.8.99', className: 'E', kind: 'IP' },
-            { text: '255.201.17.6', className: 'E', kind: 'IP' },
-        ];
+            '10.4.18.77',
+            '25.31.88.201',
+            '88.200.7.19',
+            '126.22.44.90',
+            '140.16.99.2',
+            '172.21.8.254',
+            '189.2.91.12',
+            '191.200.1.4',
+            '192.168.40.1',
+            '203.11.77.9',
+            '210.33.55.18',
+            '223.90.14.222',
+            '224.1.5.11',
+            '230.18.7.200',
+            '235.90.1.44',
+            '239.255.12.8',
+            '240.18.7.42',
+            '246.90.14.201',
+            '251.44.8.99',
+            '255.201.17.6',
+        ].map(function (text) {
+            return { text, className: ranges.classifyAddress(text), kind: 'IP' };
+        });
 
         this.maskPool = [
             { text: '255.0.0.0', className: 'A', kind: 'MASK' },
@@ -385,6 +394,7 @@ class IP2LivePatchPanelGameplayScreen extends Scene.Base {
             packet.trail.push({
                 x: packet.x,
                 y: m.wireY,
+                kind: packet.kind,
                 correct: packet.correct,
                 resolved: packet.resolved,
                 reverting,
@@ -636,7 +646,7 @@ class IP2LivePatchPanelGameplayScreen extends Scene.Base {
             this._setGuidedDialogueOpen(false);
             this._showTutorialSpotlight({
                 type: 'controls',
-                label: '04 // ARROW KEYS: ROTATE ACTIVE TUNNEL',
+                label: '04 // ARROW KEYS: ROTATE TUNNEL WHEEL',
             }, 125, () => {
                 this.tutorialStep = 'upcoming_intro';
             });
@@ -917,8 +927,12 @@ class IP2LivePatchPanelGameplayScreen extends Scene.Base {
     }
 
     _classIndexToAngle(index) {
+        return Math.PI - this._classBaseAngle(index);
+    }
+
+    _classBaseAngle(index) {
         const total = Math.max(1, this.classOrder.length);
-        return Math.PI + (Math.PI * 2 * index / total);
+        return -Math.PI * 0.5 + (Math.PI * 2 * index / total);
     }
 
     _classAtDirection(directionIndex) {
@@ -1615,7 +1629,7 @@ class IP2LivePatchPanelGameplayScreen extends Scene.Base {
             ctx.strokeRect(cx - 7 * m.sX, m.wireY - 17 * m.sY, 14 * m.sX, 34 * m.sY);
         }
 
-        ctx.font = 'bold ' + (7.2 * m.sY).toFixed(1) + 'px monospace';
+        ctx.font = 'bold ' + (7.2 * m.sY).toFixed(1) + 'px ' + this._uiPrimaryFont();
         ctx.textAlign = 'center';
         ctx.fillStyle = '#00D7E5';
         ctx.fillText('INGRESS', m.leftWireX + 54 * m.sX, m.wireY - 19 * m.sY);
@@ -1665,55 +1679,68 @@ class IP2LivePatchPanelGameplayScreen extends Scene.Base {
         ctx.lineWidth = 2.2 * m.sX;
         ctx.stroke();
 
+        // The internal indexing ring and all five tunnels rotate as one
+        // physical carousel. The outer housing remains fixed like a bearing.
         ctx.save();
         ctx.rotate(this.wheelAngle);
+        for (let tick = 0; tick < 30; tick++) {
+            const tickAngle = tick * Math.PI * 2 / 30;
+            const major = tick % 6 === 0;
+            ctx.strokeStyle = major ? activeColor : 'rgba(116,145,156,0.34)';
+            ctx.lineWidth = (major ? 2.4 : 1.1) * m.sX;
+            ctx.beginPath();
+            ctx.moveTo(Math.cos(tickAngle) * r * (major ? 0.82 : 0.86), Math.sin(tickAngle) * r * (major ? 0.82 : 0.86));
+            ctx.lineTo(Math.cos(tickAngle) * r * 0.96, Math.sin(tickAngle) * r * 0.96);
+            ctx.stroke();
+        }
         ctx.strokeStyle = activeColor;
-        ctx.globalAlpha = 0.32;
-        ctx.lineWidth = 2 * m.sX;
-        ctx.setLineDash([7 * m.sX, 12 * m.sX]);
+        ctx.globalAlpha = 0.34;
+        ctx.lineWidth = 1.7 * m.sX;
+        ctx.setLineDash([6 * m.sX, 10 * m.sX]);
         ctx.beginPath();
-        ctx.arc(0, 0, r * 0.93, 0, Math.PI * 2);
+        ctx.arc(0, 0, r * 0.76, 0, Math.PI * 2);
         ctx.stroke();
         ctx.setLineDash([]);
         ctx.restore();
         ctx.globalAlpha = 1;
 
-        const selectedAngle = -Math.PI * 0.5 + this.selectedClassIndex * (Math.PI * 2 / this.classOrder.length);
-        const selectedX = Math.cos(selectedAngle) * r * 0.79;
-        const selectedY = Math.sin(selectedAngle) * r * 0.79;
-        ctx.lineCap = 'round';
-        ctx.strokeStyle = '#020407';
-        ctx.lineWidth = 25 * m.sY;
+        // Fixed ingress throat. The selected rotating tunnel docks into this
+        // opening at the left side instead of drawing a movable wire to it.
+        const throat = ctx.createLinearGradient(-r * 1.42, 0, -r * 0.75, 0);
+        throat.addColorStop(0, '#0A1116');
+        throat.addColorStop(0.44, '#697B84');
+        throat.addColorStop(0.58, '#1B262D');
+        throat.addColorStop(1, '#05080B');
+        ctx.shadowColor = activeColor;
+        ctx.shadowBlur = 8 * m.sX;
+        ctx.fillStyle = throat;
         ctx.beginPath();
-        ctx.moveTo(-r * 1.04, 0);
-        ctx.bezierCurveTo(-r * 0.45, 0, selectedX * 0.28, selectedY * 0.28, selectedX, selectedY);
-        ctx.stroke();
-        const channelMetal = ctx.createLinearGradient(-r, -r, selectedX, selectedY);
-        channelMetal.addColorStop(0, '#35444D');
-        channelMetal.addColorStop(0.5, '#A8B8BE');
-        channelMetal.addColorStop(1, '#303B42');
-        ctx.strokeStyle = channelMetal;
-        ctx.lineWidth = 18 * m.sY;
-        ctx.stroke();
-        ctx.strokeStyle = '#05080B';
-        ctx.lineWidth = 10 * m.sY;
+        ctx.moveTo(-r * 1.4, -17 * m.sY);
+        ctx.lineTo(-r * 0.88, -12 * m.sY);
+        ctx.lineTo(-r * 0.7, -7 * m.sY);
+        ctx.lineTo(-r * 0.7, 7 * m.sY);
+        ctx.lineTo(-r * 0.88, 12 * m.sY);
+        ctx.lineTo(-r * 1.4, 17 * m.sY);
+        ctx.closePath();
+        ctx.fill();
+        ctx.shadowBlur = 0;
+        ctx.strokeStyle = 'rgba(196,225,233,0.55)';
+        ctx.lineWidth = 1.4 * m.sX;
         ctx.stroke();
         ctx.strokeStyle = activeColor;
-        ctx.lineWidth = 2.2 * m.sY;
-        ctx.setLineDash([8 * m.sX, 8 * m.sX]);
-        ctx.lineDashOffset = -this.animTick * 1.6;
+        ctx.lineWidth = 2.2 * m.sX;
+        ctx.setLineDash([7 * m.sX, 7 * m.sX]);
+        ctx.lineDashOffset = -this.animTick * 1.8;
+        ctx.beginPath();
+        ctx.moveTo(-r * 1.34, 0);
+        ctx.lineTo(-r * 0.68, 0);
         ctx.stroke();
         ctx.setLineDash([]);
 
-        const dirs = [];
         for (let i = 0; i < this.classOrder.length; i++) {
-            dirs.push({ angle: -Math.PI * 0.5 + i * (Math.PI * 2 / this.classOrder.length), idx: i });
-        }
-        for (let i = 0; i < dirs.length; i++) {
-            const dir = dirs[i];
-            const cls = this.classOrder[dir.idx];
+            const cls = this.classOrder[i];
             const color = this.classColors[cls] || '#8AC9FF';
-            const active = dir.idx === this.selectedClassIndex;
+            const active = i === this.selectedClassIndex;
             const correctHint = !!(
                 this.correctTunnelFeedback &&
                 this.correctTunnelFeedback.className === cls &&
@@ -1722,12 +1749,13 @@ class IP2LivePatchPanelGameplayScreen extends Scene.Base {
             const hintPulse = correctHint
                 ? 0.58 + 0.42 * Math.sin(this.animTick * 0.42)
                 : 0;
-            const ux = Math.cos(dir.angle);
-            const uy = Math.sin(dir.angle);
-            const innerX = ux * (r * 0.6);
-            const innerY = uy * (r * 0.6);
-            const outerX = ux * (r * 1.03);
-            const outerY = uy * (r * 1.03);
+            const angle = this._classBaseAngle(i) + this.wheelAngle;
+            const ux = Math.cos(angle);
+            const uy = Math.sin(angle);
+            const innerX = ux * (r * 0.49);
+            const innerY = uy * (r * 0.49);
+            const outerX = ux * (r * 1.04);
+            const outerY = uy * (r * 1.04);
 
             ctx.save();
             if (correctHint) {
@@ -1736,16 +1764,21 @@ class IP2LivePatchPanelGameplayScreen extends Scene.Base {
             }
 
             ctx.strokeStyle = '#020407';
-            ctx.lineWidth = 22 * m.sY;
+            ctx.lineWidth = 25 * m.sY;
             ctx.beginPath();
             ctx.moveTo(innerX, innerY);
             ctx.lineTo(outerX, outerY);
             ctx.stroke();
-            ctx.strokeStyle = correctHint ? '#B8FFC8' : (active ? '#AEBFC6' : '#35434C');
-            ctx.lineWidth = 16 * m.sY;
+            const tunnelMetal = ctx.createLinearGradient(innerX, innerY, outerX, outerY);
+            tunnelMetal.addColorStop(0, '#202A31');
+            tunnelMetal.addColorStop(0.45, correctHint ? '#A3EAB5' : (active ? '#91A5AE' : '#40515A'));
+            tunnelMetal.addColorStop(0.7, '#151D22');
+            tunnelMetal.addColorStop(1, active ? color : '#253139');
+            ctx.strokeStyle = tunnelMetal;
+            ctx.lineWidth = 18 * m.sY;
             ctx.stroke();
             ctx.strokeStyle = '#05080B';
-            ctx.lineWidth = 9 * m.sY;
+            ctx.lineWidth = 10 * m.sY;
             ctx.stroke();
             ctx.strokeStyle = correctHint ? '#59FF8A' : (active ? color : 'rgba(85,109,120,0.55)');
             ctx.lineWidth = correctHint ? 4.2 * m.sY : (active ? 2.4 * m.sY : 1.2 * m.sY);
@@ -1753,6 +1786,18 @@ class IP2LivePatchPanelGameplayScreen extends Scene.Base {
             ctx.moveTo(innerX, innerY);
             ctx.lineTo(outerX, outerY);
             ctx.stroke();
+
+            if (active) {
+                ctx.strokeStyle = color;
+                ctx.lineWidth = 1.8 * m.sX;
+                ctx.setLineDash([5 * m.sX, 6 * m.sX]);
+                ctx.lineDashOffset = -this.animTick * 2;
+                ctx.beginPath();
+                ctx.moveTo(ux * r * 0.53, uy * r * 0.53);
+                ctx.lineTo(ux * r * 1.18, uy * r * 1.18);
+                ctx.stroke();
+                ctx.setLineDash([]);
+            }
 
             const socketX = ux * (r * 1.04);
             const socketY = uy * (r * 1.04);
@@ -1770,10 +1815,10 @@ class IP2LivePatchPanelGameplayScreen extends Scene.Base {
             ctx.fill();
             ctx.globalAlpha = 1;
 
-            const labelX = ux * (r * 1.34);
-            const labelY = uy * (r * 1.34);
-            const boxW = 30 * m.sX;
-            const boxH = 18 * m.sY;
+            const labelX = ux * (r * 1.35);
+            const labelY = uy * (r * 1.35);
+            const boxW = 32 * m.sX;
+            const boxH = 19 * m.sY;
             const boxX = labelX - boxW * 0.5;
             const boxY = labelY - boxH * 0.5;
             this._fillChamferRect(ctx, boxX, boxY, boxW, boxH, 4 * m.sX, correctHint ? '#59FF8A' : (active ? color : '#101820'));
@@ -1792,6 +1837,18 @@ class IP2LivePatchPanelGameplayScreen extends Scene.Base {
                 h: Math.max(socketY + 15 * m.sY, boxY + boxH + 5 * m.sY) - Math.min(socketY - 15 * m.sY, boxY - 5 * m.sY),
             });
         }
+
+        // A fixed locator makes the left-side docking position unmistakable.
+        ctx.fillStyle = activeColor;
+        ctx.shadowColor = activeColor;
+        ctx.shadowBlur = 10 * m.sX;
+        ctx.beginPath();
+        ctx.moveTo(-r * 1.24, -5 * m.sY);
+        ctx.lineTo(-r * 1.12, 0);
+        ctx.lineTo(-r * 1.24, 5 * m.sY);
+        ctx.closePath();
+        ctx.fill();
+        ctx.shadowBlur = 0;
 
         const hub = ctx.createRadialGradient(-r * 0.08, -r * 0.1, 2, 0, 0, r * 0.48);
         hub.addColorStop(0, '#26343D');
@@ -1814,10 +1871,7 @@ class IP2LivePatchPanelGameplayScreen extends Scene.Base {
         ctx.font = 'bold ' + (27 * m.sY).toFixed(1) + 'px ' + primaryFont;
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
-        ctx.fillText(activeClass, 0, 1 * m.sY);
-        ctx.fillStyle = activeColor;
-        ctx.font = 'bold ' + (6.5 * m.sY).toFixed(1) + 'px monospace';
-        ctx.fillText('ROUTE', 0, 20 * m.sY);
+        ctx.fillText(activeClass, 0, 0);
 
         ctx.restore();
     }
@@ -1892,13 +1946,13 @@ class IP2LivePatchPanelGameplayScreen extends Scene.Base {
         ctx.textAlign = 'left';
         ctx.fillText('CONDUIT XRAY // INTERNAL ROUTE', sx + 13 * m.sX, sy + 21 * m.sY);
         ctx.fillStyle = '#00E5F4';
-        ctx.font = 'bold ' + (7 * m.sY).toFixed(1) + 'px monospace';
+        ctx.font = 'bold ' + (7 * m.sY).toFixed(1) + 'px ' + primaryFont;
         ctx.textAlign = 'right';
         ctx.fillText('SCOPE::LIVE  CH-02', sx + sw - 13 * m.sX, sy + 20 * m.sY);
 
         ctx.textAlign = 'left';
         ctx.fillStyle = '#66828D';
-        ctx.font = 'bold ' + (7 * m.sY).toFixed(1) + 'px monospace';
+        ctx.font = 'bold ' + (7 * m.sY).toFixed(1) + 'px ' + primaryFont;
         ctx.fillText('FIVE-CHANNEL HOLLOW CONDUIT // ROUTE CORE', sx + 14 * m.sX, sy + sh - 14 * m.sY);
         ctx.textAlign = 'right';
         ctx.fillStyle = returningPacket ? '#FFE600' : (signalPacket ? '#FFE600' : '#546A73');
@@ -1936,7 +1990,7 @@ class IP2LivePatchPanelGameplayScreen extends Scene.Base {
                     ? '#FFE600'
                     : p.resolved
                     ? (p.correct ? '#76FF93' : '#FF6271')
-                    : '#57E7FF';
+                    : (p.kind === 'MASK' ? '#FFB52E' : '#45E4FF');
                 ctx.beginPath();
                 ctx.arc(p.x, p.y, 4.2 * m.sY, 0, Math.PI * 2);
                 ctx.fill();
@@ -1953,11 +2007,12 @@ class IP2LivePatchPanelGameplayScreen extends Scene.Base {
         const r = 8 * m.sY;
         for (let i = 0; i < packets.length; i++) {
             const packet = packets[i];
+            const kindStyle = this._packetKindStyle(packet);
             const color = packet.reverting
                 ? '#FFE600'
                 : packet.resolved
                 ? (packet.correct ? '#7BFF8A' : '#FF5267')
-                : '#4BE3FF';
+                : kindStyle.accent;
             const inXray = this._packetVisibleInXray(m, packet);
             const wrongPulse = packet.flashWrong > 0 ? (0.4 + 0.6 * Math.sin(this.animTick * 0.8)) : 0;
             const passPulse = packet.flashPass > 0 ? (0.45 + 0.55 * Math.sin(this.animTick * 0.55)) : 0;
@@ -2062,40 +2117,44 @@ class IP2LivePatchPanelGameplayScreen extends Scene.Base {
             const x = m.xrayX + i * (cardW + gap);
             const y = m.packetCardsY;
             const currentCard = i === 2;
-            const kindColor = packet && packet.reverting
-                ? '#FFE600'
-                : packet && packet.kind === 'MASK' ? '#FFE066' : '#63EDFF';
+            const kindStyle = this._packetKindStyle(packet);
+            const kindColor = packet && packet.reverting ? '#FFE600' : kindStyle.accent;
 
             ctx.save();
             ctx.globalAlpha = opacities[i];
             const shell = ctx.createLinearGradient(x, y, x + cardW, y + cardH);
-            shell.addColorStop(0, currentCard ? '#1B2930' : '#131B21');
+            shell.addColorStop(0, currentCard ? kindStyle.panel : '#131B21');
             shell.addColorStop(0.12, '#070B0F');
             shell.addColorStop(1, '#030609');
             this._fillChamferRect(ctx, x, y, cardW, cardH, 9 * m.sX, shell);
             this._strokeChamferRect(ctx, x, y, cardW, cardH, 9 * m.sX, currentCard ? kindColor : '#4A5B63', currentCard ? 2 * m.sX : 1.2 * m.sX);
 
+            ctx.globalAlpha = opacities[i] * (currentCard ? 0.1 : 0.04);
+            ctx.fillStyle = kindColor;
+            ctx.fillRect(x + 8 * m.sX, y + 24 * m.sY, cardW - 16 * m.sX, 25 * m.sY);
+            ctx.globalAlpha = opacities[i];
+
             ctx.fillStyle = currentCard ? '#FFE600' : '#6D838C';
-            ctx.font = 'bold ' + (7 * m.sY).toFixed(1) + 'px monospace';
+            ctx.font = 'bold ' + (7 * m.sY).toFixed(1) + 'px ' + primaryFont;
             ctx.textAlign = 'left';
             ctx.fillText(labels[i], x + 13 * m.sX, y + 17 * m.sY);
             ctx.textAlign = 'right';
             ctx.fillText(currentCard ? 'NOW' : 'STAGED', x + cardW - 13 * m.sX, y + 17 * m.sY);
 
             ctx.fillStyle = packet ? kindColor : '#52666E';
-            ctx.font = 'bold ' + (16 * m.sY).toFixed(1) + 'px ' + monoFont;
+            ctx.font = 'bold ' + (19 * m.sY).toFixed(1) + 'px ' + monoFont;
             ctx.textAlign = 'left';
             ctx.fillText(packet ? packet.text : 'BUFFER EMPTY', x + 13 * m.sX, y + 45 * m.sY);
-            ctx.fillStyle = currentCard ? '#A8BDC5' : '#657982';
-            ctx.font = 'bold ' + (6.5 * m.sY).toFixed(1) + 'px ' + primaryFont;
+            ctx.fillStyle = packet ? kindColor : (currentCard ? '#A8BDC5' : '#657982');
+            ctx.font = 'bold ' + (8.5 * m.sY).toFixed(1) + 'px ' + primaryFont;
             ctx.fillText(
                 packet
                     ? (packet.reverting
                         ? 'REVERSING TO INGRESS // TRY AGAIN'
-                        : (packet.kind === 'MASK' ? 'SUBNET MASK PACKET' : 'IP ADDRESS PACKET'))
+                        : kindStyle.label)
                     : 'NO PENDING SIGNAL',
                 x + 13 * m.sX,
-                y + 61 * m.sY
+                y + 63 * m.sY
             );
 
             ctx.fillStyle = currentCard ? kindColor : '#334149';
@@ -2301,16 +2360,34 @@ class IP2LivePatchPanelGameplayScreen extends Scene.Base {
     }
 
     _uiPrimaryFont() {
-        return (IP2Live.Assets && IP2Live.Assets.nebulaLoaded) ? 'Nebula-Regular' : 'monospace';
+        return (IP2Live.Assets && IP2Live.Assets.oxaniumMediumLoaded) ? 'Oxanium-Medium' : 'sans-serif';
     }
 
     _uiMonoFont() {
-        return (IP2Live.Assets && IP2Live.Assets.nebulaLoaded) ? 'Nebula-Regular' : 'monospace';
+        return (IP2Live.Assets && IP2Live.Assets.oxaniumMediumLoaded) ? 'Oxanium-Medium' : 'sans-serif';
     }
 
     _uiTitleFont() {
         if (IP2Live.Assets && IP2Live.Assets.abnesLoaded) return 'Abnes';
-        return this._uiPrimaryFont();
+        if (IP2Live.Assets && IP2Live.Assets.nebulaLoaded) return 'Nebula-Regular';
+        return 'monospace';
+    }
+
+    _packetKindStyle(packet) {
+        if (packet && String(packet.kind || '').toUpperCase() === 'MASK') {
+            return {
+                label: 'SUBNET MASK',
+                accent: '#FFB52E',
+                bright: '#FFE3A0',
+                panel: '#34210B',
+            };
+        }
+        return {
+            label: 'IP ADDRESS',
+            accent: '#45E4FF',
+            bright: '#B7F7FF',
+            panel: '#0A2933',
+        };
     }
 
     _drawCable(ctx, x1, y1, cx1, cy1, cx2, cy2, x2, y2, color, lineWidth) {
@@ -2386,7 +2463,7 @@ class IP2LivePatchPanelGameplayScreen extends Scene.Base {
 }
 
 const PatchPanelGameplayManager = {
-    VERSION: 'ip-patchpanel-gameplay-manager-20260817-08',
+    VERSION: 'ip-patchpanel-gameplay-manager-20260918-10',
     _active: false,
     _introShown: false,
     _activeAttempt: null,

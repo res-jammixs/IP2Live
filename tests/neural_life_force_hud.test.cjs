@@ -145,7 +145,11 @@ assert.match(questSource, /oxaniumMediumLoaded\s*\?\s*'Oxanium-Medium'/);
 assert.match(questSource, /nebulaLoaded\s*\?\s*'Nebula-Regular'/);
 assert.match(questSource, /ctx\.fillRect\(o\.x, o\.y, leftW, plateH\)/, 'red quest header should be straight');
 assert.match(questSource, /leftGrad\.addColorStop\(0, '#FF164D'\)/, 'quest header should inherit dialogue styling');
+assert.match(questSource, /const rightW = 124 \* o\.sX;/, 'yellow quest header should use the wider plate');
 assert.match(questSource, /_drawTrackedText\(ctx, quest\.title/);
+assert.match(questSource, /quest\.title \|\| 'QUEST AREA', qX \+ 18 \* sX/);
+assert.match(questSource, /Math\.round\(12\.5 \* sX\) \+ 'px ' \+ headerFont/);
+assert.doesNotMatch(questSource, /const slashX|for \(let si = 0; si < 3; si\+\+\)/);
 assert.doesNotMatch(questSource, /LIVE_TRACKING|OBJ 01\/01/);
 assert.ok(
     questSource.indexOf('dialogueManager.drawHudFocusOverlay(Common.Platform.ctx)') >

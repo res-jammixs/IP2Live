@@ -786,10 +786,11 @@ class IP2LiveLoadingScreen extends Scene.Base {
     }
 
     _createSubnetFacts() {
-        return [
-            'Class A addresses start with 1-126 in the first octet and default to /8.',
-            'Class B addresses start with 128-191 in the first octet and default to /16.',
-            'Class C addresses start with 192-223 in the first octet and default to /24.',
+        const ranges = IP2Live.IPClassRanges;
+        const classFacts = ranges && typeof ranges.loadingTip === 'function'
+            ? ['A', 'B', 'C'].map(function (className) { return ranges.loadingTip(className); })
+            : [];
+        return classFacts.concat([
             'To find a block size, subtract the interesting mask octet from 256.',
             'CIDR host bits are 32 minus the prefix length; /27 leaves 5 host bits.',
             'Usable host count is usually 2 to the host bits, minus network and broadcast.',
@@ -802,7 +803,7 @@ class IP2LiveLoadingScreen extends Scene.Base {
             'The first address in a subnet is the network ID; the last is usually broadcast.',
             'If the mask octet is 240, the block size is 16 because 256 - 240 = 16.',
             'A quick CIDR ladder: /25=128, /26=64, /27=32, /28=16, /29=8, /30=4.',
-        ];
+        ]);
     }
 
     static show(options) {

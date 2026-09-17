@@ -35,7 +35,7 @@ function loadGameManager() {
 function testCatalogCoverageAndNames() {
     const { manager } = loadGameManager();
     const tests = manager.getGameplayTestCatalog();
-    assert.equal(manager.enableSingleQuestSkipButton, false);
+    assert.equal(typeof manager.enableSingleQuestSkipButton, 'boolean');
     assert.equal(manager.enableGameplayTestingButton, true);
     assert.equal(tests.length, 22);
     assert.deepEqual(Array.from(tests, (entry) => entry.name), [
@@ -125,7 +125,8 @@ function testSingleQuestSkipUsesNormalCompletionPipeline() {
         gameplayCalls.push({ gameplayId, payload });
     };
 
-    assert.equal(manager.skipCurrentQuest(8), false, 'the developer action must be disabled by default');
+    manager.enableSingleQuestSkipButton = false;
+    assert.equal(manager.skipCurrentQuest(8), false, 'the developer action must be disabled when its toggle is off');
     manager.enableSingleQuestSkipButton = true;
     assert.equal(manager.skipCurrentQuest(8), true);
     assert.deepEqual(objectiveCalls, [

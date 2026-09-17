@@ -14,6 +14,12 @@
         return null;
     }
 
+    const classRanges = {};
+    for (let rangeIndex = 0; rangeIndex < classSpecs.length; rangeIndex++) {
+        const spec = classSpecs[rangeIndex];
+        classRanges[spec.className] = spec.min + ' to ' + spec.max;
+    }
+
     function ordinal(index) {
         const n = Number(index) + 1;
         if (n === 1) return 'first';
@@ -35,16 +41,10 @@
     }
 
     const IPWiresTutorial = {
-        VERSION: 'ip-wires-tutorial-20260916-06',
+        VERSION: 'ip-wires-tutorial-20260918-07',
         _dialogueSerial: 0,
 
-        classRanges: {
-            A: '1 to 126',
-            B: '127 to 191',
-            C: '192 to 223',
-            D: '224 to 239',
-            E: '240 to 255',
-        },
+        classRanges,
 
         activateGuidedSession(screen) {
             if (!screen || !Array.isArray(screen.leftItems) || !screen.leftItems.length) return false;
@@ -235,25 +235,27 @@
             screen._ipGuide.expectedSourceId = null;
             screen._ipGuide.expectedClassName = null;
             this._clearHighlight(screen);
+            const recap = [
+                'You are now ready to repair all four Level 1 levers.',
+                '',
+                'Each fixed lever restores more power to this floor.',
+                'When all four are stable, the next-level door will open.',
+                '',
+                'Remember again this:',
+                '',
+            ];
+            for (let i = 0; i < classSpecs.length; i++) {
+                const spec = classSpecs[i];
+                recap.push(
+                    highlighted('Class ' + spec.className) + ': IP ranges from ' + highlighted(atomicRange(spec.rangeText))
+                );
+            }
             return this._startDynamicDialogue('stage1.ipwires.guided.final.', {
                 title: 'WIRE PATCH',
                 speaker: 'SYSTEM',
                 timing: 'during',
                 bindings: { mapId: 3, gameplayId: 'ip_class_wires', trigger: 'gameplay.completed' },
-                slides: [[
-                    'You are now ready to repair all four Level 1 levers.',
-                    '',
-                    'Each fixed lever restores more power to this floor.',
-                    'When all four are stable, the next-level door will open.',
-                    '',
-                    'Remember again this:',
-                    '',
-                    highlighted('Class A') + ': IP ranges from ' + highlighted(atomicRange('1.0.0.0 to 126.255.255.255')),
-                    highlighted('Class B') + ': IP ranges from ' + highlighted(atomicRange('127.0.0.0 to 191.255.255.255')),
-                    highlighted('Class C') + ': IP ranges from ' + highlighted(atomicRange('192.0.0.0 to 223.255.255.255')),
-                    highlighted('Class D') + ': IP ranges from ' + highlighted(atomicRange('224.0.0.0 to 239.255.255.255')),
-                    highlighted('Class E') + ': IP ranges from ' + highlighted(atomicRange('240.0.0.0 to 255.255.255.255')),
-                ]],
+                slides: [recap],
             });
         },
 

@@ -1,5 +1,5 @@
 {
-  "version": "dialogues-20260530-01",
+  "version": "dialogues-20260918-02",
   "dialogues": [
     {
       "id": "tutorial.intro",
@@ -148,11 +148,11 @@
           "All four levers must be fixed to open the next-level door.",
           "",
           "Match each full IP address on the left to the correct Class connector on the right.",
-          "Class A: 1.0.0.0 to 126.255.255.255",
-          "Class B: 127.0.0.0 to 191.255.255.255",
-          "Class C: 192.0.0.0 to 223.255.255.255",
-          "Class D: 224.0.0.0 to 239.255.255.255",
-          "Class E: 240.0.0.0 to 255.255.255.255"
+          "{{highlight:Class A}}: IP ranges from {{highlight:[IP_CLASS_A_FULL]}}",
+          "{{highlight:Class B}}: IP ranges from {{highlight:[IP_CLASS_B_FULL]}}",
+          "{{highlight:Class C}}: IP ranges from {{highlight:[IP_CLASS_C_FULL]}}",
+          "{{highlight:Class D}}: IP ranges from {{highlight:[IP_CLASS_D_FULL]}}",
+          "{{highlight:Class E}}: IP ranges from {{highlight:[IP_CLASS_E_FULL]}}"
         ]
       ]
     },

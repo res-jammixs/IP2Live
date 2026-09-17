@@ -31,11 +31,11 @@ const dialogueLibrary = JSON.parse(fs.readFileSync(
 const registrations = [];
 const starts = [];
 const specs = {
-    A: { className: 'A', rangeText: '1.0.0.0 to 126.255.255.255' },
-    B: { className: 'B', rangeText: '127.0.0.0 to 191.255.255.255' },
-    C: { className: 'C', rangeText: '192.0.0.0 to 223.255.255.255' },
-    D: { className: 'D', rangeText: '224.0.0.0 to 239.255.255.255' },
-    E: { className: 'E', rangeText: '240.0.0.0 to 255.255.255.255' },
+    A: { className: 'A', min: 0, max: 127, shortRange: '0-127', rangeText: '0.0.0.0 to 127.255.255.255' },
+    B: { className: 'B', min: 128, max: 191, shortRange: '128-191', rangeText: '128.0.0.0 to 191.255.255.255' },
+    C: { className: 'C', min: 192, max: 223, shortRange: '192-223', rangeText: '192.0.0.0 to 223.255.255.255' },
+    D: { className: 'D', min: 224, max: 239, shortRange: '224-239', rangeText: '224.0.0.0 to 239.255.255.255' },
+    E: { className: 'E', min: 240, max: 255, shortRange: '240-255', rangeText: '240.0.0.0 to 255.255.255.255' },
 };
 
 const context = {

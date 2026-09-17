@@ -6,10 +6,30 @@
  */
 
 const IPPatchPanelTutorial = {
-    VERSION: 'ip-patchpanel-tutorial-20260817-08',
+    VERSION: 'ip-patchpanel-tutorial-20260918-10',
     _dialogueSerial: 0,
 
+    _rangeSpecs() {
+        const ranges = IP2Live.IPClassRanges;
+        return ranges && typeof ranges.cloneSpecs === 'function' ? ranges.cloneSpecs() : [];
+    },
+
+    _rangeSpec(className) {
+        const ranges = IP2Live.IPClassRanges;
+        return ranges && typeof ranges.byClassName === 'function' ? ranges.byClassName(className) : null;
+    },
+
+    _highlightedRangeSummary() {
+        const specs = this._rangeSpecs();
+        const entries = specs.map(function (spec) {
+            return '{{highlight:Class ' + spec.className + ': ' + spec.shortRange + '}}';
+        });
+        if (entries.length < 2) return entries.join('');
+        return entries.slice(0, -1).join(', ') + ', and ' + entries[entries.length - 1];
+    },
+
     showIntro(onComplete) {
+        const rangeSummary = this._highlightedRangeSummary();
         return this._startDynamicDialogue('stage1.ippatchpanel.intro.', {
             title: 'PATCH PANEL BRIEFING',
             speaker: 'SYSTEM',
@@ -21,29 +41,32 @@ const IPPatchPanelTutorial = {
             },
             slides: [
                 [
-                    'Welcome to NETWORK PATCH: the conduit classifier protecting this route.',
-                    'A packet enters from the left, crosses the inspection lane, and exits through the right after classification.',
+                    'Welcome to {{highlight:Network Patch}}, the conduit classifier protecting this route.',
+                    'A packet enters through {{highlight:Ingress}} on the left, crosses the inspection lane, and exits through {{highlight:Egress}} after classification.',
                     '',
-                    'The panel is divided into a live conduit XRAY, a five-Class tunnel core, a packet-flow rail, and a three-card packet deck.',
+                    'The panel contains a live {{highlight:conduit X-ray}}, a five-Class tunnel wheel, a packet-flow rail, and a three-card packet deck.',
                 ], [
-                    'The XRAY exposes the hollow Class A-E tunnels inside the cable.',
-                    'Rotate the active route with the ARROW KEYS before the live packet reaches the center core.',
+                    'The X-ray exposes the hollow {{highlight:Class A–E tunnels}} inside the cable.',
+                    'Use the arrow keys to rotate the {{highlight:entire tunnel wheel}} until the correct tunnel entrance aligns with the wire on the left.',
                     '',
-                    'You may also press A-E directly or click a labeled tunnel port.',
+                    'You may also press {{key:A|KeyA}}, {{key:B|KeyB}}, {{key:C|KeyC}}, {{key:D|KeyD}}, or {{key:E|KeyE}} directly, or click a labeled tunnel port.',
                 ], [
-                    'This stream contains both IP addresses and subnet masks.',
-                    'Their numeric patterns determine which Class tunnel accepts them.',
+                    'This gameplay introduces a new packet type: the {{highlight:subnet mask}}. It is different from a regular {{highlight:IP address}}.',
                     '',
-                    'The first 3 packets teach the standard Class A, B, and C subnet masks: 255.0.0.0, 255.255.0.0, and 255.255.255.0.',
-                    'The next 5 packets review the IP address ranges for Classes A through E in order.',
+                    'Classify an {{highlight:IP address}} by its first-octet Class A–E range.',
+                    'Classify a {{highlight:subnet mask}} by its mask pattern, which describes the network and host portions of an address.',
+                    '{{highlight:A subnet mask beginning with 255 is not automatically a Class E IP address.}} Always read the packet-type label first.',
                 ], [
-                    'GUIDED SAFETY LOCK is active for those first 8 training packets.',
-                    'A wrong tunnel reverses the same signal to INGRESS without consuming a delivery or adding a scoring mistake.',
+                    'The first 3 packets teach the standard masks: {{highlight:255.0.0.0 → Class A}}, {{highlight:255.255.0.0 → Class B}}, and {{highlight:255.255.255.0 → Class C}}.',
+                    'The next 5 packets review these centralized IP first-octet ranges: ' + rangeSummary + '.',
+                ], [
+                    '{{highlight:Guided safety lock}} is active for those first 8 training packets.',
+                    'A wrong tunnel reverses the same signal to {{highlight:Ingress}} without consuming a delivery or adding a scoring mistake.',
                     '',
                     'Try that packet again until it is correct. The final 7 independent IP packets use the normal scoring rules.',
                 ], [
                     'The guided tutorial always runs all 15 packets so you can complete the entire lesson.',
-                    'Secure at least 10 correctly to stabilize the panel and proceed.',
+                    'Secure at least {{highlight:10 of 15 packets}} to stabilize the panel and proceed.',
                     '',
                     'You have two total round attempts at each Patch Panel node. If the first score is below 10, the complete stream restarts once.',
                     'If the second round also misses the target, we return to this guided tutorial before trying the unfinished node again.',
@@ -65,7 +88,7 @@ const IPPatchPanelTutorial = {
                 trigger: 'gameplay.during',
             },
             slides: [[
-                'This illuminated pulse is the CURRENT packet entering through INGRESS on the left.',
+                'This illuminated pulse is the {{highlight:current packet}} entering through {{highlight:Ingress}} on the left.',
                 '',
                 'Only one unresolved packet may occupy the live lane. Its movement is paused while a tutorial message or highlight is active.',
                 'When instruction resumes, watch it travel toward the center classifier and then leave through EGRESS.',
@@ -86,9 +109,9 @@ const IPPatchPanelTutorial = {
                 trigger: 'gameplay.during',
             },
             slides: [[
-                'The CONDUIT XRAY is a digital view inside the cable. It exposes five hollow tunnels surrounding the route core.',
+                'The {{highlight:conduit X-ray}} is a digital view inside the cable. It exposes five hollow Class tunnels surrounding the center core.',
                 '',
-                'The armed tunnel glows with its Class color. Read the current ' + label + ' in the packet deck, then align the correct tunnel before the signal reaches the core.',
+                'The selected tunnel glows with its Class color. Read the current {{highlight:' + label + '}} in the packet deck, then rotate the wheel until the correct tunnel entrance aligns with the left wire.',
             ]],
             onComplete,
         });
@@ -105,10 +128,10 @@ const IPPatchPanelTutorial = {
                 trigger: 'gameplay.during',
             },
             slides: [[
-                'The PACKET FLOW rail records all 15 deliveries in the round.',
+                'The {{highlight:Packet Flow}} rail records all {{highlight:15 deliveries}} in the round.',
                 'Cyan segments are secured routes; red segments are misroutes; dark segments have not arrived yet.',
                 '',
-                'This guided tutorial records all 15 deliveries and requires at least 10 correct routes. Regular Patch Panel nodes finish as soon as the tenth route is secured.',
+                'This guided tutorial records all 15 deliveries and requires at least {{highlight:10 correct routes}}. Regular Patch Panel nodes finish as soon as the tenth route is secured.',
                 'A lower first-round score uses your only retry; a second failed round returns you to tutorial training.',
             ]],
             onComplete,
@@ -126,10 +149,10 @@ const IPPatchPanelTutorial = {
                 trigger: 'gameplay.during',
             },
             slides: [[
-                'Use the LEFT or UP ARROW to rotate backward through the Class tunnels.',
-                'Use the RIGHT or DOWN ARROW to rotate forward. The glowing tunnel is the route currently armed.',
+                'Use {{key:LEFT|ArrowLeft}} or {{key:UP|ArrowUp}} to rotate the tunnel wheel backward.',
+                'Use {{key:RIGHT|ArrowRight}} or {{key:DOWN|ArrowDown}} to rotate it forward. The selected Class tunnel will physically dock with the wire on the left.',
                 '',
-                'For direct control, press A, B, C, D, or E, or click a labeled tunnel port inside the XRAY.',
+                'For direct control, press {{key:A|KeyA}}, {{key:B|KeyB}}, {{key:C|KeyC}}, {{key:D|KeyD}}, or {{key:E|KeyE}}, or click a labeled tunnel port inside the X-ray.',
             ]],
             onComplete,
         });
@@ -146,7 +169,7 @@ const IPPatchPanelTutorial = {
                 trigger: 'gameplay.during',
             },
             slides: [[
-                'The two dim cards on the LEFT are upcoming packets. NEXT +1 arrives first; NEXT +2 follows it.',
+                'The two dim cards on the left are {{highlight:upcoming packets}}. {{highlight:Next +1}} arrives first; Next +2 follows it.',
                 '',
                 'They are previews only, not extra live packets. Use them to prepare without losing track of the signal already in the conduit.',
             ]],
@@ -165,9 +188,10 @@ const IPPatchPanelTutorial = {
                 trigger: 'gameplay.during',
             },
             slides: [[
-                'The bright rightmost card marked CURRENT belongs to the packet flowing through the conduit now.',
+                'The bright rightmost card marked {{highlight:Current}} belongs to the packet flowing through the conduit now.',
                 '',
-                'It identifies the value as an IP ADDRESS PACKET or a SUBNET MASK PACKET. Read this card, choose its Class, and route before the packet reaches the center.',
+                'Its large type label identifies either an {{highlight:IP address}} in cyan or a {{highlight:subnet mask}} in amber.',
+                '{{highlight:Read the packet type before classifying the number.}} A leading 255 means something different on a subnet mask than it does on a regular IP address.',
             ]],
             onComplete,
         });
@@ -179,18 +203,13 @@ const IPPatchPanelTutorial = {
         const className = String(data.className || lesson.className || '?').toUpperCase();
         const value = String(data.text || 'UNKNOWN SIGNAL');
         const isMask = String(data.kind || '').toUpperCase() === 'MASK';
-        const classRanges = {
-            A: 'first octet 1-126',
-            B: 'first octet 128-191',
-            C: 'first octet 192-223',
-            D: 'first octet 224-239',
-            E: 'first octet 240-255',
-        };
+        const rangeSpec = this._rangeSpec(className);
+        const classRange = rangeSpec ? 'first-octet range ' + rangeSpec.shortRange : 'centralized class range';
         const order = Math.max(1, Number(lesson.order) || 1);
         const title = isMask ? 'SUBNET MASK TRAINING ' + order + '/3' : 'IP CLASS TRAINING ' + order + '/5';
         const explanation = isMask
-            ? value + ' is the standard subnet mask for Class ' + className + '.'
-            : value + ' belongs to Class ' + className + ' because its ' + (classRanges[className] || 'class range') + '.';
+            ? '{{highlight:' + value + '}} is a {{highlight:subnet mask}} pattern for {{highlight:Class ' + className + '}}.'
+            : '{{highlight:' + value + '}} is an {{highlight:IP address}} belonging to {{highlight:Class ' + className + '}} because it falls within the {{highlight:' + classRange + '}}.';
 
         return this._startDynamicDialogue('stage1.ippatchpanel.guided.training.', {
             title,
@@ -204,10 +223,10 @@ const IPPatchPanelTutorial = {
             slides: [[
                 explanation,
                 '',
-                'Use the arrow keys to align CLASS ' + className + ', then let the packet cross the center core.',
+                'Rotate the wheel until {{highlight:Class ' + className + '}} docks with the left wire, then let the packet cross the center core.',
                 isMask
-                    ? 'Memorize this mask pattern; only Classes A, B, and C use these standard subnet-mask lessons.'
-                    : 'The five guided IP packets now progress from Class A through Class E.',
+                    ? 'Do not classify this mask from its leading {{highlight:255}}. Memorize the full pattern; these standard lessons cover {{highlight:Classes A, B, and C}}.'
+                    : 'The five guided IP packets progress through {{highlight:Class A to Class E}} using their first-octet ranges.',
             ]],
             onComplete,
         });
@@ -224,7 +243,7 @@ const IPPatchPanelTutorial = {
                 trigger: 'gameplay.during',
             },
             slides: [[
-                'Now that you know the three standard subnet masks and the IP Class A-E ranges, route the remaining 7 IP packets on your own.',
+                'You now know the {{highlight:three standard subnet masks}} and the {{highlight:IP Class A–E ranges}}. Route the remaining 7 IP packets on your own.',
                 '',
                 'Keep reading the CURRENT card, use the two upcoming previews to prepare, and secure at least 10 of all 15 packets to proceed.',
             ]],
