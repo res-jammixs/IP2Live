@@ -7,7 +7,7 @@
 
 (function () {
     const QuestMinimap = {
-        VERSION: 'quest-minimap-20260918-04',
+        VERSION: 'quest-minimap-20260918-05',
         DEBUG: false,
 
         _container: null,
@@ -338,7 +338,9 @@
 
         _skipQuestCanvasRect() {
             const gm = IP2Live.GameManager || IP2LiveGameManager || null;
-            const buttonRect = gm && gm._skipQuestButtonRect ? gm._skipQuestButtonRect : null;
+            const buttonRect = gm
+                ? (gm._questHudAnchorRect || gm._singleQuestSkipButtonRect || gm._skipQuestButtonRect)
+                : null;
             const ctx = Common && Common.Platform ? Common.Platform.ctx : null;
             const canvas = ctx && ctx.canvas ? ctx.canvas : null;
             if (!buttonRect || !canvas || typeof canvas.getBoundingClientRect !== 'function') return null;
@@ -365,7 +367,7 @@
             for (let i = 0; i < candidates.length; i++) {
                 const el = candidates[i];
                 const text = String(el.textContent || el.value || '').toUpperCase();
-                if (text.indexOf('SKIP FLOOR QUESTS') !== -1) return el;
+                if (text.indexOf('SKIP CURRENT QUEST') !== -1 || text.indexOf('SKIP FLOOR QUESTS') !== -1) return el;
             }
             return null;
         },

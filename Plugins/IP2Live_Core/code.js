@@ -1128,7 +1128,7 @@ IP2Live.QuestMinimapReady = (async function () {
     const root = Common.Platform.ROOT_DIRECTORY;
     const src  = root + 'Plugins/IP2Live_Core/modules/quest_minimap.js';
     try {
-        const versionedSrc = src + '?v=20260918_quest_minimap_04_' + Date.now();
+        const versionedSrc = src + '?v=20260918_quest_minimap_05_' + Date.now();
         let resp = await fetch(versionedSrc, { cache: 'no-store' });
         if (!resp.ok) {
             console.warn('[IP2Live] Versioned quest minimap fetch failed, retrying plain path:', versionedSrc);
@@ -1346,7 +1346,7 @@ IP2Live.GameManagerReady = (async function () {
     const root = Common.Platform.ROOT_DIRECTORY;
     const src  = root + 'Plugins/IP2Live_Core/modules/game_manager.js';
     try {
-        const versionedSrc = src + '?v=20260530_game_manager_04_' + Date.now();
+        const versionedSrc = src + '?v=20260918_game_manager_13_' + Date.now();
         let resp = await fetch(versionedSrc, { cache: 'no-store' });
         if (!resp.ok) {
             console.warn('[IP2Live] Versioned game manager fetch failed, retrying plain path:', versionedSrc);

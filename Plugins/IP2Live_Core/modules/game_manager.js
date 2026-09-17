@@ -8,7 +8,7 @@
  */
 
 const IP2LiveGameManager = {
-    VERSION: 'game-manager-20260915-12',
+    VERSION: 'game-manager-20260918-13',
 
     STATE: {
         BOOT: 'BOOT',
@@ -55,12 +55,17 @@ const IP2LiveGameManager = {
     _checkpointDebounceTimer: null,
     _checkpointInFlight: false,
     _shutdownListenerInstalled: false,
+    // Set true to show the developer button that completes only the active quest.
+    enableSingleQuestSkipButton: true,
+    // Set true to show the legacy developer button that skips every floor quest.
     enableQuestSkipButton: false,
     // Set false to hide the Gameplay Testing button from the pause-menu header.
     enableGameplayTestingButton: true,
     // Set false to hide the Debug Map Jump entry from the pause menu.
     enableDebugMapJumpButton: true,
     _skipQuestButtonRect: null,
+    _singleQuestSkipButtonRect: null,
+    _questHudAnchorRect: null,
 
     gameplayTestDefinitions: [
         { id: 'gameplay-1-tutorial', name: 'Gameplay 1 Tutorial', gameplayId: 'ip_class_wires', tutorial: true },
@@ -2902,6 +2907,99 @@ const IP2LiveGameManager = {
         });
     },
 
+    skipCurrentQuest(mapId) {
+        if (!this.enableSingleQuestSkipButton) return false;
+        const context = this._singleQuestSkipContext(mapId);
+        if (!context) return false;
+
+        const questManager = IP2Live.QuestManager;
+        if (!questManager || typeof questManager.completeObjective !== 'function') return false;
+        let changed = false;
+        for (let i = 0; i < context.objectives.length; i++) {
+            const target = context.objectives[i];
+            const questResult = questManager.completeObjective(target.objectiveId);
+            if (!questResult) continue;
+
+            const simulatedResult = {
+                passed: true,
+                skipped: true,
+                developerSkip: true,
+                reason: 'developer_single_quest_skip',
+                durationMs: 0,
+                attemptsUsed: 0,
+                maxAttempts: 0,
+                retries: 0,
+                mistakeCount: 0,
+            };
+            this.handleGameplayCompleted(target.gameplayId, {
+                gameplayId: target.gameplayId,
+                spec: target.spec,
+                questId: context.questId,
+                objectiveId: target.objectiveId,
+                mapId: context.mapId,
+                result: simulatedResult,
+                questResult,
+                developerQuestSkip: true,
+                source: 'GameManager.skipCurrentQuest',
+            });
+            changed = true;
+        }
+        return changed;
+    },
+
+    _singleQuestSkipContext(mapId) {
+        const questManager = IP2Live.QuestManager;
+        if (!questManager || typeof questManager.currentQuest !== 'function' || typeof questManager.currentObjective !== 'function') {
+            return null;
+        }
+
+        const resolvedMapId = Number(mapId) || this._currentMapId();
+        const quest = questManager.currentQuest();
+        const objective = questManager.currentObjective();
+        if (!resolvedMapId || !quest || !objective || !quest.id || !objective.id) return null;
+        if (Number(questManager.activeMapId || resolvedMapId) !== resolvedMapId) return null;
+
+        const rows = this._mapGameplayRows(resolvedMapId);
+        const questSpecs = rows
+            .map((row) => row && row.spec)
+            .filter((candidate) => candidate && candidate.id === quest.id)
+            .sort((a, b) => Number(a.objectiveSequence || 1) - Number(b.objectiveSequence || 1));
+        const activeSpec = questSpecs.find((candidate) => candidate.objectiveId === objective.id);
+        if (!activeSpec || !activeSpec.gameplayId || !this.flowConfig.gameplayNodes[activeSpec.gameplayId]) return null;
+
+        const completed = questManager.completedObjectives && questManager.completedObjectives[quest.id];
+        if (completed && completed[objective.id]) return null;
+
+        const objectives = questSpecs
+            .filter((spec) => spec.objectiveId && !(completed && completed[spec.objectiveId]))
+            .filter((spec) => spec.gameplayId && this.flowConfig.gameplayNodes[spec.gameplayId])
+            .map((spec) => ({
+                objectiveId: spec.objectiveId,
+                gameplayId: spec.gameplayId,
+                spec: Object.assign({}, spec, {
+                    mapId: resolvedMapId,
+                    gameplayId: spec.gameplayId,
+                }),
+            }));
+        if (!objectives.length) return null;
+
+        return {
+            mapId: resolvedMapId,
+            questId: quest.id,
+            objectiveId: objective.id,
+            gameplayId: activeSpec.gameplayId,
+            objectives,
+        };
+    },
+
+    _hasSkippableSingleQuest(mapId) {
+        if (!this.enableSingleQuestSkipButton) return false;
+        if (this._activeGameplayNode) return false;
+        const dialogueManager = IP2Live.DialogueManager;
+        if (dialogueManager && typeof dialogueManager.isActive === 'function' && dialogueManager.isActive()) return false;
+        return !!this._singleQuestSkipContext(mapId);
+    },
+
     skipCurrentFloorQuests(mapId) {
         if (!this.enableQuestSkipButton) return false;
         const resolvedMapId = Number(mapId) || this._currentMapId();
@@ -2924,7 +3022,9 @@ const IP2LiveGameManager = {
         const originalDrawHUD = Scene.Map.prototype.drawHUD;
         Scene.Map.prototype.drawHUD = function () {
             if (typeof originalDrawHUD === 'function') originalDrawHUD.call(this);
+            manager._drawSingleQuestSkipButton(Common && Common.Platform ? Common.Platform.ctx : null, this);
             manager._drawQuestSkipButton(Common && Common.Platform ? Common.Platform.ctx : null, this);
+            manager._updateQuestHudAnchorRect();
         };
 
         const originalOnMouseUp = Scene.Map.prototype.onMouseUp;
@@ -2933,6 +3033,36 @@ const IP2LiveGameManager = {
             if (typeof originalOnMouseUp === 'function') return originalOnMouseUp.call(this, x, y);
             return false;
         };
+        return true;
+    },
+
+    _drawSingleQuestSkipButton(ctx, scene) {
+        this._singleQuestSkipButtonRect = null;
+        if (!this.enableSingleQuestSkipButton || !ctx || !scene) return false;
+        if (!this._isGameplayStageScene(scene)) return false;
+
+        const mapId = this._mapIdFromScene(scene);
+        if (!mapId) return false;
+
+        const cW = ctx.canvas.width;
+        const cH = ctx.canvas.height;
+        const SW = Common.ScreenResolution.SCREEN_X;
+        const SH = Common.ScreenResolution.SCREEN_Y;
+        const sX = cW / SW;
+        const sY = cH / SH;
+        const w = 220 * sX;
+        const h = 46 * sY;
+        const x = cW - w - 18 * sX;
+        const y = 16 * sY;
+        const active = this._hasSkippableSingleQuest(mapId);
+
+        this._singleQuestSkipButtonRect = { x, y, w, h, mapId, active };
+        this._drawDeveloperQuestButton(ctx, {
+            x, y, w, h, sX, sY, active,
+            title: 'SKIP CURRENT QUEST',
+            detail: active ? 'DEV // COMPLETE & ADVANCE' : 'NO ACTIVE GAMEPLAY QUEST',
+            accent: '#FFE600',
+        });
         return true;
     },
 
@@ -2953,15 +3083,37 @@ const IP2LiveGameManager = {
         const w = 220 * sX;
         const h = 46 * sY;
         const x = cW - w - 18 * sX;
-        const y = 16 * sY;
+        const y = (this.enableSingleQuestSkipButton ? 70 : 16) * sY;
         const active = this._hasSkippableFloorQuests(mapId);
 
         this._skipQuestButtonRect = { x, y, w, h, mapId, active };
 
+        this._drawDeveloperQuestButton(ctx, {
+            x, y, w, h, sX, sY, active,
+            title: 'SKIP FLOOR QUESTS',
+            detail: active ? 'CLICK: KEEP EXIT NODE ONLY' : 'NO SKIPPABLE QUESTS',
+            accent: '#00F0FF',
+        });
+        return true;
+    },
+
+    _drawDeveloperQuestButton(ctx, options) {
+        const o = options || {};
+        const x = o.x;
+        const y = o.y;
+        const w = o.w;
+        const h = o.h;
+        const sX = o.sX;
+        const sY = o.sY;
+        const active = !!o.active;
+        const font = IP2Live.Assets && IP2Live.Assets.oxaniumMediumLoaded ? 'Oxanium-Medium' : 'monospace';
+
         ctx.save();
-        ctx.fillStyle = active ? 'rgba(255,0,60,0.92)' : 'rgba(65,72,86,0.86)';
-        ctx.strokeStyle = active ? '#FFE600' : 'rgba(218,238,255,0.6)';
+        ctx.fillStyle = active ? 'rgba(255,0,60,0.92)' : 'rgba(45,50,61,0.9)';
+        ctx.strokeStyle = active ? o.accent : 'rgba(218,238,255,0.48)';
         ctx.lineWidth = 2 * sX;
+        ctx.shadowColor = active ? o.accent : 'transparent';
+        ctx.shadowBlur = active ? 7 * Math.min(sX, sY) : 0;
 
         ctx.beginPath();
         ctx.moveTo(x + 18 * sX, y);
@@ -2972,40 +3124,62 @@ const IP2LiveGameManager = {
         ctx.closePath();
         ctx.fill();
         ctx.stroke();
+        ctx.shadowBlur = 0;
+
+        ctx.fillStyle = active ? o.accent : 'rgba(190,205,216,0.34)';
+        ctx.fillRect(x + 14 * sX, y + 6 * sY, 4 * sX, h - 12 * sY);
 
         ctx.fillStyle = '#FFFFFF';
-        ctx.font = 'bold ' + Math.round(11 * sX) + 'px monospace';
+        ctx.font = 'bold ' + Math.round(10.5 * sX) + 'px ' + font;
         ctx.textAlign = 'center';
-        ctx.fillText('SKIP FLOOR QUESTS', x + w * 0.52, y + 18 * sY);
+        ctx.fillText(o.title, x + w * 0.54, y + 18 * sY);
         ctx.font = Math.round(8.5 * sX) + 'px monospace';
-        ctx.fillStyle = active ? '#FFE600' : 'rgba(218,238,255,0.9)';
-        ctx.fillText(
-            active ? 'CLICK: KEEP EXIT NODE ONLY' : 'NO SKIPPABLE QUESTS',
-            x + w * 0.52,
-            y + 34 * sY
-        );
+        ctx.fillStyle = active ? o.accent : 'rgba(218,238,255,0.72)';
+        ctx.fillText(o.detail, x + w * 0.54, y + 34 * sY);
         ctx.restore();
         return true;
     },
 
+    _updateQuestHudAnchorRect() {
+        const rects = [this._singleQuestSkipButtonRect, this._skipQuestButtonRect].filter(Boolean);
+        this._questHudAnchorRect = rects.length
+            ? rects.reduce((lowest, rect) => (rect.y + rect.h > lowest.y + lowest.h ? rect : lowest))
+            : null;
+        return this._questHudAnchorRect;
+    },
+
     _onMapMouseUp(x, y, scene) {
-        if (!this.enableQuestSkipButton || !scene || !this._skipQuestButtonRect) return false;
+        if ((!this.enableSingleQuestSkipButton && !this.enableQuestSkipButton) || !scene) return false;
         if (!this._isGameplayStageScene(scene)) return false;
         if (IP2Live.DialogueManager && typeof IP2Live.DialogueManager.isActive === 'function' && IP2Live.DialogueManager.isActive()) {
             return false;
         }
 
-        const rect = this._skipQuestButtonRect;
         const mx = Number(x);
         const my = Number(y);
-        const inside = mx >= rect.x && mx <= rect.x + rect.w && my >= rect.y && my <= rect.y + rect.h;
-        if (!inside) return false;
+        const singleRect = this._singleQuestSkipButtonRect;
+        if (this.enableSingleQuestSkipButton && this._pointInRect(mx, my, singleRect)) {
+            const changed = this.skipCurrentQuest(singleRect.mapId);
+            if (changed) this._playConfirm();
+            else this._playCursor();
+            if (Manager && Manager.Stack) Manager.Stack.requestPaintHUD = true;
+            return true;
+        }
 
-        const changed = this.skipCurrentFloorQuests(rect.mapId);
-        if (changed) this._playConfirm();
-        else this._playCursor();
-        if (Manager && Manager.Stack) Manager.Stack.requestPaintHUD = true;
-        return true;
+        const floorRect = this._skipQuestButtonRect;
+        if (this.enableQuestSkipButton && this._pointInRect(mx, my, floorRect)) {
+            const changed = this.skipCurrentFloorQuests(floorRect.mapId);
+            if (changed) this._playConfirm();
+            else this._playCursor();
+            if (Manager && Manager.Stack) Manager.Stack.requestPaintHUD = true;
+            return true;
+        }
+        return false;
+    },
+
+    _pointInRect(x, y, rect) {
+        if (!rect) return false;
+        return x >= rect.x && x <= rect.x + rect.w && y >= rect.y && y <= rect.y + rect.h;
     },
 
     _hasSkippableFloorQuests(mapId) {
