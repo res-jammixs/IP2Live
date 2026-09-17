@@ -194,6 +194,50 @@ assert.equal(
 );
 dialogueManager.discardActive('test.render');
 
+const questSuppressionStates = [];
+const minimapHighlightStates = [];
+context.IP2Live.QuestManager = {
+    setDialogueSuppressed(value) { questSuppressionStates.push(!!value); },
+    _questPanelRect() { return { x: 18, y: 88, w: 430, h: 126 }; },
+};
+context.IP2Live.QuestMinimap = {
+    setTutorialHighlight(value) { minimapHighlightStates.push(!!value); },
+};
+dialogueManager.registerDialogue('test.hud-focus', {
+    title: 'HUD TRAINING',
+    slides: [
+        ['Health systems are online.'],
+        { focusOnly: true, focus: 'health', label: 'HEALTH BAR', durationFrames: 999 },
+        { focusOnly: true, focus: 'minimap', label: 'QUEST MINIMAP', durationFrames: 999 },
+        ['HUD training complete.'],
+    ],
+});
+const clonedFocusSlides = dialogueManager.getSlides('test.hud-focus');
+assert.equal(clonedFocusSlides[1].focus, 'health', 'focus-slide metadata must survive dialogue cloning');
+dialogueManager.start('test.hud-focus');
+assert.equal(questSuppressionStates.at(-1), true, 'ordinary dialogue slides should suppress the Quest HUD');
+dialogueManager._active.typeChars = dialogueManager._activeFullText().length;
+dialogueManager.advance();
+assert.equal(dialogueManager._active.slideIndex, 1);
+assert.equal(dialogueManager._activeFullText(), '', 'HUD focus pauses must not expose metadata as dialogue text');
+assert.equal(questSuppressionStates.at(-1), false, 'focus pauses should reveal the Quest HUD');
+renderedText.length = 0;
+dialogueManager._hudFocusTopLayerAvailable = true;
+dialogueManager.drawOverlay(renderContext);
+assert.equal(renderedText.includes('Health bar'), false, 'the nested dialogue pass must defer focus drawing when a top HUD layer is available');
+dialogueManager.drawHudFocusOverlay(renderContext);
+assert.ok(renderedText.includes('Health bar'));
+assert.ok(renderedText.includes('Inspecting // click to continue'));
+assert.ok(renderedText.every((value) => value !== 'Incoming transmission'), 'the large dialogue panel should be hidden during focus pauses');
+dialogueManager.advance();
+assert.equal(dialogueManager._active.slideIndex, 2);
+assert.equal(minimapHighlightStates.at(-1), true, 'the minimap focus pause should enable its yellow DOM glow');
+dialogueManager.advance();
+assert.equal(questSuppressionStates.at(-1), true, 'the Quest HUD should be suppressed again for the next text box');
+assert.equal(minimapHighlightStates.at(-1), false, 'the minimap glow should clear after its focus pause');
+dialogueManager.discardActive('test.hud-focus');
+dialogueManager._hudFocusTopLayerAvailable = false;
+
 renderedText.length = 0;
 dialogueManager.registerDialogue('test.progress', {
     slides: [['Press {{key:W|KeyW}} and {{key:S|KeyS}}.']],

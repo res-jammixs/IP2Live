@@ -789,7 +789,7 @@ IP2Live.DialogueManagerReady = (async function () {
     const root = Common.Platform.ROOT_DIRECTORY;
     const src  = root + 'Plugins/IP2Live_Core/modules/dialogue_manager.js';
     try {
-        const versionedSrc = src + '?v=20260518_dialogue_manager_01_' + Date.now();
+        const versionedSrc = src + '?v=20260918_dialogue_manager_11_' + Date.now();
         let resp = await fetch(versionedSrc, { cache: 'no-store' });
         if (!resp.ok) {
             console.warn('[IP2Live] Versioned dialogue manager fetch failed, retrying plain path:', versionedSrc);
@@ -853,7 +853,7 @@ IP2Live.GameStateManagerReady = (async function () {
     try {
         for (let i = 0; i < files.length; i++) {
             const src = baseDir + files[i];
-            const versionedSrc = src + '?v=20260602_game_state_01_' + Date.now();
+            const versionedSrc = src + '?v=20260916_game_state_hud_04_' + Date.now();
             let resp = await fetch(versionedSrc, { cache: 'no-store' });
             if (!resp.ok) {
                 console.warn('[IP2Live] Versioned game-state module fetch failed, retrying plain path:', versionedSrc);
@@ -909,7 +909,7 @@ IP2Live.QuestArrowAssetReady = (async function () {
     const root = Common.Platform.ROOT_DIRECTORY;
     const src  = root + 'Plugins/IP2Live_Core/assets/quest_arrow.js';
     try {
-        const versionedSrc = src + '?v=20260523_quest_arrow_pathfinder_01_' + Date.now();
+        const versionedSrc = src + '?v=20260916_quest_arrow_hud_04_' + Date.now();
         let resp = await fetch(versionedSrc, { cache: 'no-store' });
         if (!resp.ok) {
             console.warn('[IP2Live] Versioned quest arrow asset fetch failed, retrying plain path:', versionedSrc);
@@ -1069,7 +1069,7 @@ IP2Live.QuestManagerReady = (async function () {
     const root = Common.Platform.ROOT_DIRECTORY;
     const src  = root + 'Plugins/IP2Live_Core/modules/quest_manager.js';
     try {
-        const versionedSrc = src + '?v=20260518_quest_manager_03_' + Date.now();
+        const versionedSrc = src + '?v=20260918_quest_manager_hud_09_' + Date.now();
         let resp = await fetch(versionedSrc, { cache: 'no-store' });
         if (!resp.ok) {
             console.warn('[IP2Live] Versioned quest manager fetch failed, retrying plain path:', versionedSrc);
@@ -1128,7 +1128,7 @@ IP2Live.QuestMinimapReady = (async function () {
     const root = Common.Platform.ROOT_DIRECTORY;
     const src  = root + 'Plugins/IP2Live_Core/modules/quest_minimap.js';
     try {
-        const versionedSrc = src + '?v=20260601_quest_minimap_01_' + Date.now();
+        const versionedSrc = src + '?v=20260918_quest_minimap_04_' + Date.now();
         let resp = await fetch(versionedSrc, { cache: 'no-store' });
         if (!resp.ok) {
             console.warn('[IP2Live] Versioned quest minimap fetch failed, retrying plain path:', versionedSrc);
@@ -1297,7 +1297,7 @@ IP2Live.TutorialReady = (async function () {
     const root = Common.Platform.ROOT_DIRECTORY;
     const src  = root + 'Plugins/IP2Live_Core/modules/tutorial.js';
     try {
-        const versionedSrc = src + '?v=20260518_tutorial_ui_13_' + Date.now();
+        const versionedSrc = src + '?v=20260916_tutorial_ui_17_' + Date.now();
         let resp = await fetch(versionedSrc, { cache: 'no-store' });
         if (!resp.ok) {
             console.warn('[IP2Live] Versioned tutorial fetch failed, retrying plain path:', versionedSrc);

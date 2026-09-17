@@ -16,6 +16,17 @@ const source = fs.readFileSync(
     ),
     'utf8'
 );
+const dialogueLibrary = JSON.parse(fs.readFileSync(
+    path.join(
+        __dirname,
+        '..',
+        'Plugins',
+        'IP2Live_Core',
+        'modules',
+        'dialogues.json'
+    ),
+    'utf8'
+));
 
 const registrations = [];
 const starts = [];
@@ -93,5 +104,34 @@ for (const line of recapLines) {
     assert.ok(range, 'each class recap should highlight one complete start/end range');
     assert.doesNotMatch(range[1], /\s/, 'recap range highlights must remain atomic');
 }
+
+const firstQuestSuccess = dialogueLibrary.dialogues.find(
+    (dialogue) => dialogue.id === 'stage1.ipwires.tutorial.success'
+);
+assert.ok(firstQuestSuccess, 'the Stage 1 Level 1 first-quest completion dialogue must exist');
+assert.equal(firstQuestSuccess.bindings.mapId, 3);
+assert.equal(firstQuestSuccess.bindings.objectiveId, 'repair_ip_wires_01');
+assert.equal(firstQuestSuccess.bindings.trigger, 'gameplay.completed');
+assert.equal(firstQuestSuccess.slides.length, 11, 'HUD onboarding should use short explanations separated by visual focus pauses');
+assert.equal(firstQuestSuccess.slides[0][0], 'Patch stable.');
+
+const hudOnboarding = firstQuestSuccess.slides
+    .filter(Array.isArray)
+    .flat()
+    .join(' ');
+assert.match(hudOnboarding, /\{\{highlight:Health Bar\}\}/);
+assert.match(hudOnboarding, /\{\{highlight:Win streak: \+10, \+11, and so on up to \+15 points\.\}\}/);
+assert.match(hudOnboarding, /\{\{highlight:Non-tutorial loss streak: -10, -12, and so on up to -16 points\.\}\}/);
+assert.match(hudOnboarding, /\{\{highlight:Quest Area\}\}/);
+assert.match(hudOnboarding, /\{\{highlight:quest minimap\}\}/);
+assert.match(hudOnboarding, /\{\{highlight:Distance tab\}\}/);
+
+const focusSlides = firstQuestSuccess.slides.filter((slide) => slide && slide.focusOnly);
+assert.deepEqual(
+    focusSlides.map((slide) => slide.focus),
+    ['health', 'streak', 'quest', 'minimap', 'distance'],
+    'each HUD explanation should be followed by its own yellow focus pause'
+);
+assert.ok(focusSlides.every((slide) => slide.durationFrames >= 90));
 
 console.log('IP Wires dialogue highlight tests passed.');

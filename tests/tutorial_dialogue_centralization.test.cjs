@@ -114,6 +114,10 @@ assert.equal(starts.at(-1).id, 'tutorial.outro');
 
 assert.doesNotMatch(source, /this\._drawIntroBoxV2\(/);
 assert.doesNotMatch(source, /this\._drawStepHUD\(/);
-assert.doesNotMatch(source, /Nebula-Regular|nebulaLoaded/);
+assert.match(
+    source,
+    /const headerFont = IP2Live\.Assets && IP2Live\.Assets\.nebulaLoaded \? 'Nebula-Regular' : font;/,
+    'the quest-only fallback header should retain Nebula without restoring legacy dialogue rendering'
+);
 
 console.log('Tutorial dialogue centralization tests passed.');

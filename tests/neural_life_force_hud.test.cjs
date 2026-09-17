@@ -7,6 +7,14 @@ const source = fs.readFileSync(
     path.join(root, 'Plugins', 'IP2Live_Core', 'modules', 'game-state', 'neural_life_force_manager.js'),
     'utf8'
 );
+const questSource = fs.readFileSync(
+    path.join(root, 'Plugins', 'IP2Live_Core', 'modules', 'quest_manager.js'),
+    'utf8'
+);
+const distanceSource = fs.readFileSync(
+    path.join(root, 'Plugins', 'IP2Live_Core', 'assets', 'quest_arrow.js'),
+    'utf8'
+);
 
 function createHarness() {
     const game = { currentMapID: 3, ip2liveGameStates: {} };
@@ -90,13 +98,17 @@ questManager.visible = true;
 assert.equal(manager.drawHUD(ctx), true);
 assert.equal(winIcons, 1);
 assert.equal(lossIcons, 0);
-assert.ok(ctx.text.includes('QUEST CHAIN'));
-assert.ok(ctx.text.includes('WIN STREAK'));
+assert.ok(ctx.text.includes('4'), 'streak count should be drawn inside the standalone icon');
+assert.equal(ctx.text.includes('QUEST CHAIN'), false);
+assert.equal(ctx.text.includes('WIN STREAK'), false);
 assert.ok(ctx.text.includes('084 / 100'));
+assert.equal(ctx.text.includes('NEURAL LIFE FORCE'), false);
+assert.equal(ctx.text.some((value) => value.includes('SYNC STABLE')), false);
 assert.ok(ctx.bezierCalls >= 3, 'HUD should include layered conduit and cable paths');
-assert.ok(ctx.gradientStops.some(([, color]) => color === '#294D53'));
-assert.ok(ctx.gradientStops.some(([, color]) => color === '#78999B'));
-assert.equal(ctx.gradientStops.some(([, color]) => color === '#00F0FF'), false, 'life-force gradient should use muted colors');
+assert.ok(ctx.gradientStops.some(([, color]) => color === '#FF174D'));
+assert.ok(ctx.gradientStops.some(([, color]) => color === '#FF8A00'));
+assert.ok(ctx.gradientStops.some(([, color]) => color === '#FFE600'));
+assert.equal(ctx.gradientStops.some(([, color]) => color === '#4A555B'), false, 'HP housing should not use the old metallic gray');
 
 questManager.suppressedByDialogue = true;
 ctx = createContext();
@@ -111,7 +123,8 @@ manager._ghostHp = 42;
 ctx = createContext();
 assert.equal(manager.drawHUD(ctx), true);
 assert.equal(lossIcons, 1);
-assert.ok(ctx.text.includes('LOSS STREAK'));
+assert.ok(ctx.text.includes('3'));
+assert.equal(ctx.text.includes('LOSS STREAK'), false);
 
 state.lifeForce = 30;
 state.failureStreak = 0;
@@ -119,7 +132,27 @@ manager._animHp = 30;
 manager._ghostHp = 30;
 ctx = createContext();
 assert.equal(manager.drawHUD(ctx), true);
-assert.ok(ctx.text.includes('NEUTRAL'));
+assert.ok(ctx.text.includes('0'));
+assert.equal(ctx.text.includes('NEUTRAL'), false);
 assert.ok(ctx.text.includes('DANGER // LIFE FORCE CRITICAL'));
+
+assert.match(source, /oxaniumMediumLoaded\s*\?\s*'Oxanium-Medium'/);
+assert.doesNotMatch(source, /fillText\('QUEST CHAIN'|fillText\(statusLabel/);
+assert.match(source, /barGrad\.addColorStop\(0, '#FF174D'\)/);
+assert.match(source, /barGrad\.addColorStop\(0\.52, '#FF8A00'\)/);
+assert.match(source, /barGrad\.addColorStop\(1, '#FFE600'\)/);
+assert.match(questSource, /oxaniumMediumLoaded\s*\?\s*'Oxanium-Medium'/);
+assert.match(questSource, /nebulaLoaded\s*\?\s*'Nebula-Regular'/);
+assert.match(questSource, /ctx\.fillRect\(o\.x, o\.y, leftW, plateH\)/, 'red quest header should be straight');
+assert.match(questSource, /leftGrad\.addColorStop\(0, '#FF164D'\)/, 'quest header should inherit dialogue styling');
+assert.match(questSource, /_drawTrackedText\(ctx, quest\.title/);
+assert.doesNotMatch(questSource, /LIVE_TRACKING|OBJ 01\/01/);
+assert.ok(
+    questSource.indexOf('dialogueManager.drawHudFocusOverlay(Common.Platform.ctx)') >
+        questSource.indexOf('manager.drawHUD(Common.Platform.ctx)'),
+    'HUD focus frames must render after the Health Bar, Quest Area, and Distance tab'
+);
+assert.match(distanceSource, /oxaniumMediumLoaded\s*\?\s*'Oxanium-Medium'/);
+assert.match(distanceSource, /_drawTrackedText\(ctx, distanceLabel/);
 
 console.log('neural_life_force_hud.test.cjs: PASS');

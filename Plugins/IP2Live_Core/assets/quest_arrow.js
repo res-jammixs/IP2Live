@@ -181,27 +181,21 @@ class IP2LiveQuestArrowGuide {
             ctx.stroke();
 
             const panel = data.panelRect || null;
-            const labelW = panel ? Math.min(292, panel.w) : 180;
-            const labelH = 48;
+            const labelW = panel ? Math.min(340, panel.w) : 300;
+            const labelH = 72;
             const lx = panel ? panel.x : Math.max(10, Math.min(cW - labelW - 10, ax - labelW / 2));
             const preferredY = panel ? panel.y + panel.h + 8 : Math.max(10, ay - 92);
             const ly = Math.max(8, Math.min(cH - labelH - 8, preferredY));
-            ctx.fillStyle = 'rgba(3, 7, 20, 0.92)';
-            ctx.fillRect(lx, ly, labelW, labelH);
-            ctx.strokeStyle = '#FF003C';
-            ctx.lineWidth = 2;
-            ctx.strokeRect(lx, ly, labelW, labelH);
-            ctx.fillStyle = '#FFE600';
-            ctx.font = 'bold 12px monospace';
-            ctx.textAlign = 'center';
-            ctx.fillText('TARGET TILE', lx + labelW / 2, ly + 18);
-            ctx.fillStyle = '#DAEEFF';
-            ctx.font = '11px monospace';
-            ctx.fillText(
-                distTiles === null ? 'DIST: --' : 'DIST: ' + distTiles.toFixed(1) + ' tiles',
-                lx + labelW / 2,
-                ly + 35
-            );
+            this._drawDistancePanel(ctx, {
+                x: lx,
+                y: ly,
+                w: labelW,
+                h: labelH,
+                target: this._targetTile(this.objective),
+                distanceTiles: distTiles,
+                tick: data.tick || 0,
+                footer: 'TARGET IN VIEW // FOLLOW THE MARKER',
+            });
         }
 
         ctx.restore();
@@ -512,38 +506,213 @@ class IP2LiveQuestArrowGuide {
         return null;
     }
 
+    _measureTrackedText(ctx, value, tracking) {
+        const text = String(value || '');
+        const gap = Math.max(0, Number(tracking) || 0);
+        let width = 0;
+        for (let i = 0; i < text.length; i++) width += ctx.measureText(text[i]).width;
+        return width + Math.max(0, text.length - 1) * gap;
+    }
+
+    _drawTrackedText(ctx, value, x, y, tracking) {
+        const text = String(value || '');
+        if (!text) return 0;
+        const gap = Math.max(0, Number(tracking) || 0);
+        const width = this._measureTrackedText(ctx, text, gap);
+        const oldAlign = ctx.textAlign || 'left';
+        let cursorX = x;
+        if (oldAlign === 'center') cursorX -= width / 2;
+        else if (oldAlign === 'right' || oldAlign === 'end') cursorX -= width;
+        ctx.textAlign = 'left';
+        for (let i = 0; i < text.length; i++) {
+            const glyph = text[i];
+            ctx.fillText(glyph, cursorX, y);
+            cursorX += ctx.measureText(glyph).width + gap;
+        }
+        ctx.textAlign = oldAlign;
+        return width;
+    }
+
+    _traceDistancePanel(ctx, x, y, w, h) {
+        ctx.beginPath();
+        ctx.moveTo(x + 12, y);
+        ctx.lineTo(x + w - 9, y);
+        ctx.lineTo(x + w, y + 9);
+        ctx.lineTo(x + w - 8, y + h);
+        ctx.lineTo(x + 7, y + h);
+        ctx.lineTo(x, y + h - 8);
+        ctx.lineTo(x, y + 11);
+        ctx.closePath();
+    }
+
+    _drawDistancePanel(ctx, options) {
+        const o = options;
+        const x = o.x;
+        const y = o.y;
+        const w = o.w;
+        const h = o.h;
+        const target = o.target || { x: 0, y: 0, z: 0 };
+        const pulse = 0.5 + 0.5 * Math.sin((o.tick || 0) * 0.1);
+        const panelFont = IP2Live.Assets && IP2Live.Assets.oxaniumMediumLoaded
+            ? 'Oxanium-Medium'
+            : 'sans-serif';
+
+        ctx.save();
+
+        // Thick offset extrusion and a second under-plate replace the old flat box.
+        this._traceDistancePanel(ctx, x + 5, y + 6, w, h);
+        ctx.fillStyle = 'rgba(0,2,7,0.9)';
+        ctx.fill();
+        ctx.beginPath();
+        ctx.moveTo(x + 20, y + h + 2);
+        ctx.lineTo(x + w - 20, y + h + 2);
+        ctx.lineTo(x + w - 29, y + h + 7);
+        ctx.lineTo(x + 11, y + h + 7);
+        ctx.closePath();
+        ctx.fillStyle = 'rgba(255,0,60,0.26)';
+        ctx.fill();
+
+        this._traceDistancePanel(ctx, x, y, w, h);
+        const panelGrad = ctx.createLinearGradient(x, y, x + w, y + h);
+        panelGrad.addColorStop(0, 'rgba(34,4,20,0.98)');
+        panelGrad.addColorStop(0.24, 'rgba(8,20,31,0.985)');
+        panelGrad.addColorStop(0.75, 'rgba(3,9,18,0.99)');
+        panelGrad.addColorStop(1, 'rgba(17,8,17,0.99)');
+        ctx.fillStyle = panelGrad;
+        ctx.fill();
+
+        ctx.save();
+        this._traceDistancePanel(ctx, x, y, w, h);
+        ctx.clip();
+        for (let sy = y + 3; sy < y + h; sy += 4) {
+            ctx.fillStyle = 'rgba(235,250,255,0.026)';
+            ctx.fillRect(x, sy, w, 0.7);
+        }
+        ctx.strokeStyle = 'rgba(255,0,60,0.09)';
+        ctx.lineWidth = 4;
+        for (let hx = x - 20; hx < x + w * 0.44; hx += 12) {
+            ctx.beginPath();
+            ctx.moveTo(hx, y + h);
+            ctx.lineTo(hx + 36, y);
+            ctx.stroke();
+        }
+        const sweepX = x + ((o.tick || 0) * 1.7 % (w + 40)) - 40;
+        const sweepGrad = ctx.createLinearGradient(sweepX, y, sweepX + 40, y);
+        sweepGrad.addColorStop(0, 'rgba(0,240,255,0)');
+        sweepGrad.addColorStop(0.5, 'rgba(0,240,255,0.07)');
+        sweepGrad.addColorStop(1, 'rgba(0,240,255,0)');
+        ctx.fillStyle = sweepGrad;
+        ctx.fillRect(sweepX, y, 40, h);
+        ctx.restore();
+
+        this._traceDistancePanel(ctx, x, y, w, h);
+        ctx.strokeStyle = '#FF174D';
+        ctx.lineWidth = 1.7;
+        ctx.shadowColor = '#FF003C';
+        ctx.shadowBlur = 6 + pulse * 4;
+        ctx.stroke();
+        ctx.shadowBlur = 0;
+
+        // Machined top rails and asymmetric Persona-style corner blocks.
+        ctx.fillStyle = '#FF003C';
+        ctx.beginPath();
+        ctx.moveTo(x + 13, y + 3);
+        ctx.lineTo(x + w * 0.55, y + 3);
+        ctx.lineTo(x + w * 0.55 - 8, y + 7);
+        ctx.lineTo(x + 9, y + 7);
+        ctx.closePath();
+        ctx.fill();
+        ctx.fillStyle = '#FFE600';
+        ctx.beginPath();
+        ctx.moveTo(x + w * 0.55 + 2, y + 3);
+        ctx.lineTo(x + w - 18, y + 3);
+        ctx.lineTo(x + w - 23, y + 7);
+        ctx.lineTo(x + w * 0.55 - 3, y + 7);
+        ctx.closePath();
+        ctx.fill();
+        ctx.fillStyle = '#00F0FF';
+        ctx.fillRect(x + w - 7, y + 18, 2, h - 32);
+
+        // Layered navigation core.
+        const iconX = x + 22;
+        const iconY = y + 40;
+        ctx.beginPath();
+        ctx.moveTo(iconX, iconY - 14);
+        ctx.lineTo(iconX + 12, iconY - 5);
+        ctx.lineTo(iconX + 9, iconY + 10);
+        ctx.lineTo(iconX, iconY + 15);
+        ctx.lineTo(iconX - 9, iconY + 10);
+        ctx.lineTo(iconX - 12, iconY - 5);
+        ctx.closePath();
+        const iconGrad = ctx.createLinearGradient(iconX - 12, iconY - 14, iconX + 12, iconY + 15);
+        iconGrad.addColorStop(0, '#FF315F');
+        iconGrad.addColorStop(0.45, '#3B0920');
+        iconGrad.addColorStop(1, '#00DDEB');
+        ctx.fillStyle = iconGrad;
+        ctx.fill();
+        ctx.strokeStyle = '#FFE600';
+        ctx.lineWidth = 1.1;
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.moveTo(iconX, iconY - 7);
+        ctx.lineTo(iconX + 6, iconY);
+        ctx.lineTo(iconX, iconY + 7);
+        ctx.lineTo(iconX - 6, iconY);
+        ctx.closePath();
+        ctx.fillStyle = '#06131C';
+        ctx.fill();
+        ctx.strokeStyle = '#67F7FF';
+        ctx.stroke();
+
+        ctx.textAlign = 'left';
+        ctx.textBaseline = 'alphabetic';
+        ctx.font = 'bold 8px ' + panelFont;
+        ctx.fillStyle = '#FF6E92';
+        this._drawTrackedText(ctx, 'TARGET TILE', x + 42, y + 19, 0.65);
+
+        ctx.textAlign = 'right';
+        ctx.font = 'bold 10px ' + panelFont;
+        ctx.fillStyle = '#FFE600';
+        this._drawTrackedText(ctx, 'X:' + target.x + '  Y:' + target.y + '  Z:' + target.z, x + w - 16, y + 20, 0.55);
+
+        const distanceLabel = o.distanceLabel || (
+            typeof o.distanceTiles === 'number'
+                ? 'DISTANCE // ' + o.distanceTiles.toFixed(1) + ' TILES'
+                : 'DISTANCE // CALCULATING'
+        );
+        ctx.textAlign = 'left';
+        ctx.font = 'bold 12px ' + panelFont;
+        ctx.fillStyle = '#E6F8FF';
+        this._drawTrackedText(ctx, distanceLabel, x + 42, y + 43, 0.7);
+
+        ctx.font = 'bold 8px ' + panelFont;
+        ctx.fillStyle = 'rgba(0,240,255,0.82)';
+        this._drawTrackedText(ctx, o.footer || 'NAVIGATION LINK ACTIVE', x + 42, y + 61, 0.5);
+
+        ctx.restore();
+    }
+
     _drawScreenFallback(ctx, cW, cH, context) {
         const data = context || {};
         const target = this._targetTile(this.objective);
         const distTiles = typeof data.distanceTiles === 'number' ? data.distanceTiles : null;
 
         const panel = data.panelRect || null;
-        const labelW = panel ? Math.min(292, panel.w) : 292;
-        const labelH = 62;
+        const labelW = panel ? Math.min(340, panel.w) : 320;
+        const labelH = 72;
         const lx = panel ? panel.x : 18;
         const preferredY = panel ? panel.y + panel.h + 8 : Math.max(76, cH * 0.18);
         const ly = Math.max(8, Math.min(cH - labelH - 8, preferredY));
-        ctx.shadowColor = '#FF003C';
-        ctx.shadowBlur = 8;
-        ctx.fillStyle = 'rgba(3, 7, 20, 0.94)';
-        ctx.fillRect(lx, ly, labelW, labelH);
-        ctx.strokeStyle = '#FF003C';
-        ctx.lineWidth = 2;
-        ctx.strokeRect(lx, ly, labelW, labelH);
-        ctx.fillStyle = '#FFE600';
-        ctx.font = 'bold 13px monospace';
-        ctx.textAlign = 'center';
-        ctx.fillText('TARGET TILE  X:' + target.x + '  Y:' + target.y + '  Z:' + target.z, lx + labelW / 2, ly + 20);
-        ctx.fillStyle = '#DAEEFF';
-        ctx.font = '12px monospace';
-        ctx.fillText(
-            distTiles === null ? 'DISTANCE: CALCULATING' : 'DISTANCE: ' + distTiles.toFixed(1) + ' tiles',
-            lx + labelW / 2,
-            ly + 39
-        );
-        ctx.fillStyle = 'rgba(255,230,0,0.85)';
-        ctx.font = '10px monospace';
-        ctx.fillText('ROTATE CAMERA UNTIL THE 3D TILE MARKER IS VISIBLE', lx + labelW / 2, ly + 54);
+        this._drawDistancePanel(ctx, {
+            x: lx,
+            y: ly,
+            w: labelW,
+            h: labelH,
+            target,
+            distanceTiles: distTiles,
+            tick: data.tick || 0,
+            footer: 'ROTATE CAMERA UNTIL THE 3D TILE MARKER IS VISIBLE',
+        });
     }
 
     _drawNoHeroFallback(ctx, cW, cH, context) {
@@ -568,23 +737,22 @@ class IP2LiveQuestArrowGuide {
         ctx.lineWidth = 3;
         ctx.stroke();
 
-        const labelW = 300;
-        const labelH = 66;
+        const labelW = 320;
+        const labelH = 72;
         const lx = cx - labelW / 2;
         const ly = cy + 34;
         ctx.shadowBlur = 0;
-        ctx.fillStyle = 'rgba(3, 7, 20, 0.94)';
-        ctx.fillRect(lx, ly, labelW, labelH);
-        ctx.strokeStyle = '#FF003C';
-        ctx.lineWidth = 2;
-        ctx.strokeRect(lx, ly, labelW, labelH);
-        ctx.fillStyle = '#FFE600';
-        ctx.font = 'bold 13px monospace';
-        ctx.textAlign = 'center';
-        ctx.fillText('TARGET TILE  X:' + target.x + '  Y:' + target.y + '  Z:' + target.z, cx, ly + 24);
-        ctx.fillStyle = '#DAEEFF';
-        ctx.font = '11px monospace';
-        ctx.fillText('PLAYER REF MISSING', cx, ly + 45);
+        this._drawDistancePanel(ctx, {
+            x: lx,
+            y: ly,
+            w: labelW,
+            h: labelH,
+            target,
+            distanceTiles: null,
+            tick,
+            distanceLabel: 'PLAYER REF MISSING',
+            footer: 'REACQUIRING NAVIGATION SIGNAL',
+        });
         ctx.restore();
     }
 }
@@ -592,6 +760,10 @@ class IP2LiveQuestArrowGuide {
 IP2Live.QuestArrowAsset = {
     create() {
         return new IP2LiveQuestArrowGuide();
+    },
+    drawDistancePanel(ctx, options) {
+        const renderer = new IP2LiveQuestArrowGuide();
+        renderer._drawDistancePanel(ctx, options || {});
     },
     Guide: IP2LiveQuestArrowGuide,
 };
