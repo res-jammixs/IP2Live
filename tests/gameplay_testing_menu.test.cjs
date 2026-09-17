@@ -35,6 +35,7 @@ function loadGameManager() {
 function testCatalogCoverageAndNames() {
     const { manager } = loadGameManager();
     const tests = manager.getGameplayTestCatalog();
+    assert.equal(manager.enableSingleQuestSkipButton, false);
     assert.equal(manager.enableGameplayTestingButton, true);
     assert.equal(tests.length, 22);
     assert.deepEqual(Array.from(tests, (entry) => entry.name), [
@@ -73,6 +74,75 @@ function testCatalogCoverageAndNames() {
         'repair_ip_wires_harder_01_tutorial',
         'the map assignment should retain the harder tutorial dialogue binding'
     );
+}
+
+function testSingleQuestSkipUsesNormalCompletionPipeline() {
+    const { manager, IP2Live } = loadGameManager();
+    const quest = {
+        id: 'stage.8.cidr_chain.01',
+        objectives: [
+            { id: 'solve_cidr_chain_01_panel' },
+            { id: 'solve_cidr_chain_01_subnet' },
+        ],
+    };
+    const nextQuest = {
+        id: 'stage.8.cidr_chain.02',
+        objectives: [{ id: 'solve_cidr_chain_02_panel' }],
+    };
+    let activeQuest = quest;
+    let activeObjectiveId = quest.objectives[0].id;
+    const completedObjectives = {};
+    const objectiveCalls = [];
+    const gameplayCalls = [];
+
+    IP2Live.QuestManager = {
+        activeMapId: 8,
+        completedObjectives,
+        currentQuest() { return activeQuest; },
+        currentObjective() {
+            return activeQuest.objectives.find((objective) => objective.id === activeObjectiveId) || null;
+        },
+        completeObjective(objectiveId) {
+            objectiveCalls.push(objectiveId);
+            if (!completedObjectives[activeQuest.id]) completedObjectives[activeQuest.id] = {};
+            completedObjectives[activeQuest.id][objectiveId] = true;
+            const nextObjective = activeQuest.objectives.find((objective) => !completedObjectives[activeQuest.id][objective.id]);
+            if (nextObjective) {
+                activeObjectiveId = nextObjective.id;
+            } else {
+                activeQuest = nextQuest;
+                activeObjectiveId = nextQuest.objectives[0].id;
+            }
+            return {
+                questId: quest.id,
+                objectiveId,
+                mapId: 8,
+                questCompleted: activeQuest !== quest,
+            };
+        },
+    };
+    manager.handleGameplayCompleted = function (gameplayId, payload) {
+        gameplayCalls.push({ gameplayId, payload });
+    };
+
+    assert.equal(manager.skipCurrentQuest(8), false, 'the developer action must be disabled by default');
+    manager.enableSingleQuestSkipButton = true;
+    assert.equal(manager.skipCurrentQuest(8), true);
+    assert.deepEqual(objectiveCalls, [
+        'solve_cidr_chain_01_panel',
+        'solve_cidr_chain_01_subnet',
+    ], 'all remaining objectives in the current quest should finish in sequence');
+    assert.deepEqual(gameplayCalls.map((call) => call.gameplayId), [
+        'ip_cidr_binary_panel',
+        'ip_subnet_simulator',
+    ]);
+    assert.ok(gameplayCalls.every((call) => call.payload.result.passed && call.payload.result.skipped));
+    assert.ok(gameplayCalls.every((call) => call.payload.developerQuestSkip));
+    assert.equal(activeQuest, nextQuest, 'normal quest progression should advance to the next quest');
+    assert.equal(completedObjectives[nextQuest.id], undefined, 'the next quest must not be skipped');
+
+    IP2Live.DialogueManager = { isActive() { return true; } };
+    assert.equal(manager._hasSkippableSingleQuest(8), false, 'the control must wait for active dialogue');
 }
 
 function testLaunchIsIsolatedFromQuestProgress() {
@@ -207,6 +277,7 @@ function testPauseHeaderButtonPlacementAndFlag() {
 }
 
 testCatalogCoverageAndNames();
+testSingleQuestSkipUsesNormalCompletionPipeline();
 testLaunchIsIsolatedFromQuestProgress();
 testDialogueAliasResolution();
 testDeveloperRunsBypassPersistentSystems();
