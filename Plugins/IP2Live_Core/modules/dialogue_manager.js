@@ -9,7 +9,7 @@
 
 class IP2LiveDialogueManager {
     constructor() {
-        this.VERSION = 'dialogue-manager-20260916-09';
+        this.VERSION = 'dialogue-manager-20260918-11';
 
         this.EVENT = {
             MAP_ENTER: 'map:enter',
@@ -439,9 +439,10 @@ class IP2LiveDialogueManager {
             highlightStates: {},
             panelHeight: null,
             panelLayoutKey: '',
+            focusTicks: 0,
         };
 
-        if (this._active.hideQuestPanel) this._setQuestPanelSuppressed(true);
+        this._syncActiveSlidePresentation();
         if (Manager && Manager.Stack) Manager.Stack.requestPaintHUD = true;
         if (IP2Live.GameManager && typeof IP2Live.GameManager.emit === 'function') {
             IP2Live.GameManager.emit(IP2Live.GameManager.EVENT.DIALOGUE_STARTED, {
@@ -458,6 +459,7 @@ class IP2LiveDialogueManager {
         const done = this._active;
         this._active = null;
         if (done.hideQuestPanel) this._setQuestPanelSuppressed(false);
+        this._setMinimapTutorialHighlight(false);
         if (IP2Live.GameManager && typeof IP2Live.GameManager.emit === 'function') {
             IP2Live.GameManager.emit(IP2Live.GameManager.EVENT.DIALOGUE_FINISHED, {
                 dialogueId: done.id,
@@ -482,6 +484,7 @@ class IP2LiveDialogueManager {
         const discarded = this._active;
         this._active = null;
         if (discarded.hideQuestPanel) this._setQuestPanelSuppressed(false);
+        this._setMinimapTutorialHighlight(false);
         if (Manager && Manager.Stack) Manager.Stack.requestPaintHUD = true;
         return true;
     }
@@ -498,7 +501,10 @@ class IP2LiveDialogueManager {
 
         if (this._active.slideIndex < this._active.slides.length - 1) {
             this._active.slideIndex++;
+            this._active.focusTicks = 0;
+            this._active.focusAdvanceScheduled = false;
             this._resetTyping();
+            this._syncActiveSlidePresentation();
             if (Manager && Manager.Stack) Manager.Stack.requestPaintHUD = true;
             return true;
         }
@@ -533,11 +539,37 @@ class IP2LiveDialogueManager {
         }
     }
 
+    _syncActiveSlidePresentation() {
+        const active = this._active;
+        if (!active) {
+            this._setMinimapTutorialHighlight(false);
+            return;
+        }
+        const slide = active.slides[active.slideIndex] || [];
+        const focusOnly = this._isFocusSlide(slide);
+        this._setQuestPanelSuppressed(!!(active.hideQuestPanel && !focusOnly));
+        this._setMinimapTutorialHighlight(focusOnly && slide.focus === 'minimap');
+    }
+
+    _setMinimapTutorialHighlight(isHighlighted) {
+        const minimap = typeof IP2Live !== 'undefined' ? IP2Live.QuestMinimap : null;
+        if (minimap && typeof minimap.setTutorialHighlight === 'function') {
+            minimap.setTutorialHighlight(!!isHighlighted);
+        }
+    }
+
     drawOverlay(ctx) {
         if (!this._active || !ctx) return;
 
         const active = this._active;
         active.animTick++;
+
+        const activeSlide = active.slides[active.slideIndex] || [];
+        if (this._isFocusSlide(activeSlide)) {
+            if (this._hudFocusTopLayerAvailable) return;
+            this._drawHudFocusSlide(ctx, activeSlide, active);
+            return;
+        }
 
         const cW = ctx.canvas.width;
         const cH = ctx.canvas.height;
@@ -561,7 +593,7 @@ class IP2LiveDialogueManager {
         const letterSpacing = 1.25 * sX;
         const bodyFont = Math.round(22 * sX) + 'px ' + font;
         const keyFont = Math.round(12 * sX) + 'px ' + font;
-        const slide = active.slides[active.slideIndex] || [];
+        const slide = activeSlide;
         const markup = this._displayMarkupForSlide(slide, active);
         const richTokens = this._parseRichText(markup);
         const fullText = this._visibleTextForTokens(richTokens);
@@ -717,6 +749,196 @@ class IP2LiveDialogueManager {
         ctx.stroke();
 
         ctx.restore();
+    }
+
+    _isFocusSlide(slide) {
+        return !!(slide && !Array.isArray(slide) && typeof slide === 'object' && slide.focusOnly && slide.focus);
+    }
+
+    isHudFocusActive() {
+        if (!this._active) return false;
+        return this._isFocusSlide(this._active.slides[this._active.slideIndex] || []);
+    }
+
+    drawHudFocusOverlay(ctx) {
+        if (!ctx || !this.isHudFocusActive()) return false;
+        const active = this._active;
+        const slide = active.slides[active.slideIndex] || [];
+        this._drawHudFocusSlide(ctx, slide, active);
+        return true;
+    }
+
+    _drawHudFocusSlide(ctx, slide, active) {
+        const cW = ctx.canvas.width;
+        const cH = ctx.canvas.height;
+        const SW = Common.ScreenResolution.SCREEN_X;
+        const SH = Common.ScreenResolution.SCREEN_Y;
+        const sX = cW / SW;
+        const sY = cH / SH;
+        const tick = active.animTick || 0;
+        const pulse = 0.5 + 0.5 * Math.sin(tick * 0.13);
+        const focusRect = this._hudFocusRect(ctx, slide.focus);
+        const label = this._sentenceCaseText(slide.label || this._hudFocusLabel(slide.focus));
+
+        active.focusTicks = Math.max(0, Number(active.focusTicks) || 0) + 1;
+        ctx.save();
+
+        // A restrained veil leaves the actual HUD readable while separating it
+        // from the game world. The selected component remains fully legible.
+        ctx.fillStyle = 'rgba(0, 2, 8, 0.16)';
+        ctx.fillRect(0, 0, cW, cH);
+
+        if (focusRect) {
+            const x = focusRect.x;
+            const y = focusRect.y;
+            const w = focusRect.w;
+            const h = focusRect.h;
+            const cut = Math.max(8 * sX, Math.min(18 * sX, w * 0.06));
+
+            this._traceFocusFrame(ctx, x, y, w, h, cut);
+            ctx.fillStyle = 'rgba(255, 230, 0,' + (0.025 + pulse * 0.035) + ')';
+            ctx.fill();
+            ctx.strokeStyle = 'rgba(255, 230, 0,' + (0.7 + pulse * 0.28) + ')';
+            ctx.lineWidth = (1.8 + pulse * 0.8) * Math.min(sX, sY);
+            ctx.shadowColor = '#FFE600';
+            ctx.shadowBlur = (12 + pulse * 18) * Math.min(sX, sY);
+            ctx.stroke();
+            ctx.shadowBlur = 0;
+
+            this._traceFocusFrame(ctx, x - 5 * sX, y - 5 * sY, w + 10 * sX, h + 10 * sY, cut + 3 * sX);
+            ctx.strokeStyle = 'rgba(0, 240, 255,' + (0.18 + pulse * 0.2) + ')';
+            ctx.lineWidth = Math.max(1, 0.8 * Math.min(sX, sY));
+            ctx.stroke();
+
+            // Persona-inspired corner blades make the focus state distinct from
+            // a generic rectangular selection.
+            const blade = 18 * sX;
+            ctx.strokeStyle = '#FFE600';
+            ctx.lineWidth = 3 * Math.min(sX, sY);
+            ctx.beginPath();
+            ctx.moveTo(x - 4 * sX, y + blade); ctx.lineTo(x - 4 * sX, y - 4 * sY); ctx.lineTo(x + blade, y - 4 * sY);
+            ctx.moveTo(x + w - blade, y - 4 * sY); ctx.lineTo(x + w + 4 * sX, y - 4 * sY); ctx.lineTo(x + w + 4 * sX, y + blade);
+            ctx.moveTo(x + w + 4 * sX, y + h - blade); ctx.lineTo(x + w + 4 * sX, y + h + 4 * sY); ctx.lineTo(x + w - blade, y + h + 4 * sY);
+            ctx.moveTo(x + blade, y + h + 4 * sY); ctx.lineTo(x - 4 * sX, y + h + 4 * sY); ctx.lineTo(x - 4 * sX, y + h - blade);
+            ctx.stroke();
+        }
+
+        const promptW = Math.min(430 * sX, cW - 40 * sX);
+        const promptH = 34 * sY;
+        const promptX = (cW - promptW) / 2;
+        const promptY = cH - promptH - 22 * sY;
+        const promptCut = 12 * sX;
+        ctx.beginPath();
+        ctx.moveTo(promptX + promptCut, promptY);
+        ctx.lineTo(promptX + promptW, promptY);
+        ctx.lineTo(promptX + promptW - promptCut, promptY + promptH);
+        ctx.lineTo(promptX, promptY + promptH);
+        ctx.closePath();
+        const promptGrad = ctx.createLinearGradient(promptX, promptY, promptX + promptW, promptY);
+        promptGrad.addColorStop(0, 'rgba(255,230,0,0.92)');
+        promptGrad.addColorStop(0.55, 'rgba(255,189,0,0.84)');
+        promptGrad.addColorStop(1, 'rgba(5,12,18,0.9)');
+        ctx.fillStyle = promptGrad;
+        ctx.fill();
+        ctx.strokeStyle = 'rgba(255,246,91,0.92)';
+        ctx.lineWidth = Math.max(1, 1.2 * Math.min(sX, sY));
+        ctx.stroke();
+        ctx.font = 'bold ' + Math.round(11 * sX) + 'px ' + (
+            IP2Live.Assets && IP2Live.Assets.oxaniumMediumLoaded ? 'Oxanium-Medium' : 'sans-serif'
+        );
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillStyle = '#111018';
+        ctx.fillText(label, promptX + promptW * 0.43, promptY + promptH / 2);
+        ctx.font = Math.round(8 * sX) + 'px monospace';
+        ctx.textAlign = 'right';
+        ctx.fillStyle = 'rgba(218,250,255,' + (0.58 + pulse * 0.3) + ')';
+        ctx.fillText('Inspecting // click to continue', promptX + promptW - 14 * sX, promptY + promptH / 2);
+        ctx.restore();
+
+        const duration = Math.max(30, Number(slide.durationFrames) || 105);
+        if (active.focusTicks >= duration && !active.focusAdvanceScheduled) {
+            active.focusAdvanceScheduled = true;
+            const slideIndex = active.slideIndex;
+            setTimeout(() => {
+                if (!this._active || this._active !== active || active.slideIndex !== slideIndex) return;
+                active.focusAdvanceScheduled = false;
+                this.advance();
+            }, 0);
+        }
+    }
+
+    _traceFocusFrame(ctx, x, y, w, h, cut) {
+        ctx.beginPath();
+        ctx.moveTo(x + cut, y);
+        ctx.lineTo(x + w, y);
+        ctx.lineTo(x + w, y + h - cut);
+        ctx.lineTo(x + w - cut, y + h);
+        ctx.lineTo(x, y + h);
+        ctx.lineTo(x, y + cut);
+        ctx.closePath();
+    }
+
+    _hudFocusRect(ctx, focus) {
+        const cW = ctx.canvas.width;
+        const cH = ctx.canvas.height;
+        const SW = Common.ScreenResolution.SCREEN_X;
+        const SH = Common.ScreenResolution.SCREEN_Y;
+        const sX = cW / SW;
+        const sY = cH / SH;
+        const qm = IP2Live.QuestManager;
+        const questRect = qm && typeof qm._questPanelRect === 'function'
+            ? qm._questPanelRect(ctx)
+            : { x: 18 * sX, y: 88 * sY, w: Math.min(430 * sX, cW - 36 * sX), h: 126 * sY };
+
+        if (focus === 'health') {
+            const healthY = Math.max(8 * sY, questRect.y - 80 * sY);
+            return {
+                x: questRect.x - 7 * sX,
+                y: healthY - 7 * sY,
+                w: Math.min(questRect.w, 460 * sX) + 14 * sX,
+                h: 70 * sY + 14 * sY,
+            };
+        }
+        if (focus === 'streak') {
+            const healthY = Math.max(8 * sY, questRect.y - 80 * sY);
+            const healthW = Math.min(questRect.w, 460 * sX);
+            const streakW = Math.min(64 * sX, healthW * 0.18);
+            return {
+                x: questRect.x + healthW - streakW - 7 * sX,
+                y: healthY - 7 * sY,
+                w: streakW + 14 * sX,
+                h: 70 * sY + 14 * sY,
+            };
+        }
+        if (focus === 'quest') {
+            return {
+                x: questRect.x - 7 * sX,
+                y: questRect.y - 7 * sY,
+                w: questRect.w + 14 * sX,
+                h: questRect.h + 14 * sY,
+            };
+        }
+        if (focus === 'distance') {
+            return {
+                x: questRect.x - 6 * sX,
+                y: questRect.y + questRect.h + 2 * sY,
+                w: Math.min(340, questRect.w) + 12 * sX,
+                h: 72 + 12 * sY,
+            };
+        }
+        return null;
+    }
+
+    _hudFocusLabel(focus) {
+        const labels = {
+            health: 'Health bar',
+            streak: 'Streak and life force',
+            quest: 'Quest area',
+            minimap: 'Quest minimap',
+            distance: 'Distance tab',
+        };
+        return labels[focus] || 'HUD guide';
     }
 
     _drawDialogueHeader(ctx, options) {
@@ -1126,6 +1348,7 @@ class IP2LiveDialogueManager {
         this._pendingTriggers = {};
         this._lastMapEnterKey = null;
         this._setQuestPanelSuppressed(false);
+        this._setMinimapTutorialHighlight(false);
         return true;
     }
 
@@ -1336,13 +1559,19 @@ class IP2LiveDialogueManager {
     }
 
     _displayMarkupForSlide(slide, active) {
-        const arr = Array.isArray(slide) ? slide : [String(slide || '')];
+        const arr = this._slideLines(slide);
         const joins = (active && active.preserveLineBreaks) ? '\n' : ' ';
         let text = arr.join(joins);
         if (active && active.autoWrapText && !(active && active.preserveLineBreaks)) {
             text = text.replace(/\s*\n+\s*/g, ' ');
         }
         return text.replace(/[ \t]{2,}/g, ' ').trim();
+    }
+
+    _slideLines(slide) {
+        if (Array.isArray(slide)) return slide;
+        if (slide && typeof slide === 'object' && Array.isArray(slide.lines)) return slide.lines;
+        return [String(slide || '')];
     }
 
     _parseRichText(markup) {
@@ -1660,6 +1889,11 @@ class IP2LiveDialogueManager {
     _cloneSlides(slides) {
         return (slides || []).map((slide) => {
             if (Array.isArray(slide)) return slide.slice();
+            if (slide && typeof slide === 'object') {
+                const copy = Object.assign({}, slide);
+                copy.lines = Array.isArray(slide.lines) ? slide.lines.slice() : [];
+                return copy;
+            }
             return [String(slide)];
         });
     }

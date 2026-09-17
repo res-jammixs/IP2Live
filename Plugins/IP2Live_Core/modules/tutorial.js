@@ -21,7 +21,7 @@
 // ================================================================
 const Tutorial = {
 
-    VERSION: 'quest-debug-20260916-16',
+    VERSION: 'quest-debug-20260916-19',
     isActive: false,
 
     PHASE: { IDLE: -1, INTRO: 0, MOVE_FB: 1, MOVE_LR: 2, CAMERA: 3, QUEST_INFO: 4, QUEST_ACTIVE: 5, COMPLETE: 6, DONE: 7 },
@@ -1119,26 +1119,20 @@ const Tutorial = {
             ctx.lineWidth = 2;
             ctx.stroke();
 
-            const labelW = 180;
-            const labelH = 48;
+            const labelW = 300;
+            const labelH = 72;
             const lx = Math.max(10, Math.min(cW - labelW - 10, ax - labelW / 2));
             const ly = Math.max(10, ay - 92);
-            ctx.fillStyle = 'rgba(3, 7, 20, 0.92)';
-            ctx.fillRect(lx, ly, labelW, labelH);
-            ctx.strokeStyle = '#FF003C';
-            ctx.lineWidth = 2;
-            ctx.strokeRect(lx, ly, labelW, labelH);
-            ctx.fillStyle = '#FFE600';
-            ctx.font = 'bold 12px monospace';
-            ctx.textAlign = 'center';
-            ctx.fillText('TARGET TILE', lx + labelW / 2, ly + 18);
-            ctx.fillStyle = '#DAEEFF';
-            ctx.font = '11px monospace';
-            ctx.fillText(
-                distTiles === null ? 'DIST: --' : `DIST: ${distTiles.toFixed(1)} tiles`,
-                lx + labelW / 2,
-                ly + 35
-            );
+            this._drawQuestDistancePanel(ctx, {
+                x: lx,
+                y: ly,
+                w: labelW,
+                h: labelH,
+                target: { x: 23, y: 0, z: 2 },
+                distanceTiles: distTiles,
+                tick: this.animTick || 0,
+                footer: 'TARGET IN VIEW // FOLLOW THE MARKER',
+            });
         }
 
         ctx.restore();
@@ -1148,31 +1142,20 @@ const Tutorial = {
         const distTiles = this._questDistanceTiles(hero);
 
         ctx.save();
-        const labelW = 292;
-        const labelH = 62;
+        const labelW = 320;
+        const labelH = 72;
         const lx = Math.max(12, cW - labelW - 28);
         const ly = Math.max(76, cH * 0.18);
-        ctx.shadowColor = '#FF003C';
-        ctx.shadowBlur = 8;
-        ctx.fillStyle = 'rgba(3, 7, 20, 0.94)';
-        ctx.fillRect(lx, ly, labelW, labelH);
-        ctx.strokeStyle = '#FF003C';
-        ctx.lineWidth = 2;
-        ctx.strokeRect(lx, ly, labelW, labelH);
-        ctx.fillStyle = '#FFE600';
-        ctx.font = 'bold 13px monospace';
-        ctx.textAlign = 'center';
-        ctx.fillText('TARGET TILE  X:23  Y:0  Z:2', lx + labelW / 2, ly + 20);
-        ctx.fillStyle = '#DAEEFF';
-        ctx.font = '12px monospace';
-        ctx.fillText(
-            distTiles === null ? 'DISTANCE: CALCULATING' : `DISTANCE: ${distTiles.toFixed(1)} tiles`,
-            lx + labelW / 2,
-            ly + 39
-        );
-        ctx.fillStyle = 'rgba(255,230,0,0.85)';
-        ctx.font = '10px monospace';
-        ctx.fillText('ROTATE CAMERA UNTIL THE 3D TILE MARKER IS VISIBLE', lx + labelW / 2, ly + 54);
+        this._drawQuestDistancePanel(ctx, {
+            x: lx,
+            y: ly,
+            w: labelW,
+            h: labelH,
+            target: { x: 23, y: 0, z: 2 },
+            distanceTiles: distTiles,
+            tick: this.animTick || 0,
+            footer: 'ROTATE CAMERA UNTIL THE 3D TILE MARKER IS VISIBLE',
+        });
         ctx.restore();
     },
 
@@ -1196,24 +1179,51 @@ const Tutorial = {
         ctx.lineWidth = 3;
         ctx.stroke();
 
-        const labelW = 300;
-        const labelH = 66;
+        const labelW = 320;
+        const labelH = 72;
         const lx = cx - labelW / 2;
         const ly = cy + 34;
         ctx.shadowBlur = 0;
-        ctx.fillStyle = 'rgba(3, 7, 20, 0.94)';
-        ctx.fillRect(lx, ly, labelW, labelH);
+        this._drawQuestDistancePanel(ctx, {
+            x: lx,
+            y: ly,
+            w: labelW,
+            h: labelH,
+            target: { x: 23, y: 0, z: 2 },
+            distanceTiles: null,
+            tick,
+            distanceLabel: 'PLAYER REF MISSING',
+            footer: 'REACQUIRING NAVIGATION SIGNAL',
+        });
+        ctx.restore();
+    },
+
+    _drawQuestDistancePanel(ctx, options) {
+        if (IP2Live.QuestArrowAsset && typeof IP2Live.QuestArrowAsset.drawDistancePanel === 'function') {
+            IP2Live.QuestArrowAsset.drawDistancePanel(ctx, options);
+            return;
+        }
+
+        // Minimal compatibility fallback for partially loaded development builds.
+        const o = options;
+        ctx.fillStyle = 'rgba(3,7,20,0.96)';
+        ctx.fillRect(o.x, o.y, o.w, o.h);
         ctx.strokeStyle = '#FF003C';
         ctx.lineWidth = 2;
-        ctx.strokeRect(lx, ly, labelW, labelH);
+        ctx.strokeRect(o.x, o.y, o.w, o.h);
         ctx.fillStyle = '#FFE600';
-        ctx.font = 'bold 13px monospace';
+        const panelFont = IP2Live.Assets && IP2Live.Assets.oxaniumMediumLoaded
+            ? 'Oxanium-Medium'
+            : 'sans-serif';
+        ctx.font = 'bold 11px ' + panelFont;
         ctx.textAlign = 'center';
-        ctx.fillText('TARGET TILE  X:23  Y:0  Z:2', cx, ly + 24);
-        ctx.fillStyle = '#DAEEFF';
-        ctx.font = '11px monospace';
-        ctx.fillText('PLAYER REF MISSING - CHECK VERSION STAMP', cx, ly + 45);
-        ctx.restore();
+        this._drawTrackedQuestText(
+            ctx,
+            o.distanceLabel || 'DISTANCE // CALCULATING',
+            o.x + o.w / 2,
+            o.y + o.h / 2,
+            0.65
+        );
     },
 
     _currentStep() {
@@ -1291,8 +1301,36 @@ const Tutorial = {
         ctx.restore();
     },
 
+    _measureTrackedQuestText(ctx, value, tracking) {
+        const text = String(value || '');
+        const gap = Math.max(0, Number(tracking) || 0);
+        let width = 0;
+        for (let i = 0; i < text.length; i++) width += ctx.measureText(text[i]).width;
+        return width + Math.max(0, text.length - 1) * gap;
+    },
+
+    _drawTrackedQuestText(ctx, value, x, y, tracking) {
+        const text = String(value || '');
+        if (!text) return 0;
+        const gap = Math.max(0, Number(tracking) || 0);
+        const width = this._measureTrackedQuestText(ctx, text, gap);
+        const oldAlign = ctx.textAlign || 'left';
+        let cursorX = x;
+        if (oldAlign === 'center') cursorX -= width / 2;
+        else if (oldAlign === 'right' || oldAlign === 'end') cursorX -= width;
+        ctx.textAlign = 'left';
+        for (let i = 0; i < text.length; i++) {
+            const glyph = text[i];
+            ctx.fillText(glyph, cursorX, y);
+            cursorX += ctx.measureText(glyph).width + gap;
+        }
+        ctx.textAlign = oldAlign;
+        return width;
+    },
+
     _drawQuestTracker(ctx, cW, cH, sX, sY, font) {
         if (IP2Live.QuestManager) return;
+        const headerFont = IP2Live.Assets && IP2Live.Assets.nebulaLoaded ? 'Nebula-Regular' : font;
         const isPreview = this.phase === this.PHASE.QUEST_INFO;
         const tick = this.animTick || 0;
         const pulse = 0.5 + 0.5 * Math.sin(tick * 0.08);
@@ -1302,13 +1340,22 @@ const Tutorial = {
         const qY = (isPreview ? 78 : 18) * sY;
         const slant = 28 * sX;
         const red = '255,0,60';
-        const cyan = '0,240,255';
 
         ctx.save();
         ctx.shadowBlur = 0;
 
-        // Persona-inspired hacked quest placard: sharp angles, loud red tab,
-        // cyan terminal details, and a compact objective readout.
+        // Offset extrusion gives the fallback tracker the same physical depth
+        // as the shared QuestManager HUD.
+        ctx.beginPath();
+        ctx.moveTo(qX + slant + 6 * sX, qY + 7 * sY);
+        ctx.lineTo(qX + qW + 6 * sX, qY + 7 * sY);
+        ctx.lineTo(qX + qW - 6 * sX, qY + qH + 7 * sY);
+        ctx.lineTo(qX + 6 * sX, qY + qH + 7 * sY);
+        ctx.lineTo(qX + 6 * sX, qY + 25 * sY);
+        ctx.closePath();
+        ctx.fillStyle = 'rgba(0,2,7,0.9)';
+        ctx.fill();
+
         ctx.beginPath();
         ctx.moveTo(qX + slant, qY);
         ctx.lineTo(qX + qW, qY);
@@ -1316,22 +1363,26 @@ const Tutorial = {
         ctx.lineTo(qX, qY + qH);
         ctx.lineTo(qX, qY + 18 * sY);
         ctx.closePath();
-        ctx.fillStyle = 'rgba(3, 7, 20, 0.94)';
+        const panelGrad = ctx.createLinearGradient(qX, qY, qX + qW, qY + qH);
+        panelGrad.addColorStop(0, 'rgba(8,22,35,0.98)');
+        panelGrad.addColorStop(0.5, 'rgba(3,10,20,0.985)');
+        panelGrad.addColorStop(1, 'rgba(8,7,13,0.99)');
+        ctx.fillStyle = panelGrad;
         ctx.fill();
 
         ctx.save();
         ctx.clip();
         const scanY = qY + ((tick * 1.35) % qH);
-        for (let sy = qY; sy < qY + qH; sy += 4 * sY) {
-            ctx.fillStyle = 'rgba(255,255,255,0.035)';
+        for (let sy = qY; sy < qY + qH; sy += 7 * sY) {
+            ctx.fillStyle = 'rgba(255,255,255,0.018)';
             ctx.fillRect(qX, sy, qW, 1 * sY);
         }
-        ctx.fillStyle = 'rgba(0,240,255,0.06)';
-        ctx.fillRect(qX, scanY, qW, 7 * sY);
+        ctx.fillStyle = 'rgba(0,240,255,0.032)';
+        ctx.fillRect(qX, scanY, qW, 5 * sY);
         ctx.restore();
 
         ctx.shadowColor = '#FF003C';
-        ctx.shadowBlur = 12 + pulse * 8;
+        ctx.shadowBlur = 5 + pulse * 3;
         ctx.strokeStyle = `rgba(${red},${0.65 + pulse * 0.25})`;
         ctx.lineWidth = 2 * sX;
         ctx.beginPath();
@@ -1344,37 +1395,60 @@ const Tutorial = {
         ctx.stroke();
 
         ctx.shadowBlur = 0;
+        ctx.fillStyle = 'rgba(0,2,6,0.92)';
+        ctx.fillRect(qX + 4 * sX, qY + 5 * sY, 190 * sX, 45 * sY);
+
+        const redGrad = ctx.createLinearGradient(qX, qY, qX + 190 * sX, qY + 42 * sY);
+        redGrad.addColorStop(0, '#FF184E');
+        redGrad.addColorStop(0.55, '#FF003C');
+        redGrad.addColorStop(1, '#8E002B');
+        ctx.fillStyle = redGrad;
+        ctx.fillRect(qX, qY, 190 * sX, 42 * sY);
+        ctx.fillStyle = 'rgba(255,255,255,0.16)';
+        ctx.fillRect(qX, qY + 2 * sY, 190 * sX, Math.max(1, 1.5 * sY));
+        ctx.fillStyle = 'rgba(44,0,14,0.42)';
+        ctx.fillRect(qX, qY + 39 * sY, 190 * sX, 3 * sY);
+
         ctx.beginPath();
-        ctx.moveTo(qX, qY + 8 * sY);
-        ctx.lineTo(qX + 168 * sX, qY);
-        ctx.lineTo(qX + 145 * sX, qY + 37 * sY);
-        ctx.lineTo(qX, qY + 45 * sY);
+        ctx.moveTo(qX + 194 * sX, qY + 5 * sY);
+        ctx.lineTo(qX + 288 * sX, qY + 5 * sY);
+        ctx.lineTo(qX + 274 * sX, qY + 48 * sY);
+        ctx.lineTo(qX + 194 * sX, qY + 48 * sY);
         ctx.closePath();
-        ctx.fillStyle = '#FF003C';
+        ctx.fillStyle = 'rgba(0,2,6,0.92)';
         ctx.fill();
 
         ctx.beginPath();
-        ctx.moveTo(qX + 156 * sX, qY);
-        ctx.lineTo(qX + 222 * sX, qY);
-        ctx.lineTo(qX + 199 * sX, qY + 37 * sY);
-        ctx.lineTo(qX + 140 * sX, qY + 37 * sY);
+        ctx.moveTo(qX + 190 * sX, qY);
+        ctx.lineTo(qX + 282 * sX, qY);
+        ctx.lineTo(qX + 268 * sX, qY + 42 * sY);
+        ctx.lineTo(qX + 190 * sX, qY + 42 * sY);
         ctx.closePath();
-        ctx.fillStyle = '#FFE600';
+        const yellowGrad = ctx.createLinearGradient(qX, qY, qX, qY + 37 * sY);
+        yellowGrad.addColorStop(0, '#FFF65B');
+        yellowGrad.addColorStop(0.48, '#FFE600');
+        yellowGrad.addColorStop(1, '#D39B00');
+        ctx.fillStyle = yellowGrad;
         ctx.fill();
 
-        ctx.font = 'bold ' + Math.round(16 * sX) + 'px ' + font;
+        const slashX = qX + 18 * sX;
+        ctx.strokeStyle = '#FFFFFF';
+        ctx.lineWidth = 3 * sX;
+        for (let si = 0; si < 3; si++) {
+            ctx.beginPath();
+            ctx.moveTo(slashX + si * 8 * sX, qY + 31 * sY);
+            ctx.lineTo(slashX + 8 * sX + si * 8 * sX, qY + 18 * sY);
+            ctx.stroke();
+        }
+
+        ctx.font = 'bold ' + Math.round(14 * sX) + 'px ' + headerFont;
         ctx.fillStyle = '#FFFFFF';
         ctx.textAlign = 'left';
-        ctx.fillText('QUEST AREA', qX + 14 * sX, qY + 27 * sY);
+        this._drawTrackedQuestText(ctx, 'QUEST AREA', qX + 57 * sX, qY + 28 * sY, 0.7 * sX);
 
-        ctx.font = 'bold ' + Math.round(8 * sX) + 'px monospace';
+        ctx.font = 'bold ' + Math.round(8.5 * sX) + 'px ' + headerFont;
         ctx.fillStyle = '#111111';
-        ctx.fillText('REQUIRED', qX + 154 * sX, qY + 24 * sY);
-
-        ctx.font = Math.round(8 * sX) + 'px monospace';
-        ctx.fillStyle = `rgba(${cyan},0.72)`;
-        ctx.textAlign = 'right';
-        ctx.fillText(isPreview ? 'OBJECTIVE_PREVIEW' : 'LIVE_TRACKING', qX + qW - 18 * sX, qY + 22 * sY);
+        this._drawTrackedQuestText(ctx, 'REQUIRED', qX + 204 * sX, qY + 25 * sY, 0.45 * sX);
 
         const rowX = qX + 18 * sX;
         const rowY = qY + 58 * sY;
@@ -1398,14 +1472,13 @@ const Tutorial = {
         ctx.font = 'bold ' + Math.round(15 * sX) + 'px ' + font;
         ctx.fillStyle = '#DAEEFF';
         ctx.textAlign = 'left';
-        ctx.fillText('GO TO THE SPOT', rowX + 36 * sX, rowY + 22 * sY);
+        this._drawTrackedQuestText(ctx, 'GO TO THE SPOT', rowX + 36 * sX, rowY + 22 * sY, 0.55 * sX);
 
-        ctx.font = Math.round(8.5 * sX) + 'px monospace';
+        ctx.font = Math.round(8.5 * sX) + 'px ' + font;
         ctx.fillStyle = 'rgba(218,238,255,0.68)';
-        ctx.fillText('TARGET TILE  X:23  Y:0  Z:2', rowX + 36 * sX, rowY + 38 * sY);
+        this._drawTrackedQuestText(ctx, 'TARGET TILE  X:23  Y:0  Z:2', rowX + 36 * sX, rowY + 38 * sY, 0.4 * sX);
 
         const hero = this._questHero();
-        const dist = this._questDistanceTiles(hero);
         const sceneStatus = this._currentMapScene() ? 'SCENE:OK' : 'SCENE:MISS';
         const heroStatus = hero ? 'HERO:OK' : 'HERO:MISS';
 
@@ -1430,17 +1503,18 @@ const Tutorial = {
         ctx.stroke();
         ctx.setLineDash([]);
 
-        ctx.font = Math.round(9 * sX) + 'px monospace';
-        ctx.fillStyle = '#00F0FF';
-        ctx.textAlign = 'right';
-        ctx.fillText(dist === null ? 'DIST: --' : `DIST: ${dist.toFixed(1)} tiles`, qX + qW - 18 * sX, qY + 128 * sY);
-
-        ctx.font = Math.round(7 * sX) + 'px monospace';
+        ctx.font = Math.round(7 * sX) + 'px ' + font;
         ctx.fillStyle = 'rgba(255,230,0,0.82)';
         ctx.textAlign = 'left';
         const heroPath = this._lastHeroPath ? `  ${this._lastHeroPath.slice(0, 30)}` : '';
         const unitStatus = hero && this._positionUsesEditorUnits(hero.position) ? 'UNIT:EDITOR' : 'UNIT:WORLD';
-        ctx.fillText(`${this.VERSION}  ${sceneStatus}  ${heroStatus}  ${unitStatus}${heroPath}`, qX + 18 * sX, qY + 128 * sY);
+        this._drawTrackedQuestText(
+            ctx,
+            `${this.VERSION}  ${sceneStatus}  ${heroStatus}  ${unitStatus}${heroPath}`,
+            qX + 18 * sX,
+            qY + 128 * sY,
+            0.3 * sX
+        );
 
         const cr = 12 * sX;
         ctx.beginPath();

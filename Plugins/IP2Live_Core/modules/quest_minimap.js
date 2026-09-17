@@ -7,7 +7,7 @@
 
 (function () {
     const QuestMinimap = {
-        VERSION: 'quest-minimap-20260915-03',
+        VERSION: 'quest-minimap-20260918-04',
         DEBUG: false,
 
         _container: null,
@@ -29,6 +29,7 @@
         _lastPlayerTile: null,
         _lastFacingVec: null,
         _visibilityReason: 'init',
+        _tutorialHighlighted: false,
 
         create() {
             if (this.isActive()) return;
@@ -55,6 +56,7 @@
             if (this.DEBUG) this._debugLog(data);
             this._syncVisibility(data);
             this._syncPlacement();
+            this._applyTutorialHighlight();
             this._syncCompletedState(data);
             this._updateText(data);
             this._draw(data);
@@ -91,6 +93,13 @@
             this._lastPlayerTile = null;
             this._lastFacingVec = null;
             this._visibilityReason = 'destroyed';
+            this._tutorialHighlighted = false;
+        },
+
+        setTutorialHighlight(isHighlighted) {
+            this._tutorialHighlighted = !!isHighlighted;
+            this._applyTutorialHighlight();
+            return true;
         },
 
         isActive() {
@@ -1031,6 +1040,25 @@
                 this._visibilityReason = 'no-visible-quests';
             }
             this._container.style.display = shouldHide ? 'none' : 'block';
+        },
+
+        _applyTutorialHighlight() {
+            if (!this._container) return false;
+            if (!this._tutorialHighlighted) {
+                this._container.style.outline = '';
+                this._container.style.outlineOffset = '';
+                this._container.style.boxShadow = '';
+                return true;
+            }
+
+            const pulse = 0.5 + 0.5 * Math.sin(Date.now() / 125);
+            this._container.style.outline = '2px solid rgba(255, 230, 0, ' + (0.78 + pulse * 0.22) + ')';
+            this._container.style.outlineOffset = '5px';
+            this._container.style.boxShadow =
+                '0 0 ' + Math.round(12 + pulse * 16) + 'px rgba(255, 230, 0, 0.88), ' +
+                '0 0 ' + Math.round(24 + pulse * 22) + 'px rgba(0, 240, 255, 0.32), ' +
+                'inset 0 0 22px rgba(255, 230, 0, 0.10)';
+            return true;
         },
 
         _syncCompletedState(data) {

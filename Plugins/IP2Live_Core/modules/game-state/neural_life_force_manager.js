@@ -614,26 +614,69 @@
         _drawWinStreakIcon(ctx, cx, cy, radius, count, sX, sY) {
             ctx.save();
             const r = radius;
-            ctx.shadowColor = 'rgba(0, 255, 190, 0.8)';
-            ctx.shadowBlur = 10 * sX;
+            ctx.shadowColor = 'rgba(0, 255, 210, 0.82)';
+            ctx.shadowBlur = 12 * sX;
+
+            // An offset black extrusion and cyan diamond make the emblem feel
+            // stamped into the quest-chain hardware instead of printed on it.
+            ctx.beginPath();
+            ctx.moveTo(cx, cy - r * 1.18 + 3 * sY);
+            ctx.lineTo(cx + r * 1.02 + 3 * sX, cy + 3 * sY);
+            ctx.lineTo(cx + 3 * sX, cy + r * 1.18 + 3 * sY);
+            ctx.lineTo(cx - r * 1.02 + 3 * sX, cy + 3 * sY);
+            ctx.closePath();
+            ctx.fillStyle = 'rgba(0, 3, 7, 0.92)';
+            ctx.fill();
+
+            ctx.beginPath();
+            ctx.moveTo(cx, cy - r * 1.18);
+            ctx.lineTo(cx + r * 1.02, cy);
+            ctx.lineTo(cx, cy + r * 1.18);
+            ctx.lineTo(cx - r * 1.02, cy);
+            ctx.closePath();
+            const badgeGrad = ctx.createLinearGradient(cx - r, cy - r, cx + r, cy + r);
+            badgeGrad.addColorStop(0, '#00D7BE');
+            badgeGrad.addColorStop(0.16, '#052F35');
+            badgeGrad.addColorStop(0.72, '#03161E');
+            badgeGrad.addColorStop(1, '#00DDEB');
+            ctx.fillStyle = badgeGrad;
+            ctx.fill();
+            ctx.strokeStyle = '#73FFE0';
+            ctx.lineWidth = 1.15 * sX;
+            ctx.stroke();
 
             // Upward-pointing shield silhouette.
             ctx.beginPath();
-            ctx.moveTo(cx, cy - r);
-            ctx.lineTo(cx + r * 0.92, cy - r * 0.28);
-            ctx.lineTo(cx + r * 0.72, cy + r * 0.62);
-            ctx.lineTo(cx, cy + r);
-            ctx.lineTo(cx - r * 0.72, cy + r * 0.62);
-            ctx.lineTo(cx - r * 0.92, cy - r * 0.28);
+            ctx.moveTo(cx, cy - r * 0.84);
+            ctx.lineTo(cx + r * 0.73, cy - r * 0.23);
+            ctx.lineTo(cx + r * 0.56, cy + r * 0.5);
+            ctx.lineTo(cx, cy + r * 0.82);
+            ctx.lineTo(cx - r * 0.56, cy + r * 0.5);
+            ctx.lineTo(cx - r * 0.73, cy - r * 0.23);
             ctx.closePath();
-            ctx.fillStyle = 'rgba(0, 40, 40, 0.98)';
+            ctx.fillStyle = 'rgba(0, 18, 24, 0.98)';
             ctx.fill();
             ctx.strokeStyle = '#54FFD2';
             ctx.lineWidth = 1.7 * sX;
             ctx.stroke();
 
-            // Twin rising chevrons make the state readable without color.
+            // Small circuit prongs give the badge a more mechanical outline.
             ctx.shadowBlur = 0;
+            ctx.strokeStyle = 'rgba(84,255,210,0.72)';
+            ctx.lineWidth = Math.max(0.8, 0.9 * sX);
+            for (let side = -1; side <= 1; side += 2) {
+                ctx.beginPath();
+                ctx.moveTo(cx + side * r * 0.88, cy - r * 0.34);
+                ctx.lineTo(cx + side * r * 1.17, cy - r * 0.48);
+                ctx.lineTo(cx + side * r * 1.28, cy - r * 0.34);
+                ctx.stroke();
+                ctx.beginPath();
+                ctx.moveTo(cx + side * r * 0.82, cy + r * 0.36);
+                ctx.lineTo(cx + side * r * 1.12, cy + r * 0.48);
+                ctx.stroke();
+            }
+
+            // Twin rising chevrons make the state readable without color.
             ctx.strokeStyle = '#00EFFF';
             ctx.lineWidth = 1.4 * sX;
             ctx.beginPath();
@@ -645,7 +688,10 @@
             ctx.lineTo(cx + r * 0.34, cy + r * 0.12);
             ctx.stroke();
 
-            ctx.font = '900 ' + Math.round(10 * sY) + 'px "Courier New", monospace';
+            const numberFont = IP2Live.Assets && IP2Live.Assets.oxaniumMediumLoaded
+                ? 'Oxanium-Medium'
+                : 'sans-serif';
+            ctx.font = '900 ' + Math.round(11 * sY) + 'px ' + numberFont;
             ctx.textAlign = 'center';
             ctx.textBaseline = 'middle';
             ctx.fillStyle = '#F4FFFC';
@@ -704,7 +750,10 @@
             ctx.lineTo(cx - r * 0.35, cy + r * 0.08);
             ctx.stroke();
 
-            ctx.font = '900 ' + Math.round(10 * sY) + 'px "Courier New", monospace';
+            const numberFont = IP2Live.Assets && IP2Live.Assets.oxaniumMediumLoaded
+                ? 'Oxanium-Medium'
+                : 'sans-serif';
+            ctx.font = '900 ' + Math.round(11 * sY) + 'px ' + numberFont;
             ctx.textAlign = 'center';
             ctx.textBaseline = 'middle';
             ctx.fillStyle = '#FFE5EC';
@@ -765,69 +814,37 @@
         _drawQuestChainCard(ctx, x, y, w, h, state, sX, sY, pulse) {
             const losing = Number(state.failureStreak) > 0;
             const winning = !losing && Number(state.successStreak) > 0;
-            const modeColor = losing ? '#FF315F' : (winning ? '#43FFD1' : '#69DDEB');
-            const modeFill = losing ? 'rgba(47, 3, 18, 0.96)' : (winning ? 'rgba(0, 38, 39, 0.96)' : 'rgba(4, 22, 31, 0.96)');
-            const statusLabel = losing ? 'LOSS STREAK' : (winning ? 'WIN STREAK' : 'NEUTRAL');
             const count = losing ? Number(state.failureStreak) : (winning ? Number(state.successStreak) : 0);
+            const iconX = x + w * 0.5;
+            const iconY = y + h * 0.5;
+            const iconRadius = Math.min(18 * sY, h * 0.34);
+            const numberFont = IP2Live.Assets && IP2Live.Assets.oxaniumMediumLoaded
+                ? 'Oxanium-Medium'
+                : 'sans-serif';
 
             ctx.save();
-            ctx.beginPath();
-            ctx.moveTo(x + 9 * sX, y);
-            ctx.lineTo(x + w, y);
-            ctx.lineTo(x + w, y + h - 9 * sY);
-            ctx.lineTo(x + w - 9 * sX, y + h);
-            ctx.lineTo(x, y + h);
-            ctx.lineTo(x, y + 10 * sY);
-            ctx.closePath();
-            ctx.fillStyle = modeFill;
-            ctx.fill();
-            ctx.strokeStyle = modeColor;
-            ctx.lineWidth = 1.2 * sX;
-            ctx.shadowColor = modeColor;
-            ctx.shadowBlur = losing ? (5 + pulse * 4) * sX : 4 * sX;
-            ctx.stroke();
-            ctx.shadowBlur = 0;
-
-            ctx.fillStyle = modeColor;
-            ctx.beginPath();
-            ctx.moveTo(x, y + 10 * sY);
-            ctx.lineTo(x + 9 * sX, y);
-            ctx.lineTo(x + 14 * sX, y);
-            ctx.lineTo(x + 4 * sX, y + 14 * sY);
-            ctx.closePath();
-            ctx.fill();
-
-            ctx.font = 'bold ' + Math.round(7.3 * sY) + 'px "Courier New", monospace';
-            ctx.textAlign = 'center';
-            ctx.textBaseline = 'alphabetic';
-            ctx.fillStyle = 'rgba(226, 248, 255, 0.82)';
-            ctx.fillText('QUEST CHAIN', x + w * 0.52, y + 10 * sY);
-
-            const iconX = x + w * 0.5;
-            const iconY = y + 34 * sY;
-            const iconRadius = 13 * sY;
             if (losing) {
                 this._drawVirusIcon(ctx, iconX, iconY, iconRadius, count, sX, sY, pulse);
             } else if (winning) {
                 this._drawWinStreakIcon(ctx, iconX, iconY, iconRadius, count, sX, sY);
             } else {
                 ctx.beginPath();
-                ctx.arc(iconX, iconY, iconRadius * 0.7, 0, Math.PI * 2);
-                ctx.fillStyle = 'rgba(0, 240, 255, 0.08)';
+                ctx.moveTo(iconX, iconY - iconRadius);
+                ctx.lineTo(iconX + iconRadius * 0.86, iconY);
+                ctx.lineTo(iconX, iconY + iconRadius);
+                ctx.lineTo(iconX - iconRadius * 0.86, iconY);
+                ctx.closePath();
+                ctx.fillStyle = 'rgba(8, 21, 29, 0.94)';
                 ctx.fill();
                 ctx.strokeStyle = 'rgba(105, 221, 235, 0.6)';
                 ctx.lineWidth = 1.2 * sX;
                 ctx.stroke();
-                ctx.font = 'bold ' + Math.round(10 * sY) + 'px "Courier New", monospace';
+                ctx.font = 'bold ' + Math.round(12 * sY) + 'px ' + numberFont;
+                ctx.textAlign = 'center';
                 ctx.textBaseline = 'middle';
                 ctx.fillStyle = '#BDECF2';
                 ctx.fillText('0', iconX, iconY);
             }
-
-            ctx.font = '900 ' + Math.round(7.5 * sY) + 'px "Courier New", monospace';
-            ctx.textBaseline = 'alphabetic';
-            ctx.fillStyle = modeColor;
-            ctx.fillText(statusLabel, x + w * 0.5, y + h - 5 * sY);
             ctx.restore();
         },
 
@@ -841,9 +858,9 @@
             const sX = cW / 1280;
             const sY = cH / 720;
             const unit = Math.min(sX, sY);
-            const uiFont = IP2Live.Assets && IP2Live.Assets.nebulaLoaded
-                ? 'Nebula-Regular'
-                : '"Courier New", monospace';
+            const hudFont = IP2Live.Assets && IP2Live.Assets.oxaniumMediumLoaded
+                ? 'Oxanium-Medium'
+                : 'sans-serif';
             const qm = IP2Live.QuestManager;
             const panel = qm && typeof qm._questPanelRect === 'function'
                 ? qm._questPanelRect(ctx)
@@ -886,11 +903,11 @@
             const h = 70 * sY;
             const pulse = 0.5 + 0.5 * Math.sin(Date.now() / 160);
             const change = state.lastChange;
-            const accent = critical ? '#FF315F' : (warning ? '#FFE04A' : '#00F0FF');
-            const streakW = Math.min(86 * sX, w * 0.23);
+            const accent = critical ? '#FF315F' : (warning ? '#FFE04A' : '#FF174D');
+            const streakW = Math.min(64 * sX, w * 0.18);
             const streakX = x + w - streakW;
             const contentLeft = x + 18 * sX;
-            const contentRight = streakX - 12 * sX;
+            const contentRight = streakX - 8 * sX;
 
             ctx.save();
 
@@ -910,7 +927,12 @@
             ctx.lineTo(x + 5 * sX, y + h - 5 * sY);
             ctx.lineTo(x - 4 * sX, y + h - 14 * sY);
             ctx.closePath();
-            ctx.fillStyle = critical ? '#FF315F' : '#00F0FF';
+            ctx.fillStyle = '#FF174D';
+            ctx.fill();
+
+            // A heavy offset body gives the whole HUD tangible depth.
+            this._drawCyberPlate(ctx, x + 5 * sX, y + 6 * sY, w, h, 7 * sX);
+            ctx.fillStyle = 'rgba(0, 2, 7, 0.88)';
             ctx.fill();
 
             // Main dark plate.
@@ -921,9 +943,9 @@
                 bgGrad.addColorStop(0.58, 'rgba(16, 7, 18, 0.99)');
                 bgGrad.addColorStop(1, 'rgba(5, 8, 14, 0.99)');
             } else {
-                bgGrad.addColorStop(0, 'rgba(7, 25, 35, 0.98)');
-                bgGrad.addColorStop(0.55, 'rgba(3, 12, 22, 0.99)');
-                bgGrad.addColorStop(1, 'rgba(3, 7, 15, 0.99)');
+                bgGrad.addColorStop(0, 'rgba(39, 3, 17, 0.98)');
+                bgGrad.addColorStop(0.55, 'rgba(15, 4, 13, 0.99)');
+                bgGrad.addColorStop(1, 'rgba(5, 5, 12, 0.99)');
             }
             ctx.fillStyle = bgGrad;
             ctx.fill();
@@ -936,7 +958,7 @@
                 ctx.fillStyle = 'rgba(220, 250, 255, 0.025)';
                 ctx.fillRect(x, lineY, w, Math.max(1, 0.5 * sY));
             }
-            ctx.strokeStyle = critical ? 'rgba(255,49,95,0.10)' : 'rgba(0,240,255,0.075)';
+            ctx.strokeStyle = 'rgba(255,23,77,0.09)';
             ctx.lineWidth = 5 * unit;
             for (let slashX = x + w * 0.58; slashX < streakX; slashX += 18 * sX) {
                 ctx.beginPath();
@@ -953,7 +975,7 @@
                 streakX - 12 * sX,
                 y + 47 * sY,
                 -8 * sY,
-                critical ? 'rgba(111, 38, 55, 0.34)' : 'rgba(46, 91, 98, 0.36)',
+                critical ? 'rgba(111, 38, 55, 0.34)' : 'rgba(112, 18, 48, 0.34)',
                 2.2 * unit,
                 unit
             );
@@ -964,7 +986,7 @@
                 streakX - 10 * sX,
                 y + 60 * sY,
                 7 * sY,
-                warning ? 'rgba(132, 95, 49, 0.30)' : 'rgba(83, 103, 110, 0.30)',
+                warning ? 'rgba(132, 95, 49, 0.30)' : 'rgba(82, 20, 39, 0.30)',
                 1.5 * unit,
                 unit
             );
@@ -974,7 +996,7 @@
             this._drawCyberPlate(ctx, x, y, w, h, 7 * sX);
             ctx.strokeStyle = accent;
             ctx.lineWidth = 1.4 * unit;
-            ctx.shadowColor = critical ? 'rgba(255,49,95,0.8)' : 'rgba(0,240,255,0.55)';
+            ctx.shadowColor = 'rgba(255,23,77,0.68)';
             ctx.shadowBlur = critical ? (6 + pulse * 5) * unit : 5 * unit;
             ctx.stroke();
             ctx.shadowBlur = 0;
@@ -991,25 +1013,24 @@
             ctx.closePath();
             ctx.fill();
 
-            // Header tag and numeric readout.
+            // Compact status glyph replaces the old explanatory labels.
             ctx.fillStyle = accent;
-            ctx.fillRect(contentLeft, y + 11 * sY, 22 * sX, 11 * sY);
-            ctx.font = '900 ' + Math.round(7 * sY) + 'px "Courier New", monospace';
-            ctx.textAlign = 'center';
-            ctx.textBaseline = 'middle';
-            ctx.fillStyle = '#031018';
-            ctx.fillText('SYS', contentLeft + 11 * sX, y + 16.5 * sY);
-
-            ctx.font = '900 ' + Math.round(8.5 * sY) + 'px ' + uiFont;
-            ctx.textAlign = 'left';
-            ctx.textBaseline = 'alphabetic';
-            ctx.fillStyle = '#E9FAFF';
-            ctx.fillText('NEURAL LIFE FORCE', contentLeft + 28 * sX, y + 20 * sY);
+            for (let glyph = 0; glyph < 3; glyph++) {
+                const gx = contentLeft + glyph * 8 * sX;
+                ctx.beginPath();
+                ctx.moveTo(gx + 3 * sX, y + 11 * sY);
+                ctx.lineTo(gx + 9 * sX, y + 11 * sY);
+                ctx.lineTo(gx + 6 * sX, y + 21 * sY);
+                ctx.lineTo(gx, y + 21 * sY);
+                ctx.closePath();
+                ctx.fill();
+            }
 
             const displayVal = Math.round(this._animHp);
             ctx.textAlign = 'right';
-            ctx.font = '900 ' + Math.round(11 * sY) + 'px "Courier New", monospace';
-            ctx.fillStyle = critical ? '#FF6B8C' : (warning ? '#FFE04A' : '#54FFD2');
+            ctx.textBaseline = 'alphabetic';
+            ctx.font = '900 ' + Math.round(12 * sY) + 'px ' + hudFont;
+            ctx.fillStyle = critical ? '#FF6B8C' : (warning ? '#FFE04A' : '#FF7899');
             ctx.fillText(String(displayVal).padStart(3, '0') + ' / ' + MAX_LIFE_FORCE, contentRight, y + 20 * sY);
 
             // Layered life-force rail.
@@ -1020,23 +1041,22 @@
             const activeRatio = Math.max(0, Math.min(1, this._animHp / MAX_LIFE_FORCE));
             const ghostRatio = Math.max(0, Math.min(1, this._ghostHp / MAX_LIFE_FORCE));
 
-            // Recessed metal housing makes the life-force cable feel seated in the HUD.
+            // Red-black recessed housing matches the Quest Area without a metallic finish.
             this._drawCyberPlate(ctx, barX - 3 * sX, barY - 3 * sY, barW + 6 * sX, barH + 6 * sY, 4 * sX);
             const housingGrad = ctx.createLinearGradient(barX, barY - 3 * sY, barX, barY + barH + 3 * sY);
-            housingGrad.addColorStop(0, '#090C10');
-            housingGrad.addColorStop(0.24, '#4A555B');
-            housingGrad.addColorStop(0.48, '#171E23');
-            housingGrad.addColorStop(1, '#05070A');
+            housingGrad.addColorStop(0, '#240510');
+            housingGrad.addColorStop(0.38, '#12040B');
+            housingGrad.addColorStop(1, '#050308');
             ctx.fillStyle = housingGrad;
             ctx.fill();
-            ctx.strokeStyle = 'rgba(176, 198, 203, 0.26)';
+            ctx.strokeStyle = 'rgba(255, 49, 95, 0.38)';
             ctx.lineWidth = Math.max(1, unit);
             ctx.stroke();
 
             this._drawCyberPlate(ctx, barX, barY, barW, barH, 3 * sX);
-            ctx.fillStyle = 'rgba(0, 2, 8, 0.88)';
+            ctx.fillStyle = 'rgba(9, 1, 7, 0.9)';
             ctx.fill();
-            ctx.strokeStyle = 'rgba(142, 171, 177, 0.42)';
+            ctx.strokeStyle = 'rgba(255, 88, 126, 0.34)';
             ctx.lineWidth = Math.max(1, unit);
             ctx.stroke();
 
@@ -1045,7 +1065,7 @@
                 ctx.beginPath();
                 ctx.rect(barX + barW * activeRatio, barY, barW * (ghostRatio - activeRatio), barH);
                 ctx.clip();
-                ctx.fillStyle = 'rgba(132, 45, 64, 0.9)';
+                ctx.fillStyle = 'rgba(255, 207, 49, 0.46)';
                 ctx.fillRect(barX, barY, barW * ghostRatio, barH);
                 ctx.restore();
             }
@@ -1057,50 +1077,20 @@
                 ctx.clip();
 
                 const barGrad = ctx.createLinearGradient(barX, barY, barX + barW, barY);
-                if (critical) {
-                    barGrad.addColorStop(0, '#6D293B');
-                    barGrad.addColorStop(0.62, '#984357');
-                    barGrad.addColorStop(1, '#B96C77');
-                } else if (warning) {
-                    barGrad.addColorStop(0, '#79502F');
-                    barGrad.addColorStop(0.62, '#9F7742');
-                    barGrad.addColorStop(1, '#B7A06A');
-                } else {
-                    barGrad.addColorStop(0, '#294D53');
-                    barGrad.addColorStop(0.62, '#47767A');
-                    barGrad.addColorStop(1, '#78999B');
-                }
+                barGrad.addColorStop(0, '#FF174D');
+                barGrad.addColorStop(0.52, '#FF8A00');
+                barGrad.addColorStop(1, '#FFE600');
                 ctx.fillStyle = barGrad;
                 ctx.fillRect(barX, barY, fillW, barH);
 
-                // Braided bands and a buried center strand echo Gameplay 1's cables.
-                ctx.strokeStyle = 'rgba(3, 10, 13, 0.34)';
-                ctx.lineWidth = 3.2 * unit;
-                for (let braidX = barX - 8 * sX; braidX < barX + fillW + 8 * sX; braidX += 10 * sX) {
-                    ctx.beginPath();
-                    ctx.moveTo(braidX, barY + barH);
-                    ctx.lineTo(braidX + 9 * sX, barY);
-                    ctx.stroke();
-                }
-                ctx.strokeStyle = 'rgba(184, 208, 209, 0.18)';
-                ctx.lineWidth = Math.max(0.8, unit);
-                ctx.beginPath();
-                ctx.moveTo(barX + 2 * sX, barY + barH * 0.42);
-                ctx.bezierCurveTo(
-                    barX + fillW * 0.28,
-                    barY + barH * 0.25,
-                    barX + fillW * 0.72,
-                    barY + barH * 0.62,
-                    barX + fillW - 2 * sX,
-                    barY + barH * 0.38
-                );
-                ctx.stroke();
-
-                ctx.fillStyle = 'rgba(221, 233, 232, 0.13)';
+                // Horizontal light bands give the fill depth without diagonal marks.
+                ctx.fillStyle = 'rgba(255, 210, 221, 0.13)';
                 ctx.fillRect(barX, barY + 2 * sY, fillW, 1.5 * sY);
+                ctx.fillStyle = 'rgba(74, 7, 16, 0.2)';
+                ctx.fillRect(barX, barY + barH - 3 * sY, fillW, 2 * sY);
 
                 const edgeX = barX + barW * activeRatio;
-                ctx.fillStyle = critical ? '#C47A84' : (warning ? '#C3AD7A' : '#91ABAC');
+                ctx.fillStyle = critical ? '#FF8BA4' : (warning ? '#C3AD7A' : '#FF8AA7');
                 ctx.shadowColor = 'rgba(0, 0, 0, 0.45)';
                 ctx.shadowBlur = 2 * unit;
                 ctx.fillRect(edgeX - 2 * sX, barY + 1 * sY, 2.5 * sX, barH - 2 * sY);
@@ -1111,21 +1101,16 @@
                 ctx.restore();
             }
 
-            // Fewer, stronger divisions stay readable at lower resolutions.
-            ctx.strokeStyle = 'rgba(0, 4, 8, 0.62)';
-            ctx.lineWidth = Math.max(1, 1.1 * unit);
-            const segmentStep = barW / 20;
+            // Straight vertical divisions create a clean segmented energy readout.
+            ctx.fillStyle = 'rgba(16, 2, 8, 0.42)';
+            const segmentStep = barW / 12;
             for (let seg = barX + segmentStep; seg < barX + barW - 1; seg += segmentStep) {
-                ctx.beginPath();
-                ctx.moveTo(seg - 1.4 * sX, barY + 1 * sY);
-                ctx.lineTo(seg + 1.4 * sX, barY + barH - 1 * sY);
-                ctx.stroke();
+                ctx.fillRect(seg, barY + 2 * sY, Math.max(1, 1 * sX), barH - 4 * sY);
             }
-            this._drawHudRivet(ctx, barX + 5 * sX, barY + barH * 0.5, 1.55 * unit, unit);
-            this._drawHudRivet(ctx, barX + barW - 5 * sX, barY + barH * 0.5, 1.55 * unit, unit);
 
-            // Plain-language telemetry directly under the rail.
-            ctx.font = 'bold ' + Math.round(7.5 * sY) + 'px "Courier New", monospace';
+            // Critical and transient feedback stays available; the quiet state
+            // is intentionally label-free to keep the compact HUD clean.
+            ctx.font = 'bold ' + Math.round(7.5 * sY) + 'px ' + hudFont;
             ctx.textAlign = 'left';
             ctx.textBaseline = 'alphabetic';
             if (critical) {
@@ -1140,18 +1125,14 @@
                     y + 59 * sY
                 );
             } else {
-                ctx.fillStyle = 'rgba(197, 239, 247, 0.82)';
-                ctx.fillText('SYNC STABLE // QUEST LINK ONLINE', barX, y + 59 * sY);
+                ctx.fillStyle = 'rgba(255,23,77,0.32)';
+                ctx.fillRect(barX, y + 55 * sY, barW * 0.34, Math.max(1, 1 * sY));
+                ctx.fillStyle = 'rgba(255,230,0,0.4)';
+                ctx.fillRect(barX, y + 58 * sY, barW * 0.13, Math.max(1, 0.7 * sY));
             }
 
-            // Dedicated quest-chain card: icon, count, and explicit state text.
-            ctx.strokeStyle = 'rgba(0, 240, 255, 0.32)';
-            ctx.lineWidth = Math.max(1, unit);
-            ctx.beginPath();
-            ctx.moveTo(streakX - 6 * sX, y + 8 * sY);
-            ctx.lineTo(streakX - 6 * sX, y + h - 8 * sY);
-            ctx.stroke();
-            this._drawQuestChainCard(ctx, streakX + 2 * sX, y + 5 * sY, streakW - 8 * sX, h - 10 * sY, state, sX, sY, pulse);
+            // Standalone streak icon; the count is rendered inside the symbol.
+            this._drawQuestChainCard(ctx, streakX, y + 5 * sY, streakW, h - 10 * sY, state, sX, sY, pulse);
 
             // Critical tint never covers text or the quest-chain card.
             if (critical) {

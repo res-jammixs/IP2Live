@@ -10,7 +10,7 @@
 
 class IP2LiveQuestManager {
     constructor() {
-        this.VERSION = 'quest-manager-20260915-04';
+        this.VERSION = 'quest-manager-20260918-09';
 
         this.quests = {};
         this.mapQuestQueues = {};
@@ -439,7 +439,8 @@ class IP2LiveQuestManager {
         const SH = Common.ScreenResolution.SCREEN_Y;
         const sX = cW / SW;
         const sY = cH / SH;
-        const font = IP2Live.Assets && IP2Live.Assets.nebulaLoaded ? 'Nebula-Regular' : 'monospace';
+        const font = IP2Live.Assets && IP2Live.Assets.oxaniumMediumLoaded ? 'Oxanium-Medium' : 'sans-serif';
+        const headerFont = IP2Live.Assets && IP2Live.Assets.nebulaLoaded ? 'Nebula-Regular' : font;
         const tick = this.animTick || 0;
         const pulse = 0.5 + 0.5 * Math.sin(tick * 0.08);
 
@@ -448,72 +449,41 @@ class IP2LiveQuestManager {
         const qH = panelRect.h;
         const qX = panelRect.x;
         const qY = panelRect.y;
-        const slant = 28 * sX;
         const red = '255,0,60';
-        const cyan = '0,240,255';
 
         ctx.save();
         ctx.shadowBlur = 0;
+        this._drawQuestPanelShell(ctx, {
+            x: qX,
+            y: qY,
+            w: qW,
+            h: qH,
+            sX,
+            sY,
+            tick,
+            pulse,
+            accent: '#FF003C',
+        });
+        this._drawQuestHeaderPlates(ctx, {
+            x: qX,
+            y: qY,
+            w: qW,
+            sX,
+            sY,
+            tick,
+            leftColor: '#FF003C',
+            rightColor: '#FFE600',
+        });
 
-        ctx.beginPath();
-        ctx.moveTo(qX + slant, qY);
-        ctx.lineTo(qX + qW, qY);
-        ctx.lineTo(qX + qW - 12 * sX, qY + qH);
-        ctx.lineTo(qX, qY + qH);
-        ctx.lineTo(qX, qY + 18 * sY);
-        ctx.closePath();
-        ctx.fillStyle = 'rgba(3, 7, 20, 0.94)';
-        ctx.fill();
-
-        ctx.save();
-        ctx.clip();
-        const scanY = qY + ((tick * 1.35) % qH);
-        for (let sy = qY; sy < qY + qH; sy += 4 * sY) {
-            ctx.fillStyle = 'rgba(255,255,255,0.035)';
-            ctx.fillRect(qX, sy, qW, Math.max(1, sY));
-        }
-        ctx.fillStyle = 'rgba(0,240,255,0.06)';
-        ctx.fillRect(qX, scanY, qW, 7 * sY);
-        ctx.restore();
-
-        ctx.shadowColor = '#FF003C';
-        ctx.shadowBlur = 12 + pulse * 8;
-        ctx.strokeStyle = 'rgba(' + red + ',' + (0.65 + pulse * 0.25) + ')';
-        ctx.lineWidth = 2 * sX;
-        ctx.stroke();
-        ctx.shadowBlur = 0;
-
-        ctx.beginPath();
-        ctx.moveTo(qX, qY + 8 * sY);
-        ctx.lineTo(qX + 168 * sX, qY);
-        ctx.lineTo(qX + 145 * sX, qY + 37 * sY);
-        ctx.lineTo(qX, qY + 45 * sY);
-        ctx.closePath();
-        ctx.fillStyle = '#FF003C';
-        ctx.fill();
-
-        ctx.beginPath();
-        ctx.moveTo(qX + 156 * sX, qY);
-        ctx.lineTo(qX + 222 * sX, qY);
-        ctx.lineTo(qX + 199 * sX, qY + 37 * sY);
-        ctx.lineTo(qX + 140 * sX, qY + 37 * sY);
-        ctx.closePath();
-        ctx.fillStyle = '#FFE600';
-        ctx.fill();
-
-        ctx.font = 'bold ' + Math.round(16 * sX) + 'px ' + font;
+        ctx.font = 'bold ' + Math.round(14 * sX) + 'px ' + headerFont;
         ctx.fillStyle = '#FFFFFF';
         ctx.textAlign = 'left';
-        ctx.fillText(quest.title || 'QUEST AREA', qX + 14 * sX, qY + 27 * sY);
+        ctx.textBaseline = 'alphabetic';
+        this._drawTrackedText(ctx, quest.title || 'QUEST AREA', qX + 57 * sX, qY + 28 * sY, 0.7 * sX);
 
-        ctx.font = 'bold ' + Math.round(8 * sX) + 'px monospace';
+        ctx.font = 'bold ' + Math.round(8.5 * sX) + 'px ' + headerFont;
         ctx.fillStyle = '#111111';
-        ctx.fillText('REQUIRED', qX + 154 * sX, qY + 24 * sY);
-
-        ctx.font = Math.round(8 * sX) + 'px monospace';
-        ctx.fillStyle = 'rgba(' + cyan + ',0.72)';
-        ctx.textAlign = 'right';
-        ctx.fillText(this.preview ? 'OBJECTIVE_PREVIEW' : 'LIVE_TRACKING', qX + qW - 18 * sX, qY + 22 * sY);
+        this._drawTrackedText(ctx, 'REQUIRED', qX + 204 * sX, qY + 25 * sY, 0.45 * sX);
 
         this._drawObjectiveRow(ctx, {
             x: qX + 18 * sX,
@@ -528,8 +498,6 @@ class IP2LiveQuestManager {
             red,
         });
 
-        const hero = this._questHero(this._sceneRef);
-        const dist = this.distanceToObjective(objective, hero);
         const meterX = qX + 18 * sX;
         const meterY = qY + 108 * sY;
         const meterW = qW - 36 * sX;
@@ -551,16 +519,6 @@ class IP2LiveQuestManager {
         ctx.lineTo(meterX + meterW * 0.58, meterY);
         ctx.stroke();
         ctx.setLineDash([]);
-
-        const progress = this._progressLabel(quest, objective);
-        ctx.font = Math.round(8.5 * sX) + 'px monospace';
-        ctx.fillStyle = '#00F0FF';
-        ctx.textAlign = 'right';
-        ctx.fillText(
-            (dist === null ? 'DIST: --' : 'DIST: ' + dist.toFixed(1) + ' tiles') + '  ' + progress,
-            qX + qW - 18 * sX,
-            qY + 120 * sY
-        );
 
         this._drawPanelCorners(ctx, qX, qY, qW, qH, sX);
         ctx.restore();
@@ -661,6 +619,8 @@ class IP2LiveQuestManager {
         Scene.Map.prototype._ip2liveQuestManagerInjected = true;
 
         const manager = this;
+        const dialogueManager = IP2Live.DialogueManager;
+        if (dialogueManager) dialogueManager._hudFocusTopLayerAvailable = true;
         const originalUpdate = Scene.Map.prototype.update;
         Scene.Map.prototype.update = function () {
             originalUpdate.call(this);
@@ -673,6 +633,9 @@ class IP2LiveQuestManager {
             originalDrawHUD.call(this);
             manager.drawGuide2D(Common.Platform.ctx);
             manager.drawHUD(Common.Platform.ctx);
+            if (dialogueManager && typeof dialogueManager.drawHudFocusOverlay === 'function') {
+                dialogueManager.drawHudFocusOverlay(Common.Platform.ctx);
+            }
         };
     }
 
@@ -884,22 +847,228 @@ class IP2LiveQuestManager {
         }
     }
 
-    _progressLabel(quest, objective) {
-        if (!quest || !objective) return '';
-        let index = 0;
-        for (let i = 0; i < quest.objectives.length; i++) {
-            if (quest.objectives[i].id === objective.id) index = i + 1;
+    _measureTrackedText(ctx, value, tracking) {
+        const text = String(value || '');
+        const gap = Math.max(0, Number(tracking) || 0);
+        let width = 0;
+        for (let i = 0; i < text.length; i++) width += ctx.measureText(text[i]).width;
+        return width + Math.max(0, text.length - 1) * gap;
+    }
+
+    _drawTrackedText(ctx, value, x, y, tracking) {
+        const text = String(value || '');
+        if (!text) return 0;
+        const gap = Math.max(0, Number(tracking) || 0);
+        const width = this._measureTrackedText(ctx, text, gap);
+        const oldAlign = ctx.textAlign || 'left';
+        let cursorX = x;
+        if (oldAlign === 'center') cursorX -= width / 2;
+        else if (oldAlign === 'right' || oldAlign === 'end') cursorX -= width;
+        ctx.textAlign = 'left';
+        for (let i = 0; i < text.length; i++) {
+            const glyph = text[i];
+            ctx.fillText(glyph, cursorX, y);
+            cursorX += ctx.measureText(glyph).width + gap;
         }
-        return 'OBJ ' + String(index).padStart(2, '0') + '/' + String(quest.objectives.length).padStart(2, '0');
+        ctx.textAlign = oldAlign;
+        return width;
+    }
+
+    _traceQuestPanel(ctx, x, y, w, h, sX, sY) {
+        const topCut = 27 * sX;
+        const sideCut = 10 * sX;
+        ctx.beginPath();
+        ctx.moveTo(x + topCut, y);
+        ctx.lineTo(x + w - sideCut, y);
+        ctx.lineTo(x + w, y + 10 * sY);
+        ctx.lineTo(x + w - 9 * sX, y + h);
+        ctx.lineTo(x + 7 * sX, y + h);
+        ctx.lineTo(x, y + h - 8 * sY);
+        ctx.lineTo(x, y + 18 * sY);
+        ctx.closePath();
+    }
+
+    _drawQuestPanelShell(ctx, options) {
+        const o = options;
+
+        // Offset extrusion, then a layered graphite face.
+        this._traceQuestPanel(ctx, o.x + 6 * o.sX, o.y + 7 * o.sY, o.w, o.h, o.sX, o.sY);
+        ctx.fillStyle = 'rgba(0,2,7,0.9)';
+        ctx.fill();
+
+        this._traceQuestPanel(ctx, o.x, o.y, o.w, o.h, o.sX, o.sY);
+        const panelGrad = ctx.createLinearGradient(o.x, o.y, o.x + o.w, o.y + o.h);
+        panelGrad.addColorStop(0, 'rgba(8,22,35,0.98)');
+        panelGrad.addColorStop(0.46, 'rgba(3,10,20,0.985)');
+        panelGrad.addColorStop(1, 'rgba(8,7,13,0.99)');
+        ctx.fillStyle = panelGrad;
+        ctx.fill();
+
+        ctx.save();
+        this._traceQuestPanel(ctx, o.x, o.y, o.w, o.h, o.sX, o.sY);
+        ctx.clip();
+
+        // A restrained scan texture keeps depth without competing with copy.
+        for (let sy = o.y + 5 * o.sY; sy < o.y + o.h; sy += 7 * o.sY) {
+            ctx.fillStyle = 'rgba(232,250,255,0.018)';
+            ctx.fillRect(o.x, sy, o.w, Math.max(0.7, 0.65 * o.sY));
+        }
+        ctx.fillStyle = 'rgba(0,240,255,0.032)';
+        ctx.fillRect(o.x, o.y + ((o.tick * 1.35) % o.h), o.w, 5 * o.sY);
+        ctx.restore();
+
+        this._traceQuestPanel(ctx, o.x, o.y, o.w, o.h, o.sX, o.sY);
+        ctx.shadowColor = o.accent;
+        ctx.shadowBlur = (4 + o.pulse * 2) * Math.min(o.sX, o.sY);
+        ctx.strokeStyle = o.accent;
+        ctx.lineWidth = Math.max(1.2, 1.5 * o.sX);
+        ctx.stroke();
+        ctx.shadowBlur = 0;
+
+        ctx.beginPath();
+        ctx.moveTo(o.x + 29 * o.sX, o.y + 3 * o.sY);
+        ctx.lineTo(o.x + o.w - 18 * o.sX, o.y + 3 * o.sY);
+        ctx.strokeStyle = 'rgba(224,255,255,0.28)';
+        ctx.lineWidth = Math.max(0.7, o.sY);
+        ctx.stroke();
+    }
+
+    _drawQuestHeaderPlates(ctx, options) {
+        const o = options;
+        const leftW = 190 * o.sX;
+        const rightX = o.x + 190 * o.sX;
+        const rightW = 100 * o.sX;
+        const plateH = 42 * o.sY;
+        const rightCut = 16 * o.sX;
+
+        // Dialogue-style offset extrusions keep the plates raised from the panel.
+        ctx.fillStyle = 'rgba(0,0,0,0.74)';
+        ctx.fillRect(o.x + 6 * o.sX, o.y + 6 * o.sY, leftW, plateH + 2 * o.sY);
+
+        ctx.beginPath();
+        ctx.moveTo(rightX + 6 * o.sX, o.y + 7 * o.sY);
+        ctx.lineTo(rightX + rightW + 6 * o.sX, o.y + 7 * o.sY);
+        ctx.lineTo(rightX + rightW - rightCut + 6 * o.sX, o.y + plateH + 7 * o.sY);
+        ctx.lineTo(rightX + 6 * o.sX, o.y + plateH + 7 * o.sY);
+        ctx.closePath();
+        ctx.fillStyle = 'rgba(0,0,0,0.8)';
+        ctx.fill();
+
+        // Straight red plate with the same gradient, hatch, and scan texture as dialogue.
+        const leftGrad = ctx.createLinearGradient(o.x, o.y, o.x + leftW, o.y + plateH);
+        leftGrad.addColorStop(0, '#FF164D');
+        leftGrad.addColorStop(0.42, '#C90042');
+        leftGrad.addColorStop(1, '#47001F');
+        ctx.fillStyle = leftGrad;
+        ctx.shadowColor = 'rgba(255,0,60,0.48)';
+        ctx.shadowBlur = 8 * o.sX;
+        ctx.fillRect(o.x, o.y, leftW, plateH);
+        ctx.shadowBlur = 0;
+
+        ctx.save();
+        ctx.beginPath();
+        ctx.rect(o.x, o.y, leftW, plateH);
+        ctx.clip();
+        for (let hx = o.x - plateH; hx < o.x + leftW + plateH; hx += 14 * o.sX) {
+            ctx.strokeStyle = 'rgba(255,255,255,0.07)';
+            ctx.lineWidth = Math.max(1, 2 * o.sX);
+            ctx.beginPath();
+            ctx.moveTo(hx, o.y + plateH);
+            ctx.lineTo(hx + 38 * o.sX, o.y);
+            ctx.stroke();
+        }
+        for (let hy = o.y + 5 * o.sY; hy < o.y + plateH; hy += 5 * o.sY) {
+            ctx.fillStyle = 'rgba(8,0,18,0.08)';
+            ctx.fillRect(o.x, hy, leftW, Math.max(1, o.sY));
+        }
+        ctx.restore();
+
+        ctx.strokeStyle = 'rgba(255,255,255,0.46)';
+        ctx.lineWidth = Math.max(1, 1.1 * o.sX);
+        ctx.beginPath();
+        ctx.moveTo(o.x + 2 * o.sX, o.y + 2 * o.sY);
+        ctx.lineTo(o.x + leftW - 3 * o.sX, o.y + 2 * o.sY);
+        ctx.stroke();
+        ctx.strokeStyle = 'rgba(22,0,14,0.72)';
+        ctx.beginPath();
+        ctx.moveTo(o.x + 2 * o.sX, o.y + plateH - 2 * o.sY);
+        ctx.lineTo(o.x + leftW - 2 * o.sX, o.y + plateH - 2 * o.sY);
+        ctx.stroke();
+
+        ctx.beginPath();
+        ctx.moveTo(rightX, o.y);
+        ctx.lineTo(rightX + rightW, o.y);
+        ctx.lineTo(rightX + rightW - rightCut, o.y + plateH);
+        ctx.lineTo(rightX, o.y + plateH);
+        ctx.closePath();
+        const rightGrad = ctx.createLinearGradient(rightX, o.y, rightX, o.y + plateH);
+        rightGrad.addColorStop(0, '#FFF21A');
+        rightGrad.addColorStop(0.58, '#FFD900');
+        rightGrad.addColorStop(1, '#D89300');
+        ctx.fillStyle = rightGrad;
+        ctx.shadowColor = 'rgba(255,230,0,0.38)';
+        ctx.shadowBlur = 7 * o.sX;
+        ctx.fill();
+        ctx.shadowBlur = 0;
+
+        ctx.save();
+        ctx.clip();
+        for (let hx = rightX + rightW * 0.62; hx < rightX + rightW + 26 * o.sX; hx += 12 * o.sX) {
+            ctx.strokeStyle = 'rgba(25,13,0,0.14)';
+            ctx.lineWidth = 5 * o.sX;
+            ctx.beginPath();
+            ctx.moveTo(hx, o.y + plateH);
+            ctx.lineTo(hx + 30 * o.sX, o.y);
+            ctx.stroke();
+        }
+        ctx.restore();
+
+        ctx.strokeStyle = 'rgba(255,255,255,0.72)';
+        ctx.lineWidth = Math.max(1, 1.1 * o.sX);
+        ctx.beginPath();
+        ctx.moveTo(rightX + 2 * o.sX, o.y + 2 * o.sY);
+        ctx.lineTo(rightX + rightW - 3 * o.sX, o.y + 2 * o.sY);
+        ctx.stroke();
+        ctx.strokeStyle = 'rgba(82,42,0,0.72)';
+        ctx.beginPath();
+        ctx.moveTo(rightX + 2 * o.sX, o.y + plateH - 2 * o.sY);
+        ctx.lineTo(rightX + rightW - rightCut - 2 * o.sX, o.y + plateH - 2 * o.sY);
+        ctx.stroke();
+
+        // Dialogue header's three transmission strokes become the Quest Area mark.
+        const slashX = o.x + 18 * o.sX;
+        ctx.strokeStyle = '#FFFFFF';
+        ctx.lineWidth = 3 * o.sX;
+        for (let si = 0; si < 3; si++) {
+            ctx.beginPath();
+            ctx.moveTo(slashX + si * 8 * o.sX, o.y + 31 * o.sY);
+            ctx.lineTo(slashX + 8 * o.sX + si * 8 * o.sX, o.y + 18 * o.sY);
+            ctx.stroke();
+        }
     }
 
     _drawObjectiveRow(ctx, options) {
         const o = options;
-        ctx.fillStyle = 'rgba(255,255,255,0.055)';
-        ctx.fillRect(o.x, o.y, o.w, o.h);
-        ctx.strokeStyle = 'rgba(0,240,255,0.22)';
+        ctx.beginPath();
+        ctx.moveTo(o.x + 7 * o.sX, o.y);
+        ctx.lineTo(o.x + o.w - 5 * o.sX, o.y);
+        ctx.lineTo(o.x + o.w, o.y + 5 * o.sY);
+        ctx.lineTo(o.x + o.w - 7 * o.sX, o.y + o.h);
+        ctx.lineTo(o.x, o.y + o.h);
+        ctx.lineTo(o.x, o.y + 7 * o.sY);
+        ctx.closePath();
+        const rowGrad = ctx.createLinearGradient(o.x, o.y, o.x + o.w, o.y + o.h);
+        rowGrad.addColorStop(0, 'rgba(14,35,49,0.78)');
+        rowGrad.addColorStop(0.55, 'rgba(8,15,27,0.86)');
+        rowGrad.addColorStop(1, 'rgba(20,7,17,0.74)');
+        ctx.fillStyle = rowGrad;
+        ctx.fill();
+        ctx.strokeStyle = 'rgba(0,240,255,0.34)';
         ctx.lineWidth = Math.max(1, o.sX);
-        ctx.strokeRect(o.x, o.y, o.w, o.h);
+        ctx.stroke();
+
+        ctx.fillStyle = '#00F0FF';
+        ctx.fillRect(o.x + 5 * o.sX, o.y + 6 * o.sY, 2 * o.sX, o.h - 12 * o.sY);
 
         const dotPulse = 0.7 + 0.3 * Math.sin(o.tick * 0.2);
         ctx.beginPath();
@@ -913,11 +1082,23 @@ class IP2LiveQuestManager {
         ctx.font = 'bold ' + Math.round(15 * o.sX) + 'px ' + o.font;
         ctx.fillStyle = '#DAEEFF';
         ctx.textAlign = 'left';
-        ctx.fillText(o.objective.title || 'OBJECTIVE', o.x + 36 * o.sX, o.y + 20 * o.sY);
+        this._drawTrackedText(
+            ctx,
+            o.objective.title || 'OBJECTIVE',
+            o.x + 36 * o.sX,
+            o.y + 20 * o.sY,
+            0.55 * o.sX
+        );
 
-        ctx.font = Math.round(8.5 * o.sX) + 'px monospace';
+        ctx.font = Math.round(8.5 * o.sX) + 'px ' + o.font;
         ctx.fillStyle = 'rgba(218,238,255,0.68)';
-        ctx.fillText(o.objective.detail || this._objectiveTargetText(o.objective), o.x + 36 * o.sX, o.y + 36 * o.sY);
+        this._drawTrackedText(
+            ctx,
+            o.objective.detail || this._objectiveTargetText(o.objective),
+            o.x + 36 * o.sX,
+            o.y + 36 * o.sY,
+            0.4 * o.sX
+        );
     }
 
     _drawFinishedPanel(ctx) {
@@ -927,7 +1108,8 @@ class IP2LiveQuestManager {
         const SH = Common.ScreenResolution.SCREEN_Y;
         const sX = cW / SW;
         const sY = cH / SH;
-        const font = IP2Live.Assets && IP2Live.Assets.nebulaLoaded ? 'Nebula-Regular' : 'monospace';
+        const font = IP2Live.Assets && IP2Live.Assets.oxaniumMediumLoaded ? 'Oxanium-Medium' : 'sans-serif';
+        const headerFont = IP2Live.Assets && IP2Live.Assets.nebulaLoaded ? 'Nebula-Regular' : font;
         const tick = this.animTick || 0;
         const pulse = 0.5 + 0.5 * Math.sin(tick * 0.08);
         const panelRect = this._questPanelRect(ctx);
@@ -935,70 +1117,55 @@ class IP2LiveQuestManager {
         const qY = panelRect.y;
         const qW = panelRect.w;
         const qH = panelRect.h;
-        const slant = 28 * sX;
 
         ctx.save();
         ctx.shadowBlur = 0;
+        this._drawQuestPanelShell(ctx, {
+            x: qX,
+            y: qY,
+            w: qW,
+            h: qH,
+            sX,
+            sY,
+            tick,
+            pulse,
+            accent: '#00F0FF',
+        });
+        this._drawQuestHeaderPlates(ctx, {
+            x: qX,
+            y: qY,
+            w: qW,
+            sX,
+            sY,
+            tick,
+            leftColor: '#FF003C',
+            rightColor: '#FFE600',
+        });
 
-        ctx.beginPath();
-        ctx.moveTo(qX + slant, qY);
-        ctx.lineTo(qX + qW, qY);
-        ctx.lineTo(qX + qW - 12 * sX, qY + qH);
-        ctx.lineTo(qX, qY + qH);
-        ctx.lineTo(qX, qY + 18 * sY);
-        ctx.closePath();
-        ctx.fillStyle = 'rgba(3, 7, 20, 0.94)';
-        ctx.fill();
-
-        ctx.save();
-        ctx.clip();
-        for (let sy = qY; sy < qY + qH; sy += 4 * sY) {
-            ctx.fillStyle = 'rgba(255,255,255,0.035)';
-            ctx.fillRect(qX, sy, qW, Math.max(1, sY));
-        }
-        ctx.fillStyle = 'rgba(0,240,255,0.055)';
-        ctx.fillRect(qX, qY + ((tick * 1.35) % qH), qW, 7 * sY);
-        ctx.restore();
-
-        ctx.shadowColor = '#00F0FF';
-        ctx.shadowBlur = 10 + pulse * 8;
-        ctx.strokeStyle = 'rgba(0,240,255,' + (0.62 + pulse * 0.24) + ')';
-        ctx.lineWidth = 2 * sX;
-        ctx.stroke();
-        ctx.shadowBlur = 0;
-
-        ctx.beginPath();
-        ctx.moveTo(qX, qY + 8 * sY);
-        ctx.lineTo(qX + 168 * sX, qY);
-        ctx.lineTo(qX + 145 * sX, qY + 37 * sY);
-        ctx.lineTo(qX, qY + 45 * sY);
-        ctx.closePath();
-        ctx.fillStyle = '#00F0FF';
-        ctx.fill();
-
-        ctx.font = 'bold ' + Math.round(16 * sX) + 'px ' + font;
-        ctx.fillStyle = '#07101C';
+        ctx.font = 'bold ' + Math.round(14 * sX) + 'px ' + headerFont;
+        ctx.fillStyle = '#FFFFFF';
         ctx.textAlign = 'left';
-        ctx.fillText('QUEST AREA', qX + 14 * sX, qY + 27 * sY);
+        this._drawTrackedText(ctx, 'QUEST AREA', qX + 57 * sX, qY + 28 * sY, 0.7 * sX);
 
-        const rowX = qX + 18 * sX;
-        const rowY = qY + 56 * sY;
-        const rowW = qW - 36 * sX;
-        const rowH = 44 * sY;
-        ctx.fillStyle = 'rgba(255,255,255,0.055)';
-        ctx.fillRect(rowX, rowY, rowW, rowH);
-        ctx.strokeStyle = 'rgba(0,240,255,0.22)';
-        ctx.lineWidth = Math.max(1, sX);
-        ctx.strokeRect(rowX, rowY, rowW, rowH);
+        ctx.font = 'bold ' + Math.round(8.2 * sX) + 'px ' + font;
+        ctx.fillStyle = '#111111';
+        this._drawTrackedText(ctx, 'COMPLETE', qX + 204 * sX, qY + 25 * sY, 0.45 * sX);
 
-        ctx.font = 'bold ' + Math.round(15 * sX) + 'px ' + font;
-        ctx.fillStyle = '#DAEEFF';
-        ctx.textAlign = 'left';
-        ctx.fillText('ALL QUESTS FINISHED', rowX + 18 * sX, rowY + 21 * sY);
-
-        ctx.font = Math.round(8.5 * sX) + 'px monospace';
-        ctx.fillStyle = 'rgba(218,238,255,0.68)';
-        ctx.fillText('NO ACTIVE OBJECTIVES IN THIS WORLD', rowX + 18 * sX, rowY + 37 * sY);
+        this._drawObjectiveRow(ctx, {
+            x: qX + 18 * sX,
+            y: qY + 56 * sY,
+            w: qW - 36 * sX,
+            h: 44 * sY,
+            sX,
+            sY,
+            font,
+            objective: {
+                title: 'ALL QUESTS FINISHED',
+                detail: 'NO ACTIVE OBJECTIVES IN THIS WORLD',
+            },
+            tick,
+            red: '0,240,255',
+        });
 
         this._drawPanelCorners(ctx, qX, qY, qW, qH, sX);
         ctx.restore();

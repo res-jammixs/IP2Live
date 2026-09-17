@@ -176,7 +176,64 @@
           "Facility lights and equipment are recovering in this sector.",
           "Continue to the next lever until all four are stabilized.",
           "Once all four are fixed, the next-level door will open."
-        ]
+        ],
+        [
+          "Your HUD is now fully active.",
+          "",
+          "Your {{highlight:Health Bar}} shows your remaining life force. Keep it above zero to stay in the run."
+        ],
+        {
+          "focusOnly": true,
+          "focus": "health",
+          "label": "HEALTH BAR",
+          "durationFrames": 105
+        },
+        [
+          "Your streak changes how many points the Health Bar gains or loses.",
+          "",
+          "{{highlight:Win streak: +10, +11, and so on up to +15 points.}}",
+          "{{highlight:Non-tutorial loss streak: -10, -12, and so on up to -16 points.}}",
+          "A win or loss resets the opposite streak."
+        ],
+        {
+          "focusOnly": true,
+          "focus": "streak",
+          "label": "STREAK AND LIFE FORCE",
+          "durationFrames": 105
+        },
+        [
+          "The {{highlight:Quest Area}} displays your active quest and target tile.",
+          "",
+          "Check it whenever you need to confirm the next objective."
+        ],
+        {
+          "focusOnly": true,
+          "focus": "quest",
+          "label": "QUEST AREA",
+          "durationFrames": 105
+        },
+        [
+          "The {{highlight:quest minimap}} shows your position and nearby quest markers.",
+          "",
+          "Use it to identify the direction of the next repair point."
+        ],
+        {
+          "focusOnly": true,
+          "focus": "minimap",
+          "label": "QUEST MINIMAP",
+          "durationFrames": 105
+        },
+        [
+          "The {{highlight:Distance tab}} tells you how far you are from the active target.",
+          "",
+          "Use it together with the minimap to reach the next lever."
+        ],
+        {
+          "focusOnly": true,
+          "focus": "distance",
+          "label": "DISTANCE TAB",
+          "durationFrames": 105
+        }
       ]
     },
     {
