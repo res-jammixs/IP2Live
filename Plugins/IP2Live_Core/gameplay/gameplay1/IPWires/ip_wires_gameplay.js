@@ -2148,7 +2148,7 @@
                 this._playMusicZone('GAMEPLAY_1');
                 const screen = createScreen();
                 Manager.Stack.replace(screen);
-                if (spec.tutorial && IP2Live.IPWiresTutorial && typeof IP2Live.IPWiresTutorial.activateGuidedSession === 'function') {
+                if (spec.tutorial && !opts._ip2liveResumeGameplay && IP2Live.IPWiresTutorial && typeof IP2Live.IPWiresTutorial.activateGuidedSession === 'function') {
                     setTimeout(() => {
                         IP2Live.IPWiresTutorial.activateGuidedSession(screen);
                     }, 0);

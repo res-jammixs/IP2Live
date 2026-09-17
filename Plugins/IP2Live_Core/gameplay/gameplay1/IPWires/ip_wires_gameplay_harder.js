@@ -502,7 +502,7 @@
                 this._playMusicZone('GAMEPLAY_1');
                 const screen = createScreen();
                 Manager.Stack.replace(screen);
-                if (spec.tutorial && IP2Live.IPWiresHarderTutorial && typeof IP2Live.IPWiresHarderTutorial.showIntro === 'function') {
+                if (spec.tutorial && !opts._ip2liveResumeGameplay && IP2Live.IPWiresHarderTutorial && typeof IP2Live.IPWiresHarderTutorial.showIntro === 'function') {
                     setTimeout(() => {
                         IP2Live.IPWiresHarderTutorial.showIntro(screen);
                     }, 0);
