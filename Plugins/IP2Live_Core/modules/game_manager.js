@@ -8,7 +8,7 @@
  */
 
 const IP2LiveGameManager = {
-    VERSION: 'game-manager-20260918-13',
+    VERSION: 'game-manager-20260918-14',
 
     STATE: {
         BOOT: 'BOOT',
@@ -1308,6 +1308,14 @@ const IP2LiveGameManager = {
             this._activeGameplayNode = null;
             return false;
         }
+        const resumeSession = IP2Live.GameplayPause && typeof IP2Live.GameplayPause.findSession === 'function'
+            ? IP2Live.GameplayPause.findSession(node.id, payload)
+            : null;
+        const gameplayLaunchOpts = Object.assign({}, launchOpts, {
+            _ip2liveResumeGameplay: !!resumeSession,
+            _ip2liveResumeCapturedAt: resumeSession ? Number(resumeSession.capturedAt || 0) : 0,
+        });
+        payload.resumeGameplay = !!resumeSession;
 
         const openGameplay = () => {
             this._ensureQuestMinimap();
@@ -1317,7 +1325,7 @@ const IP2LiveGameManager = {
                 this._openReportAttempt(node.id, payload);
             }
             if (node.id === 'ip_class_wires' && IP2Live.GameplayManager && typeof IP2Live.GameplayManager.launchWireGameplay === 'function') {
-                return IP2Live.GameplayManager.launchWireGameplay(Object.assign({}, launchOpts, {
+                return IP2Live.GameplayManager.launchWireGameplay(Object.assign({}, gameplayLaunchOpts, {
                     mapId: payload.mapId,
                     questId: payload.questId,
                     objectiveId: payload.objectiveId,
@@ -1326,82 +1334,82 @@ const IP2LiveGameManager = {
                 }));
             }
             if (node.id === 'ip_patch_panel_classes' && IP2Live.PatchPanelGameplayManager && typeof IP2Live.PatchPanelGameplayManager.launchPatchPanelGameplay === 'function') {
-                return IP2Live.PatchPanelGameplayManager.launchPatchPanelGameplay(Object.assign({}, launchOpts, {
+                return IP2Live.PatchPanelGameplayManager.launchPatchPanelGameplay(Object.assign({}, gameplayLaunchOpts, {
                     mapId: payload.mapId,
                     questId: payload.questId,
                     objectiveId: payload.objectiveId,
                     _fromGameManager: true,
-                    showIntro: opts.showIntro,
+                    showIntro: resumeSession ? false : opts.showIntro,
                     mode: 'replace',
                 }));
             }
             if (node.id === 'ip_cidr_binary_panel' && IP2Live.CIDRPanelGameplayManager && typeof IP2Live.CIDRPanelGameplayManager.launchCIDRGameplay === 'function') {
-                return IP2Live.CIDRPanelGameplayManager.launchCIDRGameplay(Object.assign({}, launchOpts, {
+                return IP2Live.CIDRPanelGameplayManager.launchCIDRGameplay(Object.assign({}, gameplayLaunchOpts, {
                     _fromGameManager: true,
-                    showIntro: opts.showIntro,
+                    showIntro: resumeSession ? false : opts.showIntro,
                     mode: 'replace',
                 }));
             }
             if (node.id === 'ip_cidr_binary_panel_harder' && IP2Live.CIDRPanelHarderGameplayManager && typeof IP2Live.CIDRPanelHarderGameplayManager.launchHarderCIDRGameplay === 'function') {
-                return IP2Live.CIDRPanelHarderGameplayManager.launchHarderCIDRGameplay(Object.assign({}, launchOpts, {
+                return IP2Live.CIDRPanelHarderGameplayManager.launchHarderCIDRGameplay(Object.assign({}, gameplayLaunchOpts, {
                     _fromGameManager: true,
-                    showIntro: opts.showIntro,
+                    showIntro: resumeSession ? false : opts.showIntro,
                     mode: 'replace',
                 }));
             }
             if (node.id === 'ip_subnet_simulator' && IP2Live.SubnetSimulatorGameplayManager && typeof IP2Live.SubnetSimulatorGameplayManager.launchSubnetSimulatorGameplay === 'function') {
-                return IP2Live.SubnetSimulatorGameplayManager.launchSubnetSimulatorGameplay(Object.assign({}, launchOpts, {
+                return IP2Live.SubnetSimulatorGameplayManager.launchSubnetSimulatorGameplay(Object.assign({}, gameplayLaunchOpts, {
                     _fromGameManager: true,
-                    showIntro: opts.showIntro,
+                    showIntro: resumeSession ? false : opts.showIntro,
                     mode: 'replace',
                 }));
             }
             if (node.id === 'ip_host_power_reactor' && IP2Live.HostPowerReactorGameplayManager && typeof IP2Live.HostPowerReactorGameplayManager.launchHostPowerReactorGameplay === 'function') {
-                return IP2Live.HostPowerReactorGameplayManager.launchHostPowerReactorGameplay(Object.assign({}, launchOpts, {
+                return IP2Live.HostPowerReactorGameplayManager.launchHostPowerReactorGameplay(Object.assign({}, gameplayLaunchOpts, {
                     _fromGameManager: true,
-                    showIntro: opts.showIntro,
-                    mode: launchOpts.mode || 'push',
+                    showIntro: resumeSession ? false : opts.showIntro,
+                    mode: gameplayLaunchOpts.mode || 'push',
                 }));
             }
             if (node.id === 'ip_cidr_quarantine' && IP2Live.CIDRQuarantineGameplayManager && typeof IP2Live.CIDRQuarantineGameplayManager.launchCIDRQuarantineGameplay === 'function') {
-                return IP2Live.CIDRQuarantineGameplayManager.launchCIDRQuarantineGameplay(Object.assign({}, launchOpts, {
+                return IP2Live.CIDRQuarantineGameplayManager.launchCIDRQuarantineGameplay(Object.assign({}, gameplayLaunchOpts, {
                     _fromGameManager: true,
-                    showIntro: opts.showIntro,
-                    mode: launchOpts.mode || 'push',
+                    showIntro: resumeSession ? false : opts.showIntro,
+                    mode: gameplayLaunchOpts.mode || 'push',
                 }));
             }
             if (node.id === 'ip_cidr_quarantine_matrix' && IP2Live.CIDRQuarantineMatrixGameplayManager && typeof IP2Live.CIDRQuarantineMatrixGameplayManager.launchCIDRQuarantineMatrixGameplay === 'function') {
-                return IP2Live.CIDRQuarantineMatrixGameplayManager.launchCIDRQuarantineMatrixGameplay(Object.assign({}, launchOpts, {
+                return IP2Live.CIDRQuarantineMatrixGameplayManager.launchCIDRQuarantineMatrixGameplay(Object.assign({}, gameplayLaunchOpts, {
                     _fromGameManager: true,
-                    showIntro: opts.showIntro,
-                    mode: launchOpts.mode || 'push',
+                    showIntro: resumeSession ? false : opts.showIntro,
+                    mode: gameplayLaunchOpts.mode || 'push',
                 }));
             }
             if (node.id === 'ip_class_wires_harder' && IP2Live.HarderWiresGameplayManager && typeof IP2Live.HarderWiresGameplayManager.launchHarderWireGameplay === 'function') {
-                return IP2Live.HarderWiresGameplayManager.launchHarderWireGameplay(Object.assign({}, launchOpts, {
+                return IP2Live.HarderWiresGameplayManager.launchHarderWireGameplay(Object.assign({}, gameplayLaunchOpts, {
                     _fromGameManager: true,
                     _reservedAttempt: (questId || spec.id) + ':' + (objectiveId || spec.objectiveId),
-                    wireCount: launchOpts.wireCount !== undefined ? launchOpts.wireCount : spec.wireCount,
+                    wireCount: gameplayLaunchOpts.wireCount !== undefined ? gameplayLaunchOpts.wireCount : spec.wireCount,
                 }));
             }
             if (node.id === 'ip_network_repair' && IP2Live.NetworkRepairGameplayManager && typeof IP2Live.NetworkRepairGameplayManager.launchNetworkRepairGameplay === 'function') {
-                return IP2Live.NetworkRepairGameplayManager.launchNetworkRepairGameplay(Object.assign({}, launchOpts, {
+                return IP2Live.NetworkRepairGameplayManager.launchNetworkRepairGameplay(Object.assign({}, gameplayLaunchOpts, {
                     _fromGameManager: true,
-                    showIntro: opts.showIntro,
+                    showIntro: resumeSession ? false : opts.showIntro,
                     mode: 'replace',
                 }));
             }
             if (node.id === 'ip_vlsm_allocator' && IP2Live.VLSMAllocatorGameplayManager && typeof IP2Live.VLSMAllocatorGameplayManager.launchVLSMAllocatorGameplay === 'function') {
-                return IP2Live.VLSMAllocatorGameplayManager.launchVLSMAllocatorGameplay(Object.assign({}, launchOpts, {
+                return IP2Live.VLSMAllocatorGameplayManager.launchVLSMAllocatorGameplay(Object.assign({}, gameplayLaunchOpts, {
                     _fromGameManager: true,
-                    showIntro: opts.showIntro,
+                    showIntro: resumeSession ? false : opts.showIntro,
                     mode: 'replace',
                 }));
             }
             return false;
         };
 
-        if (opts.skipBeforeDialogues) {
+        if (opts.skipBeforeDialogues || resumeSession) {
             this._setState(this.STATE.DIALOGUE_BEFORE, payload);
             openGameplay();
             return true;
@@ -1509,6 +1517,9 @@ const IP2LiveGameManager = {
             gameplayId,
             trigger: 'gameplay.completed',
         });
+        if (IP2Live.GameplayPause && typeof IP2Live.GameplayPause.clearSession === 'function') {
+            IP2Live.GameplayPause.clearSession(gameplayId, data);
+        }
         if (data.developerTest || (data.spec && data.spec.developerTest)) {
             this._activeGameplayNode = null;
             this._setState(this.STATE.DIALOGUE_AFTER, data);
@@ -1539,6 +1550,9 @@ const IP2LiveGameManager = {
             gameplayId,
             trigger: 'gameplay.failed',
         });
+        if (IP2Live.GameplayPause && typeof IP2Live.GameplayPause.clearSession === 'function') {
+            IP2Live.GameplayPause.clearSession(gameplayId, data);
+        }
         if (data.developerTest || (data.spec && data.spec.developerTest)) {
             this._activeGameplayNode = null;
             this._setState(this.STATE.DIALOGUE_AFTER, data);
@@ -1617,6 +1631,9 @@ const IP2LiveGameManager = {
             gameplayId,
             trigger: 'gameplay.cancelled',
         });
+        if (IP2Live.GameplayPause && typeof IP2Live.GameplayPause.releaseActiveScreen === 'function') {
+            IP2Live.GameplayPause.releaseActiveScreen(gameplayId, data);
+        }
         if (data.developerTest || (data.spec && data.spec.developerTest)) {
             this._activeGameplayNode = null;
             this._setState(this.STATE.NEXT_NODE, data);
@@ -1634,6 +1651,9 @@ const IP2LiveGameManager = {
 
     handleQuestObjectiveCompleted(result) {
         this._ensureQuestMinimap();
+        if (IP2Live.GameplayPause && typeof IP2Live.GameplayPause.clearSessionsForObjective === 'function') {
+            IP2Live.GameplayPause.clearSessionsForObjective(result || {});
+        }
         this.emit(this.EVENT.QUEST_OBJECTIVE_COMPLETED, result || {});
         this._queueCheckpoint('quest_objective_completed');
         return true;
@@ -2730,6 +2750,9 @@ const IP2LiveGameManager = {
         }
         if (!hasPreferredSlot && this.getActiveSaveSlot(game) !== slot) {
             return { saved: false, reason: 'save-slot-changed-before-checkpoint', slot: slot };
+        }
+        if (IP2Live.GameplayPause && typeof IP2Live.GameplayPause.captureActiveSession === 'function') {
+            IP2Live.GameplayPause.captureActiveSession((options && options.checkpointReason) || 'save_game');
         }
         const requestedSaveName = String(saveName || '').trim();
         const snapshot = {

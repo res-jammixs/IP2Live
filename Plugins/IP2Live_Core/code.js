@@ -948,7 +948,7 @@ IP2Live.GameplayManagerReady = (async function () {
         },
         {
             baseDir: root + 'Plugins/IP2Live_Core/gameplay/gameplay1/IPWires/',
-            version: '20260918_ip_wires_07_',
+            version: '20260918_ip_wires_08_',
             files: [
                 'ip_wires_core.js',
                 'ip_wires_tutorial.js',
@@ -1347,7 +1347,7 @@ IP2Live.GameManagerReady = (async function () {
     const root = Common.Platform.ROOT_DIRECTORY;
     const src  = root + 'Plugins/IP2Live_Core/modules/game_manager.js';
     try {
-        const versionedSrc = src + '?v=20260918_game_manager_13_' + Date.now();
+        const versionedSrc = src + '?v=20260918_game_manager_14_' + Date.now();
         let resp = await fetch(versionedSrc, { cache: 'no-store' });
         if (!resp.ok) {
             console.warn('[IP2Live] Versioned game manager fetch failed, retrying plain path:', versionedSrc);
@@ -1434,6 +1434,7 @@ IP2Live.ScreenModulesReady = (async function () {
         'export-report.js',
         'name-input.js',
         'settings.js',
+        'gameplay-pause.js',
         'pause-menu.js',
         'main-menu.js',
     ];
@@ -1444,7 +1445,7 @@ IP2Live.ScreenModulesReady = (async function () {
     for (const file of screens) {
         const src = baseDir + file;
         try {
-            const versionedSrc = src + '?v=20260918_system_ui_04_' + Date.now();
+            const versionedSrc = src + '?v=20260918_system_ui_05_' + Date.now();
             let resp = await fetch(versionedSrc, { cache: 'no-store' });
             if (!resp.ok) {
                 console.warn('[IP2Live] Versioned screen fetch failed, retrying plain path:', versionedSrc);
