@@ -7,6 +7,10 @@ const source = fs.readFileSync(
     path.join(__dirname, '..', 'Plugins', 'IP2Live_Core', 'modules', 'dialogue_manager.js'),
     'utf8'
 );
+const rangeSource = fs.readFileSync(
+    path.join(__dirname, '..', 'Plugins', 'IP2Live_Core', 'gameplay', 'common', 'ip_class_ranges.js'),
+    'utf8'
+);
 
 function MapScene() {}
 MapScene.prototype.update = function () {};
@@ -24,6 +28,7 @@ const context = {
     clearTimeout,
 };
 
+vm.runInNewContext(rangeSource, context);
 vm.runInNewContext(source, context);
 const dialogueManager = context.window.IP2LiveDialogueManager;
 
@@ -74,6 +79,11 @@ assert.equal(
 assert.equal(
     dialogueManager._visibleTextForTokens(dialogueManager._parseRichText('Keep {{highlight:unfinished text visible.')),
     'Keep {{highlight:unfinished text visible.'
+);
+assert.equal(
+    dialogueManager._visibleTextForTokens(dialogueManager._parseRichText('Class A: {{highlight:[IP_CLASS_A_FULL]}}')),
+    'Class A: 0.0.0.0 to 127.255.255.255',
+    'dialogue range placeholders must resolve through the centralized registry'
 );
 
 const longHighlightTokens = dialogueManager._parseRichText(

@@ -5,13 +5,21 @@
  */
 
 (function () {
-    const CLASS_SPECS = [
-        { className: 'A', min: 1, max: 126, color: '#FFE600', rangeText: '1.0.0.0 to 126.255.255.255', shortRange: '001-126' },
-        { className: 'B', min: 127, max: 191, color: '#2455FF', rangeText: '127.0.0.0 to 191.255.255.255', shortRange: '127-191' },
-        { className: 'C', min: 192, max: 223, color: '#FF003C', rangeText: '192.0.0.0 to 223.255.255.255', shortRange: '192-223' },
-        { className: 'D', min: 224, max: 239, color: '#FF3CFF', rangeText: '224.0.0.0 to 239.255.255.255', shortRange: '224-239' },
-        { className: 'E', min: 240, max: 255, color: '#00FF9D', rangeText: '240.0.0.0 to 255.255.255.255', shortRange: '240-255' },
-    ];
+    const sharedRanges = IP2Live.IPClassRanges;
+    if (!sharedRanges || typeof sharedRanges.cloneSpecs !== 'function') {
+        throw new Error('IP2Live.IPClassRanges must load before IPWiresCore.');
+    }
+    const classColors = {
+        A: '#FFE600',
+        B: '#2455FF',
+        C: '#FF003C',
+        D: '#FF3CFF',
+        E: '#00FF9D',
+    };
+    const CLASS_SPECS = sharedRanges.cloneSpecs().map(function (spec) {
+        spec.color = classColors[spec.className] || '#00F0FF';
+        return spec;
+    });
 
     function cloneClassSpecs() {
         return CLASS_SPECS.map(function (spec) {
@@ -112,7 +120,7 @@
     }
 
     const Core = {
-        VERSION: 'ip-wires-core-20260815-05',
+        VERSION: 'ip-wires-core-20260918-06',
         CLASS_SPECS: CLASS_SPECS,
         cloneClassSpecs: cloneClassSpecs,
         clampWireCount: clampWireCount,

@@ -789,7 +789,7 @@ IP2Live.DialogueManagerReady = (async function () {
     const root = Common.Platform.ROOT_DIRECTORY;
     const src  = root + 'Plugins/IP2Live_Core/modules/dialogue_manager.js';
     try {
-        const versionedSrc = src + '?v=20260918_dialogue_manager_11_' + Date.now();
+        const versionedSrc = src + '?v=20260918_dialogue_manager_12_' + Date.now();
         let resp = await fetch(versionedSrc, { cache: 'no-store' });
         if (!resp.ok) {
             console.warn('[IP2Live] Versioned dialogue manager fetch failed, retrying plain path:', versionedSrc);
@@ -940,14 +940,15 @@ IP2Live.GameplayManagerReady = (async function () {
     const bundles = [
         {
             baseDir: root + 'Plugins/IP2Live_Core/gameplay/common/',
-            version: '20260916_gameplay_completion_popup_02_',
+            version: '20260918_gameplay_common_03_',
             files: [
+                'ip_class_ranges.js',
                 'gameplay_completion_popup.js',
             ],
         },
         {
             baseDir: root + 'Plugins/IP2Live_Core/gameplay/gameplay1/IPWires/',
-            version: '20260916_ip_wires_06_',
+            version: '20260918_ip_wires_07_',
             files: [
                 'ip_wires_core.js',
                 'ip_wires_tutorial.js',
@@ -958,7 +959,7 @@ IP2Live.GameplayManagerReady = (async function () {
         },
         {
             baseDir: root + 'Plugins/IP2Live_Core/gameplay/gameplay2/IPPatchPanel/',
-            version: '20260530_ip_patchpanel_03_',
+            version: '20260918_ip_patchpanel_10_',
             files: [
                 'ip_patchpanel_tutorial.js',
                 'ip_patchpanel_gameplay.js',
@@ -1069,7 +1070,7 @@ IP2Live.QuestManagerReady = (async function () {
     const root = Common.Platform.ROOT_DIRECTORY;
     const src  = root + 'Plugins/IP2Live_Core/modules/quest_manager.js';
     try {
-        const versionedSrc = src + '?v=20260918_quest_manager_hud_09_' + Date.now();
+        const versionedSrc = src + '?v=20260918_quest_manager_hud_10_' + Date.now();
         let resp = await fetch(versionedSrc, { cache: 'no-store' });
         if (!resp.ok) {
             console.warn('[IP2Live] Versioned quest manager fetch failed, retrying plain path:', versionedSrc);
@@ -1412,6 +1413,7 @@ IP2Live.ScreenModulesReady = (async function () {
     if (IP2Live.MapManagerReady) await IP2Live.MapManagerReady;
     if (IP2Live.MusicManagerReady) await IP2Live.MusicManagerReady;
     if (IP2Live.TutorialReady) await IP2Live.TutorialReady;
+    if (IP2Live.GameplayManagerReady) await IP2Live.GameplayManagerReady;
     if (IP2Live.GameManagerReady) await IP2Live.GameManagerReady;
     if (IP2Live.ReportManagerReady) await IP2Live.ReportManagerReady;
     const root    = Common.Platform.ROOT_DIRECTORY;
@@ -1442,7 +1444,7 @@ IP2Live.ScreenModulesReady = (async function () {
     for (const file of screens) {
         const src = baseDir + file;
         try {
-            const versionedSrc = src + '?v=20260518_system_ui_03_' + Date.now();
+            const versionedSrc = src + '?v=20260918_system_ui_04_' + Date.now();
             let resp = await fetch(versionedSrc, { cache: 'no-store' });
             if (!resp.ok) {
                 console.warn('[IP2Live] Versioned screen fetch failed, retrying plain path:', versionedSrc);

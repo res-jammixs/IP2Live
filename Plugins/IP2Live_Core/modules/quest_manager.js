@@ -10,7 +10,7 @@
 
 class IP2LiveQuestManager {
     constructor() {
-        this.VERSION = 'quest-manager-20260918-09';
+        this.VERSION = 'quest-manager-20260918-10';
 
         this.quests = {};
         this.mapQuestQueues = {};
@@ -479,11 +479,11 @@ class IP2LiveQuestManager {
         ctx.fillStyle = '#FFFFFF';
         ctx.textAlign = 'left';
         ctx.textBaseline = 'alphabetic';
-        this._drawTrackedText(ctx, quest.title || 'QUEST AREA', qX + 57 * sX, qY + 28 * sY, 0.7 * sX);
+        this._drawTrackedText(ctx, quest.title || 'QUEST AREA', qX + 18 * sX, qY + 28 * sY, 0.7 * sX);
 
-        ctx.font = 'bold ' + Math.round(8.5 * sX) + 'px ' + headerFont;
+        ctx.font = 'bold ' + Math.round(12.5 * sX) + 'px ' + headerFont;
         ctx.fillStyle = '#111111';
-        this._drawTrackedText(ctx, 'REQUIRED', qX + 204 * sX, qY + 25 * sY, 0.45 * sX);
+        this._drawTrackedText(ctx, 'REQUIRED', qX + 204 * sX, qY + 28 * sY, 0.4 * sX);
 
         this._drawObjectiveRow(ctx, {
             x: qX + 18 * sX,
@@ -937,7 +937,7 @@ class IP2LiveQuestManager {
         const o = options;
         const leftW = 190 * o.sX;
         const rightX = o.x + 190 * o.sX;
-        const rightW = 100 * o.sX;
+        const rightW = 124 * o.sX;
         const plateH = 42 * o.sY;
         const rightCut = 16 * o.sX;
 
@@ -1035,16 +1035,6 @@ class IP2LiveQuestManager {
         ctx.lineTo(rightX + rightW - rightCut - 2 * o.sX, o.y + plateH - 2 * o.sY);
         ctx.stroke();
 
-        // Dialogue header's three transmission strokes become the Quest Area mark.
-        const slashX = o.x + 18 * o.sX;
-        ctx.strokeStyle = '#FFFFFF';
-        ctx.lineWidth = 3 * o.sX;
-        for (let si = 0; si < 3; si++) {
-            ctx.beginPath();
-            ctx.moveTo(slashX + si * 8 * o.sX, o.y + 31 * o.sY);
-            ctx.lineTo(slashX + 8 * o.sX + si * 8 * o.sX, o.y + 18 * o.sY);
-            ctx.stroke();
-        }
     }
 
     _drawObjectiveRow(ctx, options) {
@@ -1145,11 +1135,11 @@ class IP2LiveQuestManager {
         ctx.font = 'bold ' + Math.round(14 * sX) + 'px ' + headerFont;
         ctx.fillStyle = '#FFFFFF';
         ctx.textAlign = 'left';
-        this._drawTrackedText(ctx, 'QUEST AREA', qX + 57 * sX, qY + 28 * sY, 0.7 * sX);
+        this._drawTrackedText(ctx, 'QUEST AREA', qX + 18 * sX, qY + 28 * sY, 0.7 * sX);
 
-        ctx.font = 'bold ' + Math.round(8.2 * sX) + 'px ' + font;
+        ctx.font = 'bold ' + Math.round(12.5 * sX) + 'px ' + headerFont;
         ctx.fillStyle = '#111111';
-        this._drawTrackedText(ctx, 'COMPLETE', qX + 204 * sX, qY + 25 * sY, 0.45 * sX);
+        this._drawTrackedText(ctx, 'COMPLETE', qX + 204 * sX, qY + 28 * sY, 0.4 * sX);
 
         this._drawObjectiveRow(ctx, {
             x: qX + 18 * sX,

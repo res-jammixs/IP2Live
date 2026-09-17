@@ -9,7 +9,7 @@
 
 class IP2LiveDialogueManager {
     constructor() {
-        this.VERSION = 'dialogue-manager-20260918-11';
+        this.VERSION = 'dialogue-manager-20260918-12';
 
         this.EVENT = {
             MAP_ENTER: 'map:enter',
@@ -1579,7 +1579,7 @@ class IP2LiveDialogueManager {
         // dialogues.json and dynamically registered gameplay dialogue:
         //   {{highlight:a long, freely wrapping important passage}}
         //   {{key:W|KeyW}}
-        const source = String(markup || '');
+        const source = this._expandClassRangePlaceholders(markup);
         const tokens = [];
         const pattern = /\{\{(key|highlight):([\s\S]*?)\}\}/g;
         let sourceIndex = 0;
@@ -1623,6 +1623,17 @@ class IP2LiveDialogueManager {
 
         if (sourceIndex < source.length) addToken('text', source.slice(sourceIndex));
         return tokens;
+    }
+
+    _expandClassRangePlaceholders(markup) {
+        const source = String(markup || '');
+        const ranges = IP2Live.IPClassRanges;
+        if (!ranges || typeof ranges.byClassName !== 'function') return source;
+        return source.replace(/\[IP_CLASS_([A-E])_(SHORT|FULL)\]/gi, function (match, className, format) {
+            const spec = ranges.byClassName(className);
+            if (!spec) return match;
+            return String(format || '').toUpperCase() === 'FULL' ? spec.rangeText : spec.shortRange;
+        });
     }
 
     _visibleTextForTokens(tokens) {
