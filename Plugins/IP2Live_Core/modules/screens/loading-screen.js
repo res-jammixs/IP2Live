@@ -5,6 +5,277 @@
  * Loaded via fetch + new Function() by code.js. Do not use import/export.
  */
 
+IP2Live.LoadingUIComponents = IP2Live.LoadingUIComponents || (function () {
+    function traceNotchedPanel(ctx, x, y, w, h, cut) {
+        const c = Math.max(3, cut || 10);
+        ctx.beginPath();
+        ctx.moveTo(x + c, y);
+        ctx.lineTo(x + w - c, y);
+        ctx.lineTo(x + w, y + c);
+        ctx.lineTo(x + w, y + h - c);
+        ctx.lineTo(x + w - c, y + h);
+        ctx.lineTo(x + c * 0.55, y + h);
+        ctx.lineTo(x, y + h - c * 0.55);
+        ctx.lineTo(x, y + c);
+        ctx.closePath();
+    }
+
+    function measureTrackedText(ctx, text, tracking) {
+        const value = String(text || '');
+        return ctx.measureText(value).width + Math.max(0, value.length - 1) * (tracking || 0);
+    }
+
+    function drawTrackedText(ctx, text, x, y, tracking, align) {
+        const value = String(text || '');
+        const spacing = tracking || 0;
+        if (!value || spacing <= 0) {
+            ctx.fillText(value, x, y);
+            return;
+        }
+        const width = measureTrackedText(ctx, value, spacing);
+        let cursor = align === 'center' ? x - width / 2 : (align === 'right' ? x - width : x);
+        const previousAlign = ctx.textAlign;
+        ctx.textAlign = 'left';
+        for (let i = 0; i < value.length; i++) {
+            const character = value.charAt(i);
+            ctx.fillText(character, cursor, y);
+            cursor += ctx.measureText(character).width + spacing;
+        }
+        ctx.textAlign = previousAlign;
+    }
+
+    function fitFont(ctx, text, maxWidth, startSize, minSize, sX, font, weight, tracking) {
+        let size = startSize;
+        do {
+            ctx.font = (weight || '') + Math.round(size * sX) + 'px ' + font;
+            if (measureTrackedText(ctx, text, tracking) <= maxWidth) break;
+            size--;
+        } while (size >= minSize);
+        return size;
+    }
+
+    function wrapText(ctx, text, maxWidth) {
+        const words = String(text || '').split(/\s+/);
+        const lines = [];
+        let line = '';
+        for (let i = 0; i < words.length; i++) {
+            const candidate = line ? line + ' ' + words[i] : words[i];
+            if (line && ctx.measureText(candidate).width > maxWidth) {
+                lines.push(line);
+                line = words[i];
+            } else {
+                line = candidate;
+            }
+        }
+        if (line) lines.push(line);
+        return lines;
+    }
+
+    function drawStatusModule(ctx, options) {
+        const o = options;
+        const unit = Math.min(o.sX, o.sY);
+        const centerX = o.x + o.w / 2;
+        const maxTextWidth = o.w - 88 * o.sX;
+        const title = String(o.title || 'LOADING').toUpperCase();
+        const tracking = 1.35 * o.sX;
+        const topPadding = (o.topPadding || 0) * o.sY;
+        const titleY = o.y + 31 * o.sY + topPadding;
+
+        ctx.save();
+        ctx.textAlign = 'center';
+        fitFont(ctx, title, maxTextWidth, 27, 16, o.sX, o.font, 'bold ', tracking);
+        const titleWidth = measureTrackedText(ctx, title, tracking);
+
+        ctx.globalAlpha = 0.34;
+        ctx.fillStyle = '#FF164D';
+        drawTrackedText(ctx, title, centerX - 2 * unit, titleY + unit, tracking, 'center');
+        ctx.fillStyle = '#00F0FF';
+        drawTrackedText(ctx, title, centerX + 2 * unit, titleY - unit, tracking, 'center');
+        ctx.globalAlpha = 1;
+        ctx.fillStyle = '#F4FAFF';
+        ctx.shadowColor = 'rgba(0,240,255,0.36)';
+        ctx.shadowBlur = 7 * unit;
+        drawTrackedText(ctx, title, centerX, titleY, tracking, 'center');
+        ctx.shadowBlur = 0;
+
+        const accentY = o.y + 46 * o.sY + topPadding;
+        const accentHalf = Math.min(o.w * 0.39, titleWidth * 0.62 + 42 * o.sX);
+        const accentStart = centerX - accentHalf;
+        const accentEnd = centerX + accentHalf;
+        const splitGap = Math.max(10 * o.sX, titleWidth * 0.035);
+        const leftRail = ctx.createLinearGradient(accentStart, accentY, centerX, accentY);
+        leftRail.addColorStop(0, 'rgba(255,22,77,0)');
+        leftRail.addColorStop(1, 'rgba(255,22,77,0.9)');
+        ctx.fillStyle = leftRail;
+        ctx.fillRect(accentStart, accentY, accentHalf - splitGap, Math.max(1, 1.5 * unit));
+        const rightRail = ctx.createLinearGradient(centerX, accentY, accentEnd, accentY);
+        rightRail.addColorStop(0, 'rgba(0,240,255,0.9)');
+        rightRail.addColorStop(1, 'rgba(0,240,255,0)');
+        ctx.fillStyle = rightRail;
+        ctx.fillRect(centerX + splitGap, accentY, accentHalf - splitGap, Math.max(1, 1.5 * unit));
+
+        ctx.save();
+        ctx.fillStyle = '#FFE600';
+        ctx.shadowColor = '#FFE600';
+        ctx.shadowBlur = 7 * unit;
+        ctx.beginPath();
+        ctx.arc(centerX, accentY + unit * 0.7, 3.2 * unit, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.shadowBlur = 0;
+        ctx.fillStyle = '#FFFFFF';
+        ctx.beginPath();
+        ctx.arc(centerX, accentY + unit * 0.7, 1.1 * unit, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+        ctx.restore();
+    }
+
+    function drawInfoCard(ctx, options) {
+        const o = options;
+        const label = String(o.label || 'Subnet Tip') + ':';
+        const text = String(o.text || '');
+        const labelTracking = 0.85 * o.sX;
+        const bodyTracking = 0.35 * o.sX;
+        const baseline = o.y + 20 * o.sY;
+        const centerX = o.x + o.w / 2;
+        const gap = 11 * o.sX;
+
+        ctx.save();
+        ctx.font = 'bold ' + Math.round(10 * o.sX) + 'px ' + o.font;
+        const labelWidth = measureTrackedText(ctx, label, labelTracking);
+
+        ctx.font = Math.round(12 * o.sX) + 'px ' + o.font;
+        const fullBodyWidth = measureTrackedText(ctx, text, bodyTracking);
+        const fullLineWidth = labelWidth + gap + fullBodyWidth;
+        let firstLine = text;
+        let splitIndex = text.split(/\s+/).length;
+        const words = text.split(/\s+/);
+        if (fullLineWidth > o.w) {
+            const firstLineWidth = Math.max(80 * o.sX, o.w - labelWidth - gap);
+            firstLine = '';
+            splitIndex = words.length;
+            for (let i = 0; i < words.length; i++) {
+                const candidate = firstLine ? firstLine + ' ' + words[i] : words[i];
+                if (firstLine && measureTrackedText(ctx, candidate, bodyTracking) > firstLineWidth) {
+                    splitIndex = i;
+                    break;
+                }
+                firstLine = candidate;
+            }
+        }
+        const firstBodyWidth = measureTrackedText(ctx, firstLine, bodyTracking);
+        const firstGroupWidth = labelWidth + gap + firstBodyWidth;
+        const firstX = centerX - firstGroupWidth / 2;
+
+        ctx.font = 'bold ' + Math.round(10 * o.sX) + 'px ' + o.font;
+        ctx.fillStyle = '#FFE95A';
+        ctx.textAlign = 'left';
+        drawTrackedText(ctx, label, firstX, baseline, labelTracking, 'left');
+
+        ctx.font = Math.round(12 * o.sX) + 'px ' + o.font;
+        ctx.fillStyle = '#DAEEFF';
+        drawTrackedText(ctx, firstLine, firstX + labelWidth + gap, baseline, bodyTracking, 'left');
+
+        if (splitIndex < words.length) {
+            const secondLine = words.slice(splitIndex).join(' ');
+            drawTrackedText(ctx, secondLine, centerX, baseline + 16 * o.sY, bodyTracking, 'center');
+        }
+        ctx.restore();
+    }
+
+    function drawProgressTrack(ctx, options) {
+        const o = options;
+        const unit = Math.min(o.sX, o.sY);
+        const ratio = Math.max(0, Math.min(1, o.progress || 0));
+        const trackY = o.y;
+        const trackH = Math.max(10 * o.sY, 7);
+        const inset = Math.max(3 * unit, 2);
+        const innerX = o.x + inset;
+        const innerY = trackY + inset;
+        const innerW = Math.max(0, o.w - inset * 2);
+        const innerH = Math.max(2, trackH - inset * 2);
+        const progressW = innerW * ratio;
+
+        ctx.save();
+        ctx.font = Math.round(9 * o.sX) + 'px monospace';
+        ctx.textAlign = 'left';
+        ctx.fillStyle = 'rgba(0,240,255,0.76)';
+        ctx.fillText(o.label || 'ROUTE TRANSFER', o.x, trackY - 12 * o.sY);
+        ctx.textAlign = 'right';
+        ctx.fillStyle = '#EAFBFF';
+        ctx.fillText(String(Math.floor(ratio * 100)).padStart(3, '0') + '%', o.x + o.w, trackY - 12 * o.sY);
+
+        traceNotchedPanel(ctx, o.x, trackY, o.w, trackH, 4 * unit);
+        const shell = ctx.createLinearGradient(o.x, trackY, o.x, trackY + trackH);
+        shell.addColorStop(0, 'rgba(36,54,69,0.98)');
+        shell.addColorStop(0.5, 'rgba(6,12,24,0.98)');
+        shell.addColorStop(1, 'rgba(1,4,12,0.98)');
+        ctx.fillStyle = shell;
+        ctx.fill();
+        ctx.strokeStyle = 'rgba(0,240,255,0.42)';
+        ctx.lineWidth = Math.max(1, unit);
+        ctx.stroke();
+
+        ctx.save();
+        ctx.beginPath();
+        ctx.rect(innerX, innerY, innerW, innerH);
+        ctx.clip();
+        if (progressW > 0) {
+            const progressFill = ctx.createLinearGradient(innerX, innerY, innerX + innerW, innerY);
+            progressFill.addColorStop(0, '#008EAD');
+            progressFill.addColorStop(0.62, '#00F0FF');
+            progressFill.addColorStop(1, '#FFE600');
+            ctx.fillStyle = progressFill;
+            ctx.shadowColor = '#00F0FF';
+            ctx.shadowBlur = 10 * unit;
+            ctx.fillRect(innerX, innerY, progressW, innerH);
+            ctx.shadowBlur = 0;
+
+            const sweepWidth = 52 * o.sX;
+            const sweepX = innerX - sweepWidth + (((o.tick || 0) * 3 * unit) % Math.max(sweepWidth, progressW + sweepWidth));
+            const sweep = ctx.createLinearGradient(sweepX, innerY, sweepX + sweepWidth, innerY);
+            sweep.addColorStop(0, 'rgba(255,255,255,0)');
+            sweep.addColorStop(0.5, 'rgba(255,255,255,0.58)');
+            sweep.addColorStop(1, 'rgba(255,255,255,0)');
+            ctx.fillStyle = sweep;
+            ctx.fillRect(sweepX, innerY, sweepWidth, innerH);
+        }
+
+        const segmentCount = 18;
+        for (let i = 1; i < segmentCount; i++) {
+            const sx = innerX + (innerW / segmentCount) * i;
+            ctx.fillStyle = 'rgba(1,5,14,0.58)';
+            ctx.fillRect(sx, innerY, Math.max(1, unit), innerH);
+        }
+        ctx.restore();
+
+        const markerX = innerX + progressW;
+        if (ratio > 0) {
+            ctx.save();
+            ctx.translate(markerX, trackY + trackH / 2);
+            ctx.rotate(Math.PI / 4);
+            ctx.fillStyle = '#FFE600';
+            ctx.shadowColor = '#FFE600';
+            ctx.shadowBlur = 9 * unit;
+            const markerSize = 5 * unit;
+            ctx.fillRect(-markerSize / 2, -markerSize / 2, markerSize, markerSize);
+            ctx.restore();
+        }
+
+        ctx.fillStyle = 'rgba(255,22,77,0.5)';
+        ctx.fillRect(o.x, trackY + trackH + 6 * o.sY, o.w * 0.16, Math.max(1, o.sY));
+        ctx.fillStyle = 'rgba(0,240,255,0.35)';
+        ctx.fillRect(o.x + o.w * 0.18, trackY + trackH + 6 * o.sY, o.w * 0.08, Math.max(1, o.sY));
+        ctx.restore();
+    }
+
+    return {
+        drawStatusModule,
+        drawInfoCard,
+        drawProgressTrack,
+    };
+})();
+
 class IP2LiveLoadingScreen extends Scene.Base {
     constructor(options) {
         super(true);
@@ -51,7 +322,10 @@ class IP2LiveLoadingScreen extends Scene.Base {
     }
 
     async load() {
-        if (IP2Live.Assets && typeof IP2Live.Assets.loadAll === 'function' && !IP2Live.Assets.nebulaLoaded) {
+        if (
+            IP2Live.Assets && typeof IP2Live.Assets.loadAll === 'function' &&
+            (!IP2Live.Assets.nebulaLoaded || !IP2Live.Assets.oxaniumMediumLoaded)
+        ) {
             try {
                 await IP2Live.Assets.loadAll();
             } catch (e) {
@@ -176,7 +450,7 @@ class IP2LiveLoadingScreen extends Scene.Base {
         const cH = ctx.canvas.height;
         const sX = cW / SW;
         const sY = cH / SH;
-        const font = IP2Live.Assets && IP2Live.Assets.nebulaLoaded ? 'Nebula-Regular' : 'monospace';
+        const font = IP2Live.Assets && IP2Live.Assets.oxaniumMediumLoaded ? 'Oxanium-Medium' : 'sans-serif';
         const titleFont = IP2Live.Assets && IP2Live.Assets.abnesLoaded ? 'Abnes' : 'Arial Black';
 
         ctx.save();
@@ -185,6 +459,7 @@ class IP2LiveLoadingScreen extends Scene.Base {
         this._drawCenterObject(ctx, cW / 2, cH * 0.44, Math.min(cW, cH) / 720);
         this._drawStatus(ctx, cW, cH, sX, sY, font);
         this._drawFactPanel(ctx, cW, cH, sX, sY, font);
+        this._drawForegroundCorner(ctx, cW, cH, sX, sY);
         this._drawLoadingLine(ctx, cW, cH, sX, sY, font);
         this._drawShutterTransition(ctx, cW, cH, sX, sY);
         this._drawSoftFade(ctx, cW, cH);
@@ -241,27 +516,82 @@ class IP2LiveLoadingScreen extends Scene.Base {
         }
         ctx.globalAlpha = 1;
 
-        ctx.beginPath();
-        ctx.moveTo(0, 0);
-        ctx.lineTo(286 * sX, 0);
-        ctx.lineTo(210 * sX, 72 * sY);
-        ctx.lineTo(0, 112 * sY);
-        ctx.closePath();
-        ctx.fillStyle = 'rgba(255,0,60,0.92)';
-        ctx.fill();
+        this._drawTexturedCorner(ctx, [
+            { x: 0, y: 0 },
+            { x: 286 * sX, y: 0 },
+            { x: 210 * sX, y: 72 * sY },
+            { x: 0, y: 112 * sY },
+        ], '#FF164D', '#700027', sX, sY, false);
 
-        ctx.beginPath();
-        ctx.moveTo(cW, cH);
-        ctx.lineTo(cW - 340 * sX, cH);
-        ctx.lineTo(cW - 250 * sX, cH - 76 * sY);
-        ctx.lineTo(cW, cH - 136 * sY);
-        ctx.closePath();
-        ctx.fillStyle = 'rgba(255,230,0,0.90)';
+    }
+
+    _drawForegroundCorner(ctx, cW, cH, sX, sY) {
+        this._drawTexturedCorner(ctx, [
+            { x: cW, y: cH },
+            { x: cW - 340 * sX, y: cH },
+            { x: cW - 250 * sX, y: cH - 76 * sY },
+            { x: cW, y: cH - 136 * sY },
+        ], '#FFF21A', '#C78D00', sX, sY, true);
+    }
+
+    _drawTexturedCorner(ctx, points, colorStart, colorEnd, sX, sY, reverse) {
+        const xs = points.map(function (point) { return point.x; });
+        const ys = points.map(function (point) { return point.y; });
+        const minX = Math.min.apply(Math, xs);
+        const maxX = Math.max.apply(Math, xs);
+        const minY = Math.min.apply(Math, ys);
+        const maxY = Math.max.apply(Math, ys);
+        const trace = function () {
+            ctx.beginPath();
+            ctx.moveTo(points[0].x, points[0].y);
+            for (let i = 1; i < points.length; i++) ctx.lineTo(points[i].x, points[i].y);
+            ctx.closePath();
+        };
+
+        ctx.save();
+        ctx.shadowColor = this._rgba(colorStart, 0.28);
+        ctx.shadowBlur = 16 * sX;
+        trace();
+        const gradient = ctx.createLinearGradient(minX, minY, maxX, maxY);
+        gradient.addColorStop(0, colorStart);
+        gradient.addColorStop(0.58, colorStart);
+        gradient.addColorStop(1, colorEnd);
+        ctx.fillStyle = gradient;
         ctx.fill();
+        ctx.shadowBlur = 0;
+
+        trace();
+        ctx.clip();
+        const diagonal = 20 * sX;
+        for (let hx = minX - (maxY - minY); hx < maxX + (maxY - minY); hx += diagonal) {
+            ctx.strokeStyle = reverse ? 'rgba(72,42,0,0.11)' : 'rgba(255,255,255,0.075)';
+            ctx.lineWidth = Math.max(1, 4 * sX);
+            ctx.beginPath();
+            ctx.moveTo(hx, maxY);
+            ctx.lineTo(hx + (reverse ? -1 : 1) * 70 * sX, minY);
+            ctx.stroke();
+        }
+        for (let hy = minY + 7 * sY; hy < maxY; hy += 7 * sY) {
+            ctx.fillStyle = reverse ? 'rgba(35,20,0,0.055)' : 'rgba(12,0,18,0.065)';
+            ctx.fillRect(minX, hy, maxX - minX, Math.max(1, sY));
+        }
+        const sheen = ctx.createLinearGradient(minX, minY, maxX, minY);
+        sheen.addColorStop(0, 'rgba(255,255,255,0.18)');
+        sheen.addColorStop(0.35, 'rgba(255,255,255,0.02)');
+        sheen.addColorStop(1, 'rgba(255,255,255,0)');
+        ctx.fillStyle = sheen;
+        ctx.fillRect(minX, minY, maxX - minX, 7 * sY);
+        ctx.restore();
+
+        ctx.save();
+        trace();
+        ctx.strokeStyle = reverse ? 'rgba(255,248,112,0.82)' : 'rgba(255,92,132,0.78)';
+        ctx.lineWidth = Math.max(1, 1.2 * sX);
+        ctx.stroke();
+        ctx.restore();
     }
 
     _drawTitle(ctx, cW, sX, sY, titleFont) {
-        const tick = this.animTick || 0;
         const y = 84 * sY;
         ctx.save();
         ctx.textAlign = 'center';
@@ -270,12 +600,8 @@ class IP2LiveLoadingScreen extends Scene.Base {
         ctx.fillStyle = '#FFFFFF';
         ctx.fillText('IP2LIVE', cW / 2, y);
 
-        ctx.font = Math.round(9 * sX) + 'px monospace';
-        ctx.fillStyle = 'rgba(0,240,255,0.72)';
-        ctx.fillText('SYS::TRANSIT_BRIDGE // ROUTE HANDSHAKE ' + String((tick % 997)).padStart(3, '0'), cW / 2, y + 24 * sY);
-
         const slashW = 118 * sX;
-        const slashY = y + 36 * sY;
+        const slashY = y + 22 * sY;
         ctx.fillStyle = '#FF003C';
         ctx.beginPath();
         ctx.moveTo(cW / 2 - slashW - 36 * sX, slashY);
@@ -458,126 +784,48 @@ class IP2LiveLoadingScreen extends Scene.Base {
     }
 
     _drawStatus(ctx, cW, cH, sX, sY, font) {
-        const y = cH * 0.67;
-        const w = Math.min(560 * sX, cW - 56 * sX);
-        const h = 62 * sY;
-        const x = (cW - w) / 2;
-        const sl = 26 * sX;
-
-        ctx.save();
-        ctx.beginPath();
-        ctx.moveTo(x + sl, y);
-        ctx.lineTo(x + w, y);
-        ctx.lineTo(x + w - sl, y + h);
-        ctx.lineTo(x, y + h);
-        ctx.closePath();
-        ctx.fillStyle = 'rgba(2,5,14,0.92)';
-        ctx.fill();
-        ctx.strokeStyle = '#FF003C';
-        ctx.lineWidth = 2 * sX;
-        ctx.stroke();
-
-        ctx.beginPath();
-        ctx.moveTo(x, y);
-        ctx.lineTo(x + 148 * sX, y);
-        ctx.lineTo(x + 120 * sX, y + h);
-        ctx.lineTo(x, y + h);
-        ctx.closePath();
-        ctx.fillStyle = '#FF003C';
-        ctx.fill();
-
-        ctx.textAlign = 'center';
-        ctx.font = 'bold ' + Math.round(24 * sX) + 'px ' + font;
-        ctx.fillStyle = '#FFFFFF';
-        ctx.fillText(this.status, cW / 2, y + 30 * sY);
-
-        ctx.font = Math.round(9 * sX) + 'px monospace';
-        ctx.fillStyle = 'rgba(0,240,255,0.82)';
-        ctx.fillText(this.detail || 'Synchronizing route', cW / 2, y + 48 * sY);
-        ctx.restore();
+        const w = Math.min(620 * sX, cW - 64 * sX);
+        IP2Live.LoadingUIComponents.drawStatusModule(ctx, {
+            x: (cW - w) / 2,
+            y: cH * 0.665,
+            w,
+            h: 52 * sY,
+            title: this.status,
+            topPadding: 14,
+            font,
+            sX,
+            sY,
+            tick: this.animTick,
+        });
     }
 
     _drawFactPanel(ctx, cW, cH, sX, sY, font) {
-        const w = Math.min(900 * sX, cW - 58 * sX);
-        const h = 70 * sY;
-        const x = (cW - w) / 2;
-        const y = cH - 154 * sY;
-        const sl = 22 * sX;
-
-        ctx.save();
-        ctx.beginPath();
-        ctx.moveTo(x + sl, y);
-        ctx.lineTo(x + w, y);
-        ctx.lineTo(x + w - sl, y + h);
-        ctx.lineTo(x, y + h);
-        ctx.closePath();
-        ctx.fillStyle = 'rgba(3,7,20,0.88)';
-        ctx.fill();
-        ctx.strokeStyle = 'rgba(0,240,255,0.72)';
-        ctx.lineWidth = 1.5 * sX;
-        ctx.stroke();
-
-        ctx.fillStyle = '#FFE600';
-        ctx.beginPath();
-        ctx.moveTo(x + 18 * sX, y);
-        ctx.lineTo(x + 158 * sX, y);
-        ctx.lineTo(x + 134 * sX, y + 28 * sY);
-        ctx.lineTo(x + 18 * sX, y + 28 * sY);
-        ctx.closePath();
-        ctx.fill();
-
-        ctx.font = 'bold ' + Math.round(9 * sX) + 'px monospace';
-        ctx.fillStyle = '#101010';
-        ctx.textAlign = 'left';
-        ctx.fillText('SUBNET TIP', x + 32 * sX, y + 18 * sY);
-
-        ctx.font = Math.round(13 * sX) + 'px ' + font;
-        ctx.fillStyle = '#DAEEFF';
-        const lines = this._wrapText(ctx, this.fact, w - 54 * sX);
-        for (let i = 0; i < lines.length && i < 2; i++) {
-            ctx.fillText(lines[i], x + 28 * sX, y + (45 + i * 16) * sY);
-        }
-        ctx.restore();
+        const w = Math.min(820 * sX, cW - 80 * sX);
+        IP2Live.LoadingUIComponents.drawInfoCard(ctx, {
+            x: (cW - w) / 2,
+            y: cH * 0.665 + 58 * sY,
+            w,
+            h: 42 * sY,
+            label: 'Subnet Tip',
+            text: this.fact,
+            font,
+            sX,
+            sY,
+        });
     }
 
     _drawLoadingLine(ctx, cW, cH, sX, sY, font) {
         const w = Math.min(620 * sX, cW - 80 * sX);
-        const x = (cW - w) / 2;
-        const y = cH - 54 * sY;
-        const h = Math.max(4 * sY, 3);
-        const progressW = w * this.progress;
-        const tick = this.animTick || 0;
-
-        ctx.save();
-        ctx.font = Math.round(9 * sX) + 'px monospace';
-        ctx.fillStyle = 'rgba(0,240,255,0.76)';
-        ctx.textAlign = 'left';
-        ctx.fillText('LOADING LINE', x, y - 12 * sY);
-        ctx.textAlign = 'right';
-        ctx.fillText(String(Math.floor(this.progress * 100)).padStart(3, '0') + '%', x + w, y - 12 * sY);
-
-        ctx.fillStyle = 'rgba(255,255,255,0.12)';
-        ctx.fillRect(x, y, w, h);
-        ctx.fillStyle = '#00F0FF';
-        ctx.shadowColor = '#00F0FF';
-        ctx.shadowBlur = 10 * sX;
-        ctx.fillRect(x, y, progressW, h);
-        ctx.shadowBlur = 0;
-
-        const markerX = x + progressW;
-        ctx.fillStyle = '#FFE600';
-        ctx.fillRect(markerX - 4 * sX, y - 5 * sY, 8 * sX, h + 10 * sY);
-
-        ctx.strokeStyle = 'rgba(255,0,60,0.55)';
-        ctx.lineWidth = 1 * sX;
-        for (let i = 0; i <= 12; i++) {
-            const tx = x + (w / 12) * i;
-            ctx.beginPath();
-            ctx.moveTo(tx, y + 11 * sY + Math.sin(tick * 0.08 + i) * 2 * sY);
-            ctx.lineTo(tx + 10 * sX, y + 11 * sY);
-            ctx.stroke();
-        }
-        ctx.restore();
+        IP2Live.LoadingUIComponents.drawProgressTrack(ctx, {
+            x: (cW - w) / 2,
+            y: cH - 48 * sY,
+            w,
+            progress: this.progress,
+            label: 'ROUTE TRANSFER',
+            sX,
+            sY,
+            tick: this.animTick,
+        });
     }
 
     _drawShutterTransition(ctx, cW, cH, sX, sY) {

@@ -58,7 +58,10 @@ class IP2LiveLoadingScreen2 extends Scene.Base {
     }
 
     async load() {
-        if (IP2Live.Assets && typeof IP2Live.Assets.loadAll === 'function' && !IP2Live.Assets.nebulaLoaded) {
+        if (
+            IP2Live.Assets && typeof IP2Live.Assets.loadAll === 'function' &&
+            (!IP2Live.Assets.nebulaLoaded || !IP2Live.Assets.oxaniumMediumLoaded)
+        ) {
             try {
                 await IP2Live.Assets.loadAll();
             } catch (e) {
@@ -160,7 +163,7 @@ class IP2LiveLoadingScreen2 extends Scene.Base {
         const cH = ctx.canvas.height;
         const sX = cW / SW;
         const sY = cH / SH;
-        const font = IP2Live.Assets && IP2Live.Assets.nebulaLoaded ? 'Nebula-Regular' : 'monospace';
+        const font = IP2Live.Assets && IP2Live.Assets.oxaniumMediumLoaded ? 'Oxanium-Medium' : 'sans-serif';
         const titleFont = IP2Live.Assets && IP2Live.Assets.abnesLoaded ? 'Abnes' : 'Arial Black';
 
         ctx.save();
@@ -223,83 +226,52 @@ class IP2LiveLoadingScreen2 extends Scene.Base {
         ctx.font = 'bold ' + Math.round(38 * sX) + 'px ' + titleFont;
         ctx.fillStyle = '#FFFFFF';
         ctx.fillText('IP2LIVE SYSTEM', cW / 2, y);
-
-        ctx.font = Math.round(10 * sX) + 'px monospace';
-        ctx.fillStyle = 'rgba(0,240,255,0.72)';
-        ctx.fillText('STAGE TRANSITION_BRIDGE // ACTIVE', cW / 2, y + 22 * sY);
         ctx.restore();
     }
 
     _drawStatus(ctx, cW, cH, sX, sY, font) {
-        const y = cH * 0.45; // Moved up slightly due to lack of center object
-        ctx.save();
-        ctx.textAlign = 'center';
-        ctx.font = 'bold ' + Math.round(22 * sX) + 'px ' + font;
-        ctx.fillStyle = '#FFFFFF';
-        ctx.fillText(this.status, cW / 2, y);
-
-        ctx.font = Math.round(11 * sX) + 'px monospace';
-        ctx.fillStyle = 'rgba(0,240,255,0.82)';
-        ctx.fillText(this.detail || 'Loading assets...', cW / 2, y + 24 * sY);
-        ctx.restore();
+        const w = Math.min(560 * sX, cW - 64 * sX);
+        IP2Live.LoadingUIComponents.drawStatusModule(ctx, {
+            x: (cW - w) / 2,
+            y: cH * 0.415,
+            w,
+            h: 52 * sY,
+            title: this.status,
+            topPadding: 14,
+            font,
+            sX,
+            sY,
+            tick: this.animTick,
+        });
     }
 
     _drawFactPanel(ctx, cW, cH, sX, sY, font) {
         const w = Math.min(800 * sX, cW - 40 * sX);
-        const h = 60 * sY;
-        const x = (cW - w) / 2;
-        const y = cH - 140 * sY;
-
-        ctx.save();
-        ctx.fillStyle = 'rgba(3,7,20,0.88)';
-        ctx.fillRect(x, y, w, h);
-        ctx.strokeStyle = 'rgba(0,240,255,0.4)';
-        ctx.lineWidth = 1 * sX;
-        ctx.strokeRect(x, y, w, h);
-
-        ctx.fillStyle = '#FFE600';
-        ctx.fillRect(x, y, 6 * sX, h); // Yellow left border
-
-        ctx.font = 'bold ' + Math.round(10 * sX) + 'px monospace';
-        ctx.fillStyle = 'rgba(0,240,255,0.9)';
-        ctx.textAlign = 'left';
-        ctx.fillText('SUBNET TIP //', x + 20 * sX, y + 18 * sY);
-
-        ctx.font = Math.round(13 * sX) + 'px ' + font;
-        ctx.fillStyle = '#DAEEFF';
-        const lines = this._wrapText(ctx, this.fact, w - 40 * sX);
-        for (let i = 0; i < lines.length && i < 2; i++) {
-            ctx.fillText(lines[i], x + 20 * sX, y + (40 + i * 16) * sY);
-        }
-        ctx.restore();
+        IP2Live.LoadingUIComponents.drawInfoCard(ctx, {
+            x: (cW - w) / 2,
+            y: cH * 0.415 + 58 * sY,
+            w,
+            h: 42 * sY,
+            label: 'Subnet Tip',
+            text: this.fact,
+            font,
+            sX,
+            sY,
+        });
     }
 
     _drawLoadingLine(ctx, cW, cH, sX, sY, font) {
         const w = Math.min(620 * sX, cW - 80 * sX);
-        const x = (cW - w) / 2;
-        const y = cH - 44 * sY;
-        const h = Math.max(3 * sY, 2);
-        const progressW = w * this.progress;
-
-        ctx.save();
-        ctx.font = Math.round(10 * sX) + 'px monospace';
-        ctx.fillStyle = 'rgba(0,240,255,0.76)';
-        ctx.textAlign = 'left';
-        ctx.fillText('SYSTEM PROGRESS', x, y - 10 * sY);
-        ctx.textAlign = 'right';
-        ctx.fillText(String(Math.floor(this.progress * 100)).padStart(3, '0') + '%', x + w, y - 10 * sY);
-
-        ctx.fillStyle = 'rgba(255,255,255,0.1)';
-        ctx.fillRect(x, y, w, h);
-        ctx.fillStyle = '#00F0FF';
-        ctx.shadowColor = '#00F0FF';
-        ctx.shadowBlur = 8 * sX;
-        ctx.fillRect(x, y, progressW, h);
-        ctx.shadowBlur = 0;
-
-        ctx.fillStyle = '#FF003C';
-        ctx.fillRect(x + progressW - 2 * sX, y - 3 * sY, 4 * sX, h + 6 * sY);
-        ctx.restore();
+        IP2Live.LoadingUIComponents.drawProgressTrack(ctx, {
+            x: (cW - w) / 2,
+            y: cH - 48 * sY,
+            w,
+            progress: this.progress,
+            label: 'SYSTEM PROGRESS',
+            sX,
+            sY,
+            tick: this.animTick,
+        });
     }
 
     _drawCodeCreepTransition(ctx, cW, cH, sX, sY) {

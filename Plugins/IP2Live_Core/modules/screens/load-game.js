@@ -466,19 +466,17 @@ class IP2LiveLoadGameMenu extends Scene.Base {
                         ? String(meta.profileName)
                         : (game.infiltratorName || heroName || 'UNNAMED ARCHIVE'));
                 const mapId = (meta && Number(meta.mapId)) || game.currentMapID || 1;
-                const detail = 'NODE ' + String(mapId).padStart(4, '0') +
-                    ' // SESSION ' + this._getPlayTimeStr(game.playTime);
+                const detail = 'Map ' + mapId + '  |  Play time ' + this._getPlayTimeStr(game.playTime);
 
                 if (IP2Live.confirPopup && typeof IP2Live.confirPopup.show === 'function') {
                     IP2Live.confirPopup.show({
-                        title: 'RESTORE SAVE DATA?',
-                        message: 'Load this archive and replace the current session state?',
+                        title: 'LOAD SAVE?',
+                        message: 'Replace the current session with this save?',
                         detail,
-                        value: slotLabel + ' // ' + saveName,
-                        valueLabel: 'SELECTED SAVE ARCHIVE',
-                        confirmLabel: 'LOAD DATA',
-                        cancelLabel: 'RETURN',
-                        systemLabel: 'SYS::ARCHIVE_RESTORE',
+                        value: slotLabel + ' - ' + saveName,
+                        valueLabel: 'SELECTED SAVE',
+                        confirmLabel: 'LOAD',
+                        cancelLabel: 'BACK',
                         onConfirm: () => this._loadSelectedGame(game, selectedSlot, slotLabel),
                     });
                 } else {
