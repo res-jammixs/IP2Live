@@ -319,14 +319,10 @@ class IP2LiveTitleScreenImplementation extends Scene.Base {
     _openQuitConfirmation() {
         if (IP2Live.confirPopup && typeof IP2Live.confirPopup.show === 'function') {
             IP2Live.confirPopup.show({
-                title: 'TERMINATE SESSION?',
-                message: 'Close IP2Live and disconnect from the infiltration protocol?',
-                detail: 'UNSAVED FIELD PROGRESS WILL BE LOST.',
-                value: 'SYS::IP2LIVE / ACTIVE CLIENT',
-                valueLabel: 'PROCESS TARGET',
-                confirmLabel: 'QUIT GAME',
-                cancelLabel: 'STAY CONNECTED',
-                systemLabel: 'SYS::TERMINATION_REQUEST',
+                title: 'QUIT GAME?',
+                message: 'Close IP2Live?',
+                confirmLabel: 'QUIT',
+                cancelLabel: 'CANCEL',
                 danger: true,
                 onConfirm: function () {
                     const manager = IP2Live.GameManager;

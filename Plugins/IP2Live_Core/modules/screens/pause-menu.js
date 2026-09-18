@@ -308,19 +308,13 @@ class IP2LivePauseMenu extends Scene.Base {
     }
 
     _openQuitConfirmation() {
-        const profileName = Core.Game.current && Core.Game.current.infiltratorName
-            ? String(Core.Game.current.infiltratorName)
-            : 'UNKNOWN OPERATIVE';
         if (IP2Live.confirPopup && typeof IP2Live.confirPopup.show === 'function') {
             IP2Live.confirPopup.show({
-                title: 'TERMINATE SESSION?',
-                message: 'Close IP2Live and abandon the active field connection?',
-                detail: 'UNSAVED FIELD PROGRESS WILL BE LOST.',
-                value: profileName,
-                valueLabel: 'ACTIVE INFILTRATOR',
-                confirmLabel: 'QUIT GAME',
-                cancelLabel: 'RESUME LINK',
-                systemLabel: 'SYS::TERMINATION_REQUEST',
+                title: 'QUIT GAME?',
+                message: 'Return to the desktop?',
+                detail: 'Unsaved progress will be lost.',
+                confirmLabel: 'QUIT',
+                cancelLabel: 'CANCEL',
                 danger: true,
                 onConfirm: () => this._quitAfterCheckpoint(),
             });

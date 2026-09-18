@@ -1445,7 +1445,7 @@ IP2Live.ScreenModulesReady = (async function () {
     for (const file of screens) {
         const src = baseDir + file;
         try {
-            const versionedSrc = src + '?v=20260918_system_ui_05_' + Date.now();
+            const versionedSrc = src + '?v=20260918_system_ui_13_' + Date.now();
             let resp = await fetch(versionedSrc, { cache: 'no-store' });
             if (!resp.ok) {
                 console.warn('[IP2Live] Versioned screen fetch failed, retrying plain path:', versionedSrc);

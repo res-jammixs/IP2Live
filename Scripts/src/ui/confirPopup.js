@@ -7,14 +7,13 @@
  * Public API:
  *
  * IP2Live.confirPopup.show({
- *     title: 'CONFIRM OPERATION',
- *     message: 'Authorize the selected operation?',
- *     detail: 'OPTIONAL SYSTEM DETAIL',
- *     value: 'OPTIONAL VALUE TO VERIFY',
- *     valueLabel: 'TARGET',
+ *     title: 'CONFIRM?',
+ *     message: 'Continue with this action?',
+ *     detail: 'OPTIONAL DETAIL',
+ *     value: 'OPTIONAL VALUE',
+ *     valueLabel: 'SELECTION',
  *     confirmLabel: 'CONFIRM',
  *     cancelLabel: 'CANCEL',
- *     systemLabel: 'SYS::CONFIRMATION_GATE',
  *     danger: false,
  *     defaultConfirm: false,
  *     onConfirm: function () {},
