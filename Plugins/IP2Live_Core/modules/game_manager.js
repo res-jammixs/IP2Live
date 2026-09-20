@@ -106,7 +106,7 @@ const IP2LiveGameManager = {
                 name: 'Stage 1 Level 1',
                 stage: 1,
                 level: 1,
-                spawn: { x: 6, y: 0, z: 17 },
+                spawn: { x: 16, y: 0, z: 17 },
                 worldTitle: true,
             },
             4: {
