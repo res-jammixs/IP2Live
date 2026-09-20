@@ -12,7 +12,7 @@ const MapManager = {
     // are auto-discovered at runtime and merged into this list.
     stages: [
         { id: 1, name: 'Tutorial Stage', tutorial: true, questEnabled: false },
-        { id: 3, name: 'Stage 1 Level 1', stage: 1, level: 1 },
+        { id: 3, name: 'Stage 1 Level 1', stage: 1, level: 1, spawn: { x: 16, y: 0, z: 17 }, },
         {
             id: 4,
             name: 'Stage 1 Level 2',
