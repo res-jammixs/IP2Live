@@ -13,8 +13,8 @@
 // Stable IDs from the project's songs.json database.
 var MUSIC_TRACKS = {
     MAIN_MENU:  { id: 9,  name: 'Main Menu.mp3',      volume: 0.95 },
-    TUTORIAL:   { id: 10, name: 'Tutorial.mp3',       volume: 0.65 },
-    STAGE_1:    { id: 11, name: 'Stage 1 Music.mp3',  volume: 0.72 },
+    TUTORIAL:   { id: 10, name: 'Tutorial.mp3',       volume: 0.35 },
+    STAGE_1:    { id: 11, name: 'Stage 1 Music.mp3',  volume: 0.92 },
     STAGE_2:    { id: 12, name: 'Stage 2 Music.mp3',  volume: 0.72 },
     STAGE_3:    { id: 13, name: 'Stage 3 Music.mp3',  volume: 0.72 },
     STAGE_4:    { id: 14, name: 'Stage 4 Music.mp3',  volume: 0.72 },

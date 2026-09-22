@@ -1,14 +1,16 @@
 /**
  * IP2Live - Gameplay 4.5 Host-Power Reactor
  *
- * A one-minute bridge lesson for analytical subnetting:
+ * A timed bridge lesson for analytical subnetting:
  *   1. Read the required usable host count.
- *   2. Build the smallest exponent h where 2^h - 2 >= required hosts.
- *   3. Step between five lanes and press Space to shoot a value into h.
- *   4. Click CALCULATE to reveal 2^h - 2 and submit the answer.
+ *   2. Collect energy until h is the smallest exponent where 2^h - 2 >= required hosts.
+ *   3. Step between five lanes and press Space to deploy a collector tether.
+ *   4. Grab positive coal-energy cells and avoid broken battery cells.
+ *   5. Click CALCULATE to reveal 2^h - 2 and validate the engine load.
  *
- * The left third is the falling-object shooter. The right two thirds contain
- * the reactor, live capacity calculator, required-host display, and timer.
+ * The left side is the five-lane energy intake and collector. The right side
+ * is a glass reactor engine with thermal trace columns, collected-energy
+ * controls, the required-host target, and the calculation readout.
  */
 
 const IPHostPowerRules = {
@@ -134,8 +136,8 @@ const IP_HOST_POWER_PLAYFIELD = Object.freeze({
     // A balanced sweep visits every fixed lane before returning to one. This
     // prevents consecutive drops from visually merging in the same column.
     LANE_ORDER: Object.freeze([0, 2, 4, 1, 3]),
-    // Curated learning rhythm: eight clearly positive capsules and two
-    // viruses per cycle, with no long run of negative values.
+    // Curated learning rhythm: eight positive coal-energy cells and two
+    // broken battery cells per cycle, with no long run of negative values.
     DROP_SEQUENCE: Object.freeze([1, 3, 2, -1, 4, 2, 5, -2, 3, 1]),
     VALUE_COLORS: Object.freeze({
         1: '#00eaff',
@@ -146,16 +148,19 @@ const IP_HOST_POWER_PLAYFIELD = Object.freeze({
     }),
     SPAWN_INTERVAL_MS: 1500,
     FALL_SPEED_PX_PER_SECOND: 48,
-    BULLET_SPEED_PX_PER_SECOND: 390,
-    SHOT_COOLDOWN_MS: 160,
+    BULLET_SPEED_PX_PER_SECOND: 430,
+    TETHER_RETURN_SPEED_PX_PER_SECOND: 560,
+    SHOT_COOLDOWN_MS: 230,
     LANE_HOLD_DELAY_MS: 330,
     LANE_REPEAT_INTERVAL_MS: 190,
 });
 
 class IP2LiveHostPowerReactorGameplayScreen extends Scene.Base {
-    constructor(options) {
+    constructor(options, timeSeconds) {
         super(true);
         this.options = options || {};
+        const explicitTime = Number(timeSeconds);
+        this._explicitDurationSeconds = Number.isFinite(explicitTime) && explicitTime > 0 ? explicitTime : null;
         this._configure();
     }
 
@@ -177,11 +182,37 @@ class IP2LiveHostPowerReactorGameplayScreen extends Scene.Base {
         this.tutorialHighlight = null;
         this.tutorialSpotlightTimer = 0;
         this.tutorialSpotlightComplete = null;
-        this.durationMs = Math.max(10000, (Number(this.options.durationSeconds) || 60) * 1000);
+
+        const spec = this.options.spec || {};
+        const configuredSeconds =
+            this._explicitDurationSeconds ||
+            Number(this.options.timeSeconds) ||
+            Number(this.options.durationSeconds) ||
+            Number(spec.timeSeconds) ||
+            Number(spec.durationSeconds) ||
+            120;
+
+        this.durationSeconds = Math.max(10, configuredSeconds);
+        this.durationMs = this.durationSeconds * 1000;
+
         this.animTick = 0;
         this.finished = false;
         this.roundState = this.guidedTutorial ? 'tutorial' : 'ready';
-        this.exponent = Math.max(0, Math.min(this.scenario.classConfig.maxHostBits, Number(this.options.startExponent) || 0));
+        const configuredMaxCollected =
+            Number(this.options.maxCollectedExponent) ||
+            Number(spec.maxCollectedExponent) ||
+            0;
+        this.maxCollectedExponent = Math.max(
+            12,
+            this.scenario.targetExponent + 12,
+            this.scenario.classConfig.maxHostBits + 12,
+            configuredMaxCollected
+        );
+        this.maxCollectedExponent = Math.min(32, this.maxCollectedExponent);
+        this.exponent = Math.max(0, Math.min(this.maxCollectedExponent, Number(this.options.startExponent) || 0));
+        this.exponentPulseUntil = 0;
+        this.outputPulseUntil = 0;
+        this.engineNotice = null;
         this.evaluation = IPHostPowerRules.evaluate(this.scenario.requiredHosts, this.exponent);
         this.entities = [];
         this.bullets = [];
@@ -193,6 +224,7 @@ class IP2LiveHostPowerReactorGameplayScreen extends Scene.Base {
         this.laneCursor = 0;
         this.dropCursor = 0;
         this.nextEntityId = 1;
+        this.nextTetherId = 1;
         this.gunLaneIndex = Math.floor(IP_HOST_POWER_PLAYFIELD.LANE_COUNT / 2);
         this.gunX = null;
         this.heldLeft = false;
@@ -203,9 +235,21 @@ class IP2LiveHostPowerReactorGameplayScreen extends Scene.Base {
         this.lastShotAt = -Infinity;
         this.calculatedEvaluation = null;
         this.calculationAttempts = [];
+
+        // The reactor glass does not respond to raw collected energy. It only
+        // changes after CALCULATE is pressed, so the visual reinforces the
+        // deliberate subnetting step: collect h -> calculate -> observe capacity.
+        this.engineFillRatioDisplayed = 0;
+        this.engineFillRatioFrom = 0;
+        this.engineFillRatioTarget = 0;
+        this.engineFillAnimationStartedAt = null;
+        this.engineFillAnimationDurationMs = 1050;
+        this.engineCalculationPulseStartedAt = null;
         this.startedAt = null;
         this.endsAt = null;
         this.stabilizeStartedAt = null;
+        this.failureStartedAt = null;
+        this.failureAnimationDurationMs = 3000;
         this.failureReason = null;
         this.buttons = [];
         this.lastMetrics = null;
@@ -238,18 +282,18 @@ class IP2LiveHostPowerReactorGameplayScreen extends Scene.Base {
     update() {
         this.animTick++;
         const now = Date.now();
+
         if (IP2Live.GameplayCompletionPopup && typeof IP2Live.GameplayCompletionPopup.update === 'function') {
             IP2Live.GameplayCompletionPopup.update(this, now);
         }
+
         if (this.tutorialActive && !this.tutorialComplete) this._updateGuidedTutorial();
+
         const dialogueActive = this._dialogueActive();
         if (!this.finished && !dialogueActive && !this.tutorialPaused && this.roundState === 'ready') {
-            // RPG Paper Maker can invoke async load() from Scene.Base before
-            // the derived constructor finishes. _configure() then restores
-            // the initial "ready" state. Starting again on the first live
-            // update makes the lifecycle deterministic in editor and export.
             this._startRoundClock(now);
         }
+
         if (this.finished || dialogueActive || this.tutorialPaused) {
             if (Manager && Manager.Stack) Manager.Stack.requestPaintHUD = true;
             return;
@@ -259,6 +303,7 @@ class IP2LiveHostPowerReactorGameplayScreen extends Scene.Base {
         this.lastMetrics = metrics;
         this._ensureGun(metrics);
         const deltaSeconds = this._frameDeltaSeconds(now);
+        this._updateEngineFillAnimation(now);
 
         if (this.roundState === 'active') {
             if (now >= this.endsAt) {
@@ -271,10 +316,36 @@ class IP2LiveHostPowerReactorGameplayScreen extends Scene.Base {
                 this._resolveCollisions();
             }
         } else if (this.roundState === 'stabilizing') {
-            if (now - this.stabilizeStartedAt >= 900) this._complete();
+            if (now - this.stabilizeStartedAt >= Math.max(1250, this.engineFillAnimationDurationMs + 180)) this._complete();
+        } else if (this.roundState === 'overflow_failure') {
+            if (!this.failureStartedAt) this.failureStartedAt = now;
+            if (now - this.failureStartedAt >= this.failureAnimationDurationMs) {
+                this.roundState = 'failed';
+            }
         }
 
         if (Manager && Manager.Stack) Manager.Stack.requestPaintHUD = true;
+    }
+
+    _updateEngineFillAnimation(nowValue) {
+        if (!Number.isFinite(this.engineFillAnimationStartedAt)) return false;
+
+        const now = Number(nowValue) || Date.now();
+        const duration = Math.max(1, Number(this.engineFillAnimationDurationMs) || 1050);
+        const raw = Math.max(0, Math.min(1, (now - this.engineFillAnimationStartedAt) / duration));
+        const eased = raw < 0.5
+            ? 4 * raw * raw * raw
+            : 1 - Math.pow(-2 * raw + 2, 3) / 2;
+
+        this.engineFillRatioDisplayed = this.engineFillRatioFrom +
+            (this.engineFillRatioTarget - this.engineFillRatioFrom) * eased;
+
+        if (raw >= 1) {
+            this.engineFillRatioDisplayed = this.engineFillRatioTarget;
+            this.engineFillAnimationStartedAt = null;
+        }
+
+        return true;
     }
 
     _dialogueActive() {
@@ -330,7 +401,7 @@ class IP2LiveHostPowerReactorGameplayScreen extends Scene.Base {
         if (this.tutorialStep === 'shell_intro') {
             this._showGuidedDialogue(
                 'showShellGuide',
-                { type: 'shell', label: '04 // ONE SHOT BURSTS TARGET' },
+                { type: 'shell', label: '04 // COAL CELLS // BROKEN BATTERY CELLS' },
                 'controls_intro',
                 105
             );
@@ -339,7 +410,7 @@ class IP2LiveHostPowerReactorGameplayScreen extends Scene.Base {
         if (this.tutorialStep === 'controls_intro') {
             this._showGuidedDialogue(
                 'showControlsGuide',
-                { type: 'controls', label: '05 // STEP LANES // SPACE FIRE' },
+                { type: 'controls', label: '05 // STEP LANES // SPACE GRAB' },
                 'timer_intro',
                 100
             );
@@ -348,7 +419,7 @@ class IP2LiveHostPowerReactorGameplayScreen extends Scene.Base {
         if (this.tutorialStep === 'timer_intro') {
             this._showGuidedDialogue(
                 'showTimerGuide',
-                { type: 'timer', label: '06 // 60-SECOND REACTOR WINDOW' },
+                { type: 'timer', label: '06 // APEX TRACE WINDOW' },
                 'done',
                 100
             );
@@ -473,48 +544,66 @@ class IP2LiveHostPowerReactorGameplayScreen extends Scene.Base {
         const current = Number.isFinite(numericNow) ? numericNow : Date.now();
         if (!Number.isFinite(this.nextSpawnAt)) this.nextSpawnAt = current;
         if (current < this.nextSpawnAt) return false;
-        // Never catch up a backlog after lag; one calm, evenly spaced drop is
-        // easier to read than several capsules appearing in one frame.
+
         this.nextSpawnAt = current + this.spawnIntervalMs;
+
         const laneOrder = IP_HOST_POWER_PLAYFIELD.LANE_ORDER;
         const laneIndex = laneOrder[this.laneCursor % laneOrder.length];
         this.laneCursor++;
+
         const dropSequence = IP_HOST_POWER_PLAYFIELD.DROP_SEQUENCE;
         const value = dropSequence[this.dropCursor % dropSequence.length];
         this.dropCursor++;
-        const isVirus = value < 0;
-        const radius = (isVirus ? 19 : 20) * m.scale;
+
+        const isBroken = value < 0;
+        const radius = (isBroken ? 20 : 21) * m.scale;
         const laneWidth = m.arena.w / IP_HOST_POWER_PLAYFIELD.LANE_COUNT;
+
         this.entities.push({
             id: this.nextEntityId++,
-            type: isVirus ? 'virus' : 'capsule',
+            type: isBroken ? 'broken-cell' : 'coal',
             value,
             laneIndex,
             x: m.arena.x + laneWidth * (laneIndex + 0.5),
             y: m.arena.y - radius,
             radius,
             speed: IP_HOST_POWER_PLAYFIELD.FALL_SPEED_PX_PER_SECOND * m.scale,
-            spin: isVirus ? (this.nextEntityId % 8) * Math.PI / 4 : 0,
+            spin: isBroken ? (this.nextEntityId % 8) * Math.PI / 4 : 0,
             maxHits: 1,
             hitsRemaining: 1,
             hitFlashUntil: 0,
+            grabbed: false,
+            grabbedBy: null,
         });
+
         return true;
     }
 
     _fireBullet(m, now) {
         if (this.roundState !== 'active' || this.finished || this.tutorialPaused) return false;
+
         const numericNow = Number(now);
         const current = Number.isFinite(numericNow) ? numericNow : Date.now();
         if (current - this.lastShotAt < IP_HOST_POWER_PLAYFIELD.SHOT_COOLDOWN_MS) return false;
+
         this._ensureGun(m);
         this.lastShotAt = current;
+
+        const collectorY = m.arena.y + m.arena.h - 48 * m.scale;
         this.bullets.push({
+            id: this.nextTetherId++,
             x: this.gunX,
-            y: m.arena.y + m.arena.h - 40 * m.scale,
-            radius: 3.4 * m.scale,
+            homeX: this.gunX,
+            y: collectorY - 20 * m.scale,
+            originY: collectorY - 8 * m.scale,
+            radius: 7 * m.scale,
             speed: IP_HOST_POWER_PLAYFIELD.BULLET_SPEED_PX_PER_SECOND * m.scale,
+            returnSpeed: IP_HOST_POWER_PLAYFIELD.TETHER_RETURN_SPEED_PX_PER_SECOND * m.scale,
+            state: 'extending',
+            targetId: null,
+            pulse: 0,
         });
+
         this._playShot();
         return true;
     }
@@ -538,61 +627,112 @@ class IP2LiveHostPowerReactorGameplayScreen extends Scene.Base {
 
     _updateEntities(m, deltaSeconds) {
         const bottom = m.arena.y + m.arena.h - 16 * m.scale;
+
         for (let i = this.entities.length - 1; i >= 0; i--) {
             const entity = this.entities[i];
+            if (entity.grabbed) continue;
+
             entity.y += entity.speed * deltaSeconds;
-            if (entity.type === 'virus') entity.spin += 1.15 * deltaSeconds;
-            if (entity.y - entity.radius > bottom) this.entities.splice(i, 1);
+            if (entity.type === 'broken-cell') entity.spin += 1.05 * deltaSeconds;
+
+            if (entity.y - entity.radius > bottom) {
+                this.entities.splice(i, 1);
+            }
         }
     }
 
     _updateBullets(m, deltaSeconds) {
+        const top = m.arena.y + 26 * m.scale;
+        const collectorY = m.arena.y + m.arena.h - 48 * m.scale;
+
         for (let i = this.bullets.length - 1; i >= 0; i--) {
-            const bullet = this.bullets[i];
-            bullet.y -= bullet.speed * deltaSeconds;
-            if (bullet.y + bullet.radius < m.arena.y) this.bullets.splice(i, 1);
+            const tether = this.bullets[i];
+
+            if (tether.state === 'extending') {
+                tether.y -= tether.speed * deltaSeconds;
+                tether.pulse += deltaSeconds * 8;
+
+                if (tether.y <= top) {
+                    tether.y = top;
+                    tether.state = 'returning';
+                }
+            } else {
+                tether.y += tether.returnSpeed * deltaSeconds;
+                tether.pulse += deltaSeconds * 10;
+                if (Number.isFinite(this.gunX)) {
+                    tether.homeX = this.gunX;
+                    tether.x += (tether.homeX - tether.x) * Math.min(1, deltaSeconds * 12);
+                }
+
+                const target = tether.targetId
+                    ? this.entities.find((entity) => entity.id === tether.targetId)
+                    : null;
+
+                if (target) {
+                    target.x += (tether.x - target.x) * Math.min(1, deltaSeconds * 16);
+                    target.y = tether.y - 12 * m.scale;
+                    target.spin *= 0.88;
+                }
+
+                if (tether.y >= collectorY) {
+                    if (target) {
+                        const entityIndex = this.entities.findIndex((entity) => entity.id === target.id);
+                        if (entityIndex >= 0) this.entities.splice(entityIndex, 1);
+                        this._applyPower(target.value, target.type);
+                    }
+
+                    this.bullets.splice(i, 1);
+                    if (this.roundState !== 'active') return;
+                }
+            }
         }
     }
 
     _resolveCollisions() {
         for (let b = this.bullets.length - 1; b >= 0; b--) {
-            const bullet = this.bullets[b];
+            const tether = this.bullets[b];
+            if (tether.state !== 'extending' || tether.targetId) continue;
+
             let hitIndex = -1;
+            let bestDistance = Infinity;
+
             for (let e = this.entities.length - 1; e >= 0; e--) {
                 const entity = this.entities[e];
-                const dx = bullet.x - entity.x;
-                const dy = bullet.y - entity.y;
-                const hitRadius = bullet.radius + entity.radius;
-                if (dx * dx + dy * dy <= hitRadius * hitRadius) {
+                if (entity.grabbed) continue;
+
+                const dx = tether.x - entity.x;
+                const dy = tether.y - entity.y;
+                const hitRadius = tether.radius + entity.radius * 0.82;
+                const distanceSquared = dx * dx + dy * dy;
+
+                if (distanceSquared <= hitRadius * hitRadius && distanceSquared < bestDistance) {
                     hitIndex = e;
-                    break;
+                    bestDistance = distanceSquared;
                 }
             }
+
             if (hitIndex < 0) continue;
+
             const entity = this.entities[hitIndex];
-            this.bullets.splice(b, 1);
-            const storedHits = Number(entity.hitsRemaining);
-            const currentHits = Number.isFinite(storedHits) ? storedHits : 1;
-            entity.maxHits = 1;
-            entity.hitsRemaining = Math.max(0, currentHits - 1);
+            entity.grabbed = true;
+            entity.grabbedBy = tether.id;
             entity.hitFlashUntil = Date.now() + 180;
-            if (entity.hitsRemaining > 0) {
-                this._playArmorImpact();
-                continue;
-            }
-            this.entities.splice(hitIndex, 1);
-            this._applyPower(entity.value, entity.type);
-            if (this.roundState !== 'active') return;
+
+            tether.targetId = entity.id;
+            tether.state = 'returning';
+            tether.y = Math.min(tether.y, entity.y + entity.radius * 0.25);
+
+            this._playArmorImpact();
         }
     }
 
     _applyPower(delta, source) {
         const previous = this.exponent;
-        const maximum = this.scenario.classConfig.maxHostBits;
+        const maximum = this.maxCollectedExponent || Math.max(this.scenario.classConfig.maxHostBits, 12);
         this.exponent = Math.max(0, Math.min(maximum, this.exponent + Number(delta || 0)));
-        // Changing h invalidates the previously submitted calculation. The
-        // capacity result stays concealed until CALCULATE is clicked again.
-        this.calculatedEvaluation = null;
+        this.exponentPulseUntil = Date.now() + 280;
+        this.outputPulseUntil = Date.now() + 240;
+
         this.hits.push({
             value: Number(delta || 0),
             source: source || 'unknown',
@@ -603,12 +743,13 @@ class IP2LiveHostPowerReactorGameplayScreen extends Scene.Base {
         });
 
         this._lastStatus = 'pending-calculation';
-        this._playHit(source === 'virus');
+        this._playHit(source === 'broken-cell');
     }
 
     _calculateCurrentPower() {
         if (this.roundState !== 'active' || this.finished || this.tutorialPaused) return false;
         if (this.calculatedEvaluation && this.calculatedEvaluation.exponent === this.exponent) return false;
+
         const evaluation = IPHostPowerRules.evaluate(this.scenario.requiredHosts, this.exponent);
         this.evaluation = evaluation;
         this.calculatedEvaluation = Object.assign({}, evaluation);
@@ -619,6 +760,28 @@ class IP2LiveHostPowerReactorGameplayScreen extends Scene.Base {
             status: evaluation.status,
             atMs: this.startedAt ? Math.max(0, Date.now() - this.startedAt) : 0,
         });
+
+        // Only CALCULATE changes the visible reactor fill. Catching energy cells
+        // changes h, but the glass remains on the last verified state until the
+        // player explicitly evaluates the new power.
+        const targetExponent = Math.max(1, Number(this.scenario.targetExponent) || 1);
+        const visualRatio = Math.max(0, Math.min(1, this.exponent / targetExponent));
+        this.engineFillRatioFrom = Math.max(0, Math.min(1, Number(this.engineFillRatioDisplayed) || 0));
+        this.engineFillRatioTarget = visualRatio;
+        this.engineFillAnimationStartedAt = Date.now();
+        this.engineCalculationPulseStartedAt = Date.now();
+        this.outputPulseUntil = Date.now() + 380;
+
+        if (evaluation.status === 'over') {
+            this.engineNotice = {
+                text: 'ENERGY INPUT OVERLOAD',
+                color: '#FF5C74',
+                startedAt: Date.now(),
+                durationMs: 2000,
+            };
+        } else {
+            this.engineNotice = null;
+        }
 
         if (evaluation.valid) {
             this.roundState = 'stabilizing';
@@ -653,13 +816,17 @@ class IP2LiveHostPowerReactorGameplayScreen extends Scene.Base {
 
     _timeout() {
         if (this.roundState !== 'active') return;
-        this.roundState = 'failed';
+
+        this.roundState = 'overflow_failure';
         this.heldLeft = false;
         this.heldRight = false;
         this.shootHeld = false;
         this.failureReason = 'timeout';
+        this.failureStartedAt = Date.now();
+
         this.entities = [];
         this.bullets = [];
+
         this._playError();
         this._notifyMistake('timeout');
     }
@@ -686,6 +853,15 @@ class IP2LiveHostPowerReactorGameplayScreen extends Scene.Base {
         this.calculatedEvaluation = null;
         this.calculationAttempts = [];
         this.failureReason = null;
+        this.failureStartedAt = null;
+        this.exponentPulseUntil = 0;
+        this.outputPulseUntil = 0;
+        this.engineNotice = null;
+        this.engineFillRatioDisplayed = 0;
+        this.engineFillRatioFrom = 0;
+        this.engineFillRatioTarget = 0;
+        this.engineFillAnimationStartedAt = null;
+        this.engineCalculationPulseStartedAt = null;
         this._lastStatus = this.evaluation.status;
         this._startRoundClock();
     }
@@ -761,7 +937,10 @@ class IP2LiveHostPowerReactorGameplayScreen extends Scene.Base {
             return true;
         }
         if (this.roundState === 'failed') {
-            if (upper === 'ENTER' || upper === 'SPACE' || upper === 'SPACEBAR' || upper === 'R' || upper === 'KEYR') this._restart();
+            if (upper === 'ENTER' || upper === 'SPACE' || upper === 'SPACEBAR') {
+                this._cancel(true);
+                return true;
+            }
             return true;
         }
         if (this._isShootKey(upper)) {
@@ -861,13 +1040,8 @@ class IP2LiveHostPowerReactorGameplayScreen extends Scene.Base {
                 return true;
             }
         }
-        this.buttons = [];
-        if (this.roundState === 'failed') this._buildFailureButtons(m);
-        for (let i = 0; i < this.buttons.length; i++) {
-            const button = this.buttons[i];
-            if (!this._pointInRect(x, y, button)) continue;
-            if (button.action === 'retry') this._restart();
-            else if (button.action === 'exit') this._cancel(true);
+        if (this.roundState === 'failed') {
+            this._cancel(true);
             return true;
         }
         return this.onMouseMove(x, y);
@@ -883,18 +1057,44 @@ class IP2LiveHostPowerReactorGameplayScreen extends Scene.Base {
         this.lastMetrics = m;
         this._ensureGun(m);
         this.buttons = [];
+
+        const warningIntensity = this._criticalWarningIntensity(Date.now());
+
         ctx.save();
+
+        if (warningIntensity > 0 && this.roundState === 'active') {
+            const shakeAmount = warningIntensity * 2.8 * m.scale;
+            const shakeX = Math.sin(this.animTick * 1.73) * shakeAmount;
+            const shakeY = Math.cos(this.animTick * 1.41) * shakeAmount * 0.72;
+            ctx.translate(shakeX, shakeY);
+        }
+
         this._drawBackdrop(ctx, m);
         this._drawShell(ctx, m);
         this._drawHeader(ctx, m);
         this._drawArena(ctx, m);
         this._drawRightPanel(ctx, m);
-        if (this.roundState === 'failed') this._drawFailure(ctx, m);
+
+        if (this.roundState === 'overflow_failure') {
+            this._drawOverflowFailure(ctx, m, false);
+        } else if (this.roundState === 'failed') {
+            // Keep the coolant breach fully raised and animated behind the
+            // explanation card until the player leaves the scene.
+            this._drawOverflowFailure(ctx, m, true);
+            this._drawFailure(ctx, m);
+        }
+
         this._drawTutorialHighlight(ctx, m);
         ctx.restore();
+
+        if (warningIntensity > 0 && this.roundState === 'active') {
+            this._drawCriticalWarningOverlay(ctx, m, warningIntensity);
+        }
+
         if (IP2Live.GameplayCompletionPopup && typeof IP2Live.GameplayCompletionPopup.drawFor === 'function') {
             IP2Live.GameplayCompletionPopup.drawFor(this, ctx, { tick: this.animTick });
         }
+
         if (IP2Live.DialogueManager && typeof IP2Live.DialogueManager.drawOverlay === 'function') {
             IP2Live.DialogueManager.drawOverlay(ctx);
         }
@@ -978,13 +1178,15 @@ class IP2LiveHostPowerReactorGameplayScreen extends Scene.Base {
     }
 
     _drawHeader(ctx, m) {
-        const titleFont = IP2Live.Assets && IP2Live.Assets.abnesLoaded ? 'Abnes' : 'monospace';
+        const titleFont = IP2Live.Assets && IP2Live.Assets.abnesLoaded ? 'Abnes' : this._uiFont();
+        const font = this._uiFont();
         const plateX = m.x + 20 * m.scale;
         const plateY = m.y + 10 * m.scale;
         const plateW = Math.min(m.w * 0.53, 445 * m.scale);
         const plateH = 43 * m.scale;
 
         ctx.save();
+
         this._chamferPath(ctx, plateX, plateY, plateW, plateH, 9 * m.scale);
         const plate = ctx.createLinearGradient(plateX, plateY, plateX + plateW, plateY + plateH);
         plate.addColorStop(0, '#202a34');
@@ -1003,6 +1205,7 @@ class IP2LiveHostPowerReactorGameplayScreen extends Scene.Base {
         ctx.lineTo(plateX + 57 * m.scale, plateY + plateH);
         ctx.lineTo(plateX, plateY + plateH - 7 * m.scale);
         ctx.closePath();
+
         const badge = ctx.createLinearGradient(plateX, plateY, plateX + 64 * m.scale, plateY + plateH);
         badge.addColorStop(0, '#ff315f');
         badge.addColorStop(0.62, '#b50032');
@@ -1013,7 +1216,7 @@ class IP2LiveHostPowerReactorGameplayScreen extends Scene.Base {
         ctx.textBaseline = 'middle';
         ctx.textAlign = 'center';
         ctx.fillStyle = '#ffffff';
-        ctx.font = 'bold ' + Math.round(7 * m.scale) + 'px monospace';
+        ctx.font = 'bold ' + Math.round(7 * m.scale) + 'px ' + font;
         ctx.fillText('IP2', plateX + 26 * m.scale, plateY + 15 * m.scale);
         ctx.fillStyle = '#ffe600';
         ctx.fillText('P-45', plateX + 26 * m.scale, plateY + 29 * m.scale);
@@ -1026,19 +1229,23 @@ class IP2LiveHostPowerReactorGameplayScreen extends Scene.Base {
         const hostW = ctx.measureText('HOST').width;
         ctx.fillStyle = '#00f0ff';
         ctx.fillText('POWER', titleX + hostW + 9 * m.scale, plateY + 19 * m.scale);
+
         ctx.fillStyle = 'rgba(190, 211, 222, 0.68)';
-        ctx.font = 'bold ' + Math.round(6.5 * m.scale) + 'px monospace';
+        ctx.font = 'bold ' + Math.round(6.5 * m.scale) + 'px ' + font;
         ctx.fillText('GAMEPLAY 4.5 // REACTOR CAPACITY', titleX, plateY + 34 * m.scale);
         ctx.restore();
 
         const chipY = m.y + 13 * m.scale;
-        const chipH = 20 * m.scale;
-        const liveColor = this.roundState === 'failed'
+        const liveColor = this.roundState === 'failed' || this.roundState === 'overflow_failure'
             ? '#ff315f'
             : (this.guidedTutorial ? '#ffe600' : (this.roundState === 'ready' ? '#ffe600' : '#00f0ff'));
+
         const statusText = this.roundState === 'failed'
             ? 'OFFLINE'
-            : (this.guidedTutorial ? 'TRAINING' : (this.roundState === 'ready' ? 'SYNC' : 'LIVE'));
+            : (this.roundState === 'overflow_failure'
+                ? 'BREACH'
+                : (this.guidedTutorial ? 'TRAINING' : (this.roundState === 'ready' ? 'SYNC' : 'LIVE')));
+
         let chipRight = m.x + m.w - 20 * m.scale;
         chipRight = this._drawStatusChip(ctx, chipRight, chipY, 'SYS ' + statusText, liveColor, m);
         chipRight = this._drawStatusChip(ctx, chipRight - 7 * m.scale, chipY, 'HOSTS ' + this._formatNumber(this.scenario.requiredHosts), '#ffe600', m);
@@ -1047,12 +1254,14 @@ class IP2LiveHostPowerReactorGameplayScreen extends Scene.Base {
         ctx.textAlign = 'right';
         ctx.textBaseline = 'middle';
         ctx.fillStyle = 'rgba(173, 205, 216, 0.62)';
-        ctx.font = 'bold ' + Math.round(7 * m.scale) + 'px monospace';
-        ctx.fillText('A/D OR LEFT/RIGHT STEP LANES  //  SPACE FIRE  //  ESC EXIT', m.x + m.w - 22 * m.scale, m.y + 52 * m.scale);
+        ctx.font = 'bold ' + Math.round(7 * m.scale) + 'px ' + font;
+        ctx.fillText('A/D OR LEFT/RIGHT STEP LANES  //  SPACE GRAB  //  ESC EXIT', m.x + m.w - 22 * m.scale, m.y + 52 * m.scale);
     }
 
     _drawArena(ctx, m) {
         const a = m.arena;
+        const font = this._uiFont();
+
         ctx.save();
         this._roundedRect(ctx, a.x, a.y, a.w, a.h, 10 * m.scale);
         ctx.fillStyle = 'rgba(0, 7, 12, 0.96)';
@@ -1064,12 +1273,14 @@ class IP2LiveHostPowerReactorGameplayScreen extends Scene.Base {
 
         const laneCount = IP_HOST_POWER_PLAYFIELD.LANE_COUNT;
         const laneWidth = a.w / laneCount;
+
         for (let lane = 0; lane < laneCount; lane++) {
             if (lane % 2 === 0) {
                 ctx.fillStyle = 'rgba(0, 174, 199, 0.025)';
                 ctx.fillRect(a.x + lane * laneWidth, a.y, laneWidth, a.h);
             }
         }
+
         if (Number.isInteger(this.gunLaneIndex)) {
             const selectedX = a.x + laneWidth * this.gunLaneIndex;
             const selectedGlow = ctx.createLinearGradient(selectedX, a.y, selectedX + laneWidth, a.y);
@@ -1079,8 +1290,10 @@ class IP2LiveHostPowerReactorGameplayScreen extends Scene.Base {
             ctx.fillStyle = selectedGlow;
             ctx.fillRect(selectedX, a.y + 30 * m.scale, laneWidth, a.h - 54 * m.scale);
         }
+
         ctx.strokeStyle = 'rgba(35, 171, 190, 0.22)';
         ctx.lineWidth = Math.max(0.8, m.scale);
+
         for (let lane = 1; lane < laneCount; lane++) {
             const laneX = a.x + lane * laneWidth;
             ctx.beginPath();
@@ -1088,16 +1301,22 @@ class IP2LiveHostPowerReactorGameplayScreen extends Scene.Base {
             ctx.lineTo(laneX, a.y + a.h - 24 * m.scale);
             ctx.stroke();
         }
+
         const grid = 42 * m.scale;
         ctx.strokeStyle = 'rgba(26, 112, 128, 0.10)';
         ctx.lineWidth = Math.max(0.5, m.scale * 0.7);
+
         for (let y = a.y + 30 * m.scale; y < a.y + a.h - 24 * m.scale; y += grid) {
-            ctx.beginPath(); ctx.moveTo(a.x, y); ctx.lineTo(a.x + a.w, y); ctx.stroke();
+            ctx.beginPath();
+            ctx.moveTo(a.x, y);
+            ctx.lineTo(a.x + a.w, y);
+            ctx.stroke();
         }
 
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
-        ctx.font = 'bold ' + Math.round(7 * m.scale) + 'px monospace';
+        ctx.font = 'bold ' + Math.round(7 * m.scale) + 'px ' + font;
+
         for (let lane = 0; lane < laneCount; lane++) {
             const laneX = a.x + laneWidth * (lane + 0.5);
             ctx.fillStyle = 'rgba(0, 8, 13, 0.72)';
@@ -1112,7 +1331,7 @@ class IP2LiveHostPowerReactorGameplayScreen extends Scene.Base {
         const scanY = a.y + ((this.animTick * 1.6 * m.scale) % Math.max(1, a.h));
         const scan = ctx.createLinearGradient(a.x, scanY - 18 * m.scale, a.x, scanY + 18 * m.scale);
         scan.addColorStop(0, 'rgba(0, 230, 255, 0)');
-        scan.addColorStop(0.5, 'rgba(0, 230, 255, 0.08)');
+        scan.addColorStop(0.5, 'rgba(0, 230, 255, 0.07)');
         scan.addColorStop(1, 'rgba(0, 230, 255, 0)');
         ctx.fillStyle = scan;
         ctx.fillRect(a.x, scanY - 18 * m.scale, a.w, 36 * m.scale);
@@ -1123,30 +1342,35 @@ class IP2LiveHostPowerReactorGameplayScreen extends Scene.Base {
         for (let i = 0; i < this.bullets.length; i++) this._drawBullet(ctx, this.bullets[i], m);
         this._drawGun(ctx, m);
 
-        ctx.fillStyle = 'rgba(0, 0, 0, 0.68)';
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.70)';
         ctx.fillRect(a.x, a.y, a.w, 30 * m.scale);
+
         ctx.fillStyle = '#00f0ff';
-        ctx.font = 'bold ' + Math.round(8 * m.scale) + 'px monospace';
+        ctx.font = 'bold ' + Math.round(8 * m.scale) + 'px ' + font;
         ctx.textAlign = 'left';
         ctx.textBaseline = 'middle';
-        ctx.fillText('CAPSULE INTAKE // 5 LANES // 1-HIT TARGETS', a.x + 13 * m.scale, a.y + 15 * m.scale);
+        ctx.fillText('ENERGY INTAKE // 5 LANES // COLLECTOR GRID', a.x + 13 * m.scale, a.y + 15 * m.scale);
+
         ctx.textAlign = 'right';
         ctx.fillStyle = '#ffe600';
-        ctx.fillText('+1..+5', a.x + a.w - 74 * m.scale, a.y + 15 * m.scale);
+        ctx.fillText('ENERGY 1..5', a.x + a.w - 98 * m.scale, a.y + 15 * m.scale);
         ctx.fillStyle = '#ff315f';
-        ctx.fillText('VIRUS -1..-2', a.x + a.w - 13 * m.scale, a.y + 15 * m.scale);
+        ctx.fillText('BROKEN 1..2', a.x + a.w - 13 * m.scale, a.y + 15 * m.scale);
 
-        ctx.fillStyle = 'rgba(0, 0, 0, 0.55)';
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.58)';
         ctx.fillRect(a.x, a.y + a.h - 24 * m.scale, a.w, 24 * m.scale);
+
         ctx.textAlign = 'left';
         ctx.fillStyle = 'rgba(183, 218, 227, 0.64)';
-        ctx.font = 'bold ' + Math.round(7 * m.scale) + 'px monospace';
-        ctx.fillText('MANUAL PULSE // TAP SPACE TO FIRE', a.x + 13 * m.scale, a.y + a.h - 12 * m.scale);
+        ctx.font = 'bold ' + Math.round(7 * m.scale) + 'px ' + font;
+        ctx.fillText('COLLECTOR LINK // TAP SPACE TO GRAB', a.x + 13 * m.scale, a.y + a.h - 12 * m.scale);
+
         ctx.textAlign = 'right';
         ctx.fillStyle = this.roundState === 'active' ? '#55ff91' : '#ffe600';
         const arenaStatus = this.guidedTutorial
-            ? 'STEP LANES // ONE SHOT BURSTS TARGET'
-            : (this.roundState === 'active' ? 'LANE L' + (this.gunLaneIndex + 1) + ' // READY' : 'REACTOR SYNC');
+            ? 'STEP LANES // GRAB ENERGY CELLS'
+            : (this.roundState === 'active' ? 'COLLECTOR L' + (this.gunLaneIndex + 1) + ' // READY' : 'ENGINE SYNC');
+
         ctx.fillText(arenaStatus, a.x + a.w - 13 * m.scale, a.y + a.h - 12 * m.scale);
         ctx.restore();
     }
@@ -1154,34 +1378,38 @@ class IP2LiveHostPowerReactorGameplayScreen extends Scene.Base {
     _tutorialSampleEntities(m) {
         if (!this.tutorialActive || this.tutorialComplete || !this.tutorialHighlight) return [];
         if (this.tutorialHighlight.type !== 'intake' && this.tutorialHighlight.type !== 'shell') return [];
+
         const laneWidth = m.arena.w / IP_HOST_POWER_PLAYFIELD.LANE_COUNT;
         const y = m.arena.y + Math.min(m.arena.h * 0.26, 118 * m.scale);
+
         return [
             {
-                id: 'tutorial-capsule',
-                type: 'capsule',
+                id: 'tutorial-coal',
+                type: 'coal',
                 value: 2,
                 laneIndex: 1,
                 x: m.arena.x + laneWidth * 1.5,
                 y,
-                radius: 20 * m.scale,
+                radius: 21 * m.scale,
                 spin: 0,
                 maxHits: 1,
                 hitsRemaining: 1,
                 hitFlashUntil: 0,
+                grabbed: false,
             },
             {
-                id: 'tutorial-virus',
-                type: 'virus',
+                id: 'tutorial-broken-cell',
+                type: 'broken-cell',
                 value: -1,
                 laneIndex: 3,
                 x: m.arena.x + laneWidth * 3.5,
                 y,
-                radius: 19 * m.scale,
+                radius: 20 * m.scale,
                 spin: Math.PI / 8,
                 maxHits: 1,
                 hitsRemaining: 1,
                 hitFlashUntil: 0,
+                grabbed: false,
             },
         ];
     }
@@ -1240,7 +1468,7 @@ class IP2LiveHostPowerReactorGameplayScreen extends Scene.Base {
         ctx.fill();
         ctx.shadowBlur = 0;
         ctx.fillStyle = '#05070a';
-        ctx.font = 'bold ' + Math.max(7, Math.round(8 * m.scale)) + 'px monospace';
+        ctx.font = 'bold ' + Math.max(7, Math.round(8 * m.scale)) + 'px ' + this._uiFont();
         ctx.textAlign = 'left';
         ctx.textBaseline = 'middle';
         ctx.fillText(label, labelX + 10 * m.scale, labelY + labelH * 0.54);
@@ -1250,6 +1478,7 @@ class IP2LiveHostPowerReactorGameplayScreen extends Scene.Base {
     _tutorialHighlightRects(m) {
         const highlight = this.tutorialHighlight || {};
         const pad = 7 * m.scale;
+
         const clamp = (rect) => {
             const minX = m.x + 14 * m.scale;
             const minY = m.y + 62 * m.scale;
@@ -1257,6 +1486,7 @@ class IP2LiveHostPowerReactorGameplayScreen extends Scene.Base {
             const maxY = m.y + m.h - 14 * m.scale;
             const x = Math.max(minX, rect.x - pad);
             const y = Math.max(minY, rect.y - pad);
+
             return {
                 x,
                 y,
@@ -1264,21 +1494,16 @@ class IP2LiveHostPowerReactorGameplayScreen extends Scene.Base {
                 h: Math.max(24 * m.scale, Math.min(maxY, rect.y + rect.h + pad) - y),
             };
         };
-        const r = m.right;
-        const reactorH = r.h * 0.55;
-        const cardsY = r.y + reactorH + 10 * m.scale;
-        const cardsH = r.h * 0.25;
-        const cardGap = 12 * m.scale;
-        const cardW = (r.w - cardGap) * 0.5;
-        const timerY = cardsY + cardsH + 13 * m.scale;
+
+        const layout = this._rightPanelLayout(m);
         const result = { label: highlight.label || '', rects: [] };
 
         if (highlight.type === 'reactor') {
-            result.rects.push(clamp({ x: r.x, y: r.y, w: r.w, h: reactorH }));
-            result.rects.push(clamp({ x: r.x + cardW + cardGap, y: cardsY, w: cardW, h: cardsH }));
+            result.rects.push(clamp(layout.engine));
+            result.rects.push(clamp(layout.needed));
         } else if (highlight.type === 'formula') {
-            result.rects.push(clamp({ x: r.x, y: cardsY, w: cardW, h: cardsH }));
-            result.rects.push(clamp({ x: r.x + cardW + cardGap, y: cardsY, w: cardW, h: cardsH }));
+            result.rects.push(clamp(layout.controls));
+            result.rects.push(clamp(layout.needed));
         } else if (highlight.type === 'intake') {
             result.rects.push(clamp({
                 x: m.arena.x,
@@ -1291,19 +1516,19 @@ class IP2LiveHostPowerReactorGameplayScreen extends Scene.Base {
             for (let i = 0; i < samples.length; i++) {
                 const sample = samples[i];
                 result.rects.push(clamp({
-                    x: sample.x - 38 * m.scale,
-                    y: sample.y - 34 * m.scale,
-                    w: 76 * m.scale,
-                    h: 72 * m.scale,
+                    x: sample.x - 40 * m.scale,
+                    y: sample.y - 36 * m.scale,
+                    w: 80 * m.scale,
+                    h: 74 * m.scale,
                 }));
             }
         } else if (highlight.type === 'controls') {
-            const gunY = m.arena.y + m.arena.h - 42 * m.scale;
+            const collectorY = m.arena.y + m.arena.h - 48 * m.scale;
             result.rects.push(clamp({
-                x: this.gunX - 31 * m.scale,
-                y: gunY - 34 * m.scale,
-                w: 62 * m.scale,
-                h: 58 * m.scale,
+                x: this.gunX - 36 * m.scale,
+                y: collectorY - 39 * m.scale,
+                w: 72 * m.scale,
+                h: 66 * m.scale,
             }));
             result.rects.push(clamp({
                 x: m.arena.x,
@@ -1312,324 +1537,525 @@ class IP2LiveHostPowerReactorGameplayScreen extends Scene.Base {
                 h: 28 * m.scale,
             }));
         } else if (highlight.type === 'timer') {
-            result.rects.push(clamp({
-                x: r.x,
-                y: timerY,
-                w: r.w,
-                h: Math.max(38 * m.scale, r.y + r.h - timerY),
-            }));
+            result.rects.push(clamp(layout.leftGauge));
+            result.rects.push(clamp(layout.rightGauge));
         }
+
         return result.rects.length ? result : null;
     }
 
     _drawEntity(ctx, entity, m) {
-        const valueColor = entity.type === 'virus'
+        const isBroken = entity.type === 'broken-cell';
+        const magnitude = Math.max(1, Math.abs(Number(entity.value) || 1));
+        const valueColor = isBroken
             ? '#ff315f'
             : (IP_HOST_POWER_PLAYFIELD.VALUE_COLORS[entity.value] || '#00eaff');
+        const font = this._uiFont();
+        const pulse = 0.5 + 0.5 * Math.sin((this.animTick + (entity.id || 0) * 13) * 0.13);
+
         ctx.save();
         ctx.translate(entity.x, entity.y);
-        ctx.rotate(entity.spin);
-        if (entity.type === 'virus') {
-            ctx.shadowColor = '#ff284f';
-            ctx.shadowBlur = 11 * m.scale;
-            ctx.fillStyle = 'rgba(116, 7, 28, 0.96)';
-            ctx.strokeStyle = '#ff315f';
+        ctx.rotate(entity.spin || 0);
+
+        if (isBroken) {
+            const r = entity.radius;
+            const bodyW = r * 1.92;
+            const bodyH = r * 1.42;
+
+            ctx.shadowColor = '#ff315f';
+            ctx.shadowBlur = (12 + pulse * 7) * m.scale;
+
+            this._chamferPath(ctx, -bodyW * 0.5, -bodyH * 0.5, bodyW, bodyH, 5 * m.scale);
+            const brokenShell = ctx.createLinearGradient(-bodyW * 0.5, -bodyH * 0.5, bodyW * 0.5, bodyH * 0.5);
+            brokenShell.addColorStop(0, '#25050d');
+            brokenShell.addColorStop(0.28, '#6d1025');
+            brokenShell.addColorStop(0.55, '#19060c');
+            brokenShell.addColorStop(0.82, '#4b0b1a');
+            brokenShell.addColorStop(1, '#0d0306');
+            ctx.fillStyle = brokenShell;
+            ctx.fill();
+            ctx.strokeStyle = '#ff5d78';
+            ctx.lineWidth = 1.5 * m.scale;
+            ctx.stroke();
+            ctx.shadowBlur = 0;
+
+            // Damaged battery terminals.
+            ctx.fillStyle = '#8d263a';
+            ctx.fillRect(-bodyW * 0.58, -bodyH * 0.18, bodyW * 0.12, bodyH * 0.36);
+            ctx.fillRect(bodyW * 0.46, -bodyH * 0.18, bodyW * 0.12, bodyH * 0.36);
+            ctx.fillStyle = '#ff8195';
+            ctx.fillRect(-bodyW * 0.60, -bodyH * 0.08, bodyW * 0.05, bodyH * 0.16);
+
+            // Dark inner cell with fractured charge plates.
+            this._roundedRect(ctx, -bodyW * 0.32, -bodyH * 0.31, bodyW * 0.64, bodyH * 0.62, 4 * m.scale);
+            ctx.fillStyle = 'rgba(7, 3, 6, 0.94)';
+            ctx.fill();
+            ctx.strokeStyle = 'rgba(255,98,121,0.55)';
+            ctx.lineWidth = 1 * m.scale;
+            ctx.stroke();
+
+            for (let i = 0; i < 3; i++) {
+                const sy = -bodyH * 0.20 + i * bodyH * 0.20;
+                ctx.strokeStyle = 'rgba(255,49,95,' + (0.28 + i * 0.11) + ')';
+                ctx.lineWidth = 1 * m.scale;
+                ctx.beginPath();
+                ctx.moveTo(-bodyW * 0.22, sy);
+                ctx.lineTo(bodyW * 0.17, sy + Math.sin(i + this.animTick * 0.06) * 2 * m.scale);
+                ctx.stroke();
+            }
+
+            ctx.strokeStyle = '#ff9aac';
             ctx.lineWidth = 2 * m.scale;
             ctx.beginPath();
-            for (let i = 0; i < 16; i++) {
-                const angle = i * Math.PI / 8;
-                const r = i % 2 === 0 ? entity.radius * 1.18 : entity.radius * 0.78;
-                const px = Math.cos(angle) * r;
-                const py = Math.sin(angle) * r;
-                if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
-            }
-            ctx.closePath();
-            ctx.fill();
+            ctx.moveTo(-bodyW * 0.30, -bodyH * 0.34);
+            ctx.lineTo(-bodyW * 0.03, -bodyH * 0.06);
+            ctx.lineTo(-bodyW * 0.18, bodyH * 0.15);
+            ctx.lineTo(bodyW * 0.08, bodyH * 0.02);
+            ctx.lineTo(bodyW * 0.28, bodyH * 0.34);
             ctx.stroke();
+
+            // Magnitude only. The red broken-cell treatment communicates subtraction.
+            ctx.fillStyle = '#ffe9ed';
+            ctx.font = 'bold ' + Math.max(10, Math.round(14 * m.scale)) + 'px ' + font;
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText(String(magnitude), 0, 0);
+
+            ctx.fillStyle = 'rgba(255,145,164,0.70)';
+            ctx.font = 'bold ' + Math.max(5, Math.round(5.3 * m.scale)) + 'px ' + font;
+            ctx.fillText('BROKEN', 0, bodyH * 0.43);
         } else {
+            const r = entity.radius;
+            const bodyW = r * 2.18;
+            const bodyH = r * 1.34;
+
             ctx.shadowColor = valueColor;
-            ctx.shadowBlur = 10 * m.scale;
-            const gradient = ctx.createLinearGradient(-entity.radius, 0, entity.radius, 0);
-            gradient.addColorStop(0, '#06131b');
-            gradient.addColorStop(0.42, valueColor);
-            gradient.addColorStop(0.54, '#eaffff');
-            gradient.addColorStop(1, valueColor);
-            this._roundedRect(ctx, -entity.radius * 1.34, -entity.radius * 0.84, entity.radius * 2.68, entity.radius * 1.68, entity.radius * 0.80);
-            ctx.fillStyle = gradient;
+            ctx.shadowBlur = (10 + pulse * 7) * m.scale;
+
+            this._chamferPath(ctx, -bodyW * 0.5, -bodyH * 0.5, bodyW, bodyH, 5 * m.scale);
+            const shell = ctx.createLinearGradient(-bodyW * 0.5, -bodyH * 0.5, bodyW * 0.5, bodyH * 0.5);
+            shell.addColorStop(0, '#031017');
+            shell.addColorStop(0.18, '#15323b');
+            shell.addColorStop(0.43, valueColor);
+            shell.addColorStop(0.50, '#e9ffff');
+            shell.addColorStop(0.58, valueColor);
+            shell.addColorStop(0.86, '#10272f');
+            shell.addColorStop(1, '#030a0f');
+            ctx.fillStyle = shell;
             ctx.fill();
-            ctx.strokeStyle = '#eaffff';
-            ctx.lineWidth = 1.8 * m.scale;
+            ctx.strokeStyle = '#dbfdff';
+            ctx.lineWidth = 1.3 * m.scale;
             ctx.stroke();
+            ctx.shadowBlur = 0;
+
+            // Outer reinforcement rails and tiny terminal caps.
+            ctx.fillStyle = 'rgba(2,10,14,0.92)';
+            ctx.fillRect(-bodyW * 0.47, -bodyH * 0.22, 4 * m.scale, bodyH * 0.44);
+            ctx.fillRect(bodyW * 0.47 - 4 * m.scale, -bodyH * 0.22, 4 * m.scale, bodyH * 0.44);
+            ctx.strokeStyle = 'rgba(255,255,255,0.30)';
+            ctx.lineWidth = 0.8 * m.scale;
             ctx.beginPath();
-            ctx.moveTo(0, -entity.radius * 0.78);
-            ctx.lineTo(0, entity.radius * 0.78);
-            ctx.strokeStyle = 'rgba(0, 13, 20, 0.72)';
+            ctx.moveTo(-bodyW * 0.34, -bodyH * 0.33);
+            ctx.lineTo(bodyW * 0.33, -bodyH * 0.33);
             ctx.stroke();
+
+            // Coal/energy fragments behind the value window.
+            for (let i = 0; i < 6; i++) {
+                const px = -bodyW * 0.31 + (i % 3) * bodyW * 0.31;
+                const py = -bodyH * 0.16 + Math.floor(i / 3) * bodyH * 0.30;
+                const size = (3.4 + (i % 2) * 1.2) * m.scale;
+                ctx.fillStyle = i % 2 ? 'rgba(1,7,10,0.95)' : 'rgba(11,19,21,0.95)';
+                ctx.beginPath();
+                ctx.moveTo(px - size, py + size * 0.3);
+                ctx.lineTo(px - size * 0.2, py - size);
+                ctx.lineTo(px + size, py - size * 0.5);
+                ctx.lineTo(px + size * 0.7, py + size);
+                ctx.closePath();
+                ctx.fill();
+                ctx.strokeStyle = 'rgba(255,255,255,0.15)';
+                ctx.lineWidth = 0.7 * m.scale;
+                ctx.stroke();
+            }
+
+            // Central glass readout. No + sign: the cyan/green/yellow cartridge
+            // already communicates that this is usable energy.
+            this._roundedRect(ctx, -13 * m.scale, -10 * m.scale, 26 * m.scale, 20 * m.scale, 5 * m.scale);
+            const windowFill = ctx.createLinearGradient(0, -10 * m.scale, 0, 10 * m.scale);
+            windowFill.addColorStop(0, 'rgba(2,13,17,0.98)');
+            windowFill.addColorStop(0.52, 'rgba(7,25,29,0.96)');
+            windowFill.addColorStop(1, 'rgba(1,7,10,0.98)');
+            ctx.fillStyle = windowFill;
+            ctx.fill();
+            ctx.strokeStyle = valueColor;
+            ctx.lineWidth = 1.2 * m.scale;
+            ctx.stroke();
+
+            ctx.fillStyle = '#ffffff';
+            ctx.font = 'bold ' + Math.max(10, Math.round(14 * m.scale)) + 'px ' + font;
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText(String(magnitude), 0, 0);
+
+            ctx.fillStyle = 'rgba(222,255,255,0.62)';
+            ctx.font = 'bold ' + Math.max(5, Math.round(5 * m.scale)) + 'px ' + font;
+            ctx.fillText('ENERGY', 0, bodyH * 0.43);
         }
-        ctx.rotate(-entity.spin);
+
+        ctx.rotate(-(entity.spin || 0));
+
         if (Number(entity.hitFlashUntil) > Date.now()) {
-            ctx.globalAlpha = 0.82;
+            ctx.globalAlpha = 0.86;
             ctx.strokeStyle = '#ffffff';
-            ctx.lineWidth = 2.2 * m.scale;
+            ctx.lineWidth = 2.1 * m.scale;
             ctx.beginPath();
-            ctx.arc(0, 0, entity.radius * 1.48, 0, Math.PI * 2);
+            ctx.arc(0, 0, entity.radius * 1.46, 0, Math.PI * 2);
             ctx.stroke();
             ctx.globalAlpha = 1;
         }
-        const labelW = (entity.type === 'virus' ? 31 : 36) * m.scale;
-        const labelH = 21 * m.scale;
-        this._roundedRect(ctx, -labelW * 0.5, -labelH * 0.5, labelW, labelH, 6 * m.scale);
-        ctx.shadowColor = '#000000';
-        ctx.shadowBlur = 5 * m.scale;
-        ctx.fillStyle = 'rgba(0, 5, 9, 0.92)';
-        ctx.fill();
-        ctx.shadowBlur = 0;
-        ctx.strokeStyle = valueColor;
-        ctx.lineWidth = 1.4 * m.scale;
-        ctx.stroke();
-        ctx.fillStyle = '#ffffff';
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'middle';
-        ctx.font = 'bold ' + Math.max(10, Math.round(15 * m.scale)) + 'px monospace';
-        ctx.fillText((entity.value > 0 ? '+' : '') + entity.value, 0, 0);
 
-        const storedMaximumHits = Number(entity.maxHits);
-        const maximumHits = Math.max(1, Number.isFinite(storedMaximumHits) ? storedMaximumHits : 1);
-        const storedHits = Number(entity.hitsRemaining);
-        const hitsRemaining = Math.max(0, Math.min(maximumHits, Number.isFinite(storedHits) ? storedHits : maximumHits));
-        const pipW = 7 * m.scale;
-        const pipH = 3 * m.scale;
-        const pipGap = 2.5 * m.scale;
-        const pipsWidth = maximumHits * pipW + (maximumHits - 1) * pipGap;
-        const pipStartX = -pipsWidth * 0.5;
-        const pipY = labelH * 0.5 + 5 * m.scale;
-        for (let index = 0; index < maximumHits; index++) {
-            this._roundedRect(ctx, pipStartX + index * (pipW + pipGap), pipY, pipW, pipH, pipH * 0.5);
-            ctx.fillStyle = index < hitsRemaining ? valueColor : 'rgba(112, 132, 140, 0.30)';
-            ctx.fill();
+        if (entity.grabbed) {
+            ctx.strokeStyle = '#dfffff';
+            ctx.globalAlpha = 0.72;
+            ctx.lineWidth = 1.3 * m.scale;
+            ctx.beginPath();
+            ctx.arc(0, 0, entity.radius * 1.30, 0, Math.PI * 2);
+            ctx.stroke();
+            ctx.globalAlpha = 1;
         }
+
         ctx.restore();
     }
 
-    _drawBullet(ctx, bullet, m) {
+    _drawBullet(ctx, tether, m) {
+        const collectorY = m.arena.y + m.arena.h - 48 * m.scale;
+        const pulse = 0.5 + 0.5 * Math.sin((this.animTick + (tether.id || 0) * 7) * 0.22);
+        const anchorX = Number.isFinite(this.gunX) ? this.gunX : (Number.isFinite(tether.homeX) ? tether.homeX : tether.x);
+
         ctx.save();
-        ctx.shadowColor = '#dffcff';
-        ctx.shadowBlur = 8 * m.scale;
-        ctx.fillStyle = '#efffff';
-        ctx.fillRect(bullet.x - bullet.radius, bullet.y - bullet.radius * 3, bullet.radius * 2, bullet.radius * 6);
+
+        const cable = ctx.createLinearGradient(anchorX, collectorY, tether.x, tether.y);
+        cable.addColorStop(0, 'rgba(224,255,255,0.92)');
+        cable.addColorStop(0.35, 'rgba(0,240,255,0.82)');
+        cable.addColorStop(1, 'rgba(0,110,135,0.18)');
+
+        ctx.strokeStyle = cable;
+        ctx.lineWidth = 1.6 * m.scale;
+        ctx.shadowColor = '#00f0ff';
+        ctx.shadowBlur = (5 + pulse * 5) * m.scale;
+        ctx.setLineDash([6 * m.scale, 5 * m.scale]);
+        ctx.beginPath();
+        ctx.moveTo(anchorX, collectorY - 18 * m.scale);
+        ctx.lineTo(tether.x, tether.y);
+        ctx.stroke();
+        ctx.setLineDash([]);
+        ctx.shadowBlur = 0;
+
+        const netR = (8 + pulse * 2) * m.scale;
+        ctx.strokeStyle = tether.targetId ? '#72ffb6' : '#b9fbff';
+        ctx.lineWidth = 1.25 * m.scale;
+        ctx.beginPath();
+        ctx.arc(tether.x, tether.y, netR, 0, Math.PI * 2);
+        ctx.stroke();
+
+        for (let i = 0; i < 4; i++) {
+            const a = i * Math.PI / 2 + Math.PI / 4;
+            ctx.beginPath();
+            ctx.moveTo(tether.x, tether.y);
+            ctx.lineTo(tether.x + Math.cos(a) * netR, tether.y + Math.sin(a) * netR);
+            ctx.stroke();
+        }
+
+        ctx.strokeStyle = 'rgba(210,255,255,0.60)';
+        ctx.lineWidth = 0.9 * m.scale;
+        ctx.beginPath();
+        ctx.moveTo(anchorX, collectorY - 22 * m.scale);
+        ctx.lineTo(tether.x, tether.y + netR * 0.30);
+        ctx.stroke();
+
         ctx.restore();
     }
 
     _drawGun(ctx, m) {
         const a = m.arena;
-        const gunY = a.y + a.h - 42 * m.scale;
+        const x = this.gunX;
+        const y = a.y + a.h - 48 * m.scale;
+        const font = this._uiFont();
+        const pulse = 0.5 + 0.5 * Math.sin(this.animTick * 0.12);
+
         ctx.save();
+
         ctx.shadowColor = '#00eaff';
-        ctx.shadowBlur = 12 * m.scale;
-        ctx.fillStyle = '#102e3a';
-        ctx.strokeStyle = '#56e7f5';
-        ctx.lineWidth = 1.5 * m.scale;
-        ctx.fillRect(this.gunX - 18 * m.scale, gunY - 10 * m.scale, 36 * m.scale, 17 * m.scale);
-        ctx.strokeRect(this.gunX - 18 * m.scale, gunY - 10 * m.scale, 36 * m.scale, 17 * m.scale);
-        ctx.fillStyle = '#75f2ff';
-        ctx.fillRect(this.gunX - 4 * m.scale, gunY - 24 * m.scale, 8 * m.scale, 17 * m.scale);
-        ctx.fillStyle = '#ff315f';
-        ctx.fillRect(this.gunX - 8 * m.scale, gunY + 8 * m.scale, 16 * m.scale, 3 * m.scale);
+        ctx.shadowBlur = (8 + pulse * 6) * m.scale;
+
+        const body = ctx.createLinearGradient(x - 24 * m.scale, y, x + 24 * m.scale, y);
+        body.addColorStop(0, '#061116');
+        body.addColorStop(0.28, '#153641');
+        body.addColorStop(0.52, '#1b5966');
+        body.addColorStop(0.72, '#12313a');
+        body.addColorStop(1, '#050b0f');
+
+        this._chamferPath(ctx, x - 25 * m.scale, y - 13 * m.scale, 50 * m.scale, 24 * m.scale, 6 * m.scale);
+        ctx.fillStyle = body;
+        ctx.fill();
+        ctx.strokeStyle = '#67efff';
+        ctx.lineWidth = 1.4 * m.scale;
+        ctx.stroke();
+
         ctx.shadowBlur = 0;
+
+        ctx.fillStyle = '#09151a';
+        ctx.strokeStyle = '#00f0ff';
+        ctx.lineWidth = 1.2 * m.scale;
+        ctx.beginPath();
+        ctx.arc(x, y - 6 * m.scale, 10 * m.scale, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.stroke();
+
+        ctx.strokeStyle = '#91fbff';
+        ctx.lineWidth = 2 * m.scale;
+        ctx.beginPath();
+        ctx.arc(x, y - 6 * m.scale, 5.5 * m.scale, -Math.PI * 0.15, Math.PI * 1.15);
+        ctx.stroke();
+
+        ctx.fillStyle = '#5fffd0';
+        ctx.fillRect(x - 2 * m.scale, y - 29 * m.scale, 4 * m.scale, 15 * m.scale);
+
+        ctx.strokeStyle = '#5fffd0';
+        ctx.lineWidth = 1.2 * m.scale;
+        ctx.beginPath();
+        ctx.moveTo(x - 8 * m.scale, y - 24 * m.scale);
+        ctx.lineTo(x, y - 31 * m.scale);
+        ctx.lineTo(x + 8 * m.scale, y - 24 * m.scale);
+        ctx.stroke();
+
+        for (let i = -1; i <= 1; i += 2) {
+            ctx.fillStyle = '#1a3038';
+            ctx.fillRect(x + i * 19 * m.scale - 3 * m.scale, y + 10 * m.scale, 6 * m.scale, 5 * m.scale);
+        }
+
         ctx.fillStyle = '#dffcff';
-        ctx.font = 'bold ' + Math.round(7 * m.scale) + 'px monospace';
+        ctx.font = 'bold ' + Math.round(7 * m.scale) + 'px ' + font;
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
-        ctx.fillText('L' + (this.gunLaneIndex + 1), this.gunX, gunY + 18 * m.scale);
+        ctx.fillText('L' + (this.gunLaneIndex + 1), x, y + 20 * m.scale);
+
         ctx.restore();
     }
 
     _drawRightPanel(ctx, m) {
         const layout = this._rightPanelLayout(m);
-        this._drawReactor(ctx, layout.reactor, m);
-        this._drawCalculatorCard(ctx, layout.calculator, m);
-        this._drawNeededCard(ctx, layout.needed, m);
-        this._drawTimer(ctx, layout.timer, m);
+
+        this._drawEngineAssembly(ctx, layout, m);
+        this._drawEngineControls(ctx, layout.controls, m);
     }
+
 
     _rightPanelLayout(m) {
         const r = m.right;
-        const reactorH = r.h * 0.55;
-        const cardsY = r.y + reactorH + 10 * m.scale;
-        const cardsH = r.h * 0.25;
-        const cardGap = 12 * m.scale;
-        const cardW = (r.w - cardGap) * 0.5;
-        const timerY = cardsY + cardsH + 13 * m.scale;
+        const controlsH = Math.max(108 * m.scale, r.h * 0.225);
+        const gap = 11 * m.scale;
+
+        const engine = {
+            x: r.x,
+            y: r.y,
+            w: r.w,
+            h: r.h - controlsH - gap,
+        };
+
+        const controls = {
+            x: r.x,
+            y: engine.y + engine.h + gap,
+            w: r.w,
+            h: controlsH,
+        };
+
+        const gaugeW = Math.max(29 * m.scale, engine.w * 0.048);
+        const gaugeTop = engine.y + 48 * m.scale;
+        const gaugeH = engine.h - 76 * m.scale;
+
+        const leftGauge = {
+            x: engine.x + 18 * m.scale,
+            y: gaugeTop,
+            w: gaugeW,
+            h: gaugeH,
+        };
+
+        const rightGauge = {
+            x: engine.x + engine.w - 18 * m.scale - gaugeW,
+            y: gaugeTop,
+            w: gaugeW,
+            h: gaugeH,
+        };
+
+        const glass = {
+            x: leftGauge.x + leftGauge.w + 18 * m.scale,
+            y: engine.y + 40 * m.scale,
+            w: rightGauge.x - (leftGauge.x + leftGauge.w) - 36 * m.scale,
+            h: engine.h - 65 * m.scale,
+        };
+
+        const needed = {
+            x: glass.x + glass.w * 0.22,
+            y: glass.y + 17 * m.scale,
+            w: glass.w * 0.56,
+            h: 68 * m.scale,
+        };
+
+        const calculator = {
+            x: controls.x + 11 * m.scale,
+            y: controls.y + 9 * m.scale,
+            w: controls.w - 22 * m.scale,
+            h: controls.h - 18 * m.scale,
+        };
+
         return {
-            reactor: { x: r.x, y: r.y, w: r.w, h: reactorH },
-            calculator: { x: r.x, y: cardsY, w: cardW, h: cardsH },
-            needed: { x: r.x + cardW + cardGap, y: cardsY, w: cardW, h: cardsH },
-            timer: { x: r.x, y: timerY, w: r.w, h: Math.max(38 * m.scale, r.y + r.h - timerY) },
+            reactor: engine,
+            engine,
+            controls,
+            calculator,
+            needed,
+            leftGauge,
+            rightGauge,
+            glass,
+            timer: {
+                x: leftGauge.x,
+                y: leftGauge.y,
+                w: rightGauge.x + rightGauge.w - leftGauge.x,
+                h: leftGauge.h,
+            },
         };
     }
 
+
     _calculateButtonRect(m, calculatorBox) {
         const box = calculatorBox || this._rightPanelLayout(m).calculator;
-        const margin = 12 * m.scale;
-        const h = 24 * m.scale;
+        const size = Math.min(84 * m.scale, box.h - 10 * m.scale);
+
         return {
-            x: box.x + margin,
-            y: box.y + box.h - h - 9 * m.scale,
-            w: box.w - margin * 2,
-            h,
+            x: box.x + box.w - size - 7 * m.scale,
+            y: box.y + (box.h - size) * 0.5,
+            w: size,
+            h: size,
         };
     }
 
     _reactorColor() {
         const checked = this.calculatedEvaluation;
-        if (this.roundState === 'stabilizing' || (checked && checked.valid)) return '#52ff8f';
-        if (!checked) return '#00eaff';
-        if (checked.status === 'over') return '#ff315f';
-        return '#f6b73c';
+        if (this.roundState === 'stabilizing' || (checked && checked.valid)) return '#55ff9b';
+        if (checked && checked.status === 'over') return '#ff315f';
+        if (checked && checked.status === 'under') return '#ffd05e';
+        return '#27e8d2';
     }
 
+
     _drawReactor(ctx, box, m) {
-        const color = this._reactorColor();
-        const checked = this.calculatedEvaluation;
-        const target = Math.max(1, this.scenario.targetExponent);
-        const ratio = checked ? Math.max(0, Math.min(1.25, this.exponent / target)) : 0.08;
-        const cx = box.x + box.w * 0.5;
-        const cy = box.y + box.h * 0.54;
-        const radius = Math.min(box.w * 0.22, box.h * 0.35);
-        const pulse = 1 + Math.sin(this.animTick * 0.08) * 0.025;
-
-        ctx.save();
-        this._roundedRect(ctx, box.x, box.y, box.w, box.h, 10 * m.scale);
-        const panelFill = ctx.createLinearGradient(box.x, box.y, box.x, box.y + box.h);
-        panelFill.addColorStop(0, 'rgba(5, 20, 29, 0.94)');
-        panelFill.addColorStop(1, 'rgba(2, 8, 14, 0.98)');
-        ctx.fillStyle = panelFill;
-        ctx.fill();
-        ctx.strokeStyle = 'rgba(60, 143, 157, 0.48)';
-        ctx.lineWidth = 1.2 * m.scale;
-        ctx.stroke();
-
-        ctx.fillStyle = '#7fa8b2';
-        ctx.font = 'bold ' + Math.round(9 * m.scale) + 'px monospace';
-        ctx.textAlign = 'left';
-        ctx.textBaseline = 'middle';
-        ctx.fillText('REACTOR CAPACITY CORE', box.x + 16 * m.scale, box.y + 18 * m.scale);
-        ctx.textAlign = 'right';
-        ctx.fillStyle = color;
-        const statusLabel = !checked
-            ? 'AWAITING CALC'
-            : (checked.status === 'under' ? 'INSUFFICIENT' : (checked.status === 'over' ? 'OVER-ALLOCATED' : 'OPTIMAL'));
-        ctx.fillText(statusLabel, box.x + box.w - 16 * m.scale, box.y + 18 * m.scale);
-
-        ctx.translate(cx, cy);
-        ctx.scale(pulse, pulse);
-        ctx.shadowColor = color;
-        ctx.shadowBlur = 24 * m.scale * Math.max(0.25, ratio);
-        ctx.strokeStyle = 'rgba(73, 122, 134, 0.52)';
-        ctx.lineWidth = 13 * m.scale;
-        ctx.beginPath();
-        ctx.arc(0, 0, radius, -Math.PI * 0.78, Math.PI * 0.78);
-        ctx.stroke();
-
-        ctx.strokeStyle = color;
-        ctx.lineWidth = 13 * m.scale;
-        ctx.lineCap = 'round';
-        ctx.beginPath();
-        ctx.arc(0, 0, radius, -Math.PI * 0.78, -Math.PI * 0.78 + Math.PI * 1.56 * Math.min(1, ratio));
-        ctx.stroke();
-
-        ctx.globalAlpha = 0.18 + Math.min(1, ratio) * 0.36;
-        ctx.fillStyle = color;
-        ctx.beginPath();
-        ctx.arc(0, 0, radius * 0.72, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.globalAlpha = 1;
-        ctx.shadowBlur = 0;
-
-        ctx.fillStyle = '#ecfcff';
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'middle';
-        ctx.font = 'bold ' + Math.round(31 * m.scale) + 'px monospace';
-        ctx.fillText(String(this.exponent), 0, -4 * m.scale);
-        ctx.fillStyle = '#8eacb3';
-        ctx.font = 'bold ' + Math.round(8 * m.scale) + 'px monospace';
-        ctx.fillText('HOST BITS', 0, 23 * m.scale);
-        ctx.restore();
-
-        ctx.save();
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'middle';
-        ctx.fillStyle = color;
-        ctx.font = 'bold ' + Math.round(10 * m.scale) + 'px monospace';
-        const footer = this.roundState === 'stabilizing'
-            ? 'STABILIZING // BORROW ' + this.scenario.bitsToBorrow + ' BIT(S)'
-            : (!checked
-                ? 'SET H // CLICK CALCULATE'
-                : (checked.status === 'under'
-                    ? 'INSUFFICIENT CAPACITY // ADJUST H'
-                    : (checked.status === 'over'
-                        ? 'EXCESS CAPACITY // ADJUST H'
-                        : 'SMALLEST VALID EXPONENT ACQUIRED')));
-        ctx.fillText(footer, cx, box.y + box.h - 16 * m.scale);
-        ctx.restore();
+        const layout = this._rightPanelLayout(m);
+        this._drawEngineAssembly(ctx, layout, m);
     }
 
     _drawCalculatorCard(ctx, box, m) {
-        this._card(ctx, box, m, 'MANUAL POWER CALCULATOR');
-        const checked = this.calculatedEvaluation;
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'middle';
-        ctx.fillStyle = '#f1fbff';
-        ctx.font = 'bold ' + Math.round(17 * m.scale) + 'px monospace';
-        if (checked) {
-            ctx.fillText('2^' + this.exponent + ' = ' + this._formatNumber(checked.totalAddresses), box.x + box.w * 0.5, box.y + box.h * 0.34);
-            ctx.fillStyle = '#8db5be';
-            ctx.font = 'bold ' + Math.round(7.5 * m.scale) + 'px monospace';
-            ctx.fillText(this._formatNumber(checked.totalAddresses) + ' - 2 RESERVED', box.x + box.w * 0.5, box.y + box.h * 0.52);
-            ctx.fillStyle = this._reactorColor();
-            ctx.font = 'bold ' + Math.round(9 * m.scale) + 'px monospace';
-            ctx.fillText(this._formatNumber(checked.usableHosts) + ' USABLE HOSTS', box.x + box.w * 0.5, box.y + box.h * 0.66);
-        } else {
-            ctx.fillText('h = ' + this.exponent, box.x + box.w * 0.5, box.y + box.h * 0.38);
-            ctx.fillStyle = '#8db5be';
-            ctx.font = 'bold ' + Math.round(8 * m.scale) + 'px monospace';
-            ctx.fillText('CAPACITY RESULT LOCKED', box.x + box.w * 0.5, box.y + box.h * 0.59);
-        }
-        this._drawCalculateButton(ctx, this._calculateButtonRect(m, box), m);
+        this._drawEngineControls(ctx, this._rightPanelLayout(m).controls, m);
     }
 
     _drawNeededCard(ctx, box, m) {
-        this._card(ctx, box, m, 'NEEDED USABLE HOSTS');
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'middle';
-        ctx.fillStyle = '#ffffff';
-        ctx.font = 'bold ' + Math.round(25 * m.scale) + 'px monospace';
-        ctx.fillText(this._formatNumber(this.scenario.requiredHosts), box.x + box.w * 0.5, box.y + box.h * 0.52);
-        ctx.fillStyle = '#ffce69';
-        ctx.font = 'bold ' + Math.round(8 * m.scale) + 'px monospace';
-        ctx.fillText('ADDRESS DEMAND: ' + this._formatNumber(this.scenario.addressDemand), box.x + box.w * 0.5, box.y + box.h * 0.76);
-        ctx.fillStyle = '#789ca6';
-        ctx.fillText('CLASS ' + this.scenario.className + ' STARTS WITH ' + this.scenario.classConfig.maxHostBits + ' HOST BITS', box.x + box.w * 0.5, box.y + box.h * 0.89);
+        this._drawNeededPlaque(ctx, box, m);
     }
+
+
 
     _drawCalculateButton(ctx, button, m) {
         const enabled = this.roundState === 'active' && !this.finished && !this.tutorialPaused;
-        const accent = enabled ? '#ffe600' : '#66747c';
-        this._chamferPath(ctx, button.x, button.y, button.w, button.h, 5 * m.scale);
-        ctx.fillStyle = enabled ? 'rgba(99, 82, 0, 0.92)' : 'rgba(25, 32, 37, 0.9)';
+        const dirty = !this.calculatedEvaluation || this.calculatedEvaluation.exponent !== this.exponent;
+        const font = this._uiFont();
+        const pulse = 0.5 + 0.5 * Math.sin(this.animTick * 0.11);
+
+        const cx = button.x + button.w * 0.5;
+        const cy = button.y + button.h * 0.44;
+        const outerR = Math.min(button.w, button.h) * 0.31;
+        const ringColor = enabled ? '#FFE600' : '#67757A';
+        const iconColor = enabled ? '#FFB300' : '#7A868A';
+
+        ctx.save();
+
+        ctx.shadowColor = 'rgba(0,0,0,0.88)';
+        ctx.shadowBlur = 10 * m.scale;
+        ctx.shadowOffsetY = 3 * m.scale;
+        ctx.beginPath();
+        ctx.arc(cx, cy, outerR + 9 * m.scale, 0, Math.PI * 2);
+        const mount = ctx.createRadialGradient(cx - outerR * 0.35, cy - outerR * 0.38, outerR * 0.08, cx, cy, outerR + 9 * m.scale);
+        mount.addColorStop(0, '#68757A');
+        mount.addColorStop(0.18, '#232C31');
+        mount.addColorStop(0.64, '#090E11');
+        mount.addColorStop(1, '#020304');
+        ctx.fillStyle = mount;
         ctx.fill();
-        ctx.strokeStyle = accent;
+        ctx.shadowBlur = 0;
+        ctx.shadowOffsetY = 0;
+        ctx.strokeStyle = 'rgba(196,219,227,0.24)';
         ctx.lineWidth = 1.2 * m.scale;
-        ctx.shadowColor = accent;
-        ctx.shadowBlur = enabled ? 7 * m.scale : 0;
+        ctx.stroke();
+
+        ctx.beginPath();
+        ctx.arc(cx, cy, outerR, 0, Math.PI * 2);
+        const core = ctx.createRadialGradient(cx - outerR * 0.25, cy - outerR * 0.30, outerR * 0.10, cx, cy, outerR);
+        core.addColorStop(0, enabled ? 'rgba(70,58,8,0.96)' : 'rgba(34,40,43,0.94)');
+        core.addColorStop(0.52, 'rgba(9,13,16,0.98)');
+        core.addColorStop(1, 'rgba(1,3,4,1)');
+        ctx.fillStyle = core;
+        ctx.fill();
+        ctx.strokeStyle = enabled ? 'rgba(255,230,0,0.82)' : 'rgba(118,136,141,0.34)';
+        ctx.lineWidth = 1.4 * m.scale;
+        ctx.stroke();
+
+        ctx.strokeStyle = enabled ? ringColor : 'rgba(98,110,116,0.42)';
+        ctx.lineWidth = 2.8 * m.scale;
+        ctx.shadowColor = enabled ? ringColor : 'transparent';
+        ctx.shadowBlur = enabled ? (4 + pulse * 4) * m.scale : 0;
+        ctx.beginPath();
+        ctx.arc(cx, cy, outerR * 0.82, Math.PI * 0.18, Math.PI * 1.62);
         ctx.stroke();
         ctx.shadowBlur = 0;
-        ctx.fillStyle = enabled ? '#fff6a5' : '#839198';
-        ctx.font = 'bold ' + Math.round(8 * m.scale) + 'px monospace';
+
+        ctx.beginPath();
+        const arrowA = Math.PI * 0.20;
+        const ax = cx + Math.cos(arrowA) * outerR * 0.82;
+        const ay = cy + Math.sin(arrowA) * outerR * 0.82;
+        ctx.moveTo(ax, ay);
+        ctx.lineTo(ax - 7 * m.scale, ay - 1.5 * m.scale);
+        ctx.lineTo(ax - 2.4 * m.scale, ay - 6.2 * m.scale);
+        ctx.closePath();
+        ctx.fillStyle = iconColor;
+        ctx.fill();
+
+        ctx.strokeStyle = enabled ? 'rgba(255,255,220,0.30)' : 'rgba(220,235,240,0.12)';
+        ctx.lineWidth = 1.0 * m.scale;
+        ctx.beginPath();
+        ctx.arc(cx - 1 * m.scale, cy - 1 * m.scale, outerR * 0.60, Math.PI * 1.02, Math.PI * 1.52);
+        ctx.stroke();
+
+        const labelW = Math.min(button.w - 6 * m.scale, 70 * m.scale);
+        const labelH = 16 * m.scale;
+        const labelX = cx - labelW * 0.5;
+        const labelY = button.y + button.h - labelH - 1 * m.scale;
+        this._chamferPath(ctx, labelX, labelY, labelW, labelH, 4 * m.scale);
+        ctx.fillStyle = enabled ? 'rgba(255,230,0,0.94)' : 'rgba(79,92,97,0.82)';
+        ctx.fill();
+        ctx.fillStyle = enabled ? '#06080A' : '#172025';
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
-        ctx.fillText('CALCULATE CAPACITY', button.x + button.w * 0.5, button.y + button.h * 0.54);
+        ctx.font = 'bold ' + Math.round(6.3 * m.scale) + 'px ' + font;
+        ctx.fillText('CALCULATE', cx, labelY + labelH * 0.55);
+
+        if (dirty && enabled) {
+            ctx.fillStyle = '#FFE052';
+            ctx.beginPath();
+            ctx.arc(button.x + button.w - 7 * m.scale, button.y + 8 * m.scale, 2.4 * m.scale, 0, Math.PI * 2);
+            ctx.fill();
+        }
+
+        ctx.restore();
     }
+
 
     _card(ctx, box, m, label) {
         this._roundedRect(ctx, box.x, box.y, box.w, box.h, 8 * m.scale);
@@ -1639,97 +2065,192 @@ class IP2LiveHostPowerReactorGameplayScreen extends Scene.Base {
         ctx.lineWidth = 1 * m.scale;
         ctx.stroke();
         ctx.fillStyle = '#6f9ba5';
-        ctx.font = 'bold ' + Math.round(8 * m.scale) + 'px monospace';
+        ctx.font = 'bold ' + Math.round(8 * m.scale) + 'px ' + this._uiFont();
         ctx.textAlign = 'left';
         ctx.textBaseline = 'middle';
         ctx.fillText(label, box.x + 12 * m.scale, box.y + 15 * m.scale);
     }
 
     _drawTimer(ctx, box, m) {
-        const now = Date.now();
-        const remaining = this.endsAt ? Math.max(0, this.endsAt - now) : this.durationMs;
-        const ratio = Math.max(0, Math.min(1, remaining / this.durationMs));
+        const remaining = this._remainingMs(Date.now());
         const seconds = Math.ceil(remaining / 1000);
         const minutesText = String(Math.floor(seconds / 60)).padStart(2, '0');
         const secondsText = String(seconds % 60).padStart(2, '0');
-        const color = ratio > 0.5 ? '#54e9ff' : (ratio > 0.2 ? '#ffbf47' : '#ff315f');
-        ctx.fillStyle = '#789ca6';
-        ctx.font = 'bold ' + Math.round(8 * m.scale) + 'px monospace';
-        ctx.textAlign = 'left';
-        ctx.textBaseline = 'middle';
-        ctx.fillText('ONE-MINUTE REACTOR WINDOW', box.x, box.y + 8 * m.scale);
-        ctx.textAlign = 'right';
-        ctx.fillStyle = color;
-        ctx.font = 'bold ' + Math.round(12 * m.scale) + 'px monospace';
-        ctx.fillText(minutesText + ':' + secondsText, box.x + box.w, box.y + 8 * m.scale);
-        const railY = box.y + 23 * m.scale;
-        const railH = 12 * m.scale;
-        this._roundedRect(ctx, box.x, railY, box.w, railH, railH * 0.5);
-        ctx.fillStyle = 'rgba(35, 61, 70, 0.82)';
-        ctx.fill();
-        if (ratio > 0) {
-            this._roundedRect(ctx, box.x, railY, Math.max(railH, box.w * ratio), railH, railH * 0.5);
-            ctx.fillStyle = color;
-            ctx.shadowColor = color;
-            ctx.shadowBlur = 8 * m.scale;
-            ctx.fill();
-            ctx.shadowBlur = 0;
-        }
-    }
+        const font = this._uiFont();
 
-    _drawFailure(ctx, m) {
-        ctx.save();
-        ctx.fillStyle = 'rgba(0, 2, 6, 0.74)';
-        ctx.fillRect(0, 0, m.cW, m.cH);
-        const w = Math.min(470 * m.scale, m.cW - 32 * m.scale);
-        const h = 210 * m.scale;
-        const x = (m.cW - w) * 0.5;
-        const y = (m.cH - h) * 0.5;
-        this._chamferPath(ctx, x, y, w, h, 15 * m.scale);
-        ctx.fillStyle = 'rgba(18, 5, 12, 0.98)';
-        ctx.fill();
-        ctx.strokeStyle = '#ff315f';
-        ctx.lineWidth = 1.5 * m.scale;
-        ctx.stroke();
+        ctx.fillStyle = '#ffca53';
+        ctx.font = 'bold ' + Math.round(11 * m.scale) + 'px ' + font;
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
-        ctx.fillStyle = '#ff6480';
-        ctx.font = 'bold ' + Math.round(20 * m.scale) + 'px monospace';
-        ctx.fillText('REACTOR WINDOW EXPIRED', x + w * 0.5, y + 42 * m.scale);
-        ctx.fillStyle = '#d6e9ed';
-        ctx.font = Math.round(10 * m.scale) + 'px monospace';
-        ctx.fillText('Required: ' + this._formatNumber(this.scenario.requiredHosts) + ' usable hosts', x + w * 0.5, y + 78 * m.scale);
-        ctx.fillText('Smallest correct power: 2^' + this.scenario.targetExponent + ' = ' + this._formatNumber(this.scenario.totalAddresses), x + w * 0.5, y + 98 * m.scale);
-        ctx.fillStyle = '#ffcf67';
-        ctx.fillText(this._formatNumber(this.scenario.totalAddresses) + ' - 2 = ' + this._formatNumber(this.scenario.usableHosts) + ' usable', x + w * 0.5, y + 118 * m.scale);
-        this._buildFailureButtons(m, { x, y, w, h });
-        for (let i = 0; i < this.buttons.length; i++) this._drawButton(ctx, this.buttons[i], m);
+        ctx.fillText(minutesText + ':' + secondsText, box.x + box.w * 0.5, box.y + 9 * m.scale);
+    }
+
+
+
+    _drawFailure(ctx, m) {
+        const font = this._uiFont();
+        const current = IPHostPowerRules.evaluate(this.scenario.requiredHosts, this.exponent);
+        const target = this.scenario.targetExponent;
+        const difference = this.exponent - target;
+
+        ctx.save();
+
+        const shade = ctx.createRadialGradient(
+            m.cW * 0.5,
+            m.cH * 0.5,
+            Math.min(m.cW, m.cH) * 0.12,
+            m.cW * 0.5,
+            m.cH * 0.5,
+            Math.max(m.cW, m.cH) * 0.72
+        );
+        shade.addColorStop(0, 'rgba(0,2,5,0.28)');
+        shade.addColorStop(0.55, 'rgba(0,2,6,0.44)');
+        shade.addColorStop(1, 'rgba(0,1,4,0.62)');
+        ctx.fillStyle = shade;
+        ctx.fillRect(0, 0, m.cW, m.cH);
+
+        const w = Math.min(680 * m.scale, m.cW - 34 * m.scale);
+        const h = 332 * m.scale;
+        const x = (m.cW - w) * 0.5;
+        const y = (m.cH - h) * 0.5;
+
+        ctx.shadowColor = '#FF315F';
+        ctx.shadowBlur = 22 * m.scale;
+        ctx.shadowOffsetY = 6 * m.scale;
+        this._chamferPath(ctx, x, y, w, h, 18 * m.scale);
+        const shell = ctx.createLinearGradient(x, y, x + w, y + h);
+        shell.addColorStop(0, '#5A1326');
+        shell.addColorStop(0.035, '#260812');
+        shell.addColorStop(0.26, '#10070B');
+        shell.addColorStop(0.76, '#09070A');
+        shell.addColorStop(0.965, '#3E0D1B');
+        shell.addColorStop(1, '#7A1831');
+        ctx.fillStyle = shell;
+        ctx.fill();
+        ctx.shadowBlur = 0;
+        ctx.shadowOffsetY = 0;
+        ctx.strokeStyle = '#FF4C6A';
+        ctx.lineWidth = 1.7 * m.scale;
+        ctx.stroke();
+
+        this._chamferPath(ctx, x + 7 * m.scale, y + 7 * m.scale, w - 14 * m.scale, h - 14 * m.scale, 13 * m.scale);
+        ctx.fillStyle = 'rgba(8,5,9,0.96)';
+        ctx.fill();
+        ctx.strokeStyle = 'rgba(255,132,151,0.18)';
+        ctx.lineWidth = 1 * m.scale;
+        ctx.stroke();
+
+        ctx.fillStyle = 'rgba(255,49,95,0.15)';
+        ctx.fillRect(x + 22 * m.scale, y + 15 * m.scale, w - 44 * m.scale, 3 * m.scale);
+        for (let i = 0; i < 4; i++) {
+            this._drawFastener(ctx, x + 22 * m.scale + i * (w - 44 * m.scale) / 3, y + 16.5 * m.scale, 2.6 * m.scale);
+        }
+
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillStyle = '#FF7087';
+        ctx.shadowColor = '#FF315F';
+        ctx.shadowBlur = 8 * m.scale;
+        ctx.font = 'bold ' + Math.round(23 * m.scale) + 'px ' + font;
+        ctx.fillText('ENGINE TRACE BREACH', x + w * 0.5, y + 47 * m.scale);
+        ctx.shadowBlur = 0;
+
+        ctx.fillStyle = '#CFE5EA';
+        ctx.font = 'bold ' + Math.round(9.6 * m.scale) + 'px ' + font;
+        ctx.fillText('APEX completed the trace before the host-capacity bypass was stabilized.', x + w * 0.5, y + 79 * m.scale);
+
+        const bayX = x + 34 * m.scale;
+        const bayY = y + 100 * m.scale;
+        const bayW = w - 68 * m.scale;
+        const bayH = 142 * m.scale;
+        this._chamferPath(ctx, bayX, bayY, bayW, bayH, 8 * m.scale);
+        const bay = ctx.createLinearGradient(bayX, bayY, bayX, bayY + bayH);
+        bay.addColorStop(0, 'rgba(14,20,24,0.95)');
+        bay.addColorStop(0.10, 'rgba(3,9,12,0.96)');
+        bay.addColorStop(1, 'rgba(2,6,9,0.98)');
+        ctx.fillStyle = bay;
+        ctx.fill();
+        ctx.strokeStyle = 'rgba(255,103,126,0.34)';
+        ctx.lineWidth = 1 * m.scale;
+        ctx.stroke();
+
+        ctx.textAlign = 'left';
+        const tx = bayX + 22 * m.scale;
+        const contentW = bayW - 44 * m.scale;
+
+        ctx.fillStyle = '#86A8B0';
+        ctx.font = 'bold ' + Math.round(7.4 * m.scale) + 'px ' + font;
+        ctx.fillText('CORRECT HOST-CAPACITY ROUTE', tx, bayY + 20 * m.scale);
+
+        const answerScreenX = tx;
+        const answerScreenY = bayY + 31 * m.scale;
+        const answerScreenW = contentW;
+        const answerScreenH = 44 * m.scale;
+        this._chamferPath(ctx, answerScreenX, answerScreenY, answerScreenW, answerScreenH, 7 * m.scale);
+        ctx.fillStyle = 'rgba(3,8,11,0.98)';
+        ctx.fill();
+        ctx.strokeStyle = 'rgba(255,214,90,0.28)';
+        ctx.stroke();
+
+        ctx.fillStyle = '#FFFFFF';
+        ctx.font = 'bold ' + Math.round(16 * m.scale) + 'px ' + font;
+        ctx.fillText(this._formatNumber(this.scenario.requiredHosts) + ' usable hosts  ->  h = ' + target, tx + 12 * m.scale, answerScreenY + 15 * m.scale);
+
+        ctx.fillStyle = '#FFD65A';
+        ctx.font = 'bold ' + Math.round(11 * m.scale) + 'px ' + font;
+        ctx.fillText('2^' + target + ' = ' + this._formatNumber(this.scenario.totalAddresses) + ' addresses  //  ' + this._formatNumber(this.scenario.totalAddresses) + ' - 2 = ' + this._formatNumber(this.scenario.usableHosts) + ' usable', tx + 12 * m.scale, answerScreenY + 31 * m.scale);
+
+        let diagnosis;
+        if (difference < 0) {
+            diagnosis = 'Collected h = ' + this.exponent + ' was too low. You needed ' + Math.abs(difference) + ' more host bit' + (Math.abs(difference) === 1 ? '' : 's') + ' before calculating.';
+        } else if (difference > 0) {
+            diagnosis = 'Collected h = ' + this.exponent + ' exceeded the smallest valid power by ' + difference + ' host bit' + (difference === 1 ? '' : 's') + '. Use a broken cell to reduce the input.';
+        } else {
+            diagnosis = 'You reached the correct h = ' + this.exponent + ', but APEX completed the trace before the engine finished stabilizing.';
+        }
+
+        ctx.fillStyle = difference === 0 ? '#68FFB5' : '#FF758D';
+        ctx.font = 'bold ' + Math.round(10.5 * m.scale) + 'px ' + font;
+        ctx.fillText(diagnosis, tx, bayY + 98 * m.scale);
+
+        ctx.fillStyle = '#A6C5CC';
+        ctx.font = 'bold ' + Math.round(8.2 * m.scale) + 'px ' + font;
+        ctx.fillText('Your current h = ' + this.exponent + ' represents 2^' + this.exponent + ' - 2 = ' + this._formatNumber(current.usableHosts) + ' usable hosts.', tx, bayY + 122 * m.scale);
+
+        ctx.textAlign = 'center';
+        const pulse = 0.62 + 0.38 * Math.sin(this.animTick * 0.12);
+        ctx.fillStyle = 'rgba(235,252,255,' + (0.70 + pulse * 0.24) + ')';
+        ctx.font = 'bold ' + Math.round(10.3 * m.scale) + 'px ' + font;
+        ctx.fillText('PRESS SPACE / ENTER TO CONTINUE', x + w * 0.5, y + h - 48 * m.scale);
+
+        ctx.fillStyle = 'rgba(124,165,173,0.72)';
+        ctx.font = 'bold ' + Math.round(6.4 * m.scale) + 'px ' + font;
+        ctx.fillText('RETURNING TO THE INFILTRATION ROUTE', x + w * 0.5, y + h - 24 * m.scale);
+
         ctx.restore();
     }
 
+
     _buildFailureButtons(m, card) {
-        const w = card ? card.w : Math.min(470 * m.scale, m.cW - 32 * m.scale);
-        const x = card ? card.x : (m.cW - w) * 0.5;
-        const y = card ? card.y : (m.cH - 210 * m.scale) * 0.5;
-        const buttonW = 150 * m.scale;
-        const buttonH = 38 * m.scale;
-        const gap = 14 * m.scale;
-        const startX = x + (w - buttonW * 2 - gap) * 0.5;
-        this.buttons = [
-            { x: startX, y: y + 150 * m.scale, w: buttonW, h: buttonH, action: 'retry', label: 'RETRY (R)' },
-            { x: startX + buttonW + gap, y: y + 150 * m.scale, w: buttonW, h: buttonH, action: 'exit', label: 'EXIT' },
-        ];
+        // Timeout failure now uses a single keyboard/mouse continuation state.
+        // Keeping this method as a no-op preserves compatibility with any older
+        // code that still calls it.
+        this.buttons = [];
+        return this.buttons;
     }
 
     _drawButton(ctx, button, m) {
+        const font = this._uiFont();
+
         this._roundedRect(ctx, button.x, button.y, button.w, button.h, 5 * m.scale);
         ctx.fillStyle = button.action === 'retry' ? 'rgba(0, 105, 119, 0.9)' : 'rgba(91, 18, 36, 0.9)';
         ctx.fill();
         ctx.strokeStyle = button.action === 'retry' ? '#5eefff' : '#ff526e';
         ctx.lineWidth = 1.2 * m.scale;
         ctx.stroke();
+
         ctx.fillStyle = '#f1fcff';
-        ctx.font = 'bold ' + Math.round(10 * m.scale) + 'px monospace';
+        ctx.font = 'bold ' + Math.round(10 * m.scale) + 'px ' + font;
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
         ctx.fillText(button.label, button.x + button.w * 0.5, button.y + button.h * 0.5);
@@ -1737,24 +2258,31 @@ class IP2LiveHostPowerReactorGameplayScreen extends Scene.Base {
 
     _drawStatusChip(ctx, rightX, y, label, color, m) {
         const text = String(label || '');
+        const font = this._uiFont();
+
         ctx.save();
-        ctx.font = 'bold ' + Math.round(7 * m.scale) + 'px monospace';
+        ctx.font = 'bold ' + Math.round(7 * m.scale) + 'px ' + font;
+
         const w = Math.max(68 * m.scale, ctx.measureText(text).width + 20 * m.scale);
         const h = 20 * m.scale;
         const x = rightX - w;
+
         this._chamferPath(ctx, x, y, w, h, 5 * m.scale);
         ctx.fillStyle = 'rgba(3, 8, 13, 0.94)';
         ctx.fill();
+
         ctx.strokeStyle = color;
         ctx.globalAlpha = 0.62;
         ctx.lineWidth = 1 * m.scale;
         ctx.stroke();
         ctx.globalAlpha = 1;
+
         ctx.fillStyle = color;
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
         ctx.fillText(text, x + w * 0.5, y + h * 0.54);
         ctx.restore();
+
         return x;
     }
 
@@ -1778,6 +2306,1086 @@ class IP2LiveHostPowerReactorGameplayScreen extends Scene.Base {
         ctx.moveTo(x - r * 0.48, y + r * 0.18);
         ctx.lineTo(x + r * 0.48, y - r * 0.18);
         ctx.stroke();
+        ctx.restore();
+    }
+
+
+    _uiFont() {
+        return 'Oxanium-Medium, Oxanium, monospace';
+    }
+
+    _remainingMs(nowValue) {
+        const numericNow = Number(nowValue);
+        const now = Number.isFinite(numericNow) ? numericNow : Date.now();
+
+        if (this.roundState === 'ready' || this.roundState === 'tutorial' || !this.endsAt) {
+            return this.durationMs;
+        }
+
+        return Math.max(0, this.endsAt - now);
+    }
+
+    _timeRatio(nowValue) {
+        return Math.max(0, Math.min(1, this._remainingMs(nowValue) / Math.max(1, this.durationMs)));
+    }
+
+    _criticalWarningIntensity(nowValue) {
+        if (this.roundState !== 'active' || !this.endsAt) return 0;
+
+        const remainingSeconds = this._remainingMs(nowValue) / 1000;
+        if (remainingSeconds > 20) return 0;
+
+        const urgency = Math.max(0, Math.min(1, (20 - remainingSeconds) / 20));
+        const blink = 0.45 + 0.55 * (0.5 + 0.5 * Math.sin((Number(nowValue) || Date.now()) * 0.020 + urgency * 2.6));
+
+        return urgency * (0.46 + blink * 0.54);
+    }
+
+    _drawEngineAssembly(ctx, layout, m) {
+        const engine = layout.engine;
+        const glass = layout.glass;
+        const font = this._uiFont();
+        const checked = this.calculatedEvaluation;
+        const overload = !!(checked && checked.status === 'over');
+        const timeRatio = this._timeRatio(Date.now());
+        const traceRatio = 1 - timeRatio;
+        const fillRatio = Math.max(0, Math.min(1, Number(this.engineFillRatioDisplayed) || 0));
+        const pulse = 0.5 + 0.5 * Math.sin(this.animTick * 0.08);
+
+        ctx.save();
+
+        // Deep cast-metal reactor housing.
+        ctx.shadowColor = 'rgba(0,0,0,0.88)';
+        ctx.shadowBlur = 22 * m.scale;
+        ctx.shadowOffsetY = 7 * m.scale;
+        this._roundedRect(ctx, engine.x, engine.y, engine.w, engine.h, 11 * m.scale);
+        const shell = ctx.createLinearGradient(engine.x, engine.y, engine.x + engine.w, engine.y + engine.h);
+        shell.addColorStop(0, '#33434a');
+        shell.addColorStop(0.035, '#111a20');
+        shell.addColorStop(0.18, '#050a0e');
+        shell.addColorStop(0.52, '#101a20');
+        shell.addColorStop(0.82, '#05090c');
+        shell.addColorStop(0.97, '#263940');
+        shell.addColorStop(1, '#506067');
+        ctx.fillStyle = shell;
+        ctx.fill();
+        ctx.shadowBlur = 0;
+        ctx.shadowOffsetY = 0;
+        ctx.strokeStyle = 'rgba(130, 200, 210, 0.52)';
+        ctx.lineWidth = 1.3 * m.scale;
+        ctx.stroke();
+
+        // Brushed-metal texture and recessed bands.
+        ctx.save();
+        this._roundedRect(ctx, engine.x + 5 * m.scale, engine.y + 5 * m.scale, engine.w - 10 * m.scale, engine.h - 10 * m.scale, 9 * m.scale);
+        ctx.clip();
+        for (let y = engine.y + 7 * m.scale; y < engine.y + engine.h - 7 * m.scale; y += 7 * m.scale) {
+            const alpha = 0.025 + ((Math.floor(y / (7 * m.scale)) % 3) * 0.012);
+            ctx.strokeStyle = 'rgba(190,220,225,' + alpha + ')';
+            ctx.lineWidth = 0.6 * m.scale;
+            ctx.beginPath();
+            ctx.moveTo(engine.x + 10 * m.scale, y);
+            ctx.lineTo(engine.x + engine.w - 10 * m.scale, y + Math.sin(y * 0.04) * 1.2 * m.scale);
+            ctx.stroke();
+        }
+        ctx.restore();
+
+        // Heavy side rails.
+        const railW = 13 * m.scale;
+        const railInset = 18 * m.scale;
+        [engine.x + railInset, engine.x + engine.w - railInset - railW].forEach((rx) => {
+            const rail = ctx.createLinearGradient(rx, 0, rx + railW, 0);
+            rail.addColorStop(0, '#020405');
+            rail.addColorStop(0.32, '#68757a');
+            rail.addColorStop(0.52, '#c1c9cb');
+            rail.addColorStop(0.72, '#404c51');
+            rail.addColorStop(1, '#020405');
+            ctx.fillStyle = rail;
+            ctx.fillRect(rx, engine.y + 40 * m.scale, railW, engine.h - 54 * m.scale);
+        });
+
+        for (let i = 0; i < 4; i++) {
+            const boltY = engine.y + 24 * m.scale + i * (engine.h - 48 * m.scale) / 3;
+            this._drawFastener(ctx, engine.x + 10 * m.scale, boltY, 3.4 * m.scale);
+            this._drawFastener(ctx, engine.x + engine.w - 10 * m.scale, boltY, 3.4 * m.scale);
+        }
+
+        ctx.fillStyle = '#90aeb6';
+        ctx.font = 'bold ' + Math.round(8 * m.scale) + 'px ' + font;
+        ctx.textAlign = 'left';
+        ctx.textBaseline = 'middle';
+        ctx.fillText('APEX BYPASS ENGINE // ENERGY REACTOR', engine.x + 18 * m.scale, engine.y + 18 * m.scale);
+
+        const remainingSeconds = Math.ceil(this._remainingMs(Date.now()) / 1000);
+        const mm = String(Math.floor(remainingSeconds / 60)).padStart(2, '0');
+        const ss = String(remainingSeconds % 60).padStart(2, '0');
+        ctx.textAlign = 'right';
+        ctx.fillStyle = remainingSeconds <= 20 ? '#ff5d72' : '#ffc94f';
+        ctx.font = 'bold ' + Math.round(10 * m.scale) + 'px ' + font;
+        ctx.fillText('APEX TRACE ' + mm + ':' + ss, engine.x + engine.w - 18 * m.scale, engine.y + 18 * m.scale);
+
+        // The trace coolant now RISES bottom -> top as APEX gets closer.
+        this._drawThermalColumn(ctx, layout.leftGauge, m, traceRatio, true);
+        this._drawThermalColumn(ctx, layout.rightGauge, m, traceRatio, false);
+
+        // Glass chamber outer frame.
+        ctx.shadowColor = overload ? '#ff315f' : '#1fd8d0';
+        ctx.shadowBlur = (overload ? 16 : 8) * m.scale;
+        this._roundedRect(ctx, glass.x - 5 * m.scale, glass.y - 5 * m.scale, glass.w + 10 * m.scale, glass.h + 10 * m.scale, 20 * m.scale);
+        const bezel = ctx.createLinearGradient(glass.x, glass.y, glass.x + glass.w, glass.y + glass.h);
+        bezel.addColorStop(0, overload ? '#8b1832' : '#1e7776');
+        bezel.addColorStop(0.18, '#071116');
+        bezel.addColorStop(0.78, '#061016');
+        bezel.addColorStop(1, overload ? '#5e0c20' : '#135e61');
+        ctx.fillStyle = bezel;
+        ctx.fill();
+        ctx.shadowBlur = 0;
+
+        this._roundedRect(ctx, glass.x, glass.y, glass.w, glass.h, 17 * m.scale);
+        const glassFill = ctx.createLinearGradient(glass.x, glass.y, glass.x + glass.w, glass.y + glass.h);
+        glassFill.addColorStop(0, 'rgba(12, 43, 50, 0.78)');
+        glassFill.addColorStop(0.28, 'rgba(3, 17, 23, 0.74)');
+        glassFill.addColorStop(0.64, 'rgba(3, 21, 24, 0.74)');
+        glassFill.addColorStop(1, 'rgba(6, 39, 33, 0.82)');
+        ctx.fillStyle = glassFill;
+        ctx.fill();
+        ctx.strokeStyle = overload ? 'rgba(255,68,96,0.94)' : 'rgba(86,239,229,0.62)';
+        ctx.lineWidth = 1.55 * m.scale;
+        ctx.stroke();
+
+        ctx.save();
+        this._roundedRect(ctx, glass.x + 5 * m.scale, glass.y + 5 * m.scale, glass.w - 10 * m.scale, glass.h - 10 * m.scale, 14 * m.scale);
+        ctx.clip();
+
+        // Dark chamber texture visible before the first calculation.
+        for (let i = 0; i < 14; i++) {
+            const yy = glass.y + 20 * m.scale + i * (glass.h - 40 * m.scale) / 13;
+            ctx.strokeStyle = 'rgba(92,168,176,' + (0.025 + (i % 3) * 0.012) + ')';
+            ctx.lineWidth = 0.7 * m.scale;
+            ctx.beginPath();
+            ctx.moveTo(glass.x + 12 * m.scale, yy);
+            ctx.lineTo(glass.x + glass.w - 12 * m.scale, yy);
+            ctx.stroke();
+        }
+
+        const fillH = Math.max(0, glass.h * fillRatio);
+        const fillY = glass.y + glass.h - fillH;
+
+        if (fillH > 0) {
+            // Multi-layer translucent energy fluid.
+            const energy = ctx.createLinearGradient(0, fillY, 0, glass.y + glass.h);
+            if (overload) {
+                energy.addColorStop(0, 'rgba(255,55,91,0.58)');
+                energy.addColorStop(0.30, 'rgba(255,80,58,0.52)');
+                energy.addColorStop(0.68, 'rgba(245,130,44,0.48)');
+                energy.addColorStop(1, 'rgba(105,9,27,0.74)');
+            } else {
+                energy.addColorStop(0, 'rgba(69,255,191,0.56)');
+                energy.addColorStop(0.30, 'rgba(29,226,196,0.54)');
+                energy.addColorStop(0.68, 'rgba(24,151,205,0.50)');
+                energy.addColorStop(1, 'rgba(13,73,141,0.66)');
+            }
+            ctx.fillStyle = energy;
+            ctx.fillRect(glass.x, fillY, glass.w, fillH);
+
+            // Subsurface turbulence bands.
+            for (let band = 0; band < 7; band++) {
+                const bandY = fillY + fillH * ((band + 0.55) / 7);
+                const bandGrad = ctx.createLinearGradient(glass.x, bandY, glass.x + glass.w, bandY);
+                bandGrad.addColorStop(0, 'rgba(255,255,255,0)');
+                bandGrad.addColorStop(0.30, overload ? 'rgba(255,210,111,0.08)' : 'rgba(122,255,234,0.08)');
+                bandGrad.addColorStop(0.62, overload ? 'rgba(255,104,77,0.12)' : 'rgba(62,190,255,0.10)');
+                bandGrad.addColorStop(1, 'rgba(255,255,255,0)');
+                ctx.strokeStyle = bandGrad;
+                ctx.lineWidth = (1.2 + (band % 2) * 0.8) * m.scale;
+                ctx.beginPath();
+                for (let i = 0; i <= 24; i++) {
+                    const px = glass.x + glass.w * (i / 24);
+                    const py = bandY + Math.sin(i * 0.72 + this.animTick * (0.05 + band * 0.004) + band) * (2 + band * 0.22) * m.scale;
+                    if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+                }
+                ctx.stroke();
+            }
+
+            // Bright fluid surface and refracted secondary edge.
+            const waveY = fillY + Math.sin(this.animTick * 0.09) * 2.5 * m.scale;
+            ctx.shadowColor = overload ? '#ff526d' : '#6dffdc';
+            ctx.shadowBlur = 10 * m.scale;
+            ctx.strokeStyle = overload ? '#ff7588' : '#8affdf';
+            ctx.lineWidth = 1.9 * m.scale;
+            ctx.beginPath();
+            for (let i = 0; i <= 30; i++) {
+                const px = glass.x + glass.w * (i / 30);
+                const py = waveY + Math.sin(i * 0.68 + this.animTick * 0.12) * 2.4 * m.scale + Math.sin(i * 1.73 + this.animTick * 0.07) * 1.2 * m.scale;
+                if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+            }
+            ctx.stroke();
+            ctx.shadowBlur = 0;
+
+            ctx.strokeStyle = overload ? 'rgba(255,193,119,0.30)' : 'rgba(189,255,245,0.30)';
+            ctx.lineWidth = 0.9 * m.scale;
+            ctx.beginPath();
+            ctx.moveTo(glass.x, waveY + 5 * m.scale);
+            ctx.lineTo(glass.x + glass.w, waveY + 5 * m.scale);
+            ctx.stroke();
+        }
+
+        this._drawEngineParticles(ctx, glass, fillRatio, overload, m);
+
+        // Static glass sheen. The old moving vertical reflection was removed
+        // because it read as an unrelated scanning line rather than glass.
+        const sheen = ctx.createLinearGradient(
+            glass.x,
+            glass.y,
+            glass.x + glass.w * 0.62,
+            glass.y + glass.h * 0.40
+        );
+        sheen.addColorStop(0, 'rgba(240,255,255,0.10)');
+        sheen.addColorStop(0.16, 'rgba(240,255,255,0.028)');
+        sheen.addColorStop(0.38, 'rgba(240,255,255,0)');
+        sheen.addColorStop(1, 'rgba(240,255,255,0)');
+        ctx.fillStyle = sheen;
+        ctx.beginPath();
+        ctx.moveTo(glass.x + 10 * m.scale, glass.y + 9 * m.scale);
+        ctx.lineTo(glass.x + glass.w * 0.48, glass.y + 9 * m.scale);
+        ctx.lineTo(glass.x + glass.w * 0.26, glass.y + glass.h * 0.24);
+        ctx.lineTo(glass.x + 10 * m.scale, glass.y + glass.h * 0.37);
+        ctx.closePath();
+        ctx.fill();
+
+        // Static bevel reflection.
+        const rim = ctx.createLinearGradient(glass.x, glass.y, glass.x + glass.w * 0.55, glass.y + glass.h * 0.45);
+        rim.addColorStop(0, 'rgba(240,255,255,0.17)');
+        rim.addColorStop(0.18, 'rgba(240,255,255,0.03)');
+        rim.addColorStop(0.56, 'rgba(240,255,255,0)');
+        ctx.fillStyle = rim;
+        ctx.beginPath();
+        ctx.moveTo(glass.x + 14 * m.scale, glass.y + 10 * m.scale);
+        ctx.lineTo(glass.x + glass.w * 0.42, glass.y + 10 * m.scale);
+        ctx.lineTo(glass.x + glass.w * 0.22, glass.y + glass.h * 0.24);
+        ctx.lineTo(glass.x + 10 * m.scale, glass.y + glass.h * 0.38);
+        ctx.closePath();
+        ctx.fill();
+
+        // Reinforced glass corner clamps add the same layered mechanical depth
+        // used by the IP Wires terminal housings.
+        const clampLen = 23 * m.scale;
+        const clampInset = 5 * m.scale;
+        const clampColor = overload ? 'rgba(255,80,103,0.72)' : 'rgba(102,225,225,0.48)';
+        ctx.strokeStyle = clampColor;
+        ctx.lineWidth = 2 * m.scale;
+
+        const corners = [
+            { x: glass.x + clampInset, y: glass.y + clampInset, sx: 1, sy: 1 },
+            { x: glass.x + glass.w - clampInset, y: glass.y + clampInset, sx: -1, sy: 1 },
+            { x: glass.x + clampInset, y: glass.y + glass.h - clampInset, sx: 1, sy: -1 },
+            { x: glass.x + glass.w - clampInset, y: glass.y + glass.h - clampInset, sx: -1, sy: -1 },
+        ];
+
+        for (let i = 0; i < corners.length; i++) {
+            const c = corners[i];
+            ctx.beginPath();
+            ctx.moveTo(c.x, c.y + c.sy * clampLen);
+            ctx.lineTo(c.x, c.y);
+            ctx.lineTo(c.x + c.sx * clampLen, c.y);
+            ctx.stroke();
+        }
+
+        ctx.restore();
+
+        // Engine ribs and service markings above the glass.
+        const ribCount = 6;
+        for (let i = 0; i < ribCount; i++) {
+            const y = glass.y + glass.h * ((i + 1) / (ribCount + 1));
+            ctx.strokeStyle = 'rgba(150, 223, 221, 0.075)';
+            ctx.lineWidth = 1 * m.scale;
+            ctx.beginPath();
+            ctx.moveTo(glass.x + 9 * m.scale, y);
+            ctx.lineTo(glass.x + glass.w - 9 * m.scale, y);
+            ctx.stroke();
+        }
+
+        // Calculation pulse around the chamber.
+        if (Number.isFinite(this.engineCalculationPulseStartedAt)) {
+            const age = Date.now() - this.engineCalculationPulseStartedAt;
+            if (age < 900) {
+                const q = 1 - age / 900;
+                ctx.strokeStyle = overload
+                    ? 'rgba(255,80,103,' + (q * 0.55) + ')'
+                    : 'rgba(93,255,222,' + (q * 0.55) + ')';
+                ctx.lineWidth = (1 + q * 4) * m.scale;
+                ctx.shadowColor = overload ? '#ff315f' : '#58ffda';
+                ctx.shadowBlur = q * 22 * m.scale;
+                this._roundedRect(ctx, glass.x - 3 * m.scale, glass.y - 3 * m.scale, glass.w + 6 * m.scale, glass.h + 6 * m.scale, 19 * m.scale);
+                ctx.stroke();
+                ctx.shadowBlur = 0;
+            }
+        }
+
+        // Bottom service rail beneath the glass, echoing Gameplay 1's routing bus.
+        const serviceY = glass.y + glass.h - 18 * m.scale;
+        this._chamferPath(
+            ctx,
+            glass.x + 16 * m.scale,
+            serviceY,
+            glass.w - 32 * m.scale,
+            12 * m.scale,
+            4 * m.scale
+        );
+        ctx.fillStyle = 'rgba(1,7,10,0.42)';
+        ctx.fill();
+        ctx.strokeStyle = overload ? 'rgba(255,49,95,0.12)' : 'rgba(0,240,255,0.11)';
+        ctx.lineWidth = 0.7 * m.scale;
+        ctx.stroke();
+
+        for (let i = 0; i < 7; i++) {
+            const bx = glass.x + 28 * m.scale + i * (glass.w - 56 * m.scale) / 6;
+            ctx.fillStyle = i <= Math.floor((this.animTick * 0.035) % 8)
+                ? (overload ? 'rgba(255,82,96,0.36)' : 'rgba(82,255,217,0.30)')
+                : 'rgba(81,103,111,0.16)';
+            ctx.fillRect(bx, serviceY + 4.5 * m.scale, 10 * m.scale, 2.3 * m.scale);
+        }
+
+        this._drawNeededPlaque(ctx, layout.needed, m);
+
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.font = 'bold ' + Math.round(8 * m.scale) + 'px ' + font;
+        const calculationStale = !!(checked && checked.exponent !== this.exponent);
+        if (!checked) {
+            ctx.fillStyle = '#75a7af';
+            ctx.fillText('ENERGY LOAD UNVERIFIED // PRESS CALCULATE', glass.x + glass.w * 0.5, glass.y + glass.h - 16 * m.scale);
+        } else if (calculationStale) {
+            ctx.fillStyle = '#75a7af';
+            ctx.fillText('NEW ENERGY INPUT DETECTED // PRESS CALCULATE', glass.x + glass.w * 0.5, glass.y + glass.h - 16 * m.scale);
+        } else if (checked.status === 'under') {
+            ctx.fillStyle = '#ffd05e';
+            ctx.fillText('INSUFFICIENT ENGINE LOAD // COLLECT MORE ENERGY', glass.x + glass.w * 0.5, glass.y + glass.h - 16 * m.scale);
+        } else if (checked.status === 'just-right') {
+            ctx.fillStyle = '#71ffb2';
+            ctx.fillText('OPTIMAL ENGINE LOAD // BYPASS STABILIZING', glass.x + glass.w * 0.5, glass.y + glass.h - 16 * m.scale);
+        }
+
+        ctx.restore();
+    }
+
+    _drawThermalColumn(ctx, box, m, ratio, mirror) {
+        const font = this._uiFont();
+        const level = Math.max(0, Math.min(1, Number(ratio) || 0));
+        const pulse = 0.5 + 0.5 * Math.sin(this.animTick * 0.11 + (mirror ? 0 : 1.4));
+
+        ctx.save();
+
+        // Tube housing.
+        ctx.shadowColor = 'rgba(0,0,0,0.80)';
+        ctx.shadowBlur = 8 * m.scale;
+        this._roundedRect(ctx, box.x, box.y, box.w, box.h, box.w * 0.38);
+        const housing = ctx.createLinearGradient(box.x, 0, box.x + box.w, 0);
+        housing.addColorStop(0, '#10171a');
+        housing.addColorStop(0.18, '#546166');
+        housing.addColorStop(0.38, '#10191d');
+        housing.addColorStop(0.72, '#26353a');
+        housing.addColorStop(1, '#05090b');
+        ctx.fillStyle = housing;
+        ctx.fill();
+        ctx.shadowBlur = 0;
+        ctx.strokeStyle = 'rgba(175, 206, 211, 0.46)';
+        ctx.lineWidth = 1.1 * m.scale;
+        ctx.stroke();
+
+        const inset = 6 * m.scale;
+        const innerX = box.x + inset;
+        const innerY = box.y + inset;
+        const innerW = box.w - inset * 2;
+        const innerH = box.h - inset * 2;
+        const fillH = Math.max(0, innerH * level);
+        const fillY = innerY + innerH - fillH;
+
+        this._roundedRect(ctx, innerX, innerY, innerW, innerH, innerW * 0.42);
+        const emptyGlass = ctx.createLinearGradient(innerX, innerY, innerX + innerW, innerY);
+        emptyGlass.addColorStop(0, 'rgba(2,5,6,0.92)');
+        emptyGlass.addColorStop(0.46, 'rgba(31,25,4,0.35)');
+        emptyGlass.addColorStop(0.68, 'rgba(7,8,5,0.64)');
+        emptyGlass.addColorStop(1, 'rgba(1,4,5,0.95)');
+        ctx.fillStyle = emptyGlass;
+        ctx.fill();
+
+        if (fillH > 0) {
+            ctx.save();
+            this._roundedRect(ctx, innerX, innerY, innerW, innerH, innerW * 0.42);
+            ctx.clip();
+
+            // Rising trace fluid: yellow at the bottom, orange in the body,
+            // red toward the top. The level itself rises bottom -> top.
+            const heat = ctx.createLinearGradient(0, innerY + innerH, 0, innerY);
+            heat.addColorStop(0, '#ffe75c');
+            heat.addColorStop(0.38, '#ffc13f');
+            heat.addColorStop(0.67, '#ff7b32');
+            heat.addColorStop(0.86, '#ff493f');
+            heat.addColorStop(1, '#ff234f');
+            ctx.globalAlpha = 0.80 + pulse * 0.12;
+            ctx.fillStyle = heat;
+            ctx.fillRect(innerX, fillY, innerW, fillH);
+            ctx.globalAlpha = 1;
+
+            // Dense internal heat texture.
+            for (let i = 0; i < 14; i++) {
+                const seed = i * 29 + (mirror ? 71 : 17);
+                const px = innerX + innerW * (0.12 + ((seed * 0.173) % 0.76));
+                const travel = Math.max(1, fillH - 3 * m.scale);
+                const py = innerY + innerH - ((this.animTick * (0.58 + (i % 5) * 0.055) + seed * 2.9) % travel);
+                if (py < fillY) continue;
+                const br = (1.0 + (i % 4) * 0.58) * m.scale;
+                ctx.fillStyle = i % 3 === 0 ? 'rgba(255,255,205,0.56)' : 'rgba(255,170,78,0.34)';
+                ctx.beginPath();
+                ctx.arc(px, py, br, 0, Math.PI * 2);
+                ctx.fill();
+                if (i % 4 === 0) {
+                    ctx.strokeStyle = 'rgba(255,255,223,0.38)';
+                    ctx.lineWidth = 0.7 * m.scale;
+                    ctx.beginPath();
+                    ctx.arc(px, py, br * 1.8, 0, Math.PI * 2);
+                    ctx.stroke();
+                }
+            }
+
+            // Animated fluid surface.
+            ctx.shadowColor = level > 0.82 ? '#ff315f' : '#ffd94d';
+            ctx.shadowBlur = (4 + level * 9) * m.scale;
+            ctx.strokeStyle = level > 0.82 ? '#ff7486' : '#fff09a';
+            ctx.lineWidth = 1.2 * m.scale;
+            ctx.beginPath();
+            for (let i = 0; i <= 8; i++) {
+                const px = innerX + innerW * (i / 8);
+                const py = fillY + Math.sin(i * 1.2 + this.animTick * 0.13) * 1.4 * m.scale;
+                if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+            }
+            ctx.stroke();
+            ctx.shadowBlur = 0;
+
+            // Tube glass reflection.
+            const gloss = ctx.createLinearGradient(innerX, 0, innerX + innerW, 0);
+            gloss.addColorStop(0, 'rgba(255,255,255,0.02)');
+            gloss.addColorStop(0.24, 'rgba(255,255,255,0.19)');
+            gloss.addColorStop(0.38, 'rgba(255,255,255,0.035)');
+            gloss.addColorStop(1, 'rgba(255,255,255,0)');
+            ctx.fillStyle = gloss;
+            ctx.fillRect(innerX, innerY, innerW, innerH);
+
+            ctx.restore();
+        }
+
+        // Tube scale marks.
+        for (let i = 1; i < 10; i++) {
+            const yy = innerY + innerH * (i / 10);
+            ctx.strokeStyle = 'rgba(255,229,126,' + (i % 5 === 0 ? 0.42 : 0.18) + ')';
+            ctx.lineWidth = (i % 5 === 0 ? 1.2 : 0.7) * m.scale;
+            ctx.beginPath();
+            ctx.moveTo(innerX + innerW * 0.64, yy);
+            ctx.lineTo(innerX + innerW * 0.90, yy);
+            ctx.stroke();
+        }
+
+        ctx.fillStyle = level > 0.78 ? '#ff6a65' : '#ffcf51';
+        ctx.font = 'bold ' + Math.max(5, Math.round(5.5 * m.scale)) + 'px ' + font;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.save();
+        ctx.translate(box.x + box.w * 0.5, box.y + box.h * 0.5);
+        ctx.rotate(-Math.PI / 2);
+        ctx.fillText('APEX TRACE FLUID', 0, 0);
+        ctx.restore();
+
+        ctx.restore();
+    }
+
+    _drawEngineParticles(ctx, glass, fillRatio, overload, m) {
+        if (fillRatio <= 0) return;
+
+        const activeHeight = glass.h * fillRatio;
+        const floorY = glass.y + glass.h;
+        const topY = floorY - activeHeight;
+
+        ctx.save();
+
+        // Floating energy motes, bars, rings and micro-bubbles inside the reactor.
+        for (let i = 0; i < 38; i++) {
+            const seed = i * 61 + 11;
+            const px = glass.x + 14 * m.scale + ((seed * 17.13) % Math.max(1, glass.w - 28 * m.scale));
+            const travel = Math.max(1, activeHeight - 10 * m.scale);
+            const py = floorY - ((this.animTick * (0.26 + (i % 7) * 0.045) + seed * 3.2) % travel);
+            if (py < topY || py > floorY) continue;
+
+            const size = (1.0 + (i % 5) * 0.55) * m.scale;
+            const alpha = 0.24 + (i % 4) * 0.08;
+            const color = overload
+                ? (i % 3 === 0 ? '255,220,108' : '255,102,77')
+                : (i % 3 === 0 ? '79,178,255' : '86,255,196');
+
+            ctx.fillStyle = 'rgba(' + color + ',' + alpha + ')';
+            if (i % 4 === 0) {
+                ctx.fillRect(px, py, size * 2.8, size * 0.75);
+            } else if (i % 4 === 1) {
+                ctx.strokeStyle = 'rgba(' + color + ',' + (alpha + 0.12) + ')';
+                ctx.lineWidth = 0.8 * m.scale;
+                ctx.beginPath();
+                ctx.arc(px, py, size * 1.5, 0, Math.PI * 2);
+                ctx.stroke();
+            } else {
+                ctx.beginPath();
+                ctx.arc(px, py, size, 0, Math.PI * 2);
+                ctx.fill();
+            }
+        }
+
+        // Slow electrical filaments inside the active fluid.
+        for (let line = 0; line < 5; line++) {
+            const baseY = topY + activeHeight * ((line + 1) / 6);
+            ctx.strokeStyle = overload
+                ? 'rgba(255,184,104,' + (0.08 + line * 0.015) + ')'
+                : 'rgba(105,255,225,' + (0.07 + line * 0.014) + ')';
+            ctx.lineWidth = 0.8 * m.scale;
+            ctx.beginPath();
+            for (let p = 0; p <= 18; p++) {
+                const px = glass.x + glass.w * (p / 18);
+                const py = baseY + Math.sin(p * 1.24 + line * 2.1 + this.animTick * 0.035) * 4 * m.scale;
+                if (p === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+            }
+            ctx.stroke();
+        }
+
+        ctx.restore();
+    }
+
+    _drawNeededPlaque(ctx, box, m) {
+        const font = this._uiFont();
+        const notice = this.engineNotice;
+        const now = Date.now();
+        let noticeAlpha = 0;
+
+        if (notice && Number(notice.startedAt)) {
+            const elapsed = now - notice.startedAt;
+            const duration = Math.max(1, Number(notice.durationMs) || 2000);
+            if (elapsed >= 0 && elapsed < duration) {
+                const fadeIn = Math.min(1, elapsed / 220);
+                const fadeOut = Math.min(1, (duration - elapsed) / 520);
+                noticeAlpha = Math.max(0, Math.min(1, fadeIn, fadeOut));
+            } else if (elapsed >= duration) {
+                this.engineNotice = null;
+            }
+        }
+
+        ctx.save();
+
+        ctx.shadowColor = 'rgba(0,0,0,0.78)';
+        ctx.shadowBlur = 12 * m.scale;
+        ctx.shadowOffsetY = 4 * m.scale;
+        this._chamferPath(ctx, box.x, box.y, box.w, box.h, 10 * m.scale);
+        const metal = ctx.createLinearGradient(box.x, box.y, box.x, box.y + box.h);
+        metal.addColorStop(0, '#46535a');
+        metal.addColorStop(0.13, '#11191e');
+        metal.addColorStop(0.55, '#202c32');
+        metal.addColorStop(0.88, '#0c1216');
+        metal.addColorStop(1, '#526168');
+        ctx.fillStyle = metal;
+        ctx.fill();
+        ctx.shadowBlur = 0;
+        ctx.shadowOffsetY = 0;
+
+        ctx.strokeStyle = noticeAlpha > 0 ? 'rgba(255,92,116,' + (0.45 + noticeAlpha * 0.55) + ')' : '#ffd34f';
+        ctx.lineWidth = (noticeAlpha > 0 ? 1.8 : 1.2) * m.scale;
+        ctx.stroke();
+
+        this._drawFastener(ctx, box.x + 8 * m.scale, box.y + 8 * m.scale, 2.6 * m.scale);
+        this._drawFastener(ctx, box.x + box.w - 8 * m.scale, box.y + 8 * m.scale, 2.6 * m.scale);
+        this._drawFastener(ctx, box.x + 8 * m.scale, box.y + box.h - 8 * m.scale, 2.6 * m.scale);
+        this._drawFastener(ctx, box.x + box.w - 8 * m.scale, box.y + box.h - 8 * m.scale, 2.6 * m.scale);
+
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillStyle = '#ffdf65';
+        ctx.font = 'bold ' + Math.round(7.5 * m.scale) + 'px ' + font;
+        ctx.fillText('HOSTS NEEDED', box.x + box.w * 0.5, box.y + 15 * m.scale);
+
+        ctx.fillStyle = '#ffffff';
+        ctx.font = 'bold ' + Math.round(27 * m.scale) + 'px ' + font;
+        ctx.fillText(this._formatNumber(this.scenario.requiredHosts), box.x + box.w * 0.5, box.y + box.h * 0.55);
+
+        if (noticeAlpha > 0) {
+            const bandH = 18 * m.scale;
+            const bandX = box.x + 16 * m.scale;
+            const bandY = box.y + box.h - bandH - 6 * m.scale;
+            const bandW = box.w - 32 * m.scale;
+            this._chamferPath(ctx, bandX, bandY, bandW, bandH, 4 * m.scale);
+            ctx.fillStyle = 'rgba(86,5,22,' + (0.50 + noticeAlpha * 0.34) + ')';
+            ctx.fill();
+            ctx.strokeStyle = 'rgba(255,92,116,' + (0.32 + noticeAlpha * 0.58) + ')';
+            ctx.lineWidth = 1 * m.scale;
+            ctx.stroke();
+
+            ctx.globalAlpha = noticeAlpha;
+            ctx.fillStyle = notice.color || '#FF5C74';
+            ctx.font = 'bold ' + Math.round(7.2 * m.scale) + 'px ' + font;
+            ctx.fillText(notice.text || 'ENERGY INPUT OVERLOAD', box.x + box.w * 0.5, bandY + bandH * 0.52);
+            ctx.globalAlpha = 1;
+        } else {
+            ctx.fillStyle = 'rgba(194,219,224,0.72)';
+            ctx.font = 'bold ' + Math.round(6.5 * m.scale) + 'px ' + font;
+            ctx.fillText('+2 RESERVED ADDRESSES REQUIRED', box.x + box.w * 0.5, box.y + box.h - 10 * m.scale);
+        }
+
+        ctx.restore();
+    }
+
+
+
+    _drawEngineControls(ctx, box, m) {
+        const font = this._uiFont();
+        const button = this._calculateButtonRect(m);
+        const checked = this.calculatedEvaluation;
+        const stale = !!(checked && checked.exponent !== this.exponent);
+        const pulse = 0.5 + 0.5 * Math.sin(this.animTick * 0.09);
+        const numberPulse = this.exponentPulseUntil > Date.now()
+            ? 1 + (this.exponentPulseUntil - Date.now()) / 280 * 0.08
+            : 1;
+        const outputPulse = this.outputPulseUntil > Date.now()
+            ? 1 + (this.outputPulseUntil - Date.now()) / 380 * 0.04
+            : 1;
+
+        ctx.save();
+
+        ctx.shadowColor = 'rgba(0,0,0,0.90)';
+        ctx.shadowBlur = 18 * m.scale;
+        ctx.shadowOffsetY = 7 * m.scale;
+        this._chamferPath(ctx, box.x, box.y, box.w, box.h, 11 * m.scale);
+        const shell = ctx.createLinearGradient(box.x, box.y, box.x + box.w, box.y + box.h);
+        shell.addColorStop(0, '#3A4950');
+        shell.addColorStop(0.035, '#10171C');
+        shell.addColorStop(0.22, '#060A0D');
+        shell.addColorStop(0.76, '#0B1216');
+        shell.addColorStop(0.965, '#26363C');
+        shell.addColorStop(1, '#56656B');
+        ctx.fillStyle = shell;
+        ctx.fill();
+        ctx.shadowBlur = 0;
+        ctx.shadowOffsetY = 0;
+        ctx.strokeStyle = 'rgba(145,207,214,0.46)';
+        ctx.lineWidth = 1.2 * m.scale;
+        ctx.stroke();
+
+        const inset = 6 * m.scale;
+        this._chamferPath(ctx, box.x + inset, box.y + inset, box.w - inset * 2, box.h - inset * 2, 8 * m.scale);
+        const deck = ctx.createLinearGradient(box.x, box.y, box.x, box.y + box.h);
+        deck.addColorStop(0, 'rgba(8,17,21,0.98)');
+        deck.addColorStop(0.52, 'rgba(2,6,9,0.995)');
+        deck.addColorStop(1, 'rgba(7,15,18,0.99)');
+        ctx.fillStyle = deck;
+        ctx.fill();
+        ctx.strokeStyle = 'rgba(0,240,255,0.11)';
+        ctx.lineWidth = 0.9 * m.scale;
+        ctx.stroke();
+
+        const moduleY = box.y + 14 * m.scale;
+        const moduleH = box.h - 28 * m.scale;
+        const buttonGap = 16 * m.scale;
+        const contentLeft = box.x + 16 * m.scale;
+        const contentRight = button.x - buttonGap;
+        const availableW = Math.max(1, contentRight - contentLeft);
+        const moduleGap = 14 * m.scale;
+        const collectedW = Math.max(205 * m.scale, availableW * 0.30);
+        const outputX = contentLeft + collectedW + moduleGap;
+        const outputW = Math.max(230 * m.scale, contentRight - outputX);
+
+        const drawModuleFrame = (x, y, w, h, frameAccent) => {
+            ctx.save();
+            ctx.shadowColor = 'rgba(0,0,0,0.72)';
+            ctx.shadowBlur = 7 * m.scale;
+            ctx.shadowOffsetY = 2 * m.scale;
+            this._chamferPath(ctx, x, y, w, h, 8 * m.scale);
+            const housing = ctx.createLinearGradient(x, y, x, y + h);
+            housing.addColorStop(0, '#2B373D');
+            housing.addColorStop(0.10, '#0A1014');
+            housing.addColorStop(0.50, '#04080B');
+            housing.addColorStop(0.92, '#111B20');
+            housing.addColorStop(1, '#2E3C42');
+            ctx.fillStyle = housing;
+            ctx.fill();
+            ctx.shadowBlur = 0;
+            ctx.shadowOffsetY = 0;
+            ctx.strokeStyle = frameAccent;
+            ctx.lineWidth = 1.0 * m.scale;
+            ctx.globalAlpha = 0.56;
+            ctx.stroke();
+            ctx.globalAlpha = 1;
+
+            this._chamferPath(ctx, x + 5 * m.scale, y + 5 * m.scale, w - 10 * m.scale, h - 10 * m.scale, 5 * m.scale);
+            ctx.fillStyle = 'rgba(1,7,10,0.94)';
+            ctx.fill();
+            ctx.strokeStyle = 'rgba(155,205,214,0.10)';
+            ctx.stroke();
+
+            ctx.fillStyle = frameAccent;
+            ctx.globalAlpha = 0.75;
+            ctx.fillRect(x + w * 0.5 - 27 * m.scale, y + 8 * m.scale, 54 * m.scale, 2 * m.scale);
+            ctx.globalAlpha = 1;
+            ctx.restore();
+        };
+
+        drawModuleFrame(contentLeft, moduleY, collectedW, moduleH, 'rgba(0,240,255,0.36)');
+        const outputFrameColor = !checked
+            ? 'rgba(106,154,163,0.28)'
+            : checked.status === 'over'
+                ? 'rgba(255,49,95,0.54)'
+                : checked.status === 'under'
+                    ? 'rgba(255,214,77,0.46)'
+                    : 'rgba(84,255,187,0.54)';
+        drawModuleFrame(outputX, moduleY, outputW, moduleH, outputFrameColor);
+
+        ctx.textBaseline = 'middle';
+        ctx.textAlign = 'center';
+
+        // COLLECTED ENERGY — centered label + single digital h readout.
+        const collectedCenterX = contentLeft + collectedW * 0.5;
+        const collectedPad = 16 * m.scale;
+        const collectedDigitalX = contentLeft + collectedPad;
+        const collectedDigitalY = moduleY + 28 * m.scale;
+        const collectedDigitalW = collectedW - collectedPad * 2;
+        const collectedDigitalH = 46 * m.scale;
+
+        ctx.fillStyle = '#7EA9B1';
+        ctx.font = 'bold ' + Math.round(7.4 * m.scale) + 'px ' + font;
+        ctx.fillText('COLLECTED ENERGY', collectedCenterX, moduleY + 17 * m.scale);
+
+        this._chamferPath(ctx, collectedDigitalX, collectedDigitalY, collectedDigitalW, collectedDigitalH, 6 * m.scale);
+        const collectedScreen = ctx.createLinearGradient(collectedDigitalX, collectedDigitalY, collectedDigitalX, collectedDigitalY + collectedDigitalH);
+        collectedScreen.addColorStop(0, 'rgba(14,28,34,0.98)');
+        collectedScreen.addColorStop(0.52, 'rgba(3,10,13,0.99)');
+        collectedScreen.addColorStop(1, 'rgba(5,18,22,0.98)');
+        ctx.fillStyle = collectedScreen;
+        ctx.fill();
+        ctx.strokeStyle = 'rgba(62,230,236,0.28)';
+        ctx.lineWidth = 1 * m.scale;
+        ctx.stroke();
+
+        ctx.save();
+        ctx.translate(collectedCenterX, collectedDigitalY + collectedDigitalH * 0.54);
+        ctx.scale(numberPulse, numberPulse);
+        ctx.fillStyle = '#EAF8FA';
+        ctx.font = 'bold ' + Math.round(24 * m.scale) + 'px ' + font;
+        ctx.fillText('h = ' + this.exponent, 0, 0);
+        ctx.restore();
+
+        ctx.fillStyle = '#6CA8B0';
+        ctx.font = 'bold ' + Math.round(6.2 * m.scale) + 'px ' + font;
+        ctx.fillText('HOST-BIT POWER INPUT', collectedCenterX, moduleY + moduleH - 14 * m.scale);
+
+        // CALCULATED OUTPUT — last verified calculation remains frozen until Calculate is pressed again.
+        const outputCenterX = outputX + outputW * 0.5;
+        const outputPad = 16 * m.scale;
+        const outputScreenX = outputX + outputPad;
+        const outputScreenY = moduleY + 28 * m.scale;
+        const outputScreenW = outputW - outputPad * 2;
+        const outputScreenH = 45 * m.scale;
+
+        ctx.fillStyle = '#7EA9B1';
+        ctx.font = 'bold ' + Math.round(7.4 * m.scale) + 'px ' + font;
+        ctx.fillText('CALCULATED OUTPUT', outputCenterX, moduleY + 17 * m.scale);
+
+        this._chamferPath(ctx, outputScreenX, outputScreenY, outputScreenW, outputScreenH, 6 * m.scale);
+        const outScreen = ctx.createLinearGradient(outputScreenX, outputScreenY, outputScreenX, outputScreenY + outputScreenH);
+        outScreen.addColorStop(0, 'rgba(15,22,26,0.98)');
+        outScreen.addColorStop(0.52, 'rgba(4,9,12,0.99)');
+        outScreen.addColorStop(1, 'rgba(7,16,20,0.98)');
+        ctx.fillStyle = outScreen;
+        ctx.fill();
+        ctx.strokeStyle = checked ? outputFrameColor : 'rgba(120,142,149,0.18)';
+        ctx.lineWidth = 1 * m.scale;
+        ctx.stroke();
+
+        if (!checked) {
+            ctx.fillStyle = '#768A91';
+            ctx.font = 'bold ' + Math.round(14 * m.scale) + 'px ' + font;
+            ctx.fillText('OUTPUT LOCKED', outputCenterX, outputScreenY + outputScreenH * 0.55);
+
+            ctx.fillStyle = '#526970';
+            ctx.font = 'bold ' + Math.round(6.2 * m.scale) + 'px ' + font;
+            ctx.fillText('PRESS CALCULATE TO VERIFY CAPACITY', outputCenterX, moduleY + moduleH - 14 * m.scale);
+        } else {
+            ctx.save();
+            ctx.translate(outputCenterX, outputScreenY + outputScreenH * 0.54);
+            ctx.scale(outputPulse, outputPulse);
+            ctx.fillStyle = '#EEF8FA';
+            ctx.font = 'bold ' + Math.round(18 * m.scale) + 'px ' + font;
+            ctx.fillText('2^' + checked.exponent + ' = ' + this._formatNumber(checked.totalAddresses), 0, 0);
+            ctx.restore();
+
+            // Usable host result is intentionally outside the digital formula screen.
+            ctx.textAlign = 'right';
+            ctx.fillStyle = checked.status === 'over' ? '#FF6F86' : checked.status === 'under' ? '#FFD166' : '#69E6B1';
+            ctx.font = 'bold ' + Math.round(10.4 * m.scale) + 'px ' + font;
+            ctx.fillText(
+                this._formatNumber(checked.usableHosts) + ' USABLE HOSTS',
+                outputX + outputW - 16 * m.scale,
+                moduleY + moduleH - 12 * m.scale
+            );
+
+            ctx.textAlign = 'left';
+            ctx.fillStyle = stale ? '#7FA2AA' : '#6F8E95';
+            ctx.font = 'bold ' + Math.round(6.0 * m.scale) + 'px ' + font;
+            ctx.fillText(
+                stale ? 'NEW INPUT UNVERIFIED // PRESS CALCULATE' : 'LAST VERIFIED CAPACITY',
+                outputX + 16 * m.scale,
+                moduleY + moduleH - 11 * m.scale
+            );
+        }
+
+        const ledX = contentRight - 7 * m.scale;
+        const ledY = moduleY + 15 * m.scale;
+        ctx.fillStyle = stale || !checked ? '#FFE052' : '#59FFB7';
+        ctx.shadowColor = stale || !checked ? '#FFE052' : '#59FFB7';
+        ctx.shadowBlur = (4 + pulse * 4) * m.scale;
+        ctx.beginPath();
+        ctx.arc(ledX, ledY, 2.5 * m.scale, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.shadowBlur = 0;
+
+        const dividerX = button.x - 7 * m.scale;
+        const divider = ctx.createLinearGradient(dividerX - 2 * m.scale, 0, dividerX + 2 * m.scale, 0);
+        divider.addColorStop(0, 'rgba(0,0,0,0)');
+        divider.addColorStop(0.5, 'rgba(180,214,221,0.28)');
+        divider.addColorStop(1, 'rgba(0,0,0,0)');
+        ctx.fillStyle = divider;
+        ctx.fillRect(dividerX - 2 * m.scale, box.y + 13 * m.scale, 4 * m.scale, box.h - 26 * m.scale);
+
+        this._drawCalculateButton(ctx, button, m);
+        ctx.restore();
+    }
+
+
+    _drawCriticalWarningOverlay(ctx, m, intensity) {
+        if (intensity <= 0) return;
+
+        const blink = 0.5 + 0.5 * Math.sin(this.animTick * 0.62);
+
+        ctx.save();
+
+        const vignette = ctx.createRadialGradient(
+            m.cW * 0.5,
+            m.cH * 0.5,
+            Math.min(m.cW, m.cH) * 0.20,
+            m.cW * 0.5,
+            m.cH * 0.5,
+            Math.max(m.cW, m.cH) * 0.70
+        );
+
+        vignette.addColorStop(0, 'rgba(255,0,20,0)');
+        vignette.addColorStop(0.58, 'rgba(255,0,25,' + (0.015 * intensity) + ')');
+        vignette.addColorStop(1, 'rgba(255,18,40,' + ((0.13 + blink * 0.12) * intensity) + ')');
+
+        ctx.fillStyle = vignette;
+        ctx.fillRect(0, 0, m.cW, m.cH);
+
+        ctx.strokeStyle = 'rgba(255,55,75,' + ((0.18 + blink * 0.28) * intensity) + ')';
+        ctx.lineWidth = (2 + intensity * 3) * m.scale;
+        ctx.strokeRect(3 * m.scale, 3 * m.scale, m.cW - 6 * m.scale, m.cH - 6 * m.scale);
+
+        const warningBars = Math.floor(3 + intensity * 6);
+        for (let i = 0; i < warningBars; i++) {
+            const y = ((i * 97 + this.animTick * (3 + i * 0.31)) % Math.max(1, m.cH));
+            ctx.fillStyle = 'rgba(255,49,95,' + (0.018 + intensity * 0.025) + ')';
+            ctx.fillRect(0, y, m.cW, Math.max(1, (1 + (i % 3)) * m.scale));
+        }
+
+        ctx.restore();
+    }
+
+
+    _drawOverflowFailure(ctx, m, holdFinal) {
+        if (!this.failureStartedAt) return;
+
+        const elapsed = Date.now() - this.failureStartedAt;
+        const rawProgress = Math.max(0, Math.min(1, elapsed / this.failureAnimationDurationMs));
+        const progress = holdFinal ? 1 : rawProgress;
+        const eased = holdFinal ? 1 : (1 - Math.pow(1 - progress, 2.25));
+        const topY = holdFinal ? -12 * m.scale : m.cH * (1 - eased);
+        const font = this._uiFont();
+
+        ctx.save();
+
+        // Deep thermal coolant body. Once the breach finishes, this layer stays
+        // latched at full height until the scene closes.
+        const deepFluid = ctx.createLinearGradient(0, topY, 0, m.cH);
+        deepFluid.addColorStop(0, holdFinal ? 'rgba(255,108,58,0.60)' : 'rgba(255,115,56,0.64)');
+        deepFluid.addColorStop(0.16, 'rgba(255,60,61,0.80)');
+        deepFluid.addColorStop(0.56, 'rgba(154,17,35,0.93)');
+        deepFluid.addColorStop(1, 'rgba(66,2,18,0.98)');
+        ctx.fillStyle = deepFluid;
+        ctx.beginPath();
+        ctx.moveTo(0, m.cH);
+        ctx.lineTo(0, topY);
+
+        for (let i = 0; i <= 44; i++) {
+            const x = m.cW * (i / 44);
+            const y = topY +
+                Math.sin(i * 0.63 + this.animTick * 0.13) * (8 + progress * 12) * m.scale +
+                Math.sin(i * 1.47 + this.animTick * 0.075) * 4.2 * m.scale;
+            ctx.lineTo(x, y);
+        }
+
+        ctx.lineTo(m.cW, m.cH);
+        ctx.closePath();
+        ctx.fill();
+
+        // Hot translucent surface layer.
+        const hotTop = Math.min(m.cH, topY + 42 * m.scale);
+        const hotLayer = ctx.createLinearGradient(0, topY - 4 * m.scale, 0, hotTop);
+        hotLayer.addColorStop(0, 'rgba(255,241,149,0.38)');
+        hotLayer.addColorStop(0.22, 'rgba(255,157,70,0.38)');
+        hotLayer.addColorStop(0.58, 'rgba(255,67,66,0.17)');
+        hotLayer.addColorStop(1, 'rgba(255,49,83,0)');
+        ctx.fillStyle = hotLayer;
+        ctx.beginPath();
+        ctx.moveTo(0, hotTop);
+
+        for (let i = 0; i <= 40; i++) {
+            const x = m.cW * (i / 40);
+            const y = topY +
+                Math.sin(i * 0.82 + this.animTick * 0.19) * 7 * m.scale +
+                Math.sin(i * 2.1 + this.animTick * 0.07) * 2.3 * m.scale;
+            ctx.lineTo(x, y);
+        }
+
+        ctx.lineTo(m.cW, hotTop);
+        ctx.closePath();
+        ctx.fill();
+
+        // Rolling internal currents provide layered fluid depth.
+        for (let layer = 0; layer < 7; layer++) {
+            const layerY = topY + (28 + layer * 40) * m.scale;
+            if (layerY > m.cH + 12 * m.scale) continue;
+
+            ctx.strokeStyle = layer % 2
+                ? 'rgba(255,94,61,' + (0.11 + progress * 0.08) + ')'
+                : 'rgba(83,2,24,' + (0.18 + progress * 0.09) + ')';
+
+            ctx.lineWidth = (1.7 + layer * 0.35) * m.scale;
+            ctx.beginPath();
+
+            for (let i = 0; i <= 34; i++) {
+                const x = m.cW * (i / 34);
+                const y = layerY +
+                    Math.sin(i * 0.73 + layer + this.animTick * (0.055 + layer * 0.005)) * 7 * m.scale +
+                    Math.sin(i * 1.39 + this.animTick * 0.035) * 2.4 * m.scale;
+                if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+            }
+
+            ctx.stroke();
+        }
+
+        // Fine suspended thermal particles.
+        for (let i = 0; i < 54; i++) {
+            const seed = i * 71 + 19;
+            const px = (seed * 37.31) % m.cW;
+            const available = Math.max(10 * m.scale, m.cH - topY);
+            const py = m.cH - ((this.animTick * (0.26 + (i % 5) * 0.04) + seed * 2.3) % available);
+            if (py < topY) continue;
+
+            const sz = (0.8 + (i % 4) * 0.42) * m.scale;
+            ctx.fillStyle = i % 3 === 0
+                ? 'rgba(255,229,143,0.23)'
+                : 'rgba(255,98,72,0.18)';
+            ctx.fillRect(px, py, sz * 2.3, sz * 0.8);
+        }
+
+        // Dense bubbling rises bottom -> top and continues behind the failure card.
+        const bubbleCount = holdFinal ? 86 : Math.floor(30 + progress * 58);
+        for (let i = 0; i < bubbleCount; i++) {
+            const seed = i * 47 + 13;
+            const x = (seed * 73.7) % m.cW;
+            const available = Math.max(8 * m.scale, m.cH - topY);
+            const speed = 0.85 + (i % 7) * 0.14;
+            const y = m.cH - ((this.animTick * speed + seed * 4.7) % available);
+            if (y < topY) continue;
+
+            const r = (1.8 + (i % 6) * 1.15) * m.scale;
+            const bubbleAlpha = holdFinal ? 0.34 : (0.16 + progress * 0.34);
+
+            ctx.strokeStyle = i % 3 === 0
+                ? 'rgba(255,244,183,' + bubbleAlpha + ')'
+                : 'rgba(255,171,108,' + (bubbleAlpha * 0.72) + ')';
+
+            ctx.lineWidth = (0.7 + (i % 3) * 0.3) * m.scale;
+            ctx.beginPath();
+            ctx.arc(x, y, r, 0, Math.PI * 2);
+            ctx.stroke();
+
+            if (i % 5 === 0) {
+                ctx.fillStyle = 'rgba(255,236,180,' + (holdFinal ? 0.08 : 0.05 + progress * 0.08) + ')';
+                ctx.beginPath();
+                ctx.arc(x - r * 0.25, y - r * 0.25, r * 0.55, 0, Math.PI * 2);
+                ctx.fill();
+            }
+        }
+
+        // Electrical interference peaks during the breach, then remains as a
+        // restrained background flicker while the feedback card is visible.
+        const glitchStrength = holdFinal
+            ? 0.34
+            : (progress > 0.28 ? (progress - 0.28) / 0.72 : 0);
+
+        if (glitchStrength > 0) {
+            const strips = Math.floor(6 + glitchStrength * 20);
+            for (let i = 0; i < strips; i++) {
+                const y = (i * 61 + this.animTick * (3.1 + i * 0.13)) % m.cH;
+                const h = Math.max(1, (1 + (i % 3)) * m.scale);
+                const shift = Math.sin(this.animTick * 0.61 + i * 3.1) * 24 * m.scale * glitchStrength;
+
+                ctx.fillStyle = i % 3 === 0
+                    ? 'rgba(0,240,255,' + (0.035 + glitchStrength * 0.08) + ')'
+                    : (i % 2
+                        ? 'rgba(255,255,255,' + (0.026 + glitchStrength * 0.055) + ')'
+                        : 'rgba(255,49,95,' + (0.030 + glitchStrength * 0.065) + ')');
+
+                ctx.fillRect(Math.max(0, shift), y, m.cW - Math.abs(shift), h);
+            }
+
+            const lightningCount = holdFinal ? 3 : Math.floor(2 + glitchStrength * 7);
+            for (let i = 0; i < lightningCount; i++) {
+                const startX = ((i * 193 + this.animTick * 5) % m.cW);
+                const startY = Math.max(topY, (i * 89 + this.animTick * 1.7) % m.cH);
+
+                ctx.strokeStyle = 'rgba(202,248,255,' + (0.14 + glitchStrength * 0.34) + ')';
+                ctx.shadowColor = '#C8FBFF';
+                ctx.shadowBlur = 5 * m.scale * glitchStrength;
+                ctx.lineWidth = (0.8 + glitchStrength * 1.0) * m.scale;
+
+                ctx.beginPath();
+                ctx.moveTo(startX, startY);
+
+                for (let p = 1; p <= 6; p++) {
+                    ctx.lineTo(
+                        startX + Math.sin(i * 7 + p * 2.2 + this.animTick * 0.09) * 18 * m.scale,
+                        startY + p * 13 * m.scale
+                    );
+                }
+
+                ctx.stroke();
+                ctx.shadowBlur = 0;
+            }
+        }
+
+        if (!holdFinal) {
+            const labelY = Math.max(28 * m.scale, topY - 24 * m.scale);
+            ctx.fillStyle = 'rgba(255,244,226,' + (0.54 + progress * 0.40) + ')';
+            ctx.shadowColor = '#FF604F';
+            ctx.shadowBlur = 10 * m.scale * progress;
+            ctx.font = 'bold ' + Math.round(12 * m.scale) + 'px ' + font;
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText('THERMAL TRACE BREACH // COOLANT OVERRUN', m.cW * 0.5, labelY);
+            ctx.shadowBlur = 0;
+        }
+
         ctx.restore();
     }
 
@@ -1865,7 +3473,7 @@ class IP2LiveHostPowerReactorGameplayScreen extends Scene.Base {
 }
 
 const HostPowerReactorGameplayManager = {
-    VERSION: 'ip-host-power-reactor-manager-20260821-03',
+    VERSION: 'ip-host-power-reactor-manager-20260921-04',
     _active: false,
     _activeAttempt: null,
     _introShown: false,
@@ -2156,8 +3764,10 @@ window.IP2LiveHostPowerRules = IPHostPowerRules;
 window.IP2LiveHostPowerReactorGameplayScreen = IP2LiveHostPowerReactorGameplayScreen;
 window.IP2LiveHostPowerReactorGameplayManager = HostPowerReactorGameplayManager;
 
-window.startHostPowerGameplayFourPointFive = function (options) {
-    return HostPowerReactorGameplayManager.launchHostPowerReactorGameplay(options || {});
+window.startHostPowerGameplayFourPointFive = function (options, timeSeconds) {
+    const opts = Object.assign({}, options || {});
+    if (Number.isFinite(Number(timeSeconds)) && Number(timeSeconds) > 0) opts.timeSeconds = Number(timeSeconds);
+    return HostPowerReactorGameplayManager.launchHostPowerReactorGameplay(opts);
 };
 
 console.log('[IP2Live] ip_host_power_gameplay.js loaded.');

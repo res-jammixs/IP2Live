@@ -9,9 +9,28 @@
  */
 
 class IP2LiveCIDRPanelGameplayScreen extends Scene.Base {
-    constructor(options) {
+    /**
+     * @param {Object} options Gameplay configuration.
+     * @param {number} timeSeconds Optional solve-time override in seconds.
+     *
+     * JavaScript does not support overloaded constructors, so the same
+     * constructor accepts an optional second parameter. When omitted, the
+     * CIDR panel defaults to 180 seconds (3 minutes).
+     *
+     * Examples:
+     *   new IP2LiveCIDRPanelGameplayScreen(options);       // 180 seconds
+     *   new IP2LiveCIDRPanelGameplayScreen(options, 120);  // 2 minutes
+     */
+    constructor(options, timeSeconds) {
         super(true);
         this.options = options || {};
+
+        const explicitTime = Number(timeSeconds);
+        this._constructorTimeSeconds =
+            Number.isFinite(explicitTime) && explicitTime > 0
+                ? explicitTime
+                : null;
+
         this._configure();
     }
 
@@ -71,6 +90,47 @@ class IP2LiveCIDRPanelGameplayScreen extends Scene.Base {
         this.maxAttempts = Math.max(1, Number(this.options.maxAttempts) || 3);
         this.attemptsExhausted = false;
         this.lastFailure = null;
+
+        // Timed challenge / progressive signal-corruption sequence.
+        //
+        // Priority:
+        // 1) constructor(options, timeSeconds)
+        // 2) options.timeSeconds
+        // 3) legacy options.solveTimeSeconds
+        // 4) default: 180 seconds (3 minutes)
+        const optionTime = Number(
+            this.options.timeSeconds !== undefined
+                ? this.options.timeSeconds
+                : this.options.solveTimeSeconds
+        );
+
+        const requestedTime =
+            this._constructorTimeSeconds !== null
+                ? this._constructorTimeSeconds
+                : (
+                    Number.isFinite(optionTime) && optionTime > 0
+                        ? optionTime
+                        : 180
+                );
+
+        this.solveTimeSeconds = Math.max(5, requestedTime);
+        this.solveTimerMaxTicks = Math.round(this.solveTimeSeconds * 60);
+        this.solveTimerTicks = this.solveTimerMaxTicks;
+
+        // For the default 3-minute challenge:
+        // - corruption begins at 2:00 elapsed (1:00 remaining)
+        // - corruption becomes severe at 2:40 elapsed (0:20 remaining)
+        //
+        // Custom timers preserve those same pacing ratios.
+        this.glitchStartElapsedSeconds = this.solveTimeSeconds * (2 / 3);
+        this.glitchHeavyElapsedSeconds = this.solveTimeSeconds * (8 / 9);
+
+        this.timerExpired = false;
+        this.timeoutSequenceTicks = 0;
+        this.timeoutShakeDuration = 120; // ~2 seconds at 60 FPS.
+        this.timeoutShutdownDuration = 52;
+        this.timeoutFailureCommitted = false;
+
         this._resetBulbs();
     }
 
@@ -237,6 +297,129 @@ class IP2LiveCIDRPanelGameplayScreen extends Scene.Base {
         this.cidrInputFocused = false;
     }
 
+    /**
+     * Row-local subnet-mask interaction.
+     *
+     * Clicking an OFF bulb lights that bulb and every bulb to its LEFT
+     * in the SAME octet only. Clicking an ON bulb switches that bulb and
+     * every bulb to its RIGHT OFF in the SAME octet only. Other octets are
+     * never changed by an individual bulb click.
+     */
+    _toggleBulbAsSubnetPrefix(row, col) {
+        if (!this.bulbs[row]) return;
+
+        const isOn = !!this.bulbs[row][col];
+
+        if (isOn) {
+            for (let c = col; c < this.totalCols; c++) {
+                this.bulbs[row][c] = false;
+            }
+        } else {
+            for (let c = 0; c <= col; c++) {
+                this.bulbs[row][c] = true;
+            }
+        }
+
+        this.rowSums[row] = 0;
+        this.calcRows = [];
+    }
+
+    /**
+     * Row lever helper. The lever affects ONLY its own octet.
+     */
+    _toggleRowPrefix(row) {
+        if (!this.bulbs[row]) return;
+        const allOn = this.bulbs[row].every((value) => !!value);
+        for (let c = 0; c < this.totalCols; c++) {
+            this.bulbs[row][c] = !allOn;
+        }
+        this.rowSums[row] = 0;
+        this.calcRows = [];
+    }
+
+    _isTimeoutSequence() {
+        return this.phase === 'timeout_shake' || this.phase === 'timeout_shutdown';
+    }
+
+    _shouldRunSolveTimer() {
+        if (this.finished || this.timerExpired || this._isTimeoutSequence()) return false;
+        if (this.tutorialPaused || this._isGuidedDialogueActive()) return false;
+        if (this.guidedTutorial && !this.tutorialComplete) return false;
+        return this.phase === 'build' || this.phase === 'cidr_entry';
+    }
+
+    _updateSolveTimer() {
+        if (!this._shouldRunSolveTimer()) return;
+        this.solveTimerTicks = Math.max(0, this.solveTimerTicks - 1);
+        if (this.solveTimerTicks <= 0) this._beginTimeoutFailure();
+    }
+
+    _beginTimeoutFailure() {
+        if (this.timerExpired || this.finished) return;
+
+        this.timerExpired = true;
+        this.timeoutSequenceTicks = this.timeoutShakeDuration;
+        this.phase = 'timeout_shake';
+        this.failReason = 'CIDR CONSOLE LINK LOST // TIME LIMIT EXCEEDED.';
+        this.statusText = 'SIGNAL CORRUPTION CRITICAL // CONNECTION COLLAPSING';
+        this.cidrInputFocused = false;
+        this.failJitter = 0;
+        this._emitFailureSparks();
+        this._playCancel();
+    }
+
+    _updateTimeoutSequence() {
+        if (this.phase === 'timeout_shake') {
+            this.timeoutSequenceTicks--;
+            if (this.timeoutSequenceTicks <= 0) {
+                this.phase = 'timeout_shutdown';
+                this.timeoutSequenceTicks = this.timeoutShutdownDuration;
+                this.statusText = 'SIGNAL TERMINATED // CONSOLE SHUTTING DOWN';
+            }
+            return;
+        }
+
+        if (this.phase === 'timeout_shutdown') {
+            this.timeoutSequenceTicks--;
+            if (this.timeoutSequenceTicks <= 0) this._failOutTimeout();
+        }
+    }
+
+    _failOutTimeout() {
+        if (this.timeoutFailureCommitted || this.finished) return;
+        this.timeoutFailureCommitted = true;
+        this.finished = true;
+
+        const result = {
+            gameplayId: this.options.gameplayId || 'ip_cidr_binary_panel',
+            handoffKey: this.options.handoffKey || null,
+            passed: false,
+            reason: 'time_expired',
+            mask: this.targetMask,
+            targetClass: this.targetClass,
+            cidr: this.targetCIDR,
+            timeLimitSeconds: this.solveTimeSeconds,
+            attemptsUsed: this._mistakesUsed(),
+            maxAttempts: this.enforceAttemptLimit ? this.maxAttempts : 0,
+            retries: this._mistakesUsed(),
+            lastFailure: {
+                kind: 'timeout',
+                expected: this.targetMask,
+                submitted: this._currentBulbBinary(),
+            },
+        };
+
+        if (typeof this.options.onFailed === 'function') {
+            this.options.onFailed(result);
+            return;
+        }
+        if (typeof this.options.onCancel === 'function') {
+            this.options.onCancel();
+            return;
+        }
+        if (Manager && Manager.Stack) Manager.Stack.pop();
+    }
+
     async load() {
         this.loading = false;
         if (Manager && Manager.Stack) Manager.Stack.requestPaintHUD = true;
@@ -263,8 +446,11 @@ class IP2LiveCIDRPanelGameplayScreen extends Scene.Base {
         }
 
         this._updateGuidedTutorial();
+        this._updateSolveTimer();
 
-        if (this.phase === 'calculating') {
+        if (this._isTimeoutSequence()) {
+            this._updateTimeoutSequence();
+        } else if (this.phase === 'calculating') {
             this._updateCalculation();
         } else if (this.phase === 'cidr_entry') {
             // idle input phase
@@ -460,6 +646,7 @@ class IP2LiveCIDRPanelGameplayScreen extends Scene.Base {
         }
         if (this.tutorialPaused) return true;
         if (this.postCorrectionInputLockTicks > 0) return true;
+        if (this._isTimeoutSequence()) return true;
         if (Data.Keyboards.checkCancelMenu && Data.Keyboards.checkCancelMenu(key)) {
             this._cancel();
             return true;
@@ -530,8 +717,7 @@ class IP2LiveCIDRPanelGameplayScreen extends Scene.Base {
         for (let i = 0; i < this.switchRects.length; i++) {
             const sw = this.switchRects[i];
             if (this._pointInRect(x, y, sw)) {
-                const allOn = this.bulbs[sw.row].every((value) => !!value);
-                for (let c = 0; c < this.totalCols; c++) this.bulbs[sw.row][c] = !allOn;
+                this._toggleRowPrefix(sw.row);
                 this._playCursor();
                 return true;
             }
@@ -540,7 +726,7 @@ class IP2LiveCIDRPanelGameplayScreen extends Scene.Base {
         for (let i = 0; i < this.bulbRects.length; i++) {
             const bulb = this.bulbRects[i];
             if (this._pointInRect(x, y, bulb)) {
-                this.bulbs[bulb.row][bulb.col] = !this.bulbs[bulb.row][bulb.col];
+                this._toggleBulbAsSubnetPrefix(bulb.row, bulb.col);
                 this._playCursor();
                 return true;
             }
@@ -915,7 +1101,11 @@ class IP2LiveCIDRPanelGameplayScreen extends Scene.Base {
         this._buildInteractionRects(m);
 
         ctx.save();
-        if (this.phase === 'fail' && this.failJitter > 0) {
+        if (this.phase === 'timeout_shake') {
+            const collapse = 1 - Math.max(0, this.timeoutSequenceTicks) / Math.max(1, this.timeoutShakeDuration);
+            const amp = (4 + collapse * 12) * m.sX;
+            ctx.translate((Math.random() - 0.5) * amp, (Math.random() - 0.5) * amp);
+        } else if (this.phase === 'fail' && this.failJitter > 0) {
             const amp = this.failJitter * 0.13 * m.sX;
             ctx.translate((Math.random() - 0.5) * amp, (Math.random() - 0.5) * amp);
         }
@@ -924,6 +1114,7 @@ class IP2LiveCIDRPanelGameplayScreen extends Scene.Base {
         this._drawHeader(ctx, m);
         this._drawMainPanel(ctx, m);
         this._drawRows(ctx, m);
+        this._drawStatusBar(ctx, m);
         if (this.phase === 'build' || this.phase === 'calculating' || this.phase === 'fail' || this.phase === 'cidr_entry') {
             this._drawTargetMaskCard(ctx, m);
             this._drawCIDRActionPanel(ctx, m);
@@ -935,6 +1126,8 @@ class IP2LiveCIDRPanelGameplayScreen extends Scene.Base {
         if (this.miniWidgetVisible && this.iconAnim) this._drawMiniWidget(ctx, m);
         this._drawSparks(ctx, m);
         this._drawPhaseOverlay(ctx, m);
+        this._drawProgressiveGlitch(ctx, m);
+        if (this.phase === 'timeout_shutdown') this._drawOldTVShutdown(ctx, m);
         this._drawTutorialHighlight(ctx, m);
         ctx.restore();
 
@@ -1000,11 +1193,28 @@ class IP2LiveCIDRPanelGameplayScreen extends Scene.Base {
         };
     }
 
+    _rowLayout(m) {
+        const statusH = 31 * m.sY;
+        const statusY = m.mainY + m.mainH - 40 * m.sY;
+        const rowBaseY = m.mainY + 64 * m.sY;
+        const lastRowY = statusY - 10 * m.sY - 31 * m.sY;
+        const rowGap = (lastRowY - rowBaseY) / 3;
+        return {
+            rowBaseY,
+            rowGap,
+            statusX: m.mainX + 22 * m.sX,
+            statusY,
+            statusW: m.mainW - 44 * m.sX,
+            statusH,
+        };
+    }
+
     _buildInteractionRects(m) {
         this.bulbRects = [];
         this.switchRects = [];
-        const rowGap = (m.mainH - 119 * m.sY) / 3;
-        const rowBaseY = m.mainY + 64 * m.sY;
+        const rowLayout = this._rowLayout(m);
+        const rowGap = rowLayout.rowGap;
+        const rowBaseY = rowLayout.rowBaseY;
         const bulbsX = m.mainX + 155 * m.sX;
         const gap = 58 * m.sX;
         const radius = 14.5 * m.sY;
@@ -1282,7 +1492,7 @@ class IP2LiveCIDRPanelGameplayScreen extends Scene.Base {
         ctx.fill();
 
         ctx.fillStyle = '#FFFFFF';
-        ctx.font = 'bold ' + Math.round(7 * m.sX) + 'px monospace';
+        ctx.font = 'bold ' + Math.round(7 * m.sX) + 'px ' + this._uiMonoFont();
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
         ctx.fillText('IP2', bx + 28 * m.sX, by + 19 * m.sY);
@@ -1313,7 +1523,7 @@ class IP2LiveCIDRPanelGameplayScreen extends Scene.Base {
         ctx.fillText('CALCULATION', titleX + cidrW + 11 * m.sX, titleY);
         ctx.fillStyle = '#FFE600';
         ctx.fillText('PANEL', titleX + cidrW + calcW + 22 * m.sX, titleY);
-        ctx.font = 'bold ' + Math.round(6.3 * m.sX) + 'px monospace';
+        ctx.font = 'bold ' + Math.round(6.3 * m.sX) + 'px ' + this._uiMonoFont();
         ctx.fillStyle = 'rgba(190,211,222,0.68)';
         ctx.fillText('BINARY MASK // OCTET CALCULATION CONSOLE', titleX, by + 46 * m.sY);
         ctx.fillStyle = '#FF315F';
@@ -1322,21 +1532,109 @@ class IP2LiveCIDRPanelGameplayScreen extends Scene.Base {
         ctx.fillRect(bx + 106 * m.sX, by + 6 * m.sY, 72 * m.sX, 2 * m.sY);
         ctx.restore();
 
-        const statusX = m.panelX + m.panelW - 26 * m.sX;
-        ctx.textAlign = 'right';
-        ctx.fillStyle = 'rgba(0,240,255,0.78)';
-        ctx.font = 'bold ' + (7.4 * m.sY).toFixed(1) + 'px monospace';
-        ctx.fillText('SYS::CIDR_MASK_CONSOLE // LIVE', statusX, by + 18 * m.sY);
-        ctx.fillStyle = 'rgba(190,211,222,0.64)';
-        ctx.font = 'bold ' + (6.4 * m.sY).toFixed(1) + 'px monospace';
-        const attemptStatus = this.enforceAttemptLimit
-            ? 'TRIES ' + this._attemptsRemaining() + '/' + this.maxAttempts + ' // '
-            : '';
-        ctx.fillText(attemptStatus + 'OCTET BUS 04 // MATRIX 32-BIT', statusX, by + 36 * m.sY);
-        for (let i = 0; i < 5; i++) {
-            ctx.fillStyle = i < 4 ? '#FFE600' : '#25313A';
-            ctx.fillRect(statusX - (61 - i * 10) * m.sX, by + 46 * m.sY, 7 * m.sX, 3 * m.sY);
+        /*
+         * Upper-right timer.
+         *
+         * Keep this area deliberately clean: no system-status strings, attempt
+         * counter, bus labels, or other copy. The countdown is the only item.
+         */
+        const remainingSeconds = Math.max(0, Math.ceil((this.solveTimerTicks || 0) / 60));
+        const minutes = Math.floor(remainingSeconds / 60);
+        const seconds = remainingSeconds % 60;
+        const timerText =
+            String(minutes).padStart(2, '0') +
+            ':' +
+            String(seconds).padStart(2, '0');
+
+        const elapsedSeconds = Math.max(0, this.solveTimeSeconds - remainingSeconds);
+        const glitchStart = Math.max(0, this.glitchStartElapsedSeconds || this.solveTimeSeconds * (2 / 3));
+        const glitchHeavy = Math.max(glitchStart + 1, this.glitchHeavyElapsedSeconds || this.solveTimeSeconds * (8 / 9));
+
+        let timerColor = '#00EAF2';
+        if (elapsedSeconds >= glitchHeavy) {
+            timerColor = '#FF315F';
+        } else if (elapsedSeconds >= glitchStart) {
+            timerColor = '#FFE600';
         }
+
+        const timerW = 154 * m.sX;
+        const timerH = 34 * m.sY;
+        const timerX = m.panelX + m.panelW - timerW - 23 * m.sX;
+        const timerY = by + 11 * m.sY;
+
+        ctx.save();
+
+        ctx.shadowColor = timerColor;
+        ctx.shadowBlur = elapsedSeconds >= glitchHeavy ? 13 * m.sX : 7 * m.sX;
+
+        const timerBg = ctx.createLinearGradient(
+            timerX,
+            timerY,
+            timerX,
+            timerY + timerH
+        );
+        timerBg.addColorStop(0, 'rgba(8,18,27,0.97)');
+        timerBg.addColorStop(0.50, 'rgba(2,7,13,0.99)');
+        timerBg.addColorStop(1, 'rgba(9,13,19,0.98)');
+
+        ctx.fillStyle = timerBg;
+        this._fillChamferRect(
+            ctx,
+            timerX,
+            timerY,
+            timerW,
+            timerH,
+            7 * m.sX
+        );
+
+        ctx.shadowBlur = 0;
+
+        this._strokeChamferRect(
+            ctx,
+            timerX,
+            timerY,
+            timerW,
+            timerH,
+            7 * m.sX,
+            timerColor,
+            1.35 * m.sX
+        );
+
+        // Small rendered hardware rails; these are decorative only and add no text.
+        ctx.fillStyle = timerColor;
+        ctx.globalAlpha = 0.78;
+        ctx.fillRect(
+            timerX + 11 * m.sX,
+            timerY + 4 * m.sY,
+            27 * m.sX,
+            2 * m.sY
+        );
+        ctx.fillRect(
+            timerX + timerW - 38 * m.sX,
+            timerY + timerH - 6 * m.sY,
+            27 * m.sX,
+            2 * m.sY
+        );
+        ctx.globalAlpha = 1;
+
+        // Stronger pulse during the last corruption phase.
+        if (elapsedSeconds >= glitchHeavy) {
+            const pulse = 0.58 + 0.42 * Math.sin((this.animTick || 0) * 0.20);
+            ctx.shadowColor = '#FF315F';
+            ctx.shadowBlur = (8 + pulse * 10) * m.sX;
+        }
+
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.font = 'bold ' + (20.5 * m.sY).toFixed(1) + 'px ' + this._uiPrimaryFont();
+        ctx.fillStyle = timerColor;
+        ctx.fillText(
+            timerText,
+            timerX + timerW * 0.5,
+            timerY + timerH * 0.52
+        );
+
+        ctx.restore();
     }
 
     _drawMainPanel(ctx, m) {
@@ -1369,7 +1667,7 @@ class IP2LiveCIDRPanelGameplayScreen extends Scene.Base {
         ctx.fillStyle = tab;
         this._fillChamferRect(ctx, tabX, tabY, tabW, tabH, 5 * m.sX);
         ctx.fillStyle = '#031014';
-        ctx.font = 'bold ' + Math.round(7 * m.sX) + 'px monospace';
+        ctx.font = 'bold ' + Math.round(7 * m.sX) + 'px ' + this._uiMonoFont();
         ctx.textAlign = 'left';
         ctx.fillText('OCTET BUS // BINARY LAMP ARRAY', tabX + 12 * m.sX, tabY + 12.5 * m.sY);
 
@@ -1398,8 +1696,9 @@ class IP2LiveCIDRPanelGameplayScreen extends Scene.Base {
     _drawRows(ctx, m) {
         const primaryFont = this._uiPrimaryFont();
         const monoFont = this._uiMonoFont();
-        const rowGap = (m.mainH - 119 * m.sY) / 3;
-        const rowBaseY = m.mainY + 64 * m.sY;
+        const rowLayout = this._rowLayout(m);
+        const rowGap = rowLayout.rowGap;
+        const rowBaseY = rowLayout.rowBaseY;
         const bulbsX = m.mainX + 155 * m.sX;
         const gap = 58 * m.sX;
         const radius = 14.5 * m.sY;
@@ -1490,77 +1789,243 @@ class IP2LiveCIDRPanelGameplayScreen extends Scene.Base {
 
             const sw = this.switchRects[r];
             const allOn = this.bulbs[r].every((value) => !!value);
+            const accent = allOn ? '#FFE600' : '#00EAF2';
+
+            // Rear mechanical depth.
+            ctx.save();
+            ctx.shadowColor = 'rgba(0,0,0,0.88)';
+            ctx.shadowBlur = 7 * m.sX;
+            ctx.shadowOffsetY = 3 * m.sY;
+            this._fillChamferRect(
+                ctx,
+                sw.x + 3 * m.sX,
+                sw.y + 4 * m.sY,
+                sw.w,
+                sw.h,
+                7 * m.sX,
+                '#020406'
+            );
+            ctx.restore();
+
+            // Main lever housing.
             const swg = ctx.createLinearGradient(sw.x, sw.y, sw.x + sw.w, sw.y + sw.h);
-            swg.addColorStop(0, '#171E24');
-            swg.addColorStop(0.62, '#080C10');
-            swg.addColorStop(1, '#242F36');
+            swg.addColorStop(0, allOn ? '#343315' : '#14232A');
+            swg.addColorStop(0.18, '#111920');
+            swg.addColorStop(0.72, '#070B10');
+            swg.addColorStop(1, '#26343B');
             ctx.fillStyle = swg;
             this._fillChamferRect(ctx, sw.x, sw.y, sw.w, sw.h, 7 * m.sX);
-            this._strokeChamferRect(ctx, sw.x, sw.y, sw.w, sw.h, 7 * m.sX, '#5C717C', 1.4 * m.sX);
-            const accent = allOn ? '#FFE600' : (r % 2 ? '#FF315F' : '#00EAF2');
+            this._strokeChamferRect(
+                ctx,
+                sw.x,
+                sw.y,
+                sw.w,
+                sw.h,
+                7 * m.sX,
+                allOn ? 'rgba(255,230,0,0.92)' : 'rgba(0,234,242,0.72)',
+                1.35 * m.sX
+            );
+
+            // Inner glass line.
+            this._strokeChamferRect(
+                ctx,
+                sw.x + 4 * m.sX,
+                sw.y + 4 * m.sY,
+                sw.w - 8 * m.sX,
+                sw.h - 8 * m.sY,
+                5 * m.sX,
+                'rgba(185,228,238,0.12)',
+                0.8 * m.sX
+            );
+
+            // Status diode.
+            const diodeX = sw.x + 12 * m.sX;
+            const diodeY = sw.y + sw.h * 0.5;
+            ctx.shadowColor = accent;
+            ctx.shadowBlur = allOn ? 10 * m.sX : 5 * m.sX;
             ctx.fillStyle = accent;
-            ctx.fillRect(sw.x + 7 * m.sX, sw.y + 6 * m.sY, 3 * m.sX, sw.h - 12 * m.sY);
-            ctx.fillStyle = '#E8F6FF';
+            ctx.beginPath();
+            ctx.arc(diodeX, diodeY, 3.1 * m.sX, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.shadowBlur = 0;
+
+            // Main action label.
+            ctx.fillStyle = allOn ? '#FFF6A8' : '#E8F8FC';
             ctx.font = 'bold ' + (6.8 * m.sY).toFixed(1) + 'px ' + primaryFont;
             ctx.textAlign = 'left';
             ctx.textBaseline = 'middle';
-            ctx.fillText(allOn ? 'ALL OFF' : 'ALL ON', sw.x + 16 * m.sX, sw.y + sw.h * 0.51);
+            ctx.fillText(allOn ? 'ALL OFF' : 'ALL ON', sw.x + 21 * m.sX, sw.y + sw.h * 0.51);
 
-            const leverX = sw.x + sw.w - 22 * m.sX;
-            const leverY = sw.y + sw.h * 0.5;
-            const slot = ctx.createLinearGradient(leverX - 7 * m.sX, sw.y, leverX + 7 * m.sX, sw.y);
-            slot.addColorStop(0, '#020304');
-            slot.addColorStop(0.5, '#586970');
-            slot.addColorStop(1, '#05080A');
-            ctx.fillStyle = slot;
-            this._fillChamferRect(ctx, leverX - 7 * m.sX, sw.y + 5 * m.sY, 14 * m.sX, sw.h - 10 * m.sY, 4 * m.sX);
-            ctx.strokeStyle = allOn ? '#FFE600' : '#60737B';
-            ctx.lineWidth = 2.4 * m.sX;
+            // Futuristic vertical toggle module.
+            const moduleX = sw.x + sw.w - 31 * m.sX;
+            const moduleY = sw.y + 5 * m.sY;
+            const moduleW = 22 * m.sX;
+            const moduleH = sw.h - 10 * m.sY;
+
+            const moduleG = ctx.createLinearGradient(moduleX, moduleY, moduleX + moduleW, moduleY);
+            moduleG.addColorStop(0, '#020406');
+            moduleG.addColorStop(0.45, '#1F2C32');
+            moduleG.addColorStop(0.7, '#53666D');
+            moduleG.addColorStop(1, '#080C0F');
+            ctx.fillStyle = moduleG;
+            this._fillChamferRect(ctx, moduleX, moduleY, moduleW, moduleH, 5 * m.sX);
+            this._strokeChamferRect(
+                ctx,
+                moduleX,
+                moduleY,
+                moduleW,
+                moduleH,
+                5 * m.sX,
+                allOn ? '#FFE600' : '#536B74',
+                1 * m.sX
+            );
+
+            const trackX = moduleX + moduleW * 0.5;
+            const trackTop = moduleY + 5 * m.sY;
+            const trackBottom = moduleY + moduleH - 5 * m.sY;
+            ctx.strokeStyle = 'rgba(0,0,0,0.88)';
+            ctx.lineWidth = 4.6 * m.sX;
             ctx.lineCap = 'round';
             ctx.beginPath();
-            ctx.moveTo(leverX, leverY + (allOn ? 5 : -5) * m.sY);
-            ctx.lineTo(leverX + (allOn ? -5 : 5) * m.sX, leverY + (allOn ? -7 : 7) * m.sY);
+            ctx.moveTo(trackX, trackTop);
+            ctx.lineTo(trackX, trackBottom);
             ctx.stroke();
-            const knobX = leverX + (allOn ? -5 : 5) * m.sX;
-            const knobY = leverY + (allOn ? -7 : 7) * m.sY;
-            const knob = ctx.createRadialGradient(knobX - 2 * m.sX, knobY - 2 * m.sY, 1, knobX, knobY, 5 * m.sX);
-            knob.addColorStop(0, '#F1F6F7');
-            knob.addColorStop(0.35, allOn ? '#FFE600' : '#82949B');
-            knob.addColorStop(1, '#11181B');
+
+            ctx.strokeStyle = allOn ? 'rgba(255,230,0,0.48)' : 'rgba(0,234,242,0.25)';
+            ctx.lineWidth = 1.25 * m.sX;
+            ctx.beginPath();
+            ctx.moveTo(trackX, trackTop);
+            ctx.lineTo(trackX, trackBottom);
+            ctx.stroke();
+
+            const knobY = allOn
+                ? moduleY + 7 * m.sY
+                : moduleY + moduleH - 7 * m.sY;
+
+            ctx.shadowColor = accent;
+            ctx.shadowBlur = allOn ? 8 * m.sX : 3 * m.sX;
+            const knob = ctx.createRadialGradient(
+                trackX - 2 * m.sX,
+                knobY - 2 * m.sY,
+                1,
+                trackX,
+                knobY,
+                6 * m.sX
+            );
+            knob.addColorStop(0, '#FFFFFF');
+            knob.addColorStop(0.28, allOn ? '#FFF56D' : '#A8D9E2');
+            knob.addColorStop(0.62, allOn ? '#D2B800' : '#42616A');
+            knob.addColorStop(1, '#080C0E');
             ctx.fillStyle = knob;
             ctx.beginPath();
-            ctx.arc(knobX, knobY, 4.7 * m.sX, 0, Math.PI * 2);
+            ctx.arc(trackX, knobY, 5.4 * m.sX, 0, Math.PI * 2);
             ctx.fill();
+            ctx.shadowBlur = 0;
         }
         ctx.textBaseline = 'alphabetic';
     }
 
     _drawConfirm(ctx, m) {
         if (this.phase !== 'build' && this.phase !== 'cidr_entry') return;
-        const b = this.confirmRect;
-        const g = ctx.createLinearGradient(b.x, b.y, b.x + b.w, b.y + b.h);
-        g.addColorStop(0, '#FFE600');
-        g.addColorStop(0.58, '#C7B200');
-        g.addColorStop(1, '#514800');
-        ctx.fillStyle = g;
-        this._fillChamferRect(ctx, b.x, b.y, b.w, b.h, 9 * m.sX);
-        this._strokeChamferRect(ctx, b.x, b.y, b.w, b.h, 9 * m.sX, '#FFF6A0', 1.8 * m.sX);
-        ctx.fillStyle = this.phase === 'cidr_entry' ? '#00EAF2' : '#FF315F';
-        ctx.fillRect(b.x + 7 * m.sX, b.y + 6 * m.sY, 4 * m.sX, b.h - 12 * m.sY);
 
+        const b = this.confirmRect;
+        const accent = this.phase === 'cidr_entry' ? '#00EAF2' : '#FFE600';
+        const pulse = 0.72 + 0.28 * Math.sin(this.animTick * 0.14);
         const cx = b.x + b.w * 0.5;
+
+        // Mechanical drop shadow / lower chassis.
+        ctx.save();
+        ctx.shadowColor = 'rgba(0,0,0,0.92)';
+        ctx.shadowBlur = 11 * m.sX;
+        ctx.shadowOffsetY = 5 * m.sY;
+        this._fillChamferRect(
+            ctx,
+            b.x + 4 * m.sX,
+            b.y + 5 * m.sY,
+            b.w,
+            b.h,
+            10 * m.sX,
+            '#020405'
+        );
+        ctx.restore();
+
+        // Dark rendered face with a warm/cyan energized edge.
+        const face = ctx.createLinearGradient(b.x, b.y, b.x + b.w, b.y + b.h);
+        face.addColorStop(0, this.phase === 'cidr_entry' ? '#12343A' : '#353314');
+        face.addColorStop(0.16, '#121A1E');
+        face.addColorStop(0.62, '#080C10');
+        face.addColorStop(1, '#202A2F');
+        ctx.fillStyle = face;
+        this._fillChamferRect(ctx, b.x, b.y, b.w, b.h, 10 * m.sX);
+
+        ctx.shadowColor = accent;
+        ctx.shadowBlur = (4 + pulse * 5) * m.sX;
+        this._strokeChamferRect(
+            ctx,
+            b.x,
+            b.y,
+            b.w,
+            b.h,
+            10 * m.sX,
+            accent,
+            1.8 * m.sX
+        );
+        ctx.shadowBlur = 0;
+
+        // Inner bevel instead of the previous red side streak.
+        this._strokeChamferRect(
+            ctx,
+            b.x + 5 * m.sX,
+            b.y + 5 * m.sY,
+            b.w - 10 * m.sX,
+            b.h - 10 * m.sY,
+            7 * m.sX,
+            'rgba(215,246,250,0.17)',
+            0.9 * m.sX
+        );
+
+        // Top illuminated rail.
+        const railX = b.x + 15 * m.sX;
+        const railW = b.w - 30 * m.sX;
+        const rail = ctx.createLinearGradient(railX, 0, railX + railW, 0);
+        rail.addColorStop(0, 'rgba(255,255,255,0)');
+        rail.addColorStop(0.18, accent);
+        rail.addColorStop(0.82, accent);
+        rail.addColorStop(1, 'rgba(255,255,255,0)');
+        ctx.globalAlpha = 0.62 + pulse * 0.22;
+        ctx.fillStyle = rail;
+        ctx.fillRect(railX, b.y + 6 * m.sY, railW, 1.7 * m.sY);
+        ctx.globalAlpha = 1;
+
+        // Small corner brackets add depth without adding extra text.
+        ctx.strokeStyle = 'rgba(225,250,252,0.40)';
+        ctx.lineWidth = Math.max(1, 1 * m.sX);
+        const corner = 7 * m.sX;
+        ctx.beginPath();
+        ctx.moveTo(b.x + 9 * m.sX, b.y + 17 * m.sY);
+        ctx.lineTo(b.x + 9 * m.sX, b.y + 10 * m.sY);
+        ctx.lineTo(b.x + 9 * m.sX + corner, b.y + 10 * m.sY);
+        ctx.moveTo(b.x + b.w - 9 * m.sX - corner, b.y + 10 * m.sY);
+        ctx.lineTo(b.x + b.w - 9 * m.sX, b.y + 10 * m.sY);
+        ctx.lineTo(b.x + b.w - 9 * m.sX, b.y + 17 * m.sY);
+        ctx.stroke();
+
         this._drawMaskVerificationGlyph(ctx, cx, b.y + 28 * m.sY, m);
 
-        ctx.fillStyle = '#071015';
-        ctx.font = 'bold ' + (5.8 * m.sY).toFixed(1) + 'px monospace';
+        ctx.fillStyle = this.phase === 'cidr_entry' ? '#BFFFFF' : '#FFF5A2';
+        ctx.font = 'bold ' + (6.2 * m.sY).toFixed(1) + 'px ' + this._uiMonoFont();
         ctx.textAlign = 'center';
         ctx.textBaseline = 'alphabetic';
-        ctx.fillText(this.phase === 'cidr_entry' ? 'VERIFY CIDR' : 'VERIFY MATCH', cx, b.y + b.h - 7 * m.sY);
+        ctx.fillText(
+            this.phase === 'cidr_entry' ? 'VERIFY CIDR' : 'VERIFY MATCH',
+            cx,
+            b.y + b.h - 7 * m.sY
+        );
         ctx.textBaseline = 'alphabetic';
     }
 
     _drawMaskVerificationGlyph(ctx, cx, cy, m) {
-        const accent = this.phase === 'cidr_entry' ? '#00EAF2' : '#FF315F';
+        const accent = this.phase === 'cidr_entry' ? '#00EAF2' : '#FFE600';
         const pulse = 0.72 + 0.28 * Math.sin(this.animTick * 0.16);
         const radius = 14 * m.sY;
         ctx.save();
@@ -1656,16 +2121,16 @@ class IP2LiveCIDRPanelGameplayScreen extends Scene.Base {
         ctx.fillStyle = '#FFE600';
         this._fillChamferRect(ctx, tabX, tabY, 158 * m.sX, 18 * m.sY, 5 * m.sX);
         ctx.fillStyle = '#111000';
-        ctx.font = 'bold ' + (6.4 * m.sY).toFixed(1) + 'px monospace';
+        ctx.font = 'bold ' + (6.4 * m.sY).toFixed(1) + 'px ' + this._uiMonoFont();
         ctx.textAlign = 'left';
         ctx.fillText('SUBNET MASK // TARGET', tabX + 10 * m.sX, tabY + 12 * m.sY);
 
         ctx.fillStyle = '#8BA3AE';
-        ctx.font = 'bold ' + (6.8 * m.sY).toFixed(1) + 'px monospace';
+        ctx.font = 'bold ' + (6.8 * m.sY).toFixed(1) + 'px ' + this._uiMonoFont();
         ctx.fillText('SUBNET MASK TO MATCH', x + 22 * m.sX, y + 31 * m.sY);
         ctx.fillStyle = '#F5FCFF';
-        ctx.font = 'bold ' + (13.2 * m.sY).toFixed(1) + 'px ' + primaryFont;
-        ctx.fillText(this.targetMask, x + 22 * m.sX, y + 56 * m.sY);
+        ctx.font = 'bold ' + (18.2 * m.sY).toFixed(1) + 'px ' + primaryFont;
+        ctx.fillText(this.targetMask, x + 22 * m.sX, y + 58 * m.sY);
 
         ctx.fillStyle = '#00EAF2';
         ctx.fillRect(x + 22 * m.sX, y + h - 16 * m.sY, w - 92 * m.sX, 2 * m.sY);
@@ -1702,7 +2167,7 @@ class IP2LiveCIDRPanelGameplayScreen extends Scene.Base {
         ctx.fillStyle = unlocked ? '#FF315F' : '#58636A';
         this._fillChamferRect(ctx, tabX, tabY, 132 * m.sX, 18 * m.sY, 5 * m.sX);
         ctx.fillStyle = unlocked ? '#FFFFFF' : '#C0C8CC';
-        ctx.font = 'bold ' + (6.5 * m.sY).toFixed(1) + 'px monospace';
+        ctx.font = 'bold ' + (6.5 * m.sY).toFixed(1) + 'px ' + this._uiMonoFont();
         ctx.textAlign = 'left';
         ctx.fillText(unlocked ? 'CIDR TYPE // PREFIX' : 'CIDR TYPE // LOCKED', tabX + 10 * m.sX, tabY + 12 * m.sY);
 
@@ -1790,7 +2255,7 @@ class IP2LiveCIDRPanelGameplayScreen extends Scene.Base {
         ctx.fillText('OCTET KEY FABRICATED', cardX + 36 * m.sX, cardY + 10 * m.sY);
 
         ctx.fillStyle = '#00EAF2';
-        ctx.font = 'bold ' + (7.5 * m.sY).toFixed(1) + 'px monospace';
+        ctx.font = 'bold ' + (7.5 * m.sY).toFixed(1) + 'px ' + this._uiMonoFont();
         ctx.fillText('ARCHIVE::CIDR_' + String(this.targetCIDR).padStart(2, '0') + ' // SIGNAL LOCKED', cardX + 26 * m.sX, cardY + 39 * m.sY);
 
         this._drawOctetCartridge(ctx, cardX + 26 * m.sX, cardY + 51 * m.sY, cardW - 52 * m.sX, 80 * m.sY, this.iconAnim, m, false);
@@ -1848,27 +2313,194 @@ class IP2LiveCIDRPanelGameplayScreen extends Scene.Base {
         ctx.font = 'bold ' + (8.2 * m.sY).toFixed(1) + 'px ' + monoFont;
         ctx.fillText(this.iconAnim.bitsBinary, cardX + cardW * 0.66, cardY + 34 * m.sY);
         ctx.fillStyle = '#FFE600';
-        ctx.font = 'bold ' + (7.2 * m.sY).toFixed(1) + 'px monospace';
+        ctx.font = 'bold ' + (7.2 * m.sY).toFixed(1) + 'px ' + this._uiMonoFont();
         ctx.fillText('/' + this.targetCIDR + ' READY', cardX + cardW * 0.66, cardY + 45 * m.sY);
     }
-
+    
     _drawStatusBar(ctx, m) {
-        if (!this.statusText) return;
-        const monoFont = this._uiMonoFont();
-        const x = m.panelX + m.panelW * 0.23;
-        const y = m.panelY + m.panelH * 0.13;
-        const w = m.panelW * 0.54;
-        const h = 22 * m.sY;
-        const g = ctx.createLinearGradient(x, y, x + w, y);
-        g.addColorStop(0, 'rgba(28, 62, 86, 0.7)');
-        g.addColorStop(1, 'rgba(24, 46, 70, 0.68)');
-        ctx.fillStyle = g;
+        const primaryFont = this._uiPrimaryFont();
+        const rowLayout = this._rowLayout(m);
+
+        const x = rowLayout.statusX;
+        const y = rowLayout.statusY;
+        const w = rowLayout.statusW;
+        const h = rowLayout.statusH;
+
+        let tone = '#00EAF2';
+        let text = this.statusText || 'MATCH THE SUBNET MASK WITH BULBS, THEN CONFIRM.';
+
+        if (this.phase === 'calculating') {
+            tone = '#FFE600';
+            text = 'RUNNING OCTET SUM VERIFICATION';
+        } else if (this.phase === 'fail') {
+            tone = '#FF315F';
+            text = this.failReason || this.statusText || 'CALCULATION ERROR';
+        } else if (this.phase === 'cidr_entry') {
+            tone = '#00EAF2';
+            text = this.statusText || 'ENTER THE CORRECT CIDR PREFIX.';
+        } else if (this._isTimeoutSequence()) {
+            tone = '#FF315F';
+            text = this.statusText || 'CONNECTION INTEGRITY LOST.';
+        }
+
+        ctx.save();
+
+        // Deep recessed status bay.
+        ctx.shadowColor = 'rgba(0,0,0,0.78)';
+        ctx.shadowBlur = 7 * m.sX;
+        ctx.shadowOffsetY = 2 * m.sY;
+
+        const shell = ctx.createLinearGradient(x, y, x, y + h);
+        shell.addColorStop(0, '#27343B');
+        shell.addColorStop(0.12, '#080C11');
+        shell.addColorStop(0.72, '#10181F');
+        shell.addColorStop(1, '#05070A');
+
+        ctx.fillStyle = shell;
         this._fillChamferRect(ctx, x, y, w, h, 6 * m.sX);
-        this._strokeChamferRect(ctx, x, y, w, h, 6 * m.sX, 'rgba(140,219,255,0.75)', 1.1 * m.sX);
-        ctx.fillStyle = '#D5F2FF';
-        ctx.font = 'bold ' + (9.8 * m.sY).toFixed(1) + 'px ' + monoFont;
-        ctx.textAlign = 'center';
-        ctx.fillText(this.statusText, x + w * 0.5, y + h * 0.66);
+
+        ctx.shadowColor = 'transparent';
+        ctx.shadowBlur = 0;
+        ctx.shadowOffsetY = 0;
+
+        this._strokeChamferRect(
+            ctx,
+            x,
+            y,
+            w,
+            h,
+            6 * m.sX,
+            'rgba(104,138,150,0.5)',
+            1 * m.sX
+        );
+
+        // Inner display.
+        const insetX = x + 5 * m.sX;
+        const insetY = y + 5 * m.sY;
+        const insetW = w - 10 * m.sX;
+        const insetH = h - 10 * m.sY;
+
+        this._fillChamferRect(
+            ctx,
+            insetX,
+            insetY,
+            insetW,
+            insetH,
+            4 * m.sX,
+            'rgba(2,7,11,0.95)'
+        );
+
+        this._strokeChamferRect(
+            ctx,
+            insetX,
+            insetY,
+            insetW,
+            insetH,
+            4 * m.sX,
+            tone,
+            0.9 * m.sX
+        );
+
+        // Animated left signal block.
+        const pulse = 0.52 + 0.48 * Math.sin(this.animTick * 0.18);
+
+        ctx.fillStyle = tone;
+        ctx.globalAlpha = 0.42 + pulse * 0.38;
+
+        ctx.fillRect(
+            insetX + 7 * m.sX,
+            insetY + 5 * m.sY,
+            3 * m.sX,
+            insetH - 10 * m.sY
+        );
+
+        ctx.globalAlpha = 1;
+
+        // Main status message.
+        const textX = insetX + 18 * m.sX;
+        const textY = insetY + insetH / 2;
+        const textSize = 11.8 * m.sY;
+
+        ctx.font = 'bold ' + textSize.toFixed(1) + 'px ' + primaryFont;
+        ctx.textAlign = 'left';
+        ctx.textBaseline = 'middle';
+
+        // Animated chromatic ghost effect.
+        if (
+            this.phase === 'calculating' ||
+            this.phase === 'fail' ||
+            this._isTimeoutSequence()
+        ) {
+            const ghostShift =
+                (0.5 + Math.sin(this.animTick * 0.42) * 0.5) *
+                1.6 *
+                m.sX;
+
+            ctx.globalAlpha = 0.24;
+
+            ctx.fillStyle = '#FF315F';
+            ctx.fillText(text, textX - ghostShift, textY);
+
+            ctx.fillStyle = '#00EAF2';
+            ctx.fillText(text, textX + ghostShift, textY);
+
+            ctx.globalAlpha = 1;
+        }
+
+        // Main readable text.
+        ctx.fillStyle = '#F2FBFF';
+
+        ctx.shadowColor =
+            this.phase === 'calculating'
+                ? 'rgba(255,230,0,0.26)'
+                : this.phase === 'fail' || this._isTimeoutSequence()
+                    ? 'rgba(255,49,95,0.26)'
+                    : 'rgba(0,234,242,0.18)';
+
+        ctx.shadowBlur = 4 * m.sX;
+        ctx.fillText(text, textX, textY);
+        ctx.shadowBlur = 0;
+
+        // Moving scan highlight across the status bay.
+        const scanW = Math.max(24 * m.sX, insetW * 0.09);
+        const scanTravel = Math.max(1, insetW - scanW);
+        const scanX = insetX + ((this.animTick * 2.25 * m.sX) % scanTravel);
+
+        const scan = ctx.createLinearGradient(scanX, 0, scanX + scanW, 0);
+        scan.addColorStop(0, 'rgba(255,255,255,0)');
+        scan.addColorStop(0.5, 'rgba(255,255,255,0.13)');
+        scan.addColorStop(1, 'rgba(255,255,255,0)');
+
+        ctx.fillStyle = scan;
+        ctx.fillRect(
+            scanX,
+            insetY + 2 * m.sY,
+            scanW,
+            insetH - 4 * m.sY
+        );
+
+        // Small animated signal details on the right.
+        const signalX = insetX + insetW - 28 * m.sX;
+        const signalY = insetY + insetH / 2;
+
+        for (let i = 0; i < 3; i++) {
+            ctx.globalAlpha =
+                0.25 +
+                ((i + Math.floor(this.animTick / 8)) % 3) *
+                0.18;
+
+            ctx.fillStyle = tone;
+
+            ctx.fillRect(
+                signalX + i * 6 * m.sX,
+                signalY - 1.5 * m.sY,
+                4 * m.sX,
+                3 * m.sY
+            );
+        }
+
+        ctx.globalAlpha = 1;
+        ctx.restore();
     }
 
     _drawSparks(ctx, m) {
@@ -1885,16 +2517,13 @@ class IP2LiveCIDRPanelGameplayScreen extends Scene.Base {
 
     _drawPhaseOverlay(ctx, m) {
         const primaryFont = this._uiPrimaryFont();
-        const monoFont = this._uiMonoFont();
+
         if (this.phase === 'calculating') {
-            ctx.fillStyle = 'rgba(82, 219, 255, 0.08)';
+            ctx.fillStyle = 'rgba(82,219,255,0.045)';
             ctx.fillRect(0, 0, m.cW, m.cH);
-            ctx.fillStyle = '#C9EEFF';
-            ctx.font = 'bold ' + (13 * m.sY).toFixed(1) + 'px ' + monoFont;
-            ctx.textAlign = 'center';
-            ctx.fillText('RUNNING OCTET SUM VERIFICATION...', m.cW * 0.5, m.panelY + m.panelH * 0.94);
             return;
         }
+
         if (this.phase === 'success') {
             const sharedPopup = IP2Live.GameplayCompletionPopup;
             if (sharedPopup && typeof sharedPopup.draw === 'function') {
@@ -1907,7 +2536,7 @@ class IP2LiveCIDRPanelGameplayScreen extends Scene.Base {
                 });
                 return;
             }
-            ctx.fillStyle = 'rgba(68, 255, 150, 0.16)';
+            ctx.fillStyle = 'rgba(68,255,150,0.16)';
             ctx.fillRect(0, 0, m.cW, m.cH);
             ctx.fillStyle = '#F4FFF8';
             ctx.font = 'bold ' + (30 * m.sY).toFixed(1) + 'px ' + primaryFont;
@@ -1915,22 +2544,220 @@ class IP2LiveCIDRPanelGameplayScreen extends Scene.Base {
             ctx.fillText('CIDR LOCK CONFIRMED', m.cW * 0.5, m.cH * 0.5);
             return;
         }
+
         if (this.phase === 'fail') {
-            ctx.fillStyle = 'rgba(255, 52, 78, 0.13)';
+            ctx.fillStyle = 'rgba(255,52,78,0.08)';
             ctx.fillRect(0, 0, m.cW, m.cH);
-            if (this.failReason) {
-                ctx.fillStyle = '#FFD3DA';
-                ctx.font = 'bold ' + (12 * m.sY).toFixed(1) + 'px ' + monoFont;
-                ctx.textAlign = 'center';
-                ctx.fillText(this.failReason, m.cW * 0.5, m.panelY + m.panelH * 0.94);
+        }
+    }
+
+    _timerProgress() {
+        const max = Math.max(1, this.solveTimerMaxTicks || 1);
+        return Math.max(0, Math.min(1, 1 - (this.solveTimerTicks || 0) / max));
+    }
+
+    _drawProgressiveGlitch(ctx, m) {
+        // Do not interfere with success / icon transfer.
+        if (this.phase === 'success' || this.phase === 'icon_popup' || this.phase === 'icon_float') return;
+
+        let fullFailure = false;
+        if (this.phase === 'timeout_shake' || this.phase === 'timeout_shutdown') {
+            fullFailure = true;
+        }
+
+        const remainingSeconds = Math.max(0, (this.solveTimerTicks || 0) / 60);
+        const elapsedSeconds = Math.max(0, this.solveTimeSeconds - remainingSeconds);
+
+        // Default 180-second pacing:
+        //   0:00 -> 2:00 elapsed : clean display
+        //   2:00 -> 2:40 elapsed : corruption slowly grows from the sides
+        //   2:40 -> 3:00 elapsed : severe corruption increasingly reaches center
+        //
+        // For a custom time limit the same ratios are preserved automatically.
+        const glitchStart = Math.max(
+            0,
+            this.glitchStartElapsedSeconds || this.solveTimeSeconds * (2 / 3)
+        );
+
+        const glitchHeavy = Math.max(
+            glitchStart + 0.001,
+            this.glitchHeavyElapsedSeconds || this.solveTimeSeconds * (8 / 9)
+        );
+
+        const edgeProgress = fullFailure
+            ? 1
+            : Math.max(
+                0,
+                Math.min(
+                    1,
+                    (elapsedSeconds - glitchStart) /
+                    Math.max(0.001, glitchHeavy - glitchStart)
+                )
+            );
+
+        const lateProgress = fullFailure
+            ? 1
+            : Math.max(
+                0,
+                Math.min(
+                    1,
+                    (elapsedSeconds - glitchHeavy) /
+                    Math.max(0.001, this.solveTimeSeconds - glitchHeavy)
+                )
+            );
+
+        // No visible corruption before the configured start point.
+        if (!fullFailure && elapsedSeconds < glitchStart) return;
+
+        const intensity = fullFailure
+            ? 1
+            : Math.min(
+                0.94,
+                0.035 +
+                edgeProgress * 0.30 +
+                lateProgress * 0.60
+            );
+
+        const sideWidth = fullFailure
+            ? m.cW * 0.5
+            : m.cW * (
+                0.045 +
+                edgeProgress * 0.085 +
+                lateProgress * 0.36
+            );
+
+        ctx.save();
+
+        // Side chromatic noise blocks.
+        const blockCount = Math.floor(5 + intensity * 22);
+        for (let i = 0; i < blockCount; i++) {
+            const fromLeft = i % 2 === 0;
+            const regionX = fromLeft ? 0 : m.cW - sideWidth;
+            const regionW = sideWidth;
+            const bh = (2 + Math.random() * (6 + intensity * 18)) * m.sY;
+            const by = Math.random() * Math.max(1, m.cH - bh);
+            const bw = Math.max(8 * m.sX, regionW * (0.18 + Math.random() * 0.72));
+            const bx = regionX + Math.random() * Math.max(1, regionW - bw);
+            const tone = i % 3 === 0 ? '#FF315F' : (i % 3 === 1 ? '#00EAF2' : '#FFE600');
+            ctx.globalAlpha = (0.035 + Math.random() * 0.11) * intensity;
+            ctx.fillStyle = tone;
+            ctx.fillRect(bx, by, bw, bh);
+        }
+
+        // Horizontal displaced strips copied from the already-rendered frame.
+        const strips = Math.floor(2 + intensity * 11);
+        for (let i = 0; i < strips; i++) {
+            const sh = Math.max(1, (2 + Math.random() * 11) * m.sY);
+            const sy = Math.random() * Math.max(1, m.cH - sh);
+            const offset = (Math.random() - 0.5) * (5 + intensity * 26) * m.sX;
+
+            if (fullFailure || lateProgress > 0.06) {
+                ctx.globalAlpha = 0.10 + intensity * 0.16;
+                try {
+                    ctx.drawImage(ctx.canvas, 0, sy, m.cW, sh, offset, sy, m.cW, sh);
+                } catch (e) {}
+            } else {
+                // Early phase: clip the displacement to the outer sides.
+                ctx.save();
+                ctx.beginPath();
+                ctx.rect(0, 0, sideWidth, m.cH);
+                ctx.rect(m.cW - sideWidth, 0, sideWidth, m.cH);
+                ctx.clip();
+                ctx.globalAlpha = 0.08 + intensity * 0.12;
+                try {
+                    ctx.drawImage(ctx.canvas, 0, sy, m.cW, sh, offset, sy, m.cW, sh);
+                } catch (e) {}
+                ctx.restore();
             }
         }
+
+        // Severe phase: static scanlines and center corruption build up.
+        if (lateProgress > 0) {
+            ctx.globalAlpha = 0.04 + lateProgress * 0.11;
+            for (let y = 0; y < m.cH; y += Math.max(2, 4 * m.sY)) {
+                ctx.fillStyle = (Math.floor(y / Math.max(1, 4 * m.sY)) % 2 === 0)
+                    ? '#FFFFFF'
+                    : '#001015';
+                ctx.fillRect(0, y, m.cW, Math.max(1, 1.1 * m.sY));
+            }
+
+            const centerBlocks = Math.floor(3 + lateProgress * 20);
+            for (let i = 0; i < centerBlocks; i++) {
+                const bw = (18 + Math.random() * 120) * m.sX;
+                const bh = (2 + Math.random() * 15) * m.sY;
+                const centerSpread = m.cW * (0.10 + lateProgress * 0.45);
+                const bx = m.cW * 0.5 + (Math.random() - 0.5) * centerSpread - bw * 0.5;
+                const by = Math.random() * Math.max(1, m.cH - bh);
+                ctx.globalAlpha = (0.025 + Math.random() * 0.12) * lateProgress;
+                ctx.fillStyle = i % 2 ? '#00EAF2' : '#FF315F';
+                ctx.fillRect(bx, by, bw, bh);
+            }
+        }
+
+        // At timeout the display is nearly swallowed by analog/digital static.
+        if (fullFailure) {
+            const cell = Math.max(2, Math.round(3 * m.sX));
+            ctx.globalAlpha = 0.16;
+            for (let y = 0; y < m.cH; y += cell * 2) {
+                for (let x = 0; x < m.cW; x += cell * 3) {
+                    if (Math.random() < 0.34) {
+                        const v = 120 + Math.floor(Math.random() * 135);
+                        ctx.fillStyle = 'rgb(' + v + ',' + v + ',' + v + ')';
+                        ctx.fillRect(x, y, cell * (1 + Math.floor(Math.random() * 3)), cell);
+                    }
+                }
+            }
+        }
+
+        ctx.restore();
+    }
+
+    _drawOldTVShutdown(ctx, m) {
+        const duration = Math.max(1, this.timeoutShutdownDuration);
+        const p = Math.max(0, Math.min(1, 1 - this.timeoutSequenceTicks / duration));
+        const eased = p * p * (3 - 2 * p);
+        const centerY = m.cH * 0.5;
+        const halfOpen = (m.cH * 0.5) * Math.max(0, 1 - eased);
+
+        ctx.save();
+
+        // CRT vertical collapse: black closes from top and bottom.
+        ctx.fillStyle = '#000000';
+        ctx.fillRect(0, 0, m.cW, Math.max(0, centerY - halfOpen));
+        ctx.fillRect(0, centerY + halfOpen, m.cW, Math.max(0, m.cH - (centerY + halfOpen)));
+
+        // Bright phosphor line remains as the image collapses.
+        if (p > 0.36) {
+            const lineP = Math.max(0, Math.min(1, (p - 0.36) / 0.64));
+            const lineW = m.cW * Math.max(0.02, 1 - lineP * 0.96);
+            const lineH = Math.max(1.5 * m.sY, 7 * m.sY * (1 - lineP));
+            const glow = ctx.createLinearGradient(m.cW * 0.5 - lineW * 0.5, 0, m.cW * 0.5 + lineW * 0.5, 0);
+            glow.addColorStop(0, 'rgba(255,255,255,0)');
+            glow.addColorStop(0.30, 'rgba(0,240,255,0.82)');
+            glow.addColorStop(0.50, 'rgba(255,255,255,1)');
+            glow.addColorStop(0.70, 'rgba(255,49,95,0.72)');
+            glow.addColorStop(1, 'rgba(255,255,255,0)');
+            ctx.shadowColor = '#FFFFFF';
+            ctx.shadowBlur = 16 * m.sX;
+            ctx.fillStyle = glow;
+            ctx.fillRect(m.cW * 0.5 - lineW * 0.5, centerY - lineH * 0.5, lineW, lineH);
+            ctx.shadowBlur = 0;
+        }
+
+        if (p > 0.90) {
+            ctx.globalAlpha = Math.min(1, (p - 0.90) / 0.10);
+            ctx.fillStyle = '#000000';
+            ctx.fillRect(0, 0, m.cW, m.cH);
+        }
+
+        ctx.restore();
     }
 
     _emitRowPulse(row, color) {
         const m = this._metrics();
-        const rowGap = (m.mainH - 103 * m.sY) / 3;
-        const y = m.mainY + 64 * m.sY + row * rowGap;
+        const rowLayout = this._rowLayout(m);
+        const rowGap = rowLayout.rowGap;
+        const y = rowLayout.rowBaseY + row * rowGap;
         const x = m.mainX + 116 * m.sX;
         for (let i = 0; i < 10; i++) {
             const ang = Math.random() * Math.PI * 2;
@@ -1950,8 +2777,9 @@ class IP2LiveCIDRPanelGameplayScreen extends Scene.Base {
 
     _emitFailureSparks() {
         const m = this._metrics();
-        const rowGap = (m.mainH - 103 * m.sY) / 3;
-        const rowBaseY = m.mainY + 64 * m.sY;
+        const rowLayout = this._rowLayout(m);
+        const rowGap = rowLayout.rowGap;
+        const rowBaseY = rowLayout.rowBaseY;
         const bulbsX = m.mainX + 155 * m.sX;
         const gap = 58 * m.sX;
         for (let r = 0; r < 4; r++) {
@@ -2130,7 +2958,7 @@ class IP2LiveCIDRPanelGameplayScreen extends Scene.Base {
             this._drawFastener(ctx, x + 12 * m.sX, y + h * 0.5, 3.2 * m.sX, m);
             this._drawFastener(ctx, x + w - 12 * m.sX, y + h * 0.5, 3.2 * m.sX, m);
             ctx.fillStyle = 'rgba(0,234,242,0.55)';
-            ctx.font = 'bold ' + (6.4 * m.sY).toFixed(1) + 'px monospace';
+            ctx.font = 'bold ' + (6.4 * m.sY).toFixed(1) + 'px ' + this._uiMonoFont();
             ctx.textAlign = 'center';
             ctx.fillText('128   64   32   16    8    4    2    1', x + w * 0.5, y + 12 * m.sY);
         }
@@ -2168,16 +2996,23 @@ class IP2LiveCIDRPanelGameplayScreen extends Scene.Base {
     }
 
     _uiPrimaryFont() {
-        return (IP2Live.Assets && IP2Live.Assets.nebulaLoaded) ? 'Nebula-Regular' : 'monospace';
+        return (IP2Live.Assets && IP2Live.Assets.oxaniumMediumLoaded)
+            ? 'Oxanium-Medium'
+            : 'sans-serif';
     }
 
     _uiMonoFont() {
-        return (IP2Live.Assets && IP2Live.Assets.nebulaLoaded) ? 'Nebula-Regular' : 'monospace';
+        return (IP2Live.Assets && IP2Live.Assets.oxaniumMediumLoaded)
+            ? 'Oxanium-Medium'
+            : 'sans-serif';
     }
 
     _uiTitleFont() {
+        // Keep the distinctive gameplay title treatment used by Network Patch,
+        // while all functional UI text uses Oxanium-Medium.
         if (IP2Live.Assets && IP2Live.Assets.abnesLoaded) return 'Abnes';
-        return this._uiPrimaryFont();
+        if (IP2Live.Assets && IP2Live.Assets.oxaniumMediumLoaded) return 'Oxanium-Medium';
+        return 'sans-serif';
     }
 
     _playCursor() {
@@ -2351,6 +3186,7 @@ const CIDRPanelGameplayManager = {
             targetClasses: spec.targetClasses || (mapId === 7 ? ['A', 'B', 'C'] : null),
             randomizeTarget: spec.randomizeTarget !== false,
             handoffKey: spec.handoffKey,
+            timeSeconds: spec.timeSeconds,
             _fromObjective: true,
             tutorialMode: isCIDRTutorial,
             enforceAttemptLimit: !isCIDRTutorial,
@@ -2412,12 +3248,33 @@ const CIDRPanelGameplayManager = {
         if (shouldShowIntro) this._introShown = true;
 
         const open = () => {
+            // Time can be configured from the launch payload or directly on the
+            // GameManager map assignment spec:
+            //
+            //   { ..., timeSeconds: 120 }
+            //
+            // If nothing is supplied, the screen constructor defaults to 180.
+            const configuredTimeSeconds = Number(
+                opts.timeSeconds !== undefined
+                    ? opts.timeSeconds
+                    : (
+                        opts.solveTimeSeconds !== undefined
+                            ? opts.solveTimeSeconds
+                            : (
+                                opts.spec && opts.spec.timeSeconds !== undefined
+                                    ? opts.spec.timeSeconds
+                                    : 180
+                            )
+                    )
+            );
+
             const screen = new IP2LiveCIDRPanelGameplayScreen({
                 targetMask: opts.targetMask,
                 targetClass: opts.targetClass,
                 targetClasses: opts.targetClasses,
                 randomizeTarget: !!opts.randomizeTarget,
                 handoffKey: opts.handoffKey,
+                timeSeconds: configuredTimeSeconds,
                 tutorialMode: !!opts.tutorialMode,
                 guidedTutorial: shouldShowIntro && !!opts.tutorialMode,
                 enforceAttemptLimit: !!opts.enforceAttemptLimit,
@@ -2428,7 +3285,7 @@ const CIDRPanelGameplayManager = {
                 onComplete: (result) => this._onComplete(opts, result),
                 onFailed: (result) => this._onFailed(opts, result),
                 onCancel: () => this._onCancel(opts),
-            });
+            }, configuredTimeSeconds);
 
             const openGameplay = () => {
                 this._playMusicZone('GAMEPLAY_1');
@@ -2535,10 +3392,13 @@ const CIDRPanelGameplayManager = {
             if (Manager && Manager.Stack) Manager.Stack.requestPaintHUD = true;
         };
 
+        const timedOut = result && result.reason === 'time_expired';
         if (!this._showLoadingScreen2({
             mode: 'replace',
-            status: 'Loading CIDR Training',
-            detail: 'Retry budget exhausted - returning to the tutorial relay',
+            status: timedOut ? 'Signal Lost' : 'Loading CIDR Training',
+            detail: timedOut
+                ? 'CIDR console timed out - returning to the training relay'
+                : 'Retry budget exhausted - returning to the tutorial relay',
             onComplete: finalizeExit,
         })) finalizeExit();
     },

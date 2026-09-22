@@ -2,15 +2,22 @@
  * IP2Live - Subnet Simulator Gameplay
  *
  * Gameplay Four:
- * - Merge equal-number circles to form powers of two
- * - Use "-2" bubble helper
+ * - Merge equal-number synthesis nodes to form powers of two
+ * - Use Duplicate and "-2" helper controls
  * - Fill answer slots: usable subnets, total subnets, total hosts, usable hosts
+ * - Timed sandbox challenge with progressive corruption / CRT timeout failure
+ * - Center-out signal-repair animation when solved during corruption
+ * - Quiet space-like sandbox backdrop with low-opacity code fragments
  */
 
 class IP2LiveSubnetSimulatorGameplayScreen extends Scene.Base {
-    constructor(options) {
+    constructor(options, timeSeconds) {
         super(true);
         this.options = options || {};
+        this._constructorTimeSeconds =
+            Number.isFinite(Number(timeSeconds)) && Number(timeSeconds) > 0
+                ? Number(timeSeconds)
+                : null;
         this._configure();
     }
 
@@ -29,13 +36,23 @@ class IP2LiveSubnetSimulatorGameplayScreen extends Scene.Base {
         this.shake = 0;
         this.failBanner = '';
         this.failBannerTimer = 0;
+        this.failureReason = '';
         this.particles = [];
-        this.maxNormalBalls = 10;
-        this.minBaseBalls = 6;
+
+        // Supply behavior:
+        // Keep a small pool of free 2s available, while merge rewards can also
+        // inject 4s. A tiny emergency overflow prevents high-value boards from
+        // becoming impossible simply because the normal node cap was reached.
+        this.maxNormalBalls = 12;
+        this.minBaseBalls = 2;
         this.baseBallValue = 2;
+        this.randomSupplyFourChance = 0.50;
+        this.randomSupplyEightChance = 0.30;
+        this.emergencySupplyOverflow = 2;
         this.duplicateUsesLeft = 3;
         this.spawnPausedByLimit = false;
         this.hoverSlotKey = null;
+
         this.guidedTutorial = !!this.options.guidedTutorial;
         this.tutorialActive = this.guidedTutorial;
         this.tutorialComplete = !this.guidedTutorial;
@@ -45,6 +62,10 @@ class IP2LiveSubnetSimulatorGameplayScreen extends Scene.Base {
         this.tutorialHighlight = null;
         this.tutorialSpotlightTimer = 0;
         this.tutorialSpotlightComplete = null;
+        this.tutorialSolveStage = this.guidedTutorial ? 'intro' : 'all';
+        this.tutorialReminderOpen = false;
+        this.dragOriginSlotKey = null;
+
         this.validationAttempts = 0;
         this.enforceAttemptLimit = !!this.options.enforceAttemptLimit;
         this.maxAttempts = Math.max(1, Number(this.options.maxAttempts) || 3);
@@ -58,6 +79,43 @@ class IP2LiveSubnetSimulatorGameplayScreen extends Scene.Base {
                 usableHosts: 0,
             },
         };
+
+        // Countdown. Default is 3 minutes.
+        const optionTime = Number(
+            this.options.timeSeconds !== undefined
+                ? this.options.timeSeconds
+                : this.options.time
+        );
+        const requestedTime = this._constructorTimeSeconds !== null
+            ? this._constructorTimeSeconds
+            : optionTime;
+        this.solveTimeSeconds =
+            Number.isFinite(requestedTime) && requestedTime > 0
+                ? Math.max(10, Math.floor(requestedTime))
+                : 180;
+        this.solveTimerMaxTicks = this.solveTimeSeconds * 60;
+        this.solveTimerTicks = this.solveTimerMaxTicks;
+        this.timerExpired = false;
+        this.timeoutFailureCommitted = false;
+        this.timeoutStaticTicks = 0;
+        this.timeoutShutdownTicks = 0;
+        this.timeoutStaticDuration = 120;   // 2 seconds at 60 FPS.
+        this.timeoutShutdownDuration = 54;  // CRT collapse after the shake.
+        this.glitchStartRemainingSeconds = Math.min(
+            45,
+            Math.max(15, this.solveTimeSeconds * 0.25)
+        );
+        this.glitchHeavyRemainingSeconds = Math.min(10, this.solveTimeSeconds);
+        this.glitchSeed = Math.random() * 10000;
+
+        // If the player completes the puzzle while corruption is visible,
+        // briefly purge the glitch from the center outward before the normal
+        // completion popup appears.
+        this.successRepairTicks = 0;
+        this.successRepairDuration = 42;
+        this.successRepairStartIntensity = 0;
+        this.successRepairSeed = Math.random() * 10000;
+        this.corruptionCleared = false;
 
         const state = this._resolveCIDRState();
         this.cidrState = state;
@@ -82,6 +140,8 @@ class IP2LiveSubnetSimulatorGameplayScreen extends Scene.Base {
             { key: 'usableHosts', label: 'USABLE HOSTS', x: 0, y: 0, r: 34, ballId: null, result: null, resultTimer: 0 },
         ];
         this.submitRect = null;
+        this.timerRect = null;
+
         this._seedBalls();
     }
 
@@ -162,28 +222,73 @@ class IP2LiveSubnetSimulatorGameplayScreen extends Scene.Base {
 
     _seedBalls() {
         this.balls = [];
-        for (let i = 0; i < this.minBaseBalls; i++) this._spawnOneBall();
+
+        // Three supply waves seed the sandbox. Every wave guarantees a 2,
+        // with independent bonus chances for a 4 and an 8.
+        for (let i = 0; i < 3; i++) this._spawnSupplyWave(true);
+
         this._spawnMinusBall();
         this._spawnDuplicateBall();
     }
 
-    _spawnOneBall() {
-        if (!this._canSpawnNormalBall()) return false;
+    _spawnOneBall(force) {
+        return this._spawnNormalBall(this.baseBallValue, !!force);
+    }
+
+    _spawnNormalBall(value, force) {
+        const requested = Number(value);
+        const n = requested === 8 ? 8 : (requested === 4 ? 4 : 2);
+        if (!this._canSpawnNormalBall(!!force)) return false;
+
         const pos = this._randomArenaPoint();
         this.balls.push({
             id: this.nextBallId++,
-            value: this.baseBallValue,
+            value: n,
             x: pos.x,
             y: pos.y,
             homeX: pos.x,
             homeY: pos.y,
-            r: this._radiusForValue(this.baseBallValue),
+            r: this._radiusForValue(n),
             minus: false,
             duplicate: false,
-            pulse: 0,
+            pulse: 10,
             slotKey: null,
+            supplied: true,
         });
         return true;
+    }
+
+    _spawnSupplyWave(seedMode) {
+        let spawned = 0;
+
+        // Every supply wave ALWAYS guarantees at least one fresh 2. During an
+        // emergency this may exceed the normal arena cap slightly so the merge
+        // ladder can always be rebuilt from the bottom.
+        if (this._spawnNormalBall(2, true)) spawned++;
+
+        // Bonus supplies are independent rolls rather than mutually exclusive:
+        // - 50% chance to add a 4
+        // - 30% chance to add an 8
+        // This means one wave can contain 2 only, 2+4, 2+8, or 2+4+8.
+        if (Math.random() < this.randomSupplyFourChance) {
+            if (this._spawnNormalBall(4, !!seedMode)) spawned++;
+        }
+
+        if (Math.random() < this.randomSupplyEightChance) {
+            if (this._spawnNormalBall(8, !!seedMode)) spawned++;
+        }
+
+        return spawned;
+    }
+
+    _countFreeValue(value) {
+        let count = 0;
+        for (let i = 0; i < this.balls.length; i++) {
+            const b = this.balls[i];
+            if (b.minus || b.duplicate || b.slotKey) continue;
+            if (b.value === value) count++;
+        }
+        return count;
     }
 
     _spawnMinusBall() {
@@ -195,7 +300,7 @@ class IP2LiveSubnetSimulatorGameplayScreen extends Scene.Base {
             y: pos.y,
             homeX: pos.x,
             homeY: pos.y,
-            r: 30,
+            r: 34,
             minus: true,
             duplicate: false,
             pulse: 0,
@@ -212,7 +317,7 @@ class IP2LiveSubnetSimulatorGameplayScreen extends Scene.Base {
             y: pos.y,
             homeX: pos.x,
             homeY: pos.y,
-            r: 30,
+            r: 34,
             minus: false,
             duplicate: true,
             usesLeft: this.duplicateUsesLeft,
@@ -246,15 +351,38 @@ class IP2LiveSubnetSimulatorGameplayScreen extends Scene.Base {
 
     update() {
         this.animTick++;
+
         if (this.shake > 0) this.shake--;
         if (this.failBannerTimer > 0) this.failBannerTimer--;
+
         for (let i = 0; i < this.slots.length; i++) {
             this.slots[i].resultTimer = Math.max(0, (this.slots[i].resultTimer || 0) - 1);
             if (this.slots[i].resultTimer === 0) this.slots[i].result = null;
         }
+
         for (let i = 0; i < this.balls.length; i++) {
             const b = this.balls[i];
             if (b.pulse && b.pulse > 0) b.pulse--;
+        }
+
+        this._updateSolveTimer();
+
+        // Once time reaches zero, gameplay input is locked while the complete
+        // corruption -> shake -> CRT shutdown sequence plays.
+        if (this._isTimeoutSequence()) {
+            this._updateTimeoutSequence();
+            this._updateParticles();
+
+            if (Manager && Manager.Stack) Manager.Stack.requestPaintHUD = true;
+            return;
+        }
+
+        if (this.phase === 'success_repair') {
+            this._updateSuccessRepair();
+            this._updateParticles();
+
+            if (Manager && Manager.Stack) Manager.Stack.requestPaintHUD = true;
+            return;
         }
 
         this._refreshSpawnPauseState();
@@ -263,15 +391,7 @@ class IP2LiveSubnetSimulatorGameplayScreen extends Scene.Base {
         this._snapDuplicateHome();
         this._ensureBaseBalls();
         this._updateGuidedTutorial();
-
-        for (let i = this.particles.length - 1; i >= 0; i--) {
-            const p = this.particles[i];
-            p.life--;
-            p.x += p.vx;
-            p.y += p.vy;
-            p.vy += 0.03;
-            if (p.life <= 0) this.particles.splice(i, 1);
-        }
+        this._updateParticles();
 
         if (this.phase === 'success') {
             const popupBlocked = !!(
@@ -283,10 +403,196 @@ class IP2LiveSubnetSimulatorGameplayScreen extends Scene.Base {
             if (this.phaseTimer <= 0) this._finishSuccess();
         } else if (this.phase === 'failed') {
             this.phaseTimer--;
-            if (this.phaseTimer <= 0) this._failOut();
+            if (this.phaseTimer <= 0) this._failOut(this.failureReason || 'attempts_exhausted');
         }
 
         if (Manager && Manager.Stack) Manager.Stack.requestPaintHUD = true;
+    }
+
+    _updateParticles() {
+        for (let i = this.particles.length - 1; i >= 0; i--) {
+            const p = this.particles[i];
+            p.life--;
+            p.x += p.vx;
+            p.y += p.vy;
+            p.vy += 0.03;
+            if (p.life <= 0) this.particles.splice(i, 1);
+        }
+    }
+
+    _shouldRunSolveTimer() {
+        if (this.finished || this.timerExpired || this.phase !== 'build') return false;
+        if (this.tutorialPaused || this._isGuidedDialogueActive()) return false;
+
+        if (
+            IP2Live.DialogueManager &&
+            typeof IP2Live.DialogueManager.isActive === 'function' &&
+            IP2Live.DialogueManager.isActive()
+        ) {
+            return false;
+        }
+
+        if (
+            IP2Live.GameplayPause &&
+            IP2Live.GameplayPause.menuOpen
+        ) {
+            return false;
+        }
+
+        return true;
+    }
+
+    _updateSolveTimer() {
+        if (!this._shouldRunSolveTimer()) return;
+
+        this.solveTimerTicks = Math.max(0, this.solveTimerTicks - 1);
+
+        if (this.solveTimerTicks <= 0) {
+            this._beginTimeoutSequence();
+        }
+    }
+
+    _beginTimeoutSequence() {
+        if (this.timerExpired || this.finished) return false;
+
+        this.timerExpired = true;
+        this.failureReason = 'time_expired';
+        this.phase = 'timeout_static';
+        this.timeoutStaticTicks = this.timeoutStaticDuration;
+        this.timeoutShutdownTicks = 0;
+        this.dragBallId = null;
+        this.hoverSlotKey = null;
+        this.tutorialPaused = true;
+        this.tutorialHighlight = null;
+        this.failBanner = 'SIGNAL WINDOW EXPIRED.';
+        this.failBannerTimer = this.timeoutStaticDuration + this.timeoutShutdownDuration;
+        this.shake = 45;
+
+        this._playCancel();
+        return true;
+    }
+
+    _isTimeoutSequence() {
+        return this.phase === 'timeout_static' || this.phase === 'timeout_shutdown';
+    }
+
+    _updateTimeoutSequence() {
+        if (this.phase === 'timeout_static') {
+            this.shake = Math.max(this.shake, 42);
+            this.timeoutStaticTicks = Math.max(0, this.timeoutStaticTicks - 1);
+
+            if (this.timeoutStaticTicks <= 0) {
+                this.phase = 'timeout_shutdown';
+                this.timeoutShutdownTicks = this.timeoutShutdownDuration;
+                this.shake = 8;
+            }
+            return;
+        }
+
+        if (this.phase === 'timeout_shutdown') {
+            this.timeoutShutdownTicks = Math.max(0, this.timeoutShutdownTicks - 1);
+
+            if (this.timeoutShutdownTicks <= 0 && !this.timeoutFailureCommitted) {
+                this.timeoutFailureCommitted = true;
+                this._failOut('time_expired');
+            }
+        }
+    }
+
+    _timerRemainingSeconds() {
+        return Math.max(0, Math.ceil((this.solveTimerTicks || 0) / 60));
+    }
+
+    _formatTimer(seconds) {
+        const total = Math.max(0, Math.floor(Number(seconds) || 0));
+        const minutes = Math.floor(total / 60);
+        const remainder = total % 60;
+        return String(minutes).padStart(2, '0') + ':' + String(remainder).padStart(2, '0');
+    }
+
+    _glitchIntensity() {
+        if (this.phase === 'timeout_static' || this.phase === 'timeout_shutdown') return 1;
+
+        // Once a successful recovery has purged the corruption, never rebuild
+        // the timer-driven glitch behind the completion popup.
+        if (this.corruptionCleared || this.phase === 'success') return 0;
+
+        const remaining = this._timerRemainingSeconds();
+        const start = Math.max(
+            this.glitchHeavyRemainingSeconds,
+            this.glitchStartRemainingSeconds
+        );
+
+        if (remaining > start) return 0;
+
+        if (remaining > this.glitchHeavyRemainingSeconds) {
+            const span = Math.max(1, start - this.glitchHeavyRemainingSeconds);
+            const progress = 1 - ((remaining - this.glitchHeavyRemainingSeconds) / span);
+            return 0.08 + progress * 0.32;
+        }
+
+        const heavySpan = Math.max(1, this.glitchHeavyRemainingSeconds);
+        const heavyProgress = 1 - (remaining / heavySpan);
+        return Math.min(0.98, 0.46 + heavyProgress * 0.52);
+    }
+
+    _beginSuccessSequence() {
+        const visibleGlitch = this._glitchIntensity();
+
+        this._saveState();
+        this._playConfirm();
+        this.dragBallId = null;
+        this.hoverSlotKey = null;
+
+        if (visibleGlitch > 0.01) {
+            this.phase = 'success_repair';
+            this.successRepairStartIntensity = Math.max(0.12, visibleGlitch);
+            this.successRepairTicks = this.successRepairDuration;
+            this.failBanner = '';
+            this.failBannerTimer = 0;
+            this.tutorialPaused = true;
+
+            // The repair overlay owns the remaining corruption from this point
+            // forward. Prevent the countdown glitch from being drawn again.
+            this.corruptionCleared = true;
+            return;
+        }
+
+        this.corruptionCleared = true;
+        this._enterSuccessPhase();
+    }
+
+    _enterSuccessPhase() {
+        this.phase = 'success';
+        this.phaseTimer = 120;
+        this.successRepairTicks = 0;
+        this.successRepairStartIntensity = 0;
+        this.corruptionCleared = true;
+        this.failBanner = 'VALIDATED. SUBNET SIMULATION COMPLETE.';
+        this.failBannerTimer = 120;
+        this.tutorialPaused = false;
+    }
+
+    _updateSuccessRepair() {
+        if (this.phase !== 'success_repair') return;
+
+        this.successRepairTicks = Math.max(0, this.successRepairTicks - 1);
+
+        if (this.successRepairTicks <= 0) {
+            this._enterSuccessPhase();
+        }
+    }
+
+    _successRepairProgress() {
+        if (this.phase !== 'success_repair') return 1;
+
+        return Math.max(
+            0,
+            Math.min(
+                1,
+                1 - (this.successRepairTicks / Math.max(1, this.successRepairDuration))
+            )
+        );
     }
 
     _tutorialContext() {
@@ -299,7 +605,243 @@ class IP2LiveSubnetSimulatorGameplayScreen extends Scene.Base {
             totalHosts: this.answers.totalHosts,
             usableHosts: this.answers.usableHosts,
             duplicateUsesLeft: this.duplicateUsesLeft,
+            timeSeconds: this.solveTimeSeconds,
+            timeRemainingSeconds: this._timerRemainingSeconds(),
         });
+    }
+
+
+    _isSubnetSlotKey(slotKey) {
+        return slotKey === 'totalSubnets' || slotKey === 'usableSubnets';
+    }
+
+    _isHostSlotKey(slotKey) {
+        return slotKey === 'totalHosts' || slotKey === 'usableHosts';
+    }
+
+    _isTutorialHostSlotLocked(slotKey) {
+        if (!this.guidedTutorial || !this._isHostSlotKey(slotKey)) return false;
+
+        return (
+            this.tutorialSolveStage === 'intro' ||
+            this.tutorialSolveStage === 'subnets' ||
+            this.tutorialSolveStage === 'hosts_intro'
+        );
+    }
+
+    _isTutorialCommittedSlot(slotKey) {
+        if (!this.guidedTutorial) return false;
+
+        if (
+            this._isSubnetSlotKey(slotKey) &&
+            (
+                this.tutorialSolveStage === 'hosts_intro' ||
+                this.tutorialSolveStage === 'hosts' ||
+                this.tutorialSolveStage === 'final_intro' ||
+                this.tutorialSolveStage === 'ready_validation'
+            )
+        ) {
+            return true;
+        }
+
+        if (
+            this._isHostSlotKey(slotKey) &&
+            (
+                this.tutorialSolveStage === 'final_intro' ||
+                this.tutorialSolveStage === 'ready_validation'
+            )
+        ) {
+            return true;
+        }
+
+        return false;
+    }
+
+    _tutorialPairIsCorrect(keys) {
+        if (!Array.isArray(keys) || !keys.length) return false;
+
+        for (let i = 0; i < keys.length; i++) {
+            const key = keys[i];
+            const actual = this._slotValue(key);
+            const expected = this._expectedForSlot(key);
+
+            if (actual === null || actual !== expected) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    _tutorialSubnetPairCorrect() {
+        return this._tutorialPairIsCorrect([
+            'totalSubnets',
+            'usableSubnets',
+        ]);
+    }
+
+    _tutorialHostPairCorrect() {
+        return this._tutorialPairIsCorrect([
+            'totalHosts',
+            'usableHosts',
+        ]);
+    }
+
+    _restoreDraggedBall(ball) {
+        if (!ball) return;
+
+        const originKey = this.dragOriginSlotKey;
+        const originSlot = originKey ? this._slotByKey(originKey) : null;
+
+        if (originSlot && !originSlot.ballId && !ball.minus && !ball.duplicate) {
+            originSlot.ballId = ball.id;
+            originSlot.result = null;
+            originSlot.resultTimer = 0;
+
+            ball.slotKey = originSlot.key;
+            ball.x = originSlot.x;
+            ball.y = originSlot.y;
+            ball.homeX = originSlot.x;
+            ball.homeY = originSlot.y;
+        } else {
+            ball.slotKey = null;
+            ball.x = ball.homeX;
+            ball.y = ball.homeY;
+        }
+
+        this.dragOriginSlotKey = null;
+    }
+
+    _showHostsLockedReminder() {
+        if (
+            !this.guidedTutorial ||
+            this.tutorialReminderOpen ||
+            this.tutorialSolveStage !== 'subnets'
+        ) {
+            return false;
+        }
+
+        const tutorial = IP2Live.IPSubnetSimulatorTutorial;
+        if (!tutorial || typeof tutorial.showHostsLockedReminder !== 'function') {
+            this.failBanner = 'SOLVE TOTAL SUBNETS AND USABLE SUBNETS FIRST.';
+            this.failBannerTimer = 120;
+            this._playCancel();
+            return false;
+        }
+
+        this.tutorialReminderOpen = true;
+        this.tutorialPaused = true;
+        this._setGuidedDialogueOpen(true);
+
+        tutorial.showHostsLockedReminder(
+            this._tutorialContext(),
+            () => {
+                this.tutorialReminderOpen = false;
+                this._setGuidedDialogueOpen(false);
+
+                if (
+                    this.tutorialSolveStage === 'subnets' &&
+                    !this.finished
+                ) {
+                    this.tutorialPaused = false;
+                }
+            }
+        );
+
+        return true;
+    }
+
+    _showValidationLockedReminder() {
+        if (!this.guidedTutorial) return false;
+
+        if (this.tutorialSolveStage === 'subnets') {
+            this._showHostsLockedReminder();
+            return true;
+        }
+
+        if (
+            this.tutorialSolveStage === 'hosts' ||
+            this.tutorialSolveStage === 'hosts_intro'
+        ) {
+            const tutorial = IP2Live.IPSubnetSimulatorTutorial;
+
+            if (
+                tutorial &&
+                typeof tutorial.showValidationLockedReminder === 'function' &&
+                !this.tutorialReminderOpen
+            ) {
+                this.tutorialReminderOpen = true;
+                this.tutorialPaused = true;
+                this._setGuidedDialogueOpen(true);
+
+                tutorial.showValidationLockedReminder(
+                    this._tutorialContext(),
+                    () => {
+                        this.tutorialReminderOpen = false;
+                        this._setGuidedDialogueOpen(false);
+
+                        if (
+                            this.tutorialSolveStage === 'hosts' &&
+                            !this.finished
+                        ) {
+                            this.tutorialPaused = false;
+                        }
+                    }
+                );
+            } else {
+                this.failBanner = 'SOLVE TOTAL HOSTS AND USABLE HOSTS FIRST.';
+                this.failBannerTimer = 120;
+                this._playCancel();
+            }
+
+            return true;
+        }
+
+        return false;
+    }
+
+    _checkTutorialStageProgress() {
+        if (!this.guidedTutorial || this.finished) return false;
+
+        if (
+            this.tutorialSolveStage === 'subnets' &&
+            this._tutorialSubnetPairCorrect()
+        ) {
+            this.tutorialSolveStage = 'hosts_intro';
+            this.tutorialStep = 'hosts_intro';
+            this.tutorialPaused = true;
+            this.hoverSlotKey = null;
+            this.dragBallId = null;
+            this.failBanner = 'SUBNET VALUES SECURED.';
+            this.failBannerTimer = 90;
+
+            if (Manager && Manager.Stack) {
+                Manager.Stack.requestPaintHUD = true;
+            }
+
+            return true;
+        }
+
+        if (
+            this.tutorialSolveStage === 'hosts' &&
+            this._tutorialHostPairCorrect()
+        ) {
+            this.tutorialSolveStage = 'final_intro';
+            this.tutorialStep = 'final_intro';
+            this.tutorialPaused = true;
+            this.hoverSlotKey = null;
+            this.dragBallId = null;
+            this.failBanner = 'HOST VALUES SECURED.';
+            this.failBannerTimer = 90;
+
+            if (Manager && Manager.Stack) {
+                Manager.Stack.requestPaintHUD = true;
+            }
+
+            return true;
+        }
+
+        return false;
     }
 
     _updateGuidedTutorial() {
@@ -307,16 +849,27 @@ class IP2LiveSubnetSimulatorGameplayScreen extends Scene.Base {
 
         if (this.tutorialSpotlightTimer > 0) {
             this.tutorialSpotlightTimer--;
+
             if (this.tutorialSpotlightTimer <= 0) {
                 const complete = this.tutorialSpotlightComplete;
+
                 this.tutorialSpotlightComplete = null;
                 this.tutorialHighlight = null;
-                if (typeof complete === 'function') complete();
+
+                if (typeof complete === 'function') {
+                    complete();
+                }
             }
+
             return;
         }
 
-        if (this.tutorialDialogueOpen || this._isGuidedDialogueActive()) return;
+        if (
+            this.tutorialDialogueOpen ||
+            this._isGuidedDialogueActive()
+        ) {
+            return;
+        }
 
         if (this.tutorialStep === 'carried_intro') {
             this.tutorialPaused = true;
@@ -325,24 +878,24 @@ class IP2LiveSubnetSimulatorGameplayScreen extends Scene.Base {
             return;
         }
 
-        if (this.tutorialStep === 'powers_intro') {
+        if (this.tutorialStep === 'subnet_intro') {
             this.tutorialPaused = true;
-            this.tutorialStep = 'powers_dialogue';
-            this._showGuidedPowersDialogue();
+            this.tutorialStep = 'subnet_dialogue';
+            this._showGuidedSubnetDialogue();
             return;
         }
 
-        if (this.tutorialStep === 'usable_intro') {
+        if (this.tutorialStep === 'hosts_intro') {
             this.tutorialPaused = true;
-            this.tutorialStep = 'usable_dialogue';
-            this._showGuidedUsableDialogue();
+            this.tutorialStep = 'hosts_dialogue';
+            this._showGuidedHostsDialogue();
             return;
         }
 
-        if (this.tutorialStep === 'duplicate_intro') {
+        if (this.tutorialStep === 'final_intro') {
             this.tutorialPaused = true;
-            this.tutorialStep = 'duplicate_dialogue';
-            this._showGuidedDuplicateDialogue();
+            this.tutorialStep = 'final_dialogue';
+            this._showGuidedFinalDialogue();
         }
     }
 
@@ -371,78 +924,147 @@ class IP2LiveSubnetSimulatorGameplayScreen extends Scene.Base {
 
     _showGuidedCarriedDialogue() {
         this._setGuidedDialogueOpen(true);
+
         const done = () => {
             this._setGuidedDialogueOpen(false);
-            this._showTutorialSpotlight({
-                type: 'carried_reference',
-                label: '01 // RETAINED OCTET FROM THE PREVIOUS PANEL',
-            }, 135, () => {
-                this.tutorialStep = 'powers_intro';
-            });
+
+            this._showTutorialSpotlight(
+                {
+                    type: 'carried_reference',
+                    label: '01 // PREVIOUS CIDR OCTET CARRIED FORWARD',
+                },
+
+                120,
+
+                () => {
+                    this.tutorialStep = 'subnet_intro';
+                }
+            );
         };
+
         const tutorial = IP2Live.IPSubnetSimulatorTutorial;
-        if (tutorial && typeof tutorial.showCarriedReference === 'function') {
-            tutorial.showCarriedReference(this._tutorialContext(), done);
+
+        if (
+            tutorial &&
+            typeof tutorial.showCarriedReference === 'function'
+        ) {
+            tutorial.showCarriedReference(
+                this._tutorialContext(),
+                done
+            );
         } else {
             done();
         }
     }
 
-    _showGuidedPowersDialogue() {
+    _showGuidedSubnetDialogue() {
         this._setGuidedDialogueOpen(true);
+
         const done = () => {
             this._setGuidedDialogueOpen(false);
-            this._showTutorialSpotlight({
-                type: 'power_totals',
-                label: '02 // ON BITS = SUBNETS // OFF BITS = HOSTS',
-            }, 150, () => {
-                this.tutorialStep = 'usable_intro';
-            });
+
+            this._showTutorialSpotlight(
+                {
+                    type: 'subnet_solve',
+                    label: '02 // SOLVE TOTAL SUBNETS + USABLE SUBNETS FIRST',
+                },
+
+                150,
+
+                () => {
+                    this.tutorialSolveStage = 'subnets';
+                    this.tutorialStep = 'wait_subnets';
+                    this.tutorialPaused = false;
+                }
+            );
         };
+
         const tutorial = IP2Live.IPSubnetSimulatorTutorial;
-        if (tutorial && typeof tutorial.showPowerGuide === 'function') {
-            tutorial.showPowerGuide(this._tutorialContext(), done);
+
+        if (
+            tutorial &&
+            typeof tutorial.showSubnetStageGuide === 'function'
+        ) {
+            tutorial.showSubnetStageGuide(
+                this._tutorialContext(),
+                done
+            );
         } else {
             done();
         }
     }
 
-    _showGuidedUsableDialogue() {
+    _showGuidedHostsDialogue() {
         this._setGuidedDialogueOpen(true);
+
         const done = () => {
             this._setGuidedDialogueOpen(false);
-            this._showTutorialSpotlight({
-                type: 'usable_values',
-                label: '03 // APPLY -2 FOR RESERVED VALUES',
-            }, 150, () => {
-                this.tutorialStep = 'duplicate_intro';
-            });
+
+            this._showTutorialSpotlight(
+                {
+                    type: 'host_solve',
+                    label: '03 // SUBNETS SECURED // NOW SOLVE HOSTS',
+                },
+
+                150,
+
+                () => {
+                    this.tutorialSolveStage = 'hosts';
+                    this.tutorialStep = 'wait_hosts';
+                    this.tutorialPaused = false;
+                }
+            );
         };
+
         const tutorial = IP2Live.IPSubnetSimulatorTutorial;
-        if (tutorial && typeof tutorial.showUsableGuide === 'function') {
-            tutorial.showUsableGuide(this._tutorialContext(), done);
+
+        if (
+            tutorial &&
+            typeof tutorial.showHostStageGuide === 'function'
+        ) {
+            tutorial.showHostStageGuide(
+                this._tutorialContext(),
+                done
+            );
         } else {
             done();
         }
     }
 
-    _showGuidedDuplicateDialogue() {
+    _showGuidedFinalDialogue() {
         this._setGuidedDialogueOpen(true);
+
         const done = () => {
             this._setGuidedDialogueOpen(false);
-            this._showTutorialSpotlight({
-                type: 'duplicate_strategy',
-                label: '04 // MERGE, DUPLICATE WISELY, THEN VALIDATE',
-            }, 180, () => {
-                this.tutorialPaused = false;
-                this.tutorialActive = false;
-                this.tutorialComplete = true;
-                this.tutorialStep = 'done';
-            });
+
+            this._showTutorialSpotlight(
+                {
+                    type: 'validation_ready',
+                    label: '04 // ALL VALUES SECURED // VALIDATE THE SIMULATION',
+                },
+
+                120,
+
+                () => {
+                    this.tutorialSolveStage = 'ready_validation';
+                    this.tutorialPaused = false;
+                    this.tutorialActive = false;
+                    this.tutorialComplete = true;
+                    this.tutorialStep = 'done';
+                }
+            );
         };
+
         const tutorial = IP2Live.IPSubnetSimulatorTutorial;
-        if (tutorial && typeof tutorial.showDuplicateGuide === 'function') {
-            tutorial.showDuplicateGuide(this._tutorialContext(), done);
+
+        if (
+            tutorial &&
+            typeof tutorial.showFinalGuide === 'function'
+        ) {
+            tutorial.showFinalGuide(
+                this._tutorialContext(),
+                done
+            );
         } else {
             done();
         }
@@ -475,25 +1097,52 @@ class IP2LiveSubnetSimulatorGameplayScreen extends Scene.Base {
         this._layoutSlots();
 
         if (this.submitRect && this._pointInRect(x, y, this.submitRect)) {
+            if (
+                this.guidedTutorial &&
+                this.tutorialSolveStage !== 'ready_validation' &&
+                this.tutorialSolveStage !== 'all'
+            ) {
+                this._showValidationLockedReminder();
+                return true;
+            }
+
             this._submitAnswers();
             return true;
         }
 
         const ball = this._ballAt(x, y);
         if (!ball) return true;
+
+        if (
+            ball.slotKey &&
+            this._isTutorialCommittedSlot(ball.slotKey)
+        ) {
+            this.failBanner = this._isSubnetSlotKey(ball.slotKey)
+                ? 'SUBNET ANSWERS SECURED.'
+                : 'HOST ANSWERS SECURED.';
+            this.failBannerTimer = 80;
+            this._playCancel();
+            return true;
+        }
+
         this.dragBallId = ball.id;
+        this.dragOriginSlotKey = ball.slotKey || null;
         this.hoverSlotKey = null;
         this.dragOffset.x = x - ball.x;
         this.dragOffset.y = y - ball.y;
+
         if (ball.slotKey) {
             const slot = this._slotByKey(ball.slotKey);
-            if (slot) slot.ballId = null;
+
             if (slot) {
+                slot.ballId = null;
                 slot.result = null;
                 slot.resultTimer = 0;
             }
+
             ball.slotKey = null;
         }
+
         this._playCursor();
         return true;
     }
@@ -505,7 +1154,16 @@ class IP2LiveSubnetSimulatorGameplayScreen extends Scene.Base {
         ball.x = x - this.dragOffset.x;
         ball.y = y - this.dragOffset.y;
         const slot = this._slotAt(x, y);
-        this.hoverSlotKey = slot && !slot.ballId && !ball.minus && !ball.duplicate ? slot.key : null;
+
+        this.hoverSlotKey =
+            slot &&
+            !slot.ballId &&
+            !ball.minus &&
+            !ball.duplicate &&
+            !this._isTutorialHostSlotLocked(slot.key)
+                ? slot.key
+                : null;
+
         return true;
     }
 
@@ -518,16 +1176,32 @@ class IP2LiveSubnetSimulatorGameplayScreen extends Scene.Base {
         if (!ball) return true;
 
         const slot = this._slotAt(x, y);
+
+        if (
+            slot &&
+            this._isTutorialHostSlotLocked(slot.key)
+        ) {
+            this._restoreDraggedBall(ball);
+            this._playCancel();
+            this._showHostsLockedReminder();
+            return true;
+        }
+
         if (slot && !slot.ballId && !ball.minus && !ball.duplicate) {
             slot.ballId = ball.id;
             slot.result = null;
             slot.resultTimer = 0;
+
             ball.slotKey = slot.key;
             ball.x = slot.x;
             ball.y = slot.y;
             ball.homeX = slot.x;
             ball.homeY = slot.y;
+
+            this.dragOriginSlotKey = null;
             this._playConfirm();
+            this._checkTutorialStageProgress();
+
             return true;
         }
 
@@ -558,6 +1232,8 @@ class IP2LiveSubnetSimulatorGameplayScreen extends Scene.Base {
             ball.homeX = p.x;
             ball.homeY = p.y;
         }
+
+        this.dragOriginSlotKey = null;
         return true;
     }
 
@@ -627,6 +1303,8 @@ class IP2LiveSubnetSimulatorGameplayScreen extends Scene.Base {
         target.r = this._radiusForValue(target.value);
         this._emitPop(target.x, target.y, '#FF6E86', 18);
         this._playConfirm();
+        this._checkTutorialStageProgress();
+
         const minus = this._minusBall();
         if (minus) {
             minus.x = minus.homeX;
@@ -638,8 +1316,10 @@ class IP2LiveSubnetSimulatorGameplayScreen extends Scene.Base {
         const x = (a.x + b.x) * 0.5;
         const y = (a.y + b.y) * 0.5;
         const next = Math.min(128, a.value * 2);
+
         this._removeBall(a.id);
         this._removeBall(b.id);
+
         this.balls.push({
             id: this.nextBallId++,
             value: next,
@@ -653,9 +1333,12 @@ class IP2LiveSubnetSimulatorGameplayScreen extends Scene.Base {
             pulse: 18,
             slotKey: null,
         });
-        this._spawnOneBall();
-        this._spawnOneBall();
-        this._emitPop(x, y, '#7EEDFF', 24);
+
+        // Replenish the synthesis pool with a weighted supply wave. One 2 is
+        // guaranteed, with independent bonus chances for a 4 and an 8.
+        this._spawnSupplyWave(false);
+
+        this._emitPop(x, y, this._valueVisualStyle(next).accent, 24);
         this._playConfirm();
     }
 
@@ -682,7 +1365,8 @@ class IP2LiveSubnetSimulatorGameplayScreen extends Scene.Base {
         this.duplicateUsesLeft = duplicateBall.usesLeft;
         duplicateBall.x = duplicateBall.homeX;
         duplicateBall.y = duplicateBall.homeY;
-        if (duplicateBall.usesLeft <= 0) this._removeBall(duplicateBall.id);
+        // Keep the Duplicate module visible after all three charges are spent
+        // so the player can clearly see that it has 0 uses remaining.
         this._emitPop(target.x, target.y, '#78F5C0', 20);
         this._playConfirm();
     }
@@ -703,14 +1387,20 @@ class IP2LiveSubnetSimulatorGameplayScreen extends Scene.Base {
     }
 
     _ensureBaseBalls() {
-        let base = 0;
-        for (let i = 0; i < this.balls.length; i++) {
-            const b = this.balls[i];
-            if (!b.minus && !b.duplicate && b.value === this.baseBallValue) base++;
+        // Only FREE 2s count toward the safety floor. A 2 already placed in an
+        // answer socket should not prevent the simulator from supplying more.
+        let freeTwos = this._countFreeValue(2);
+
+        while (freeTwos < this.minBaseBalls) {
+            if (!this._spawnNormalBall(2, true)) break;
+            freeTwos++;
         }
-        while (base < this.minBaseBalls && this._canSpawnNormalBall()) {
-            if (!this._spawnOneBall()) break;
-            base++;
+
+        // If the free pool somehow has no immediate pair, seed one low-value
+        // companion. This keeps the merge ladder recoverable even after the
+        // board has accumulated high powers such as 16, 32 or 64.
+        if (freeTwos < 2 && this._canSpawnNormalBall(true)) {
+            if (this._spawnNormalBall(2, true)) freeTwos++;
         }
     }
 
@@ -759,18 +1449,31 @@ class IP2LiveSubnetSimulatorGameplayScreen extends Scene.Base {
 
     _refreshSpawnPauseState() {
         const normalCount = this._countNormalBalls();
+
         if (!this.spawnPausedByLimit && normalCount >= this.maxNormalBalls) {
             this.spawnPausedByLimit = true;
             return;
         }
-        if (this.spawnPausedByLimit && normalCount <= this.minBaseBalls) {
+
+        // Hysteresis: resume ordinary randomized supply once the arena has
+        // enough breathing room, rather than waiting until nearly empty.
+        if (
+            this.spawnPausedByLimit &&
+            normalCount <= Math.max(this.minBaseBalls, this.maxNormalBalls - 3)
+        ) {
             this.spawnPausedByLimit = false;
         }
     }
 
-    _canSpawnNormalBall() {
+    _canSpawnNormalBall(force) {
+        const count = this._countNormalBalls();
+
+        if (force) {
+            return count < this.maxNormalBalls + this.emergencySupplyOverflow;
+        }
+
         if (this.spawnPausedByLimit) return false;
-        return this._countNormalBalls() < this.maxNormalBalls;
+        return count < this.maxNormalBalls;
     }
 
     _clampPointToArena(x, y, r) {
@@ -824,6 +1527,16 @@ class IP2LiveSubnetSimulatorGameplayScreen extends Scene.Base {
 
     _submitAnswers() {
         if (this.finished || this.phase !== 'build') return;
+
+        if (
+            this.guidedTutorial &&
+            this.tutorialSolveStage !== 'ready_validation' &&
+            this.tutorialSolveStage !== 'all'
+        ) {
+            this._showValidationLockedReminder();
+            return;
+        }
+
         this.validationAttempts++;
         let hasMissing = false;
         let wrongCount = 0;
@@ -888,12 +1601,7 @@ class IP2LiveSubnetSimulatorGameplayScreen extends Scene.Base {
         }
 
         if (wrongCount === 0 && correctCount === this.slots.length) {
-            this.phase = 'success';
-            this.phaseTimer = 120;
-            this.failBanner = 'VALIDATED. SUBNET SIMULATION COMPLETE.';
-            this.failBannerTimer = 120;
-            this._saveState();
-            this._playConfirm();
+            this._beginSuccessSequence();
             return;
         }
 
@@ -914,6 +1622,7 @@ class IP2LiveSubnetSimulatorGameplayScreen extends Scene.Base {
         if (!this.enforceAttemptLimit || this.validationAttempts < this.maxAttempts) return false;
         this.phase = 'failed';
         this.phaseTimer = 70;
+        this.failureReason = 'attempts_exhausted';
         this.failBanner = 'THREE ATTEMPTS EXHAUSTED. RETURNING TO SIMULATOR TRAINING.';
         this.failBannerTimer = 90;
         this.shake = 28;
@@ -1017,18 +1726,24 @@ class IP2LiveSubnetSimulatorGameplayScreen extends Scene.Base {
         if (Manager && Manager.Stack) Manager.Stack.pop();
     }
 
-    _failOut() {
+    _failOut(reason) {
         if (this.finished) return;
+
         this.finished = true;
+        const failureReason = reason || this.failureReason || 'attempts_exhausted';
+
         const result = {
             gameplayId: 'ip_subnet_simulator',
             handoffKey: this.cidrState && this.cidrState.handoffKey,
             mask: this.cidrState && this.cidrState.mask,
             cidr: this.cidrState && this.cidrState.cidr,
             passed: false,
-            reason: 'attempts_exhausted',
+            reason: failureReason,
+            timedOut: failureReason === 'time_expired',
+            timeLimitSeconds: this.solveTimeSeconds,
+            timeRemainingSeconds: this._timerRemainingSeconds(),
             attemptsUsed: this.validationAttempts,
-            maxAttempts: this.maxAttempts,
+            maxAttempts: this.enforceAttemptLimit ? this.maxAttempts : 0,
             validationAttempts: this.validationAttempts,
             slotStats: {
                 totalChecks: this.slotStatTotals.totalChecks,
@@ -1036,10 +1751,12 @@ class IP2LiveSubnetSimulatorGameplayScreen extends Scene.Base {
                 wrongSlotFrequency: Object.assign({}, this.slotStatTotals.wrongSlotFrequency),
             },
         };
+
         if (typeof this.options.onFailed === 'function') {
             this.options.onFailed(result);
             return;
         }
+
         if (typeof this.options.onCancel === 'function') this.options.onCancel();
     }
 
@@ -1061,14 +1778,27 @@ class IP2LiveSubnetSimulatorGameplayScreen extends Scene.Base {
     drawHUD() {
         const ctx = Common.Platform.ctx;
         if (!ctx || !ctx.canvas) return;
+
         const m = this._metrics();
         this._layoutSlots();
 
         ctx.save();
-        if (this.shake > 0) {
-            const amp = this.shake * 0.14 * m.sX;
-            ctx.translate((Math.random() - 0.5) * amp, (Math.random() - 0.5) * amp);
+
+        let shakeAmp = 0;
+        if (this.phase === 'timeout_static') {
+            const staticProgress = 1 - (this.timeoutStaticTicks / Math.max(1, this.timeoutStaticDuration));
+            shakeAmp = (5 + staticProgress * 13) * m.sX;
+        } else if (this.shake > 0) {
+            shakeAmp = this.shake * 0.14 * m.sX;
         }
+
+        if (shakeAmp > 0) {
+            ctx.translate(
+                (Math.random() - 0.5) * shakeAmp,
+                (Math.random() - 0.5) * shakeAmp
+            );
+        }
+
         this._drawBackdrop(ctx, m);
         this._drawFrame(ctx, m);
         this._drawHeader(ctx, m);
@@ -1079,6 +1809,16 @@ class IP2LiveSubnetSimulatorGameplayScreen extends Scene.Base {
         this._drawBanner(ctx, m);
         this._drawParticles(ctx, m);
         this._drawTutorialHighlight(ctx, m);
+
+        if (this.phase === 'success_repair') {
+            this._drawGlitchRepairOverlay(ctx, m);
+        } else if (this.phase !== 'success') {
+            const glitchIntensity = this._glitchIntensity();
+            if (glitchIntensity > 0) this._drawGlitchOverlay(ctx, m, glitchIntensity);
+        }
+
+        if (this.phase === 'timeout_shutdown') this._drawCRTShutdown(ctx, m);
+
         ctx.restore();
 
         const sharedPopup = IP2Live.GameplayCompletionPopup;
@@ -1095,6 +1835,284 @@ class IP2LiveSubnetSimulatorGameplayScreen extends Scene.Base {
         if (IP2Live.DialogueManager && typeof IP2Live.DialogueManager.drawOverlay === 'function') {
             IP2Live.DialogueManager.drawOverlay(ctx);
         }
+    }
+
+    _drawGlitchOverlay(ctx, m, intensity) {
+        const level = Math.max(0, Math.min(1, Number(intensity) || 0));
+        if (level <= 0) return;
+
+        ctx.save();
+
+        // Faint full-screen scanline corruption.
+        ctx.globalAlpha = 0.05 + level * 0.12;
+        ctx.fillStyle = '#BDEBFF';
+        const scanStep = Math.max(3, Math.round(5 * m.sY));
+        for (let y = 0; y < m.cH; y += scanStep) {
+            ctx.fillRect(0, y, m.cW, Math.max(1, 0.6 * m.sY));
+        }
+
+        // At lower intensity glitches stay on the outer edges. Once the timer
+        // reaches its final 10 seconds they invade the center of the display.
+        const edgeOnly = level < 0.46;
+        const blockCount = Math.floor(5 + level * 28);
+
+        for (let i = 0; i < blockCount; i++) {
+            const h = (2 + Math.random() * (7 + level * 20)) * m.sY;
+            const w = (18 + Math.random() * (70 + level * 230)) * m.sX;
+            let x;
+
+            if (edgeOnly) {
+                const left = Math.random() < 0.5;
+                const edgeDepth = (20 + level * 175) * m.sX;
+                x = left
+                    ? Math.random() * edgeDepth - w * 0.35
+                    : m.cW - Math.random() * edgeDepth - w * 0.65;
+            } else {
+                x = Math.random() * Math.max(1, m.cW - w);
+            }
+
+            const y = Math.random() * Math.max(1, m.cH - h);
+            const channel = i % 3;
+
+            ctx.globalAlpha = 0.05 + level * (0.10 + Math.random() * 0.22);
+            ctx.fillStyle =
+                channel === 0 ? '#00F0FF' :
+                channel === 1 ? '#FF315F' :
+                '#FFE600';
+            ctx.fillRect(x, y, w, h);
+
+            if (level > 0.38 && i % 3 === 0) {
+                ctx.globalAlpha = 0.06 + level * 0.16;
+                ctx.fillStyle = '#F5FCFF';
+                ctx.fillRect(
+                    x + (Math.random() - 0.5) * 16 * m.sX,
+                    y + h * 0.35,
+                    w * (0.25 + Math.random() * 0.55),
+                    Math.max(1, h * 0.18)
+                );
+            }
+        }
+
+        // RGB tear bands become much more visible during the final seconds.
+        if (level > 0.42) {
+            const tears = Math.floor(2 + level * 7);
+            for (let i = 0; i < tears; i++) {
+                const y = Math.random() * m.cH;
+                const bandH = (2 + Math.random() * 10) * m.sY;
+                const shift = (4 + Math.random() * 18) * level * m.sX;
+
+                ctx.globalAlpha = 0.08 + level * 0.16;
+                ctx.fillStyle = '#00F0FF';
+                ctx.fillRect(shift, y, m.cW - shift, bandH);
+
+                ctx.fillStyle = '#FF315F';
+                ctx.fillRect(0, y + bandH * 0.45, m.cW - shift, bandH * 0.45);
+            }
+        }
+
+        // Near timeout, add dense white/colored TV noise everywhere.
+        if (level > 0.72) {
+            const noiseCount = Math.floor(85 + level * 180);
+            for (let i = 0; i < noiseCount; i++) {
+                const size = (1 + Math.random() * 4) * m.sX;
+                ctx.globalAlpha = 0.08 + Math.random() * 0.28;
+                ctx.fillStyle =
+                    i % 5 === 0 ? '#FF315F' :
+                    i % 5 === 1 ? '#00F0FF' :
+                    i % 5 === 2 ? '#FFE600' :
+                    '#EAF7FF';
+                ctx.fillRect(
+                    Math.random() * m.cW,
+                    Math.random() * m.cH,
+                    size * (1 + Math.random() * 4),
+                    Math.max(1, size * 0.45)
+                );
+            }
+        }
+
+        ctx.globalAlpha = 1;
+        ctx.restore();
+    }
+
+    _drawGlitchRepairOverlay(ctx, m) {
+        const rawProgress = this._successRepairProgress();
+        const progress = 1 - Math.pow(1 - rawProgress, 3);
+        const remaining = Math.max(0, 1 - progress);
+        const base = Math.max(0.12, this.successRepairStartIntensity || 0.12);
+        const cx = m.cW * 0.5;
+        const cy = m.cH * 0.5;
+        const maxRadius = Math.hypot(m.cW * 0.5, m.cH * 0.5);
+        const cleanRadius = maxRadius * (0.03 + progress * 1.02);
+        const primaryFont = this._uiPrimaryFont();
+
+        const fract = (value) => value - Math.floor(value);
+        const pseudo = (index, salt) => {
+            return fract(
+                Math.sin(
+                    index * 12.9898 +
+                    salt * 78.233 +
+                    this.successRepairSeed * 0.013 +
+                    Math.floor(this.animTick * 0.5) * 0.071
+                ) * 43758.5453
+            );
+        };
+
+        ctx.save();
+
+        // A restrained center flash marks the moment the payload stabilizes.
+        if (rawProgress < 0.24) {
+            const flashProgress = rawProgress / 0.24;
+            const flash = ctx.createRadialGradient(
+                cx,
+                cy,
+                0,
+                cx,
+                cy,
+                Math.max(m.cW, m.cH) * (0.08 + flashProgress * 0.28)
+            );
+
+            flash.addColorStop(0, 'rgba(218,252,255,' + (0.14 * (1 - flashProgress)).toFixed(3) + ')');
+            flash.addColorStop(0.35, 'rgba(0,240,255,' + (0.07 * (1 - flashProgress)).toFixed(3) + ')');
+            flash.addColorStop(1, 'rgba(0,240,255,0)');
+
+            ctx.fillStyle = flash;
+            ctx.fillRect(0, 0, m.cW, m.cH);
+        }
+
+        // Remaining corruption is pushed out from the center. Blocks inside the
+        // expanding clean radius are simply omitted, so the repair reads as a
+        // center-to-edge purge rather than a normal fade.
+        const blockCount = Math.floor(14 + base * 34);
+
+        for (let i = 0; i < blockCount; i++) {
+            const x = pseudo(i, 1) * m.cW;
+            const y = pseudo(i, 2) * m.cH;
+            const dx = x - cx;
+            const dy = y - cy;
+            const distance = Math.hypot(dx, dy);
+
+            if (distance < cleanRadius) continue;
+
+            const w = (18 + pseudo(i, 3) * 150) * m.sX;
+            const h = (1.5 + pseudo(i, 4) * 8) * m.sY;
+            const channel = i % 4;
+
+            ctx.globalAlpha = (0.045 + base * 0.20) * remaining;
+            ctx.fillStyle =
+                channel === 0 ? '#00F0FF' :
+                channel === 1 ? '#FF315F' :
+                channel === 2 ? '#FFE600' :
+                '#DDF8FF';
+
+            ctx.fillRect(x - w * 0.5, y - h * 0.5, w, h);
+        }
+
+        // Short outward-moving fragments make the disappearing corruption feel
+        // like it is being expelled toward the borders.
+        const streaks = 16;
+        for (let i = 0; i < streaks; i++) {
+            const angle = (Math.PI * 2 * i) / streaks + this.successRepairSeed * 0.001;
+            const radial = Math.min(maxRadius, cleanRadius + (18 + pseudo(i, 8) * 70) * m.sX);
+            const x = cx + Math.cos(angle) * radial;
+            const y = cy + Math.sin(angle) * radial;
+            const len = (16 + pseudo(i, 9) * 44) * m.sX;
+
+            ctx.globalAlpha = (0.08 + base * 0.12) * remaining;
+            ctx.strokeStyle = i % 3 === 0 ? '#FFE600' : '#78F3FF';
+            ctx.lineWidth = Math.max(1, 1.1 * m.sX);
+            ctx.beginPath();
+            ctx.moveTo(x, y);
+            ctx.lineTo(
+                x + Math.cos(angle) * len,
+                y + Math.sin(angle) * len
+            );
+            ctx.stroke();
+        }
+
+        // Recovery wave. Kept thin and low-opacity so it feels flashy without
+        // washing out the gameplay UI.
+        ctx.globalAlpha = 0.18 * Math.sin(Math.PI * rawProgress);
+        ctx.strokeStyle = '#BFFBFF';
+        ctx.shadowColor = '#00F0FF';
+        ctx.shadowBlur = 12 * m.sX;
+        ctx.lineWidth = Math.max(1, 1.8 * m.sX);
+        ctx.beginPath();
+        ctx.ellipse(
+            cx,
+            cy,
+            Math.max(8 * m.sX, cleanRadius),
+            Math.max(5 * m.sY, cleanRadius * 0.58),
+            0,
+            0,
+            Math.PI * 2
+        );
+        ctx.stroke();
+        ctx.shadowBlur = 0;
+
+        // Brief recovery text, deliberately small and unobtrusive.
+        if (rawProgress > 0.12 && rawProgress < 0.82) {
+            ctx.globalAlpha = 0.32 * Math.sin(Math.PI * rawProgress);
+            ctx.fillStyle = '#DFFFFF';
+            ctx.font = 'bold ' + (7.2 * m.sY).toFixed(1) + 'px ' + primaryFont;
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText('SIGNAL STABILIZED // PURGING CORRUPTION', cx, cy + 38 * m.sY);
+        }
+
+        ctx.globalAlpha = 1;
+        ctx.restore();
+    }
+
+    _drawCRTShutdown(ctx, m) {
+        const progress = 1 - (
+            this.timeoutShutdownTicks /
+            Math.max(1, this.timeoutShutdownDuration)
+        );
+        const p = Math.max(0, Math.min(1, progress));
+        const centerY = m.cH * 0.5;
+
+        ctx.save();
+
+        // Darken first, then squeeze the visible image into a bright horizontal
+        // phosphor line like an old CRT losing vertical deflection.
+        ctx.fillStyle = 'rgba(0,0,0,' + (0.18 + p * 0.62).toFixed(3) + ')';
+        ctx.fillRect(0, 0, m.cW, m.cH);
+
+        const aperture = Math.max(
+            1.5 * m.sY,
+            m.cH * Math.pow(1 - p, 3.1)
+        );
+
+        ctx.fillStyle = '#000000';
+        ctx.fillRect(0, 0, m.cW, Math.max(0, centerY - aperture * 0.5));
+        ctx.fillRect(
+            0,
+            centerY + aperture * 0.5,
+            m.cW,
+            Math.max(0, m.cH - (centerY + aperture * 0.5))
+        );
+
+        const lineAlpha = Math.max(0, 1 - Math.max(0, p - 0.82) / 0.18);
+        ctx.globalAlpha = lineAlpha;
+        ctx.shadowColor = '#DFFFFF';
+        ctx.shadowBlur = (8 + p * 30) * m.sX;
+        ctx.fillStyle = '#F7FFFF';
+        ctx.fillRect(
+            m.cW * (0.06 + p * 0.38),
+            centerY - Math.max(1, 1.2 * m.sY),
+            m.cW * Math.max(0.06, 0.88 - p * 0.76),
+            Math.max(2, 2.4 * m.sY)
+        );
+
+        ctx.shadowBlur = 0;
+        ctx.globalAlpha = 1;
+
+        if (p > 0.94) {
+            ctx.fillStyle = 'rgba(0,0,0,' + ((p - 0.94) / 0.06).toFixed(3) + ')';
+            ctx.fillRect(0, 0, m.cW, m.cH);
+        }
+
+        ctx.restore();
     }
 
     _metrics() {
@@ -1308,33 +2326,124 @@ class IP2LiveSubnetSimulatorGameplayScreen extends Scene.Base {
     }
 
     _drawBackdrop(ctx, m) {
-        const g = ctx.createLinearGradient(0, 0, m.cW, m.cH);
-        g.addColorStop(0, '#03080F');
-        g.addColorStop(0.52, '#0A1622');
-        g.addColorStop(1, '#02070D');
+        const g = ctx.createLinearGradient(0, 0, 0, m.cH);
+        g.addColorStop(0, '#06101D');
+        g.addColorStop(0.48, '#020812');
+        g.addColorStop(1, '#010409');
+
         ctx.fillStyle = g;
         ctx.fillRect(0, 0, m.cW, m.cH);
+
+        // Very faint blue nebula behind the chassis.
+        const nebula = ctx.createRadialGradient(
+            m.cW * 0.56,
+            m.cH * 0.34,
+            0,
+            m.cW * 0.56,
+            m.cH * 0.34,
+            Math.max(m.cW, m.cH) * 0.62
+        );
+        nebula.addColorStop(0, 'rgba(12,73,105,0.13)');
+        nebula.addColorStop(0.38, 'rgba(8,38,70,0.07)');
+        nebula.addColorStop(1, 'rgba(0,0,0,0)');
+
+        ctx.fillStyle = nebula;
+        ctx.fillRect(0, 0, m.cW, m.cH);
+
         this._drawBackdropDecor(ctx, m);
     }
 
     _drawBackdropDecor(ctx, m) {
+        const primaryFont = this._uiPrimaryFont();
+        const fract = (value) => value - Math.floor(value);
+        const pseudo = (index, salt) => {
+            return fract(
+                Math.sin(
+                    index * 91.173 +
+                    salt * 17.731 +
+                    4.217
+                ) * 43758.5453
+            );
+        };
+
         ctx.save();
-        ctx.globalAlpha = 0.09;
-        ctx.strokeStyle = '#356176';
-        ctx.lineWidth = Math.max(0.7, 0.8 * m.sX);
-        for (let x = -m.cH; x < m.cW + m.cH; x += 48 * m.sX) {
+
+        // Sparse star field. Nothing moves quickly enough to compete with the
+        // draggable simulator nodes.
+        for (let i = 0; i < 48; i++) {
+            const x = pseudo(i, 1) * m.cW;
+            const baseY = pseudo(i, 2) * m.cH;
+            const drift = (this.animTick * (0.008 + pseudo(i, 3) * 0.018)) % (12 * m.sY);
+            const y = (baseY + drift) % m.cH;
+            const twinkle = 0.45 + 0.55 * Math.sin(this.animTick * 0.018 + i * 1.37);
+            const size = (0.65 + pseudo(i, 4) * 1.4) * m.sX;
+
+            ctx.globalAlpha = (0.035 + pseudo(i, 5) * 0.11) * twinkle;
+            ctx.fillStyle =
+                i % 11 === 0 ? '#FFE9A8' :
+                i % 7 === 0 ? '#FF8AA7' :
+                '#A9F4FF';
+
+            ctx.fillRect(x, y, size, size);
+        }
+
+        // A few distant floating system fragments / code snippets.
+        const fragments = [
+            '0x2A',
+            '0101',
+            'CIDR',
+            'NODE',
+            '2^n',
+            'MASK',
+            '1010',
+            'SYNC',
+        ];
+
+        ctx.font = 'bold ' + (5.1 * m.sY).toFixed(1) + 'px ' + primaryFont;
+        ctx.textBaseline = 'middle';
+
+        for (let i = 0; i < fragments.length; i++) {
+            const span = m.cW + 160 * m.sX;
+            const travel = (
+                pseudo(i, 6) * span +
+                this.animTick * (0.025 + pseudo(i, 7) * 0.028) * m.sX
+            ) % span;
+
+            const x = travel - 80 * m.sX;
+            const y = (0.10 + pseudo(i, 8) * 0.78) * m.cH;
+
+            ctx.globalAlpha = 0.025 + pseudo(i, 9) * 0.04;
+            ctx.fillStyle = i % 3 === 0 ? '#FFE600' : '#67DCEB';
+            ctx.textAlign = 'left';
+            ctx.fillText(fragments[i], x, y);
+
+            ctx.strokeStyle = i % 2 ? '#00DCE8' : '#496A7B';
+            ctx.lineWidth = Math.max(0.6, 0.7 * m.sX);
             ctx.beginPath();
-            ctx.moveTo(x, 0);
-            ctx.lineTo(x + m.cH * 0.22, m.cH);
+            ctx.moveTo(x - 24 * m.sX, y);
+            ctx.lineTo(x - 7 * m.sX, y);
             ctx.stroke();
         }
-        ctx.globalAlpha = 0.17;
-        ctx.fillStyle = '#00DCE8';
-        for (let i = 0; i < 22; i++) {
-            const px = (37 + i * 83) % Math.max(1, m.cW);
-            const py = (19 + i * 47) % Math.max(1, m.cH);
-            ctx.fillRect(px, py, 2 * m.sX, 2 * m.sY);
+
+        // Minimal floating circuit shards near the outer edges.
+        for (let i = 0; i < 9; i++) {
+            const leftSide = i % 2 === 0;
+            const x = leftSide
+                ? (16 + pseudo(i, 10) * 82) * m.sX
+                : m.cW - (16 + pseudo(i, 10) * 82) * m.sX;
+            const y = (44 + pseudo(i, 11) * (m.cH - 88 * m.sY));
+            const w = (8 + pseudo(i, 12) * 26) * m.sX;
+
+            ctx.globalAlpha = 0.035 + pseudo(i, 13) * 0.045;
+            ctx.fillStyle = i % 3 === 0 ? '#FF315F' : '#00F0FF';
+            ctx.save();
+            ctx.translate(x, y);
+            ctx.rotate((pseudo(i, 14) - 0.5) * 0.5);
+            ctx.fillRect(-w * 0.5, -1 * m.sY, w, 2 * m.sY);
+            ctx.restore();
         }
+
+        ctx.globalAlpha = 1;
         ctx.restore();
     }
 
@@ -1378,6 +2487,7 @@ class IP2LiveSubnetSimulatorGameplayScreen extends Scene.Base {
 
     _drawHeader(ctx, m) {
         const titleFont = this._uiTitleFont();
+        const primaryFont = this._uiPrimaryFont();
         const bx = m.panelX + 22 * m.sX;
         const by = m.panelY + 12 * m.sY;
         const bw = 490 * m.sX;
@@ -1387,6 +2497,7 @@ class IP2LiveSubnetSimulatorGameplayScreen extends Scene.Base {
         ctx.shadowColor = 'rgba(0,0,0,0.82)';
         ctx.shadowBlur = 12 * m.sX;
         ctx.shadowOffsetY = 5 * m.sY;
+
         const plate = ctx.createLinearGradient(bx, by, bx + bw, by + bh);
         plate.addColorStop(0, '#202A34');
         plate.addColorStop(0.18, '#090D13');
@@ -1403,6 +2514,7 @@ class IP2LiveSubnetSimulatorGameplayScreen extends Scene.Base {
         ctx.lineTo(bx + 62 * m.sX, by + bh);
         ctx.lineTo(bx, by + bh - 8 * m.sY);
         ctx.closePath();
+
         const badge = ctx.createLinearGradient(bx, by, bx + 70 * m.sX, by + bh);
         badge.addColorStop(0, '#FF315F');
         badge.addColorStop(0.62, '#B50032');
@@ -1411,10 +2523,11 @@ class IP2LiveSubnetSimulatorGameplayScreen extends Scene.Base {
         ctx.fill();
 
         ctx.fillStyle = '#FFFFFF';
-        ctx.font = 'bold ' + Math.round(7 * m.sX) + 'px monospace';
+        ctx.font = 'bold ' + Math.round(7 * m.sX) + 'px ' + primaryFont;
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
         ctx.fillText('IP2', bx + 28 * m.sX, by + 19 * m.sY);
+
         ctx.fillStyle = '#FFE600';
         ctx.fillText('S-04', bx + 28 * m.sX, by + 34 * m.sY);
 
@@ -1427,21 +2540,111 @@ class IP2LiveSubnetSimulatorGameplayScreen extends Scene.Base {
         ctx.shadowColor = 'rgba(0,240,255,0.22)';
         ctx.shadowBlur = 5 * m.sX;
         ctx.fillText('SUBNET', titleX, titleY);
+
         const subnetW = ctx.measureText('SUBNET').width;
         ctx.shadowColor = 'transparent';
         ctx.fillStyle = '#00F0FF';
         ctx.fillText('SIMULATOR', titleX + subnetW + 12 * m.sX, titleY);
 
-        ctx.font = 'bold ' + Math.round(6.3 * m.sX) + 'px monospace';
+        ctx.font = 'bold ' + Math.round(6.3 * m.sX) + 'px ' + primaryFont;
         ctx.fillStyle = 'rgba(190,211,222,0.68)';
         ctx.fillText('SUBNET CAPACITY // MERGE & ALLOCATION CONSOLE', titleX, by + 46 * m.sY);
+
         ctx.fillStyle = '#FF315F';
         ctx.fillRect(bx + 75 * m.sX, by + 6 * m.sY, 28 * m.sX, 2 * m.sY);
         ctx.fillStyle = '#00F0FF';
         ctx.fillRect(bx + 106 * m.sX, by + 6 * m.sY, 72 * m.sX, 2 * m.sY);
         ctx.restore();
 
+        this._drawTimerWidget(ctx, m);
         this._drawCIDRWidget(ctx, m);
+    }
+
+    _drawTimerWidget(ctx, m) {
+        const primaryFont = this._uiPrimaryFont();
+        const cidrW = 286 * m.sX;
+        const cidrX = m.panelX + m.panelW - cidrW - 24 * m.sX;
+        const w = 156 * m.sX;
+        const h = 54 * m.sY;
+        const x = cidrX - w - 14 * m.sX;
+        const y = m.panelY + 12 * m.sY;
+        const remaining = this._timerRemainingSeconds();
+
+        let accent = '#00F0FF';
+        if (remaining <= 30) accent = '#FFE600';
+        if (remaining <= 10) accent = '#FF315F';
+
+        this.timerRect = { x, y, w, h };
+
+        ctx.save();
+        ctx.shadowColor = 'rgba(0,0,0,0.78)';
+        ctx.shadowBlur = 10 * m.sX;
+        ctx.shadowOffsetY = 4 * m.sY;
+
+        const shell = ctx.createLinearGradient(x, y, x, y + h);
+        shell.addColorStop(0, '#394953');
+        shell.addColorStop(0.09, '#080D12');
+        shell.addColorStop(0.72, '#111B22');
+        shell.addColorStop(1, '#04070A');
+        ctx.fillStyle = shell;
+        this._fillChamferRect(ctx, x, y, w, h, 10 * m.sX);
+
+        ctx.shadowColor = 'transparent';
+        this._strokeChamferRect(ctx, x, y, w, h, 10 * m.sX, '#536B76', 1.4 * m.sX);
+        this._strokeChamferRect(
+            ctx,
+            x + 5 * m.sX,
+            y + 5 * m.sY,
+            w - 10 * m.sX,
+            h - 10 * m.sY,
+            7 * m.sX,
+            accent,
+            remaining <= 10 ? 2.2 * m.sX : 1.1 * m.sX
+        );
+
+        const pulse = 0.55 + 0.45 * Math.sin(this.animTick * (remaining <= 10 ? 0.38 : 0.12));
+        if (remaining <= 10) {
+            ctx.globalAlpha = 0.16 + pulse * 0.18;
+            ctx.fillStyle = '#FF315F';
+            this._fillChamferRect(
+                ctx,
+                x + 7 * m.sX,
+                y + 7 * m.sY,
+                w - 14 * m.sX,
+                h - 14 * m.sY,
+                6 * m.sX
+            );
+            ctx.globalAlpha = 1;
+        }
+
+        ctx.shadowColor = accent;
+        ctx.shadowBlur = (remaining <= 10 ? 12 : 6) * m.sX;
+        ctx.fillStyle = remaining <= 10 ? '#FFF2F6' : '#F4FCFF';
+        ctx.font = 'bold ' + (25 * m.sY).toFixed(1) + 'px ' + primaryFont;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(
+            this._formatTimer(remaining),
+            x + w * 0.5,
+            y + h * 0.54
+        );
+        ctx.shadowBlur = 0;
+
+        // Small edge charge bars keep the timer visually connected to the
+        // carried-octet terminal without adding extra text.
+        for (let i = 0; i < 4; i++) {
+            ctx.globalAlpha = 0.28 + i * 0.12;
+            ctx.fillStyle = accent;
+            ctx.fillRect(
+                x + 12 * m.sX + i * 13 * m.sX,
+                y + h - 7 * m.sY,
+                8 * m.sX,
+                2 * m.sY
+            );
+        }
+
+        ctx.globalAlpha = 1;
+        ctx.restore();
     }
 
     _drawCIDRWidget(ctx, m) {
@@ -1501,100 +2704,328 @@ class IP2LiveSubnetSimulatorGameplayScreen extends Scene.Base {
     }
 
     _drawArena(ctx, m) {
+        const primaryFont = this._uiPrimaryFont();
+
         ctx.save();
         ctx.shadowColor = 'rgba(0,0,0,0.78)';
         ctx.shadowBlur = 16 * m.sX;
         ctx.shadowOffsetY = 6 * m.sY;
-        const shell = ctx.createLinearGradient(m.arenaX, m.arenaY, m.arenaX, m.arenaY + m.arenaH);
+
+        const shell = ctx.createLinearGradient(
+            m.arenaX,
+            m.arenaY,
+            m.arenaX,
+            m.arenaY + m.arenaH
+        );
         shell.addColorStop(0, '#2D3A43');
-        shell.addColorStop(0.035, '#0A1015');
-        shell.addColorStop(0.52, '#111B22');
-        shell.addColorStop(0.965, '#070B0F');
+        shell.addColorStop(0.035, '#080F16');
+        shell.addColorStop(0.52, '#09131C');
+        shell.addColorStop(0.965, '#05090E');
         shell.addColorStop(1, '#29363E');
+
         ctx.fillStyle = shell;
-        this._fillChamferRect(ctx, m.arenaX, m.arenaY, m.arenaW, m.arenaH, 12 * m.sX);
+        this._fillChamferRect(
+            ctx,
+            m.arenaX,
+            m.arenaY,
+            m.arenaW,
+            m.arenaH,
+            12 * m.sX
+        );
+
         ctx.shadowColor = 'transparent';
-        this._strokeChamferRect(ctx, m.arenaX, m.arenaY, m.arenaW, m.arenaH, 12 * m.sX, '#536873', 2.2 * m.sX);
-        this._strokeChamferRect(ctx, m.arenaX + 7 * m.sX, m.arenaY + 7 * m.sY, m.arenaW - 14 * m.sX, m.arenaH - 14 * m.sY, 8 * m.sX, 'rgba(0,231,242,0.4)', 1 * m.sX);
-        this._drawMetalTexture(ctx, m.arenaX + 9 * m.sX, m.arenaY + 9 * m.sY, m.arenaW - 18 * m.sX, m.arenaH - 18 * m.sY, m, 0.22);
+
+        this._strokeChamferRect(
+            ctx,
+            m.arenaX,
+            m.arenaY,
+            m.arenaW,
+            m.arenaH,
+            12 * m.sX,
+            '#536873',
+            2.2 * m.sX
+        );
+
+        this._strokeChamferRect(
+            ctx,
+            m.arenaX + 7 * m.sX,
+            m.arenaY + 7 * m.sY,
+            m.arenaW - 14 * m.sX,
+            m.arenaH - 14 * m.sY,
+            8 * m.sX,
+            'rgba(0,231,242,0.34)',
+            1 * m.sX
+        );
+
+        this._drawMetalTexture(
+            ctx,
+            m.arenaX + 9 * m.sX,
+            m.arenaY + 9 * m.sY,
+            m.arenaW - 18 * m.sX,
+            m.arenaH - 18 * m.sY,
+            m,
+            0.13
+        );
 
         const tabX = m.arenaX + 18 * m.sX;
         const tabY = m.arenaY + 8 * m.sY;
         const tabW = 260 * m.sX;
         const tabH = 19 * m.sY;
+
         const tab = ctx.createLinearGradient(tabX, tabY, tabX + tabW, tabY);
         tab.addColorStop(0, '#00DDE8');
         tab.addColorStop(0.72, '#087783');
         tab.addColorStop(1, '#10242A');
+
         ctx.fillStyle = tab;
         this._fillChamferRect(ctx, tabX, tabY, tabW, tabH, 5 * m.sX);
+
         ctx.fillStyle = '#031014';
-        ctx.font = 'bold ' + (6.8 * m.sY).toFixed(1) + 'px monospace';
+        ctx.font = 'bold ' + (6.8 * m.sY).toFixed(1) + 'px ' + primaryFont;
         ctx.textAlign = 'left';
-        ctx.fillText('SUBNET MERGE FIELD // DRAG + COMBINE', tabX + 12 * m.sX, tabY + 13 * m.sY);
+        ctx.textBaseline = 'alphabetic';
+        ctx.fillText(
+            'SUBNET MERGE FIELD // DRAG + COMBINE',
+            tabX + 12 * m.sX,
+            tabY + 13 * m.sY
+        );
 
         const liveX = m.arenaX + m.arenaW - 184 * m.sX;
         ctx.fillStyle = '#FFE600';
-        this._fillChamferRect(ctx, liveX, tabY, 160 * m.sX, tabH, 5 * m.sX);
+        this._fillChamferRect(
+            ctx,
+            liveX,
+            tabY,
+            160 * m.sX,
+            tabH,
+            5 * m.sX
+        );
+
         ctx.fillStyle = '#120F00';
-        ctx.fillText('LIVE NODES // ' + this._countNormalBalls() + '/10', liveX + 12 * m.sX, tabY + 13 * m.sY);
+        ctx.fillText(
+            'LIVE NODES // ' + this._countNormalBalls() + '/' + this.maxNormalBalls,
+            liveX + 12 * m.sX,
+            tabY + 13 * m.sY
+        );
 
         ctx.save();
-        ctx.beginPath();
-        this._traceChamferPath(ctx, m.arenaX + 13 * m.sX, m.arenaY + 34 * m.sY, m.arenaW - 26 * m.sX, m.arenaH - 47 * m.sY, 7 * m.sX);
+        this._traceChamferPath(
+            ctx,
+            m.arenaX + 13 * m.sX,
+            m.arenaY + 34 * m.sY,
+            m.arenaW - 26 * m.sX,
+            m.arenaH - 47 * m.sY,
+            7 * m.sX
+        );
         ctx.clip();
-        ctx.globalAlpha = 0.16;
-        ctx.fillStyle = '#00DCE8';
-        const lineSpan = m.arenaH - 58 * m.sY;
-        const lineStep = lineSpan / 15;
-        const lineOffset = (this.animTick * 0.22 * m.sY) % lineStep;
-        for (let i = 0; i < 16; i++) {
-            const y = m.arenaY + 42 * m.sY + ((i * lineStep + lineOffset) % lineSpan);
-            ctx.fillRect(m.arenaX + 16 * m.sX, y, m.arenaW - 32 * m.sX, 1 * m.sY);
+
+        const innerX = m.arenaX + 14 * m.sX;
+        const innerY = m.arenaY + 35 * m.sY;
+        const innerW = m.arenaW - 28 * m.sX;
+        const innerH = m.arenaH - 49 * m.sY;
+
+        // Space-like sandbox wash.
+        const space = ctx.createRadialGradient(
+            innerX + innerW * 0.5,
+            innerY + innerH * 0.48,
+            0,
+            innerX + innerW * 0.5,
+            innerY + innerH * 0.48,
+            innerW * 0.62
+        );
+        space.addColorStop(0, 'rgba(7,28,39,0.34)');
+        space.addColorStop(0.42, 'rgba(3,15,25,0.18)');
+        space.addColorStop(1, 'rgba(0,3,8,0.08)');
+
+        ctx.fillStyle = space;
+        ctx.fillRect(innerX, innerY, innerW, innerH);
+
+        const fract = (value) => value - Math.floor(value);
+        const pseudo = (index, salt) => {
+            return fract(
+                Math.sin(
+                    index * 73.113 +
+                    salt * 19.921 +
+                    2.817
+                ) * 43758.5453
+            );
+        };
+
+        // Sparse drifting stars / data motes.
+        for (let i = 0; i < 34; i++) {
+            const baseX = innerX + pseudo(i, 1) * innerW;
+            const baseY = innerY + pseudo(i, 2) * innerH;
+            const driftX = Math.sin(this.animTick * 0.008 + i) * 4 * m.sX;
+            const driftY = (this.animTick * (0.006 + pseudo(i, 3) * 0.010)) % (7 * m.sY);
+            const size = (0.65 + pseudo(i, 4) * 1.25) * m.sX;
+            const pulse = 0.45 + 0.55 * Math.sin(this.animTick * 0.022 + i * 0.91);
+
+            ctx.globalAlpha = (0.025 + pseudo(i, 5) * 0.08) * pulse;
+            ctx.fillStyle =
+                i % 9 === 0 ? '#FFE600' :
+                i % 7 === 0 ? '#FF668C' :
+                '#7DEEFF';
+
+            ctx.fillRect(
+                baseX + driftX,
+                baseY + driftY,
+                size,
+                size
+            );
         }
 
-        ctx.globalAlpha = 0.2;
-        for (let packet = 0; packet < 6; packet++) {
-            const travel = m.arenaW - 88 * m.sX;
-            const progress = (this.animTick * (0.28 + packet * 0.025) * m.sX + packet * 181 * m.sX) % travel;
-            const px = m.arenaX + 44 * m.sX + progress;
-            const py = m.arenaY + 66 * m.sY + packet * ((m.arenaH - 116 * m.sY) / 5);
-            ctx.strokeStyle = packet % 2 ? '#00DCE8' : '#7FE9F4';
-            ctx.lineWidth = Math.max(0.7, 0.8 * m.sX);
+        // Only a few faint synthesis guide rails.
+        ctx.globalAlpha = 0.055;
+        ctx.strokeStyle = '#00DCE8';
+        ctx.lineWidth = Math.max(0.7, 0.75 * m.sX);
+
+        for (let i = 1; i <= 5; i++) {
+            const y = innerY + (innerH * i) / 6;
             ctx.beginPath();
-            ctx.moveTo(px - 30 * m.sX, py);
-            ctx.lineTo(px, py);
+            ctx.moveTo(innerX + 28 * m.sX, y);
+            ctx.lineTo(innerX + innerW - 28 * m.sX, y);
             ctx.stroke();
-            ctx.fillStyle = packet % 2 ? '#FFE600' : '#00EAF2';
-            ctx.fillRect(px, py - 1.5 * m.sY, 3 * m.sX, 3 * m.sY);
         }
 
-        ctx.globalAlpha = 0.09;
-        ctx.strokeStyle = '#FFE600';
-        ctx.lineWidth = 1 * m.sX;
-        const watermarkX = m.arenaX + m.arenaW * 0.5;
-        const watermarkY = m.arenaY + m.arenaH * 0.56;
+        // Quiet central payload seed: a sandbox "virus" being assembled.
+        const coreX = innerX + innerW * 0.5;
+        const coreY = innerY + innerH * 0.54;
+        const corePulse = 0.5 + 0.5 * Math.sin(this.animTick * 0.025);
+
+        ctx.globalAlpha = 0.045 + corePulse * 0.025;
+        ctx.strokeStyle = '#77EDFF';
+        ctx.lineWidth = Math.max(0.7, 0.9 * m.sX);
+
         for (let ring = 0; ring < 3; ring++) {
             ctx.beginPath();
-            ctx.arc(watermarkX, watermarkY, (38 + ring * 28 + Math.sin(this.animTick * 0.025 + ring) * 1.5) * m.sY, 0, Math.PI * 2);
+            ctx.arc(
+                coreX,
+                coreY,
+                (38 + ring * 28 + corePulse * 2) * m.sY,
+                0,
+                Math.PI * 2
+            );
             ctx.stroke();
         }
-        for (let i = 0; i < 8; i++) {
-            const a = (Math.PI * 2 * i) / 8 + this.animTick * 0.004;
+
+        // A small rotating molecular/viral structure.
+        for (let i = 0; i < 6; i++) {
+            const angle =
+                (Math.PI * 2 * i) / 6 +
+                this.animTick * 0.0035;
+
+            const orbit = (74 + (i % 2) * 24) * m.sY;
+            const nodeX = coreX + Math.cos(angle) * orbit;
+            const nodeY = coreY + Math.sin(angle) * orbit;
+
+            ctx.globalAlpha = 0.04;
+            ctx.strokeStyle = i % 2 ? '#00F0FF' : '#FFE600';
             ctx.beginPath();
-            ctx.moveTo(watermarkX + Math.cos(a) * 28 * m.sX, watermarkY + Math.sin(a) * 28 * m.sY);
-            ctx.lineTo(watermarkX + Math.cos(a) * 96 * m.sX, watermarkY + Math.sin(a) * 96 * m.sY);
+            ctx.moveTo(coreX, coreY);
+            ctx.lineTo(nodeX, nodeY);
             ctx.stroke();
+
+            ctx.globalAlpha = 0.08 + corePulse * 0.035;
+            ctx.fillStyle =
+                i % 3 === 0 ? '#FF557E' :
+                i % 3 === 1 ? '#00F0FF' :
+                '#FFE600';
+
+            ctx.beginPath();
+            ctx.arc(
+                nodeX,
+                nodeY,
+                (2 + corePulse * 1.2) * m.sY,
+                0,
+                Math.PI * 2
+            );
+            ctx.fill();
         }
+
+        // Low-opacity code snippets drift through the sandbox like captured
+        // packets. Their opacity is deliberately below the node visuals.
+        const snippets = [
+            '0101',
+            '2^n',
+            'MERGE',
+            '0x20',
+            'NODE',
+            'MASK',
+            '0010',
+            'ALLOC',
+        ];
+
+        ctx.font = 'bold ' + (5.0 * m.sY).toFixed(1) + 'px ' + primaryFont;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+
+        for (let i = 0; i < snippets.length; i++) {
+            const travelW = innerW + 120 * m.sX;
+            const travel = (
+                pseudo(i, 10) * travelW +
+                this.animTick * (0.018 + pseudo(i, 11) * 0.025) * m.sX
+            ) % travelW;
+
+            const x = innerX - 60 * m.sX + travel;
+            const y = innerY + (0.15 + pseudo(i, 12) * 0.72) * innerH;
+
+            ctx.globalAlpha = 0.022 + pseudo(i, 13) * 0.035;
+            ctx.fillStyle =
+                i % 4 === 0 ? '#FFE600' :
+                i % 4 === 1 ? '#FF6B91' :
+                '#65DCEA';
+
+            ctx.fillText(snippets[i], x, y);
+        }
+
+        // A few tiny floating "code chips" rather than a full lattice.
+        for (let i = 0; i < 7; i++) {
+            const x = innerX + (0.08 + pseudo(i, 14) * 0.84) * innerW;
+            const y = innerY + (0.10 + pseudo(i, 15) * 0.80) * innerH;
+            const w = (12 + pseudo(i, 16) * 28) * m.sX;
+            const h = (3 + pseudo(i, 17) * 4) * m.sY;
+
+            ctx.globalAlpha = 0.025 + pseudo(i, 18) * 0.025;
+            ctx.fillStyle = i % 3 === 0 ? '#FF315F' : '#00F0FF';
+            this._fillChamferRect(
+                ctx,
+                x - w * 0.5,
+                y - h * 0.5,
+                w,
+                h,
+                Math.max(1, 1.5 * m.sX)
+            );
+        }
+
+        ctx.globalAlpha = 1;
         ctx.restore();
 
         const railTop = m.arenaY + 36 * m.sY;
         const railBottom = m.arenaY + m.arenaH - 14 * m.sY;
-        [m.arenaX + 12 * m.sX, m.arenaX + m.arenaW - 12 * m.sX].forEach((rx) => {
+
+        [
+            m.arenaX + 12 * m.sX,
+            m.arenaX + m.arenaW - 12 * m.sX,
+        ].forEach((rx) => {
             ctx.fillStyle = '#52636B';
-            ctx.fillRect(rx - 3 * m.sX, railTop, 6 * m.sX, railBottom - railTop);
-            for (let i = 0; i < 3; i++) this._drawFastener(ctx, rx, railTop + (railBottom - railTop) * (i / 2), 3.4 * m.sX, m);
+            ctx.fillRect(
+                rx - 3 * m.sX,
+                railTop,
+                6 * m.sX,
+                railBottom - railTop
+            );
+
+            for (let i = 0; i < 3; i++) {
+                this._drawFastener(
+                    ctx,
+                    rx,
+                    railTop + (railBottom - railTop) * (i / 2),
+                    3.4 * m.sX,
+                    m
+                );
+            }
         });
+
         ctx.restore();
     }
 
@@ -1619,8 +3050,15 @@ class IP2LiveSubnetSimulatorGameplayScreen extends Scene.Base {
             const bayY = Number.isFinite(s.bayY) ? s.bayY : s.y - bayH * 0.5;
             const hasResult = !!s.result && (s.resultTimer || 0) > 0;
             const isCorrect = s.result === 'correct';
-            const hover = this.hoverSlotKey === s.key;
-            const accent = hasResult ? (isCorrect ? '#76FF93' : '#FF315F') : (hover ? '#FFE600' : '#00EAF2');
+            const locked = this._isTutorialHostSlotLocked(s.key);
+            const hover = !locked && this.hoverSlotKey === s.key;
+            const accent = locked
+                ? '#4F5B63'
+                : (
+                    hasResult
+                        ? (isCorrect ? '#76FF93' : '#FF315F')
+                        : (hover ? '#FFE600' : '#00EAF2')
+                );
             if (hasResult) {
                 const glow = ctx.createRadialGradient(s.x, s.y, s.r * 0.2, s.x, s.y, s.r * 2.4);
                 glow.addColorStop(0, isCorrect ? 'rgba(118,255,147,0.46)' : 'rgba(255,49,95,0.45)');
@@ -1646,9 +3084,11 @@ class IP2LiveSubnetSimulatorGameplayScreen extends Scene.Base {
             const tabY = bayY - 7 * m.sY;
             const tabW = bayW - 20 * m.sX;
             const tabH = 20 * m.sY;
-            ctx.fillStyle = i % 2 === 0 ? '#00DCE8' : '#FFE600';
+            ctx.fillStyle = locked
+                ? '#5B646A'
+                : (i % 2 === 0 ? '#00DCE8' : '#FFE600');
             this._fillChamferRect(ctx, tabX, tabY, tabW, tabH, 5 * m.sX);
-            ctx.fillStyle = '#071015';
+            ctx.fillStyle = locked ? '#D5DBDE' : '#071015';
             ctx.font = 'bold ' + (8.6 * m.sY).toFixed(1) + 'px ' + primaryFont;
             ctx.textAlign = 'center';
             ctx.textBaseline = 'middle';
@@ -1684,13 +3124,37 @@ class IP2LiveSubnetSimulatorGameplayScreen extends Scene.Base {
 
             if (!s.ballId) {
                 const drag = this._dragBall();
-                const canDrop = hover && drag && !drag.minus && !drag.duplicate;
-                this._drawDropArrow(ctx, s.x, s.y - s.r - 2 * m.sY, canDrop ? '#FFE600' : '#00EAF2', i, m);
-                ctx.fillStyle = canDrop ? '#FFE600' : '#78909A';
+                const canDrop =
+                    !locked &&
+                    hover &&
+                    drag &&
+                    !drag.minus &&
+                    !drag.duplicate;
+
+                this._drawDropArrow(
+                    ctx,
+                    s.x,
+                    s.y - s.r - 2 * m.sY,
+                    locked ? '#59656D' : (canDrop ? '#FFE600' : '#00EAF2'),
+                    i,
+                    m
+                );
+
+                ctx.fillStyle = locked
+                    ? '#7A858B'
+                    : (canDrop ? '#FFE600' : '#78909A');
+
                 ctx.font = 'bold ' + (6.5 * m.sY).toFixed(1) + 'px ' + monoFont;
                 ctx.textAlign = 'center';
                 ctx.textBaseline = 'middle';
-                ctx.fillText(canDrop ? String(drag.value) : 'DROP NODE', s.x, s.y + 2 * m.sY);
+
+                ctx.fillText(
+                    locked
+                        ? 'LOCKED // SUBNETS FIRST'
+                        : (canDrop ? String(drag.value) : 'DROP NODE'),
+                    s.x,
+                    s.y + 2 * m.sY
+                );
             }
 
             this._drawFastener(ctx, bayX + 10 * m.sX, bayY + bayH - 10 * m.sY, 2.8 * m.sX, m);
@@ -1741,70 +3205,666 @@ class IP2LiveSubnetSimulatorGameplayScreen extends Scene.Base {
         ctx.fillText(text, x + w * 0.5, y + h * 0.66);
     }
 
-    _drawSubnetToken(ctx, ball, radius, m) {
+    _valueVisualStyle(value) {
+        const n = Math.max(0, Number(value) || 0);
+
+        const styles = {
+            2: {
+                accent: '#64E8FF',
+                accent2: '#0B8AA7',
+                face: '#102B36',
+                edge: '#041118',
+                sides: 0,
+                pattern: 'split',
+            },
+            4: {
+                accent: '#70FFC3',
+                accent2: '#198A66',
+                face: '#113229',
+                edge: '#04140F',
+                sides: 6,
+                pattern: 'quad',
+            },
+            8: {
+                accent: '#FFE65A',
+                accent2: '#A88700',
+                face: '#332C10',
+                edge: '#151003',
+                sides: 8,
+                pattern: 'segments',
+            },
+            16: {
+                accent: '#FFAA55',
+                accent2: '#A84E18',
+                face: '#362113',
+                edge: '#160A04',
+                sides: 0,
+                pattern: 'orbit',
+            },
+            32: {
+                accent: '#FF628E',
+                accent2: '#9E244B',
+                face: '#351522',
+                edge: '#15060C',
+                sides: 8,
+                pattern: 'cross',
+            },
+            64: {
+                accent: '#C48BFF',
+                accent2: '#633AA6',
+                face: '#28183A',
+                edge: '#0D0616',
+                sides: 6,
+                pattern: 'triad',
+            },
+            128: {
+                accent: '#EAF7FF',
+                accent2: '#6D8BA0',
+                face: '#26323A',
+                edge: '#091014',
+                sides: 10,
+                pattern: 'crown',
+            },
+        };
+
+        return styles[n] || {
+            accent: '#6EEBFF',
+            accent2: '#14788E',
+            face: '#16313B',
+            edge: '#061218',
+            sides: 0,
+            pattern: 'split',
+        };
+    }
+
+    _tracePolygon(ctx, x, y, radius, sides, rotation) {
+        const count = Math.max(3, Number(sides) || 6);
+        const rot = Number(rotation) || 0;
+
+        ctx.beginPath();
+        for (let i = 0; i < count; i++) {
+            const a = rot + (Math.PI * 2 * i) / count;
+            const px = x + Math.cos(a) * radius;
+            const py = y + Math.sin(a) * radius;
+
+            if (i === 0) ctx.moveTo(px, py);
+            else ctx.lineTo(px, py);
+        }
+        ctx.closePath();
+    }
+
+    _drawValuePattern(ctx, x, y, radius, value, style, m) {
+        const pattern = style.pattern;
+        const accent = style.accent;
+        const secondary = style.accent2;
+        const tick = this.animTick || 0;
+
+        ctx.save();
+        ctx.strokeStyle = accent;
+        ctx.fillStyle = accent;
+        ctx.lineWidth = Math.max(1, 1.15 * m.sX);
+        ctx.globalAlpha = 0.5;
+
+        if (pattern === 'split') {
+            // 2: two opposing data rails.
+            for (let side = -1; side <= 1; side += 2) {
+                ctx.beginPath();
+                ctx.moveTo(x + side * radius * 0.48, y - radius * 0.45);
+                ctx.lineTo(x + side * radius * 0.69, y - radius * 0.18);
+                ctx.lineTo(x + side * radius * 0.69, y + radius * 0.18);
+                ctx.lineTo(x + side * radius * 0.48, y + radius * 0.45);
+                ctx.stroke();
+            }
+        } else if (pattern === 'quad') {
+            // 4: four corner nodes.
+            for (let i = 0; i < 4; i++) {
+                const a = Math.PI * 0.25 + i * Math.PI * 0.5;
+                ctx.beginPath();
+                ctx.arc(
+                    x + Math.cos(a) * radius * 0.66,
+                    y + Math.sin(a) * radius * 0.66,
+                    2.1 * m.sY,
+                    0,
+                    Math.PI * 2
+                );
+                ctx.fill();
+            }
+        } else if (pattern === 'segments') {
+            // 8: broken octagonal ring.
+            for (let i = 0; i < 8; i++) {
+                const a0 = -Math.PI / 2 + i * Math.PI / 4 + 0.06;
+                const a1 = a0 + Math.PI / 4 - 0.12;
+                ctx.beginPath();
+                ctx.arc(x, y, radius * 0.66, a0, a1);
+                ctx.stroke();
+            }
+        } else if (pattern === 'orbit') {
+            // 16: two counter-rotating orbital arcs.
+            ctx.strokeStyle = secondary;
+            ctx.beginPath();
+            ctx.arc(
+                x,
+                y,
+                radius * 0.62,
+                tick * 0.015,
+                tick * 0.015 + Math.PI * 0.85
+            );
+            ctx.stroke();
+
+            ctx.strokeStyle = accent;
+            ctx.beginPath();
+            ctx.arc(
+                x,
+                y,
+                radius * 0.73,
+                -tick * 0.012 + Math.PI,
+                -tick * 0.012 + Math.PI * 1.82
+            );
+            ctx.stroke();
+        } else if (pattern === 'cross') {
+            // 32: crosshair processor channels.
+            ctx.globalAlpha = 0.42;
+            for (let i = 0; i < 4; i++) {
+                const a = i * Math.PI * 0.5;
+                ctx.beginPath();
+                ctx.moveTo(
+                    x + Math.cos(a) * radius * 0.48,
+                    y + Math.sin(a) * radius * 0.48
+                );
+                ctx.lineTo(
+                    x + Math.cos(a) * radius * 0.77,
+                    y + Math.sin(a) * radius * 0.77
+                );
+                ctx.stroke();
+            }
+        } else if (pattern === 'triad') {
+            // 64: triangular lattice.
+            ctx.strokeStyle = secondary;
+            ctx.globalAlpha = 0.48;
+            this._tracePolygon(ctx, x, y, radius * 0.56, 3, -Math.PI / 2);
+            ctx.stroke();
+            this._tracePolygon(ctx, x, y, radius * 0.68, 3, Math.PI / 2);
+            ctx.stroke();
+        } else if (pattern === 'crown') {
+            // 128: high-value crown/tick ring.
+            ctx.globalAlpha = 0.55;
+            for (let i = 0; i < 8; i++) {
+                const a = i * Math.PI / 4 + tick * 0.002;
+                ctx.beginPath();
+                ctx.moveTo(
+                    x + Math.cos(a) * radius * 0.69,
+                    y + Math.sin(a) * radius * 0.69
+                );
+                ctx.lineTo(
+                    x + Math.cos(a) * radius * 0.86,
+                    y + Math.sin(a) * radius * 0.86
+                );
+                ctx.stroke();
+            }
+        }
+
+        ctx.restore();
+    }
+
+    _drawDuplicateControl(ctx, ball, radius, m) {
         const primaryFont = this._uiPrimaryFont();
-        const accent = ball.minus ? '#FF4D71' : (ball.duplicate ? '#78F5C0' : '#6EEBFF');
-        const accentGlow = ball.minus ? 'rgba(255,49,95,0.32)' : (ball.duplicate ? 'rgba(118,255,176,0.3)' : 'rgba(63,221,245,0.3)');
-        const pulse = 0.78 + 0.22 * Math.sin(this.animTick * 0.12 + ball.id * 0.51);
+        const x = ball.x;
+        const y = ball.y;
+        const outerR = Math.max(radius * 1.04, 33 * m.sX);
+        const innerR = outerR * 0.77;
+        const uses = Math.max(0, Math.min(3, Number(ball.usesLeft) || 0));
+        const disabled = uses <= 0;
+        const pulse = 0.5 + 0.5 * Math.sin(this.animTick * 0.10 + ball.id);
+
+        const accent = disabled ? '#65747A' : '#70FFC3';
+        const accentSoft = disabled ? 'rgba(101,116,122,0.24)' : 'rgba(112,255,195,0.28)';
+        const bright = disabled ? '#A6B0B4' : '#DFFFF0';
+
+        ctx.save();
+
+        // Soft circular aura.
+        const aura = ctx.createRadialGradient(
+            x, y, outerR * 0.45,
+            x, y, outerR * 1.55
+        );
+        aura.addColorStop(0, disabled ? 'rgba(95,110,116,0.10)' : 'rgba(112,255,195,0.18)');
+        aura.addColorStop(0.58, disabled ? 'rgba(95,110,116,0.05)' : 'rgba(55,220,161,0.08)');
+        aura.addColorStop(1, 'rgba(0,0,0,0)');
+
+        ctx.globalAlpha = 0.65;
+        ctx.fillStyle = aura;
+        ctx.beginPath();
+        ctx.arc(x, y, outerR * 1.55, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.globalAlpha = 1;
+
+        // Rear mechanical disc.
+        ctx.shadowColor = 'rgba(0,0,0,0.82)';
+        ctx.shadowBlur = 8 * m.sX;
+        ctx.shadowOffsetY = 3 * m.sY;
+
+        const rear = ctx.createRadialGradient(
+            x - outerR * 0.28,
+            y - outerR * 0.32,
+            outerR * 0.08,
+            x,
+            y,
+            outerR
+        );
+        rear.addColorStop(0, disabled ? '#263136' : '#214A3D');
+        rear.addColorStop(0.52, '#07120F');
+        rear.addColorStop(1, '#020807');
+
+        ctx.fillStyle = rear;
+        ctx.beginPath();
+        ctx.arc(x, y, outerR, 0, Math.PI * 2);
+        ctx.fill();
+
+        ctx.shadowBlur = 0;
+        ctx.shadowOffsetY = 0;
+
+        // Outer energized rings.
+        ctx.strokeStyle = accent;
+        ctx.lineWidth = Math.max(1, 2 * m.sX);
+        ctx.shadowColor = accent;
+        ctx.shadowBlur = disabled ? 2 * m.sX : (5 + pulse * 5) * m.sX;
+        ctx.beginPath();
+        ctx.arc(x, y, outerR - 1.5 * m.sX, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.shadowBlur = 0;
+
+        ctx.strokeStyle = accentSoft;
+        ctx.lineWidth = Math.max(1, 1 * m.sX);
+        ctx.beginPath();
+        ctx.arc(x, y, innerR, 0, Math.PI * 2);
+        ctx.stroke();
+
+        // Three radial charge segments. Lit segments equal remaining uses.
+        const chargeStart = -Math.PI * 0.86;
+        const chargeEnd = -Math.PI * 0.14;
+        const chargeSpan = (chargeEnd - chargeStart) / 3;
+
+        for (let i = 0; i < 3; i++) {
+            const a0 = chargeStart + i * chargeSpan + 0.035;
+            const a1 = chargeStart + (i + 1) * chargeSpan - 0.035;
+            const active = i < uses;
+
+            ctx.strokeStyle = active ? '#FFE600' : 'rgba(112,255,195,0.16)';
+            ctx.lineWidth = Math.max(2, 3.6 * m.sX);
+            ctx.lineCap = 'butt';
+            ctx.beginPath();
+            ctx.arc(x, y, outerR - 6 * m.sX, a0, a1);
+            ctx.stroke();
+        }
+
+        // Side registration ticks give the circular control a machined look.
+        ctx.globalAlpha = disabled ? 0.24 : 0.50;
+        ctx.strokeStyle = accent;
+        ctx.lineWidth = Math.max(1, 1.1 * m.sX);
+
+        for (let i = 0; i < 8; i++) {
+            const a = (Math.PI * 2 * i) / 8 + Math.PI / 8;
+            const r0 = outerR * 0.83;
+            const r1 = outerR * 0.93;
+
+            ctx.beginPath();
+            ctx.moveTo(x + Math.cos(a) * r0, y + Math.sin(a) * r0);
+            ctx.lineTo(x + Math.cos(a) * r1, y + Math.sin(a) * r1);
+            ctx.stroke();
+        }
+
+        ctx.globalAlpha = 1;
+
+        // Central linked-cell Duplicate symbol.
+        const iconY = y - 8 * m.sY;
+        const cellR = 6.3 * m.sY;
+        const cellGap = 6.2 * m.sX;
+
+        ctx.strokeStyle = bright;
+        ctx.lineWidth = Math.max(1, 1.55 * m.sX);
+        ctx.shadowColor = disabled ? 'transparent' : '#70FFC3';
+        ctx.shadowBlur = disabled ? 0 : 4 * m.sX;
+
+        ctx.beginPath();
+        ctx.arc(x - cellGap, iconY, cellR, 0, Math.PI * 2);
+        ctx.stroke();
+
+        ctx.beginPath();
+        ctx.arc(x + cellGap, iconY, cellR, 0, Math.PI * 2);
+        ctx.stroke();
+
+        ctx.beginPath();
+        ctx.moveTo(x - 1.7 * m.sX, iconY);
+        ctx.lineTo(x + 1.7 * m.sX, iconY);
+        ctx.stroke();
+
+        ctx.shadowBlur = 0;
+
+        // Tool label.
+        ctx.fillStyle = disabled ? 'rgba(180,190,194,0.72)' : '#DFFFF0';
+        ctx.font = 'bold ' + (5.0 * m.sY).toFixed(1) + 'px ' + primaryFont;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText('DUPLICATE', x, y + 5 * m.sY);
+
+        // Clear numeric remaining-use readout.
+        const badgeY = y + 18 * m.sY;
+        ctx.fillStyle = disabled ? 'rgba(255,91,126,0.10)' : 'rgba(255,230,0,0.10)';
+        ctx.beginPath();
+        ctx.arc(x, badgeY, 10.5 * m.sY, 0, Math.PI * 2);
+        ctx.fill();
+
+        ctx.strokeStyle = disabled ? '#FF668C' : '#FFE600';
+        ctx.lineWidth = Math.max(1, 1.2 * m.sX);
+        ctx.beginPath();
+        ctx.arc(x, badgeY, 10.5 * m.sY, 0, Math.PI * 2);
+        ctx.stroke();
+
+        ctx.fillStyle = disabled ? '#FF8CA9' : '#FFE600';
+        ctx.font = 'bold ' + (8.2 * m.sY).toFixed(1) + 'px ' + primaryFont;
+        ctx.fillText(String(uses), x, badgeY - 1.5 * m.sY);
+
+        ctx.font = 'bold ' + (3.7 * m.sY).toFixed(1) + 'px ' + primaryFont;
+        ctx.fillText(uses === 1 ? 'USE' : 'USES', x, badgeY + 5.5 * m.sY);
+
+        ctx.restore();
+    }
+
+    _drawMinusControl(ctx, ball, radius, m) {
+        const primaryFont = this._uiPrimaryFont();
+        const x = ball.x;
+        const y = ball.y;
+        const outerR = Math.max(radius * 1.04, 33 * m.sX);
+        const innerR = outerR * 0.77;
+        const pulse = 0.5 + 0.5 * Math.sin(this.animTick * 0.12 + ball.id);
+
+        ctx.save();
+
+        // Red reserve-tool aura.
+        const aura = ctx.createRadialGradient(
+            x, y, outerR * 0.4,
+            x, y, outerR * 1.55
+        );
+        aura.addColorStop(0, 'rgba(255,49,95,0.18)');
+        aura.addColorStop(0.58, 'rgba(255,49,95,0.07)');
+        aura.addColorStop(1, 'rgba(0,0,0,0)');
+
+        ctx.globalAlpha = 0.72;
+        ctx.fillStyle = aura;
+        ctx.beginPath();
+        ctx.arc(x, y, outerR * 1.55, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.globalAlpha = 1;
+
+        // Main circular cartridge chassis.
+        ctx.shadowColor = 'rgba(0,0,0,0.84)';
+        ctx.shadowBlur = 8 * m.sX;
+        ctx.shadowOffsetY = 3 * m.sY;
+
+        const shell = ctx.createRadialGradient(
+            x - outerR * 0.28,
+            y - outerR * 0.30,
+            outerR * 0.08,
+            x,
+            y,
+            outerR
+        );
+        shell.addColorStop(0, '#5A1A30');
+        shell.addColorStop(0.46, '#16070D');
+        shell.addColorStop(1, '#060204');
+
+        ctx.fillStyle = shell;
+        ctx.beginPath();
+        ctx.arc(x, y, outerR, 0, Math.PI * 2);
+        ctx.fill();
+
+        ctx.shadowBlur = 0;
+        ctx.shadowOffsetY = 0;
+
+        ctx.strokeStyle = '#FF557C';
+        ctx.lineWidth = Math.max(1, 2 * m.sX);
+        ctx.shadowColor = '#FF315F';
+        ctx.shadowBlur = (5 + pulse * 6) * m.sX;
+        ctx.beginPath();
+        ctx.arc(x, y, outerR - 1.5 * m.sX, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.shadowBlur = 0;
+
+        ctx.strokeStyle = 'rgba(255,143,171,0.28)';
+        ctx.lineWidth = Math.max(1, 1 * m.sX);
+        ctx.beginPath();
+        ctx.arc(x, y, innerR, 0, Math.PI * 2);
+        ctx.stroke();
+
+        // Repeating subtract chevrons around the ring.
+        ctx.strokeStyle = '#FF668C';
+        ctx.lineWidth = Math.max(1, 1.1 * m.sX);
+        ctx.globalAlpha = 0.42 + pulse * 0.20;
+
+        for (let i = 0; i < 6; i++) {
+            const a = (Math.PI * 2 * i) / 6 - Math.PI / 2;
+            const tx = x + Math.cos(a) * outerR * 0.82;
+            const ty = y + Math.sin(a) * outerR * 0.82;
+            const tangentX = -Math.sin(a);
+            const tangentY = Math.cos(a);
+            const radialX = Math.cos(a);
+            const radialY = Math.sin(a);
+
+            ctx.beginPath();
+            ctx.moveTo(
+                tx - tangentX * 3.8 * m.sX - radialX * 2.2 * m.sX,
+                ty - tangentY * 3.8 * m.sY - radialY * 2.2 * m.sY
+            );
+            ctx.lineTo(tx, ty);
+            ctx.lineTo(
+                tx + tangentX * 3.8 * m.sX - radialX * 2.2 * m.sX,
+                ty + tangentY * 3.8 * m.sY - radialY * 2.2 * m.sY
+            );
+            ctx.stroke();
+        }
+
+        ctx.globalAlpha = 1;
+
+        // Central -2 value.
+        ctx.shadowColor = '#FF315F';
+        ctx.shadowBlur = 5 * m.sX;
+        ctx.fillStyle = '#FFF5F8';
+        ctx.font = 'bold ' + (16.5 * m.sY).toFixed(1) + 'px ' + primaryFont;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText('-2', x, y - 7 * m.sY);
+        ctx.shadowBlur = 0;
+
+        // Infinite-use badge. The actual gameplay helper is never consumed.
+        const badgeY = y + 15 * m.sY;
+
+        ctx.fillStyle = 'rgba(255,49,95,0.11)';
+        ctx.beginPath();
+        ctx.arc(x, badgeY, 11.5 * m.sY, 0, Math.PI * 2);
+        ctx.fill();
+
+        ctx.strokeStyle = '#FF668C';
+        ctx.lineWidth = Math.max(1, 1.2 * m.sX);
+        ctx.beginPath();
+        ctx.arc(x, badgeY, 11.5 * m.sY, 0, Math.PI * 2);
+        ctx.stroke();
+
+        ctx.fillStyle = '#FFD8E3';
+        ctx.font = 'bold ' + (10.3 * m.sY).toFixed(1) + 'px ' + primaryFont;
+        ctx.fillText('∞', x, badgeY - 1.5 * m.sY);
+
+        ctx.font = 'bold ' + (3.2 * m.sY).toFixed(1) + 'px ' + primaryFont;
+        ctx.fillStyle = 'rgba(255,190,205,0.92)';
+        ctx.fillText('USES', x, badgeY + 6.2 * m.sY);
+
+        ctx.restore();
+    }
+
+    _drawSubnetToken(ctx, ball, radius, m) {
+        if (ball.duplicate) {
+            this._drawDuplicateControl(ctx, ball, radius, m);
+            return;
+        }
+
+        if (ball.minus) {
+            this._drawMinusControl(ctx, ball, radius, m);
+            return;
+        }
+
+        const primaryFont = this._uiPrimaryFont();
+        const style = this._valueVisualStyle(ball.value);
+        const pulse = 0.76 + 0.24 * Math.sin(this.animTick * 0.12 + ball.id * 0.51);
         const x = ball.x;
         const y = ball.y;
 
         ctx.save();
-        const glow = ctx.createRadialGradient(x, y, radius * 0.42, x, y, radius * 1.45);
-        glow.addColorStop(0, accentGlow);
+
+        const glow = ctx.createRadialGradient(
+            x,
+            y,
+            radius * 0.34,
+            x,
+            y,
+            radius * 1.55
+        );
+        glow.addColorStop(0, style.accent + '55');
+        glow.addColorStop(0.55, style.accent + '20');
         glow.addColorStop(1, 'rgba(0,0,0,0)');
+
         ctx.globalAlpha = 0.58 + pulse * 0.2;
         ctx.fillStyle = glow;
         ctx.beginPath();
-        ctx.arc(x, y, radius * 1.45, 0, Math.PI * 2);
+        ctx.arc(x, y, radius * 1.55, 0, Math.PI * 2);
         ctx.fill();
         ctx.globalAlpha = 1;
 
         ctx.shadowColor = 'rgba(0,0,0,0.82)';
         ctx.shadowBlur = 7 * m.sX;
         ctx.shadowOffsetY = 3 * m.sY;
-        const face = ctx.createRadialGradient(x - radius * 0.25, y - radius * 0.28, radius * 0.08, x, y, radius);
-        face.addColorStop(0, ball.minus ? '#34202A' : (ball.duplicate ? '#14312D' : '#16313B'));
-        face.addColorStop(0.58, '#0B222A');
-        face.addColorStop(1, '#061218');
+
+        const face = ctx.createRadialGradient(
+            x - radius * 0.28,
+            y - radius * 0.3,
+            radius * 0.08,
+            x,
+            y,
+            radius
+        );
+        face.addColorStop(0, style.face);
+        face.addColorStop(0.58, '#0A171D');
+        face.addColorStop(1, style.edge);
+
         ctx.fillStyle = face;
-        ctx.beginPath();
-        ctx.arc(x, y, radius, 0, Math.PI * 2);
-        ctx.fill();
+
+        if (style.sides > 2) {
+            this._tracePolygon(
+                ctx,
+                x,
+                y,
+                radius,
+                style.sides,
+                -Math.PI / 2
+            );
+            ctx.fill();
+        } else {
+            ctx.beginPath();
+            ctx.arc(x, y, radius, 0, Math.PI * 2);
+            ctx.fill();
+        }
+
         ctx.shadowColor = 'transparent';
 
-        ctx.strokeStyle = ball.minus ? 'rgba(255,77,113,0.42)' : (ball.duplicate ? 'rgba(120,245,192,0.42)' : 'rgba(93,199,218,0.5)');
+        // Outer value-specific chassis.
+        ctx.strokeStyle = style.accent2;
         ctx.lineWidth = 1.1 * m.sX;
-        ctx.beginPath();
-        ctx.arc(x, y, radius * 1.08, 0, Math.PI * 2);
-        ctx.stroke();
 
-        ctx.strokeStyle = accent;
-        ctx.lineWidth = Math.max(1.8, 2.4 * m.sX);
+        if (style.sides > 2) {
+            this._tracePolygon(
+                ctx,
+                x,
+                y,
+                radius * 1.07,
+                style.sides,
+                -Math.PI / 2
+            );
+            ctx.stroke();
+        } else {
+            ctx.beginPath();
+            ctx.arc(x, y, radius * 1.08, 0, Math.PI * 2);
+            ctx.stroke();
+        }
+
+        ctx.strokeStyle = style.accent;
+        ctx.lineWidth = Math.max(1.8, 2.35 * m.sX);
         ctx.globalAlpha = 0.78 + pulse * 0.2;
+
+        if (style.sides > 2) {
+            this._tracePolygon(
+                ctx,
+                x,
+                y,
+                radius * 0.87,
+                style.sides,
+                -Math.PI / 2
+            );
+            ctx.stroke();
+        } else {
+            ctx.beginPath();
+            ctx.arc(x, y, radius * 0.87, 0, Math.PI * 2);
+            ctx.stroke();
+        }
+
+        ctx.globalAlpha = 1;
+        this._drawValuePattern(ctx, x, y, radius, ball.value, style, m);
+
+        // Central dark value window keeps the number legible over every pattern.
+        const coreR = radius * 0.45;
+        const core = ctx.createRadialGradient(
+            x - coreR * 0.25,
+            y - coreR * 0.28,
+            coreR * 0.1,
+            x,
+            y,
+            coreR
+        );
+        core.addColorStop(0, 'rgba(20,29,35,0.96)');
+        core.addColorStop(1, 'rgba(2,7,10,0.98)');
+        ctx.fillStyle = core;
         ctx.beginPath();
-        ctx.arc(x, y, radius * 0.87, 0, Math.PI * 2);
+        ctx.arc(x, y, coreR, 0, Math.PI * 2);
+        ctx.fill();
+
+        ctx.strokeStyle = style.accent;
+        ctx.globalAlpha = 0.62;
+        ctx.lineWidth = 1 * m.sX;
         ctx.stroke();
         ctx.globalAlpha = 1;
 
+        ctx.shadowColor = style.accent;
+        ctx.shadowBlur = 4 * m.sX;
+        ctx.fillStyle = '#F5FCFF';
+        const textPx = Math.max(
+            11 * m.sY,
+            Math.min(18 * m.sY, radius * 0.7)
+        );
+        ctx.font = 'bold ' + textPx.toFixed(1) + 'px ' + primaryFont;
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
-        if (ball.duplicate) {
-            ctx.strokeStyle = '#DFFFF0';
-            ctx.lineWidth = Math.max(1, 1.5 * m.sX);
-            ctx.beginPath();
-            ctx.arc(x - 5 * m.sX, y - 6 * m.sY, 6.5 * m.sY, 0, Math.PI * 2);
-            ctx.arc(x + 5 * m.sX, y - 6 * m.sY, 6.5 * m.sY, 0, Math.PI * 2);
-            ctx.stroke();
-            ctx.fillStyle = '#FFE600';
-            ctx.font = 'bold ' + Math.max(10 * m.sY, radius * 0.48).toFixed(1) + 'px ' + primaryFont;
-            ctx.fillText(String(Math.max(0, ball.usesLeft || 0)), x, y + 9 * m.sY);
-        } else {
-            ctx.fillStyle = '#F5FCFF';
-            const textPx = Math.max(11 * m.sY, Math.min(19 * m.sY, radius * 0.76));
-            ctx.font = 'bold ' + textPx.toFixed(1) + 'px ' + primaryFont;
-            ctx.fillText(ball.minus ? '-2' : String(ball.value), x, y);
-        }
+        ctx.fillText(String(ball.value), x, y + 0.4 * m.sY);
+        ctx.shadowBlur = 0;
+
+        // Tiny value-class marker. This makes equal numbers visually identical
+        // while different powers of two have a recognizable silhouette/pattern.
+        ctx.fillStyle = style.accent;
+        ctx.globalAlpha = 0.78;
+        ctx.font = 'bold ' + (4.4 * m.sY).toFixed(1) + 'px ' + primaryFont;
+        ctx.fillText(
+            'P' + String(Math.round(Math.log2(Math.max(1, ball.value)))),
+            x,
+            y + radius * 0.68
+        );
+
+        ctx.globalAlpha = 1;
         ctx.restore();
     }
 
@@ -2003,11 +4063,15 @@ class IP2LiveSubnetSimulatorGameplayScreen extends Scene.Base {
     }
 
     _uiPrimaryFont() {
-        return (IP2Live.Assets && IP2Live.Assets.nebulaLoaded) ? 'Nebula-Regular' : 'monospace';
+        return (IP2Live.Assets && IP2Live.Assets.oxaniumMediumLoaded)
+            ? 'Oxanium-Medium'
+            : 'sans-serif';
     }
 
     _uiMonoFont() {
-        return (IP2Live.Assets && IP2Live.Assets.nebulaLoaded) ? 'Nebula-Regular' : 'monospace';
+        return (IP2Live.Assets && IP2Live.Assets.oxaniumMediumLoaded)
+            ? 'Oxanium-Medium'
+            : 'sans-serif';
     }
 
     _uiTitleFont() {
@@ -2029,7 +4093,7 @@ class IP2LiveSubnetSimulatorGameplayScreen extends Scene.Base {
 }
 
 const SubnetSimulatorGameplayManager = {
-    VERSION: 'ip-subnetsim-gameplay-manager-20260816-03',
+    VERSION: 'ip-subnetsim-gameplay-manager-20260921-04',
     _active: false,
     _introShown: false,
     _activeAttempt: null,
@@ -2042,6 +4106,7 @@ const SubnetSimulatorGameplayManager = {
             objectiveId: 'solve_subnet_sim_01',
             title: 'SOLVE SUBNET SIMULATOR',
             label: 'Subnet Simulator',
+            timeSeconds: 180,
             targetTile: { x: 16, y: 0, z: 20 },
         },
     ],
@@ -2134,6 +4199,10 @@ const SubnetSimulatorGameplayManager = {
             mapId,
             targetMask: spec.targetMask,
             handoffKey: spec.handoffKey,
+            timeSeconds:
+                Number.isFinite(Number(spec.timeSeconds)) && Number(spec.timeSeconds) > 0
+                    ? Number(spec.timeSeconds)
+                    : 180,
             _fromObjective: true,
             enforceAttemptLimit: mapId === 8,
             maxAttempts: 3,
@@ -2243,19 +4312,31 @@ const SubnetSimulatorGameplayManager = {
         if (shouldShowIntro) this._introShown = true;
 
         const open = () => {
+            const configuredTimeSeconds =
+                Number.isFinite(Number(opts.timeSeconds)) && Number(opts.timeSeconds) > 0
+                    ? Number(opts.timeSeconds)
+                    : (
+                        opts.spec &&
+                        Number.isFinite(Number(opts.spec.timeSeconds)) &&
+                        Number(opts.spec.timeSeconds) > 0
+                            ? Number(opts.spec.timeSeconds)
+                            : 180
+                    );
+
             const screen = new IP2LiveSubnetSimulatorGameplayScreen({
                 targetMask: opts.targetMask,
                 handoffKey: opts.handoffKey,
                 mapId: opts.mapId,
                 questId: opts.questId,
                 objectiveId: opts.objectiveId,
+                timeSeconds: configuredTimeSeconds,
                 guidedTutorial: shouldShowIntro,
                 enforceAttemptLimit: !!opts.enforceAttemptLimit,
                 maxAttempts: opts.maxAttempts || 3,
                 onComplete: (result) => this._onComplete(opts, result),
                 onFailed: (result) => this._onFailed(opts, result),
                 onCancel: () => this._onCancel(opts),
-            });
+            }, configuredTimeSeconds);
 
             const openGameplay = () => {
                 this._playMusicZone('GAMEPLAY_1');
@@ -2341,7 +4422,9 @@ const SubnetSimulatorGameplayManager = {
         const finalizeExit = () => {
             if (Manager && Manager.Stack && typeof Manager.Stack.pop === 'function') Manager.Stack.pop();
             this._restoreStageMusic();
-            if (Number(opts.mapId || spec.mapId) === 8) this._sendBackToSubnetTutorial();
+            if (Number(opts.mapId || spec.mapId) === 8) {
+                this._sendBackToSubnetTutorial(result && result.reason);
+            }
             if (typeof opts.onFailed === 'function') opts.onFailed(result);
             if (IP2Live.GameManager && typeof IP2Live.GameManager.handleGameplayFailed === 'function') {
                 IP2Live.GameManager.handleGameplayFailed('ip_subnet_simulator', {
@@ -2356,15 +4439,18 @@ const SubnetSimulatorGameplayManager = {
             if (Manager && Manager.Stack) Manager.Stack.requestPaintHUD = true;
         };
 
+        const failedByTimeout = !!(result && result.reason === 'time_expired');
         if (!this._showLoadingScreen2({
             mode: 'replace',
             status: 'Loading Simulator Training',
-            detail: 'Retry budget exhausted - returning to the guided simulator',
+            detail: failedByTimeout
+                ? 'Signal window expired - returning to the guided simulator'
+                : 'Retry budget exhausted - returning to the guided simulator',
             onComplete: finalizeExit,
         })) finalizeExit();
     },
 
-    _sendBackToSubnetTutorial() {
+    _sendBackToSubnetTutorial(reason) {
         const qm = IP2Live.QuestManager;
         const questId = 'stage.8.cidr_chain.01';
         const panelObjectiveId = 'solve_cidr_chain_01_panel';
@@ -2384,9 +4470,13 @@ const SubnetSimulatorGameplayManager = {
                 completedObjectives: qm.completedObjectives[questId],
             });
         }
-        const tutorial = IP2Live.IPSubnetSimulatorTutorial;
-        if (tutorial && typeof tutorial.showAttemptReset === 'function') {
-            setTimeout(() => tutorial.showAttemptReset(), 220);
+        // The existing retry dialogue specifically says that three validation
+        // attempts were spent, so do not show that message for a timer failure.
+        if (reason !== 'time_expired') {
+            const tutorial = IP2Live.IPSubnetSimulatorTutorial;
+            if (tutorial && typeof tutorial.showAttemptReset === 'function') {
+                setTimeout(() => tutorial.showAttemptReset(), 220);
+            }
         }
     },
 
