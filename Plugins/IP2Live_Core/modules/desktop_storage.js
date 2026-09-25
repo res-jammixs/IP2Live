@@ -61,7 +61,6 @@ const IP2LiveDesktopStorage = {
                 this._initializeNodeStorage();
                 this.mode = 'desktop-node-fallback';
                 this.enabled = true;
-                await this._migrateLegacyNodeSaves();
             }
         }
 
@@ -165,18 +164,9 @@ const IP2LiveDesktopStorage = {
             const stored = await self.readCoreSave(slot);
             if (stored && stored.data) return stored.data;
 
-            const legacy = await self._originalPlatform.loadSave(slot, enginePath);
-            if (legacy) {
-                try {
-                    await self.writeCoreSave(slot, legacy, {
-                        enginePath: enginePath,
-                        migratedFromLegacy: true,
-                    });
-                } catch (error) {
-                    console.warn('[IP2Live] Legacy save loaded but could not be migrated:', error);
-                }
-            }
-            return legacy;
+            // An empty user slot stays empty. Packaged/editor saves are not
+            // player progress and must never seed a new installation.
+            return null;
         };
 
         // RPG Paper Maker reads settings-game.json after plugins load, but its

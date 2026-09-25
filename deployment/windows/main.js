@@ -35,9 +35,8 @@ if (!hasSingleInstanceLock) app.quit();
 const storage = new IP2LiveStorageService({
     rootPath: applicationRoot,
     appVersion: app.getVersion(),
-    legacySaveDirectories: [
-        path.join(__dirname, 'build', 'Saves'),
-    ],
+    // Packaged development saves must not seed a fresh player profile.
+    legacySaveDirectories: [],
 });
 
 const getBackendCachePath = () => path.join(app.getPath('userData'), 'gpu-backend');

@@ -5,6 +5,10 @@ const path = require('node:path');
 
 async function main() {
     const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'ip2live-storage-test-'));
+    const packagedSaveDirectory = path.join(tempRoot, 'empty-export', 'build', 'Saves');
+    fs.mkdirSync(packagedSaveDirectory, { recursive: true });
+    fs.copyFileSync(path.join(__dirname, 'fixtures', 'legacy-project-saves', '1.json'), path.join(packagedSaveDirectory, '1.json'));
+    let packagedSaveReads = 0;
     const source = fs.readFileSync(
         path.join(__dirname, '..', 'Plugins', 'IP2Live_Core', 'modules', 'desktop_storage.js'),
         'utf8'
@@ -28,7 +32,7 @@ async function main() {
             IS_DESKTOP: true,
             ROOT_DIRECTORY: './build/',
             registerSave: async () => { throw new Error('legacy writer should not run'); },
-            loadSave: async () => null,
+            loadSave: async () => { packagedSaveReads++; return { pv: 'bundled-development-save', currentMapId: 4 }; },
             fileExists: async (enginePath) => enginePath === './build/settings-game.json',
             loadFile: async (enginePath) => {
                 if (enginePath === './build/settings-game.json') return packagedSettings;
@@ -68,6 +72,9 @@ async function main() {
         assert.equal(storage.enabled, true);
         assert.equal(storage.mode, 'desktop-node-fallback');
         assert.equal(storage.rootPath, path.join(tempRoot, 'IP2Live'));
+        assert.equal(await Common.Platform.loadSave(1, './build/Saves/1.json'), null, 'fresh storage must not import the packaged development save');
+        assert.equal(packagedSaveReads, 0, 'empty user slots never fall back to packaged progress');
+        assert.equal(fs.existsSync(path.join(tempRoot, 'IP2Live', 'Saves', '1.json')), false);
 
         assert.equal(await Common.Platform.loadFile('./build/settings-game.json'), packagedSettings);
         await Common.Platform.writeFile('./build/settings-game.json', { 0: { 1: [40] }, 1: 2 });

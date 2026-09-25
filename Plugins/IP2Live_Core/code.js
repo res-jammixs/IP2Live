@@ -1429,6 +1429,7 @@ IP2Live.ScreenModulesReady = (async function () {
 
     // Load order matters: leaf screens first, main-menu last
     const screens = [
+        'menu-transition.js',
         'loading-screen.js',
         'loading-screen-2.js',
         'ar-diagnostic-rewind.js',
