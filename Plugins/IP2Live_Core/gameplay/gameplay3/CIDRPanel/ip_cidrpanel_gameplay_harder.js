@@ -374,7 +374,7 @@
                     adaptiveMinCIDR: opts.adaptiveMinCIDR,
                     adaptiveMaxCIDR: opts.adaptiveMaxCIDR,
                     tutorialMode,
-                    guidedTutorial: tutorialMode && shouldShowIntro,
+                    guidedTutorial: tutorialMode && (opts.tutorialReplay || shouldShowIntro),
                     enforceAttemptLimit: !tutorialMode,
                     maxAttempts: opts.maxAttempts || 3,
                     mapId,
@@ -386,7 +386,9 @@
                 });
                 const openGameplay = () => {
                     this._playMusicZone('GAMEPLAY_1');
-                    if (Manager && Manager.Stack && typeof Manager.Stack.replace === 'function') Manager.Stack.replace(screen);
+                if (opts.tutorialReplay) IP2Live.GameManager.prepareTutorialReplayScreen(screen, opts);
+                    if (opts.tutorialReplay && Manager && Manager.Stack) { Manager.Stack.push(screen); }
+                else if (Manager && Manager.Stack && typeof Manager.Stack.replace === 'function') Manager.Stack.replace(screen);
                     else if (Manager && Manager.Stack && typeof Manager.Stack.push === 'function') Manager.Stack.push(screen);
                 };
                 if (opts.useLoading !== false && this._showLoadingScreen2({
@@ -404,6 +406,7 @@
                     this._active = false;
                     this._activeAttempt = null;
                     console.warn('[IP2Live] CIDRPanelHarderGameplayManager failed to open gameplay:', e);
+                if (opts.tutorialReplay && IP2Live.GameManager) IP2Live.GameManager.finishTutorialReplay('ip_cidr_binary_panel_harder', opts, 'unavailable');
                 }
             };
             const tutorial = IP2Live.IPCIDRPanelHarderTutorial;
@@ -416,6 +419,7 @@
         },
 
         _onComplete(options, result) {
+        if (IP2Live.GameManager && IP2Live.GameManager.finishTutorialReplay && IP2Live.GameManager.finishTutorialReplay('ip_cidr_binary_panel_harder', options, 'completed', result)) return true;
             const opts = options || {};
             const spec = opts.spec || this._defaultQuestSpec();
             this._active = false;
@@ -444,6 +448,7 @@
         },
 
         _onFailed(options, result) {
+        if (IP2Live.GameManager && IP2Live.GameManager.finishTutorialReplay && IP2Live.GameManager.finishTutorialReplay('ip_cidr_binary_panel_harder', options, 'failed', result)) return true;
             const opts = options || {};
             const spec = opts.spec || this._defaultQuestSpec();
             this._active = false;
@@ -474,6 +479,7 @@
         },
 
         _onCancel(options) {
+        if (IP2Live.GameManager && IP2Live.GameManager.finishTutorialReplay && IP2Live.GameManager.finishTutorialReplay('ip_cidr_binary_panel_harder', options, 'cancelled', null)) return true;
             const opts = options || {};
             const spec = opts.spec || this._defaultQuestSpec();
             this._active = false;

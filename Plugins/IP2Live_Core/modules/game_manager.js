@@ -38,6 +38,7 @@ const IP2LiveGameManager = {
     _flowSerial: 0,
     _activeMapFlow: null,
     _activeGameplayNode: null,
+    get _tutorialReplaySession() { return IP2Live.TutorialReplay ? IP2Live.TutorialReplay.session : null; },
     _lastWorldTitleFinishKey: null,
     _tutorialIntroPending: false,
     _dialogueLibraryReady: false,
@@ -54,17 +55,20 @@ const IP2LiveGameManager = {
     _checkpointTimer: null,
     _checkpointDebounceTimer: null,
     _checkpointInFlight: false,
-    _shutdownListenerInstalled: false,
+    _shutdownListenerInstalled: true,
     // Set true to show the developer button that completes only the active quest.
     enableSingleQuestSkipButton: true,
+    // Set true to show the developer button that simulates a terminal quest failure.
+    enableQuestFailButton: true,
     // Set true to show the legacy developer button that skips every floor quest.
-    enableQuestSkipButton: false,
+    enableQuestSkipButton: true,
     // Set false to hide the Gameplay Testing button from the pause-menu header.
     enableGameplayTestingButton: true,
     // Set false to hide the Debug Map Jump entry from the pause menu.
     enableDebugMapJumpButton: true,
     _skipQuestButtonRect: null,
     _singleQuestSkipButtonRect: null,
+    _questFailButtonRect: null,
     _questHudAnchorRect: null,
 
     gameplayTestDefinitions: [
@@ -305,13 +309,13 @@ const IP2LiveGameManager = {
     gameplayCatalog: {
         ip_class_wires: { gameplayId: 'ip_class_wires', label: 'IP Class Wires', competencyKey: 'ip_classification', competencyLabel: 'IP class identification', targetClearMs: 120000, objectiveHandler: { manager: 'GameplayManager', method: '_handleWireObjective' } },
         ip_class_wires_harder: { gameplayId: 'ip_class_wires_harder', label: 'IP Class Wires Harder', competencyKey: 'ip_classification_advanced', competencyLabel: 'Advanced IP class identification', targetClearMs: 150000, objectiveHandler: { manager: 'HarderWiresGameplayManager', method: '_handleWireObjective' } },
-        ip_patch_panel_classes: { gameplayId: 'ip_patch_panel_classes', label: 'IP Patch Panel', competencyKey: 'mask_ip_classification', competencyLabel: 'Subnet mask and IP class classification', targetClearMs: 140000, objectiveHandler: { manager: 'PatchPanelGameplayManager', method: '_handlePatchObjective' }, failureHandler: { manager: 'PatchPanelGameplayManager', method: 'recoverAfterFailure' } },
+        ip_patch_panel_classes: { gameplayId: 'ip_patch_panel_classes', label: 'IP Patch Panel', competencyKey: 'mask_ip_classification', competencyLabel: 'Subnet mask and IP class classification', targetClearMs: 140000, objectiveHandler: { manager: 'PatchPanelGameplayManager', method: '_handlePatchObjective' } },
         ip_cidr_binary_panel: { gameplayId: 'ip_cidr_binary_panel', label: 'CIDR Binary Panel', competencyKey: 'cidr_custom_mask', competencyLabel: 'CIDR and custom subnet mask understanding', targetClearMs: 120000, objectiveHandler: { manager: 'CIDRPanelGameplayManager', method: '_handleCIDRObjective' } },
         ip_cidr_binary_panel_harder: { gameplayId: 'ip_cidr_binary_panel_harder', label: 'Adaptive CIDR Binary Panel', competencyKey: 'cidr_custom_mask_adaptive', competencyLabel: 'Adaptive CIDR and custom subnet mask understanding', targetClearMs: 150000, objectiveHandler: { manager: 'CIDRPanelHarderGameplayManager', method: '_handleCIDRObjective' } },
         ip_subnet_simulator: { gameplayId: 'ip_subnet_simulator', label: 'Subnet Simulator', competencyKey: 'hosts_subnets_calculation', competencyLabel: 'Hosts and subnets calculation', targetClearMs: 150000, objectiveHandler: { manager: 'SubnetSimulatorGameplayManager', method: '_handleObjective' } },
         ip_host_power_reactor: { gameplayId: 'ip_host_power_reactor', label: 'Host-Power Reactor', competencyKey: 'host_bit_power_calculation', competencyLabel: 'Host-bit exponent and usable-address capacity calculation', targetClearMs: 60000, objectiveHandler: { manager: 'HostPowerReactorGameplayManager', method: '_handleObjective' } },
-        ip_cidr_quarantine: { gameplayId: 'ip_cidr_quarantine', label: 'CIDR Quarantine', competencyKey: 'cidr_quarantine_zone', competencyLabel: 'CIDR quarantine zone construction', targetClearMs: 150000, objectiveHandler: { manager: 'CIDRQuarantineGameplayManager', method: '_handleObjective' }, failureHandler: { manager: 'CIDRQuarantineGameplayManager', method: 'recoverAfterFailure' } },
-        ip_cidr_quarantine_matrix: { gameplayId: 'ip_cidr_quarantine_matrix', label: 'CIDR Quarantine Matrix', competencyKey: 'cidr_multi_zone_quarantine', competencyLabel: 'Multi-zone CIDR quarantine construction', targetClearMs: 180000, objectiveHandler: { manager: 'CIDRQuarantineMatrixGameplayManager', method: '_handleObjective' }, failureHandler: { manager: 'CIDRQuarantineMatrixGameplayManager', method: 'recoverAfterFailure' } },
+        ip_cidr_quarantine: { gameplayId: 'ip_cidr_quarantine', label: 'CIDR Quarantine', competencyKey: 'cidr_quarantine_zone', competencyLabel: 'CIDR quarantine zone construction', targetClearMs: 150000, objectiveHandler: { manager: 'CIDRQuarantineGameplayManager', method: '_handleObjective' } },
+        ip_cidr_quarantine_matrix: { gameplayId: 'ip_cidr_quarantine_matrix', label: 'CIDR Quarantine Matrix', competencyKey: 'cidr_multi_zone_quarantine', competencyLabel: 'Multi-zone CIDR quarantine construction', targetClearMs: 180000, objectiveHandler: { manager: 'CIDRQuarantineMatrixGameplayManager', method: '_handleObjective' } },
         ip_network_repair: { gameplayId: 'ip_network_repair', label: 'Network Repair PCs', competencyKey: 'network_broadcast_usable_range', competencyLabel: 'Network, broadcast, and usable IP range calculation', targetClearMs: 180000, pcCount: 5, objectiveHandler: { manager: 'NetworkRepairGameplayManager', method: '_handleObjective' } },
         ip_vlsm_allocator: { gameplayId: 'ip_vlsm_allocator', label: 'VLSM Infiltration Grid', competencyKey: 'vlsm_subnet_allocation', competencyLabel: 'VLSM subnet allocation and route planning', targetClearMs: 240000, objectiveHandler: { manager: 'VLSMAllocatorGameplayManager', method: '_handleObjective' } },
     },
@@ -1426,7 +1430,7 @@ const IP2LiveGameManager = {
             gameplayId,
             trigger: 'gameplay.mistake',
         });
-        const isDeveloperTest = !!(data.developerTest || (data.spec && data.spec.developerTest));
+        const isDeveloperTest = !!(data.developerTest || (data.spec && data.spec.developerTest) || data.tutorialReplay || (data.spec && data.spec.tutorialReplay) || this._tutorialReplaySession);
         if (!isDeveloperTest) this.emit('gameplay.mistake', data);
         const active = isDeveloperTest ? null : (this._reportActiveAttempt(gameplayId) || this._openReportAttempt(gameplayId, data));
         if (active) {
@@ -1513,6 +1517,7 @@ const IP2LiveGameManager = {
     },
 
     handleGameplayCompleted(gameplayId, payload) {
+        if (this.finishTutorialReplay(gameplayId, payload, 'completed', payload && payload.result)) return true;
         const data = Object.assign({}, payload || {}, {
             gameplayId,
             trigger: 'gameplay.completed',
@@ -1546,6 +1551,7 @@ const IP2LiveGameManager = {
     },
 
     handleGameplayFailed(gameplayId, payload) {
+        if (this.finishTutorialReplay(gameplayId, payload, 'failed', payload && payload.result)) return true;
         const data = Object.assign({}, payload || {}, {
             gameplayId,
             trigger: 'gameplay.failed',
@@ -1566,67 +1572,28 @@ const IP2LiveGameManager = {
         if (IP2Live.NeuralLifeForce && typeof IP2Live.NeuralLifeForce.handleTerminalFailure === 'function') {
             IP2Live.NeuralLifeForce.handleTerminalFailure(data);
         }
+        this._ensureQuestMinimap();
         this._activeGameplayNode = null;
         this.emit(this.EVENT.GAMEPLAY_FAILED, data);
         this._closeReportAttempt(gameplayId, data, false);
         this._setState(this.STATE.DIALOGUE_AFTER, data);
 
         if (data.neuralGameOver || data.neuralRecoveryHandled) {
-            if (!data.neuralGameOver) this._queueCheckpoint('neural_life_force_failure');
-            return true;
-        }
-
-        const catalog = gameplayId && this.gameplayCatalog ? this.gameplayCatalog[gameplayId] : null;
-        const failureHandler = catalog && catalog.failureHandler ? catalog.failureHandler : null;
-        if (failureHandler) {
-            const owner = IP2Live && failureHandler.manager ? IP2Live[failureHandler.manager] : null;
-            const methodName = failureHandler.method;
-            if (owner && typeof owner[methodName] === 'function') {
-                const hadDialogue = this._runTimingDialogues(data, 'after', function () {
-                    owner[methodName](spec, data);
-                });
-                if (!hadDialogue) owner[methodName](spec, data);
-                return true;
-            }
-        }
-
-        if (gameplayId === 'ip_class_wires_harder') {
-            if (spec.tutorial) {
-                const hadDialogueHarder = this._runTimingDialogues(data, 'after');
-                if (!hadDialogueHarder && IP2Live.IPWiresHarderTutorial && typeof IP2Live.IPWiresHarderTutorial.showPacketsShifted === 'function') {
-                    IP2Live.IPWiresHarderTutorial.showPacketsShifted();
-                }
+            if (!data.neuralGameOver) {
+                this._setState(this.STATE.NEXT_NODE, data);
+                this._queueCheckpoint('neural_life_force_failure');
             }
             return true;
         }
 
-        if (gameplayId === 'ip_class_wires') {
-            if (spec.tutorial) {
-                const hadDialogue = this._runTimingDialogues(data, 'after');
-                if (!hadDialogue && IP2Live.IPWiresTutorial && typeof IP2Live.IPWiresTutorial.showPacketsShifted === 'function') {
-                    IP2Live.IPWiresTutorial.showPacketsShifted();
-                }
-                return true;
-            }
-
-            if (IP2Live.GameplayManager && typeof IP2Live.GameplayManager._sendStageBackToFirstWire === 'function') {
-                IP2Live.GameplayManager._sendStageBackToFirstWire(spec, data);
-                return true;
-            }
-        }
-
-        if (
-            gameplayId === 'ip_network_repair' &&
-            IP2Live.NetworkRepairGameplayManager &&
-            typeof IP2Live.NetworkRepairGameplayManager._handleRollbackFailure === 'function'
-        ) {
-            return IP2Live.NetworkRepairGameplayManager._handleRollbackFailure(data);
-        }
-
-        return false;
+        // Non-terminal exits retain the current quest. Terminal rollback is
+        // centralized in NeuralLifeForce and never invokes legacy map routing.
+        this._setState(this.STATE.NEXT_NODE, data);
+        return true;
     },
 
     handleGameplayCancelled(gameplayId, payload) {
+        if (this.finishTutorialReplay(gameplayId, payload, 'cancelled', payload && payload.result)) return true;
         const data = Object.assign({}, payload || {}, {
             gameplayId,
             trigger: 'gameplay.cancelled',
@@ -1817,8 +1784,12 @@ const IP2LiveGameManager = {
     },
 
     _runTimingDialogues(scope, timing, onComplete) {
-        const sourceScope = scope || {};
+        let sourceScope = scope || {};
         const spec = sourceScope.spec || {};
+        if (spec.tutorialReplay) {
+            if (timing === 'after') return false;
+            sourceScope = Object.assign({}, sourceScope, spec.tutorialSource);
+        }
         const dialogueObjectiveId = sourceScope.dialogueObjectiveId || spec.dialogueObjectiveId;
         const dialogueScope = dialogueObjectiveId
             ? Object.assign({}, sourceScope, { objectiveId: dialogueObjectiveId })
@@ -2970,6 +2941,52 @@ const IP2LiveGameManager = {
         return changed;
     },
 
+    failCurrentQuest(mapId) {
+        if (!this._hasFailableCurrentQuest(mapId)) return false;
+        const context = this._singleQuestSkipContext(mapId);
+        const target = context.objectives.find((entry) => entry.objectiveId === context.objectiveId);
+        if (!target) return false;
+
+        // Use the real terminal-failure pipeline for Life Force, counters,
+        // optional tutorial help, reports, and checkpoints.
+        return this.handleGameplayFailed(target.gameplayId, {
+            gameplayId: target.gameplayId,
+            spec: target.spec,
+            questId: context.questId,
+            objectiveId: target.objectiveId,
+            mapId: context.mapId,
+            result: {
+                passed: false,
+                reason: 'attempts_exhausted',
+                developerFail: true,
+                durationMs: 0,
+            },
+            developerQuestFail: true,
+            source: 'GameManager.failCurrentQuest',
+        });
+    },
+
+    launchTutorialReplay(gameplayId, context) {
+        return !!(IP2Live.TutorialReplay && IP2Live.TutorialReplay.launch(gameplayId, context));
+    },
+
+    prepareTutorialReplayScreen(screen, options) {
+        return !!(IP2Live.TutorialReplay && IP2Live.TutorialReplay.prepareScreen(screen, options));
+    },
+
+    finishTutorialReplay(gameplayId, options, outcome, result) {
+        return !!(IP2Live.TutorialReplay && IP2Live.TutorialReplay.finish(gameplayId, options, outcome, result));
+    },
+
+    _hasFailableCurrentQuest(mapId) {
+        if (!this.enableQuestFailButton || this._activeGameplayNode) return false;
+        const dialogueManager = IP2Live.DialogueManager;
+        if (dialogueManager && typeof dialogueManager.isActive === 'function' && dialogueManager.isActive()) return false;
+        const neural = IP2Live.NeuralLifeForce;
+        if (neural && typeof neural.isRunOver === 'function' && neural.isRunOver()) return false;
+        return !!this._singleQuestSkipContext(mapId);
+    },
+
     _singleQuestSkipContext(mapId) {
         const questManager = IP2Live.QuestManager;
         if (!questManager || typeof questManager.currentQuest !== 'function' || typeof questManager.currentObjective !== 'function') {
@@ -3046,6 +3063,7 @@ const IP2LiveGameManager = {
         Scene.Map.prototype.drawHUD = function () {
             if (typeof originalDrawHUD === 'function') originalDrawHUD.call(this);
             manager._drawSingleQuestSkipButton(Common && Common.Platform ? Common.Platform.ctx : null, this);
+            manager._drawQuestFailButton(Common && Common.Platform ? Common.Platform.ctx : null, this);
             manager._drawQuestSkipButton(Common && Common.Platform ? Common.Platform.ctx : null, this);
             manager._updateQuestHudAnchorRect();
         };
@@ -3089,6 +3107,32 @@ const IP2LiveGameManager = {
         return true;
     },
 
+    _drawQuestFailButton(ctx, scene) {
+        this._questFailButtonRect = null;
+        if (!this.enableQuestFailButton || !ctx || !scene) return false;
+        if (!this._isGameplayStageScene(scene)) return false;
+
+        const mapId = this._mapIdFromScene(scene);
+        if (!mapId) return false;
+
+        const sX = ctx.canvas.width / Common.ScreenResolution.SCREEN_X;
+        const sY = ctx.canvas.height / Common.ScreenResolution.SCREEN_Y;
+        const w = 220 * sX;
+        const h = 46 * sY;
+        const x = ctx.canvas.width - w - 18 * sX;
+        const y = (this.enableSingleQuestSkipButton ? 70 : 16) * sY;
+        const active = this._hasFailableCurrentQuest(mapId);
+
+        this._questFailButtonRect = { x, y, w, h, mapId, active };
+        this._drawDeveloperQuestButton(ctx, {
+            x, y, w, h, sX, sY, active,
+            title: 'SIMULATE FAIL QUEST',
+            detail: active ? 'DEV // SIMULATE FAILED RUN' : 'NO ACTIVE GAMEPLAY QUEST',
+            accent: '#FF7896',
+        });
+        return true;
+    },
+
     _drawQuestSkipButton(ctx, scene) {
         this._skipQuestButtonRect = null;
         if (!this.enableQuestSkipButton || !ctx || !scene) return false;
@@ -3106,7 +3150,7 @@ const IP2LiveGameManager = {
         const w = 220 * sX;
         const h = 46 * sY;
         const x = cW - w - 18 * sX;
-        const y = (this.enableSingleQuestSkipButton ? 70 : 16) * sY;
+        const y = (16 + (this.enableSingleQuestSkipButton ? 54 : 0) + (this.enableQuestFailButton ? 54 : 0)) * sY;
         const active = this._hasSkippableFloorQuests(mapId);
 
         this._skipQuestButtonRect = { x, y, w, h, mapId, active };
@@ -3164,7 +3208,7 @@ const IP2LiveGameManager = {
     },
 
     _updateQuestHudAnchorRect() {
-        const rects = [this._singleQuestSkipButtonRect, this._skipQuestButtonRect].filter(Boolean);
+        const rects = [this._singleQuestSkipButtonRect, this._questFailButtonRect, this._skipQuestButtonRect].filter(Boolean);
         this._questHudAnchorRect = rects.length
             ? rects.reduce((lowest, rect) => (rect.y + rect.h > lowest.y + lowest.h ? rect : lowest))
             : null;
@@ -3172,7 +3216,7 @@ const IP2LiveGameManager = {
     },
 
     _onMapMouseUp(x, y, scene) {
-        if ((!this.enableSingleQuestSkipButton && !this.enableQuestSkipButton) || !scene) return false;
+        if ((!this.enableSingleQuestSkipButton && !this.enableQuestFailButton && !this.enableQuestSkipButton) || !scene) return false;
         if (!this._isGameplayStageScene(scene)) return false;
         if (IP2Live.DialogueManager && typeof IP2Live.DialogueManager.isActive === 'function' && IP2Live.DialogueManager.isActive()) {
             return false;
@@ -3183,6 +3227,15 @@ const IP2LiveGameManager = {
         const singleRect = this._singleQuestSkipButtonRect;
         if (this.enableSingleQuestSkipButton && this._pointInRect(mx, my, singleRect)) {
             const changed = this.skipCurrentQuest(singleRect.mapId);
+            if (changed) this._playConfirm();
+            else this._playCursor();
+            if (Manager && Manager.Stack) Manager.Stack.requestPaintHUD = true;
+            return true;
+        }
+
+        const failRect = this._questFailButtonRect;
+        if (this.enableQuestFailButton && this._pointInRect(mx, my, failRect)) {
+            const changed = this.failCurrentQuest(failRect.mapId);
             if (changed) this._playConfirm();
             else this._playCursor();
             if (Manager && Manager.Stack) Manager.Stack.requestPaintHUD = true;

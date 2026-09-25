@@ -3617,6 +3617,9 @@ const HostPowerReactorGameplayManager = {
             this._active = false;
             this._activeAttempt = null;
             console.warn('[IP2Live] Host-Power Reactor scenario rejected:', error);
+            if (opts.tutorialReplay && IP2Live.GameManager) {
+                IP2Live.GameManager.finishTutorialReplay('ip_host_power_reactor', opts, 'unavailable');
+            }
             return false;
         }
 
@@ -3633,7 +3636,9 @@ const HostPowerReactorGameplayManager = {
             }));
             try {
                 this._playMusicZone('GAMEPLAY_1');
-                if (Manager && Manager.Stack && opts.mode === 'replace' && typeof Manager.Stack.replace === 'function') {
+                if (opts.tutorialReplay) IP2Live.GameManager.prepareTutorialReplayScreen(screen, opts);
+                if (opts.tutorialReplay && Manager && Manager.Stack) { Manager.Stack.push(screen); }
+                else if (Manager && Manager.Stack && opts.mode === 'replace' && typeof Manager.Stack.replace === 'function') {
                     Manager.Stack.replace(screen);
                 } else if (Manager && Manager.Stack && typeof Manager.Stack.push === 'function') {
                     Manager.Stack.push(screen);
@@ -3647,6 +3652,7 @@ const HostPowerReactorGameplayManager = {
                 this._active = false;
                 this._activeAttempt = null;
                 console.warn('[IP2Live] Host-Power Reactor failed to open:', error);
+                if (opts.tutorialReplay && IP2Live.GameManager) IP2Live.GameManager.finishTutorialReplay('ip_host_power_reactor', opts, 'unavailable');
                 return false;
             }
         };
@@ -3675,6 +3681,7 @@ const HostPowerReactorGameplayManager = {
     },
 
     _onComplete(options, result) {
+        if (IP2Live.GameManager && IP2Live.GameManager.finishTutorialReplay && IP2Live.GameManager.finishTutorialReplay('ip_host_power_reactor', options, 'completed', result)) return true;
         const opts = options || {};
         const spec = opts.spec || {};
         const mapId = this._mapIdFor(opts, spec);
@@ -3712,6 +3719,7 @@ const HostPowerReactorGameplayManager = {
     },
 
     _onFailed(options, result) {
+        if (IP2Live.GameManager && IP2Live.GameManager.finishTutorialReplay && IP2Live.GameManager.finishTutorialReplay('ip_host_power_reactor', options, 'failed', result)) return true;
         const opts = options || {};
         const spec = opts.spec || {};
         const mapId = this._mapIdFor(opts, spec);
@@ -3734,6 +3742,7 @@ const HostPowerReactorGameplayManager = {
     },
 
     _onCancel(options, result) {
+        if (IP2Live.GameManager && IP2Live.GameManager.finishTutorialReplay && IP2Live.GameManager.finishTutorialReplay('ip_host_power_reactor', options, 'cancelled', null)) return true;
         const opts = options || {};
         const spec = opts.spec || {};
         const mapId = this._mapIdFor(opts, spec);

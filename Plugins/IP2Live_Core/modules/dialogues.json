@@ -191,9 +191,9 @@
         [
           "Your streak changes how many points the Health Bar gains or loses.",
           "",
-          "{{highlight:Win streak: +10, +11, and so on up to +15 points.}}",
+          "{{highlight:Win streak: no recovery on wins 1-2. Win 3 restores +12, then +13, +14, up to +15 points.}}",
           "{{highlight:Non-tutorial loss streak: -10, -12, and so on up to -16 points.}}",
-          "A win or loss resets the opposite streak."
+          "A normal win or loss resets the opposite streak. Tutorials do not change HP or streaks. A failed campaign run steps you back one quest inside the current level, stopping at its first quest. Every five failed runs of a gameplay, AR offers an optional tutorial."
         ],
         {
           "focusOnly": true,
