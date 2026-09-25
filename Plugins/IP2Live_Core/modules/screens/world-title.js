@@ -13,12 +13,10 @@ class IP2LiveWorldTitle {
         this._glitchOffset = 0;
         this._finishedEmitted = false;
         
-        this._creepChars = '0123456789ABCDEF!@#$%^&*()<>{}[]';
-        this._creepNodes = [];
         this._networkNodes = [];
         this._packetTraces = [];
         this._glitchSlices = [];
-        this._statusLabels = [];
+        this._panelSurfaces = {};
         this._palette = this._ominousPalette();
     }
 
@@ -51,7 +49,7 @@ class IP2LiveWorldTitle {
             this._levelName = 'LEVEL X';
         }
 
-        this._seedVisualState(actualMapId, stage);
+        this._seedVisualState(actualMapId);
 
         if (IP2Live.GameManager && typeof IP2Live.GameManager.handleWorldTitleStarted === 'function') {
             IP2Live.GameManager.handleWorldTitleStarted(actualMapId, {
@@ -102,25 +100,10 @@ class IP2LiveWorldTitle {
         ctx.restore();
     }
 
-    _seedVisualState(mapId, stage) {
+    _seedVisualState(mapId) {
         const seed = Math.max(1, Number(mapId) || 1);
         const rand = this._makeRand(seed * 7919 + 17);
         const p = this._palette;
-
-        this._creepNodes = [];
-        for (let i = 0; i < 54; i++) {
-            this._creepNodes.push({
-                xRatio: rand(),
-                yRatio: rand(),
-                char: this._creepChars[Math.floor(rand() * this._creepChars.length)],
-                color: rand() > 0.76 ? p.creepGreen : (rand() > 0.52 ? p.creepTeal : p.creepRed),
-                size: 0.75 + rand() * 1.35,
-                drift: 0.35 + rand() * 0.7,
-                phase: rand() * Math.PI * 2,
-                isLeft: (i % 2 === 0),
-                isTop: (Math.floor(i / 2) % 2 === 0)
-            });
-        }
 
         this._networkNodes = [];
         for (let i = 0; i < 24; i++) {
@@ -157,13 +140,6 @@ class IP2LiveWorldTitle {
             });
         }
 
-        const stageLabel = stage && stage.tutorial ? 'TUTORIAL_ROUTE' : 'STAGE_ROUTE';
-        this._statusLabels = [
-            'ROUTE ESTABLISHED',
-            'NODE AUTH // OK',
-            'MAP ' + String(mapId || 0).padStart(4, '0'),
-            stageLabel,
-        ];
     }
 
     _makeRand(seed) {
@@ -188,9 +164,8 @@ class IP2LiveWorldTitle {
     }
 
     _bodyFont() {
-        if (IP2Live.Assets && IP2Live.Assets.neuropolLoaded) return 'Neuropol';
-        if (IP2Live.Assets && IP2Live.Assets.nebulaLoaded) return 'Nebula-Regular';
-        return 'monospace';
+        if (IP2Live.Assets && IP2Live.Assets.oxaniumMediumLoaded) return 'Oxanium-Medium';
+        return 'sans-serif';
     }
 
     _ominousPalette() {
@@ -214,9 +189,6 @@ class IP2LiveWorldTitle {
             greenSoft: 'rgba(79,166,107,0.52)',
             packetTeal: '#3AAFA0',
             packetGreen: '#68B878',
-            creepTeal: '#2E8F83',
-            creepGreen: '#5FAE74',
-            creepRed: '#711529',
             titleGlow: 'rgba(67,174,119,0.55)',
             titleRed: '#8A1A2E',
             titleTeal: '#3AAFA0',
@@ -338,18 +310,6 @@ class IP2LiveWorldTitle {
             ctx.fill();
         }
 
-        ctx.globalAlpha = alpha * 0.55;
-        ctx.font = 'bold ' + Math.round(11 * sX) + 'px monospace';
-        ctx.textAlign = 'center';
-        for (let i = 0; i < this._creepNodes.length; i++) {
-            const node = this._creepNodes[i];
-            const nx = (node.isLeft ? node.xRatio * 0.22 : 0.78 + node.xRatio * 0.22) * cW;
-            const nyBase = (node.isTop ? node.yRatio * 0.24 : 0.74 + node.yRatio * 0.24) * cH;
-            const ny = nyBase + Math.sin(tick * 0.02 * node.drift + node.phase) * 7 * sY;
-            ctx.fillStyle = node.color;
-            ctx.fillText(node.char, nx, ny);
-        }
-
         ctx.restore();
     }
 
@@ -393,31 +353,79 @@ class IP2LiveWorldTitle {
         ctx.fillStyle = p.warning;
         ctx.fillRect(cW - 152 * sX, cH - 78 * sY, 108 * sX, 6 * sY);
 
-        const bodyFont = this._bodyFont();
-        ctx.font = 'bold ' + Math.round(9 * sX) + 'px ' + bodyFont;
-        ctx.textAlign = 'left';
-        ctx.fillStyle = p.textDim;
-        ctx.fillText(this._statusLabels[0], 132 * sX, 58 * sY);
-        ctx.fillText(this._statusLabels[1], 60 * sX, cH - 100 * sY);
-        ctx.textAlign = 'right';
-        ctx.fillStyle = p.teal;
-        ctx.fillText(this._statusLabels[2], cW - 62 * sX, 58 * sY);
-        ctx.fillStyle = p.green;
-        ctx.fillText(this._statusLabels[3], cW - 52 * sX, cH - 104 * sY);
         ctx.restore();
+    }
+
+    _drawPanelSurface(ctx, x, y, w, h, sX, sY, subtitle) {
+        const key = subtitle ? 'subtitle' : 'title';
+        const width = Math.max(1, Math.ceil(w));
+        const height = Math.max(1, Math.ceil(h));
+        let surface = this._panelSurfaces[key];
+
+        // Cache the texture and feathering so animation only draws an image.
+        if (!surface || surface.width !== width || surface.height !== height) {
+            surface = document.createElement('canvas');
+            surface.width = width;
+            surface.height = height;
+            const panel = surface.getContext('2d');
+            const band = panel.createLinearGradient(0, 0, subtitle ? 0 : width, subtitle ? height : 0);
+            if (subtitle) {
+                band.addColorStop(0, 'rgba(65,151,150,0.94)');
+                band.addColorStop(0.45, 'rgba(44,124,127,0.94)');
+                band.addColorStop(1, 'rgba(30,92,106,0.94)');
+            } else {
+                band.addColorStop(0, 'rgba(92,16,30,0.78)');
+                band.addColorStop(0.13, 'rgba(53,102,69,0.64)');
+                band.addColorStop(0.30, 'rgba(3,13,16,0.98)');
+                band.addColorStop(1, 'rgba(1,7,10,0.86)');
+            }
+            panel.fillStyle = band;
+            panel.fillRect(0, 0, width, height);
+
+            panel.fillStyle = subtitle ? 'rgba(192,241,239,0.055)' : 'rgba(116,178,151,0.045)';
+            for (let row = 0; row < height; row += (subtitle ? 3 : 8) * sY) {
+                panel.fillRect(0, row, width, Math.max(1, 0.65 * sY));
+            }
+            if (subtitle) {
+                // Fine, fixed grain keeps the blue bar textured without flicker.
+                const rand = this._makeRand(317);
+                for (let i = 0; i < 650; i++) {
+                    panel.fillStyle = i % 2 ? 'rgba(210,250,247,0.06)' : 'rgba(1,26,35,0.07)';
+                    panel.fillRect(rand() * width, rand() * height, Math.max(1, sX), Math.max(1, sY));
+                }
+            }
+
+            // Keep crisp horizontal borders; only their outer ends fade with the sides.
+            const borderHeight = Math.max(1, (subtitle ? 1 : 1.5) * sY);
+            panel.fillStyle = this._palette.stroke;
+            panel.fillRect(0, 0, width, borderHeight);
+            panel.fillRect(0, height - borderHeight, width, borderHeight);
+
+            // Feather only the left and right edges on this isolated layer.
+            const edgeX = Math.min(0.18, (subtitle ? 24 : 38) * sX / width);
+            panel.globalCompositeOperation = 'destination-in';
+            const mask = panel.createLinearGradient(0, 0, width, 0);
+            mask.addColorStop(0, 'rgba(0,0,0,0)');
+            mask.addColorStop(edgeX, '#000');
+            mask.addColorStop(1 - edgeX, '#000');
+            mask.addColorStop(1, 'rgba(0,0,0,0)');
+            panel.fillStyle = mask;
+            panel.fillRect(0, 0, width, height);
+            this._panelSurfaces[key] = surface;
+        }
+
+        ctx.drawImage(surface, x, y, w, h);
     }
 
     _drawTitleBlock(ctx, cW, cH, sX, sY, tick) {
         const intro = this._introProgress(tick);
         const exit = this._exitProgress(tick);
         const glitch = tick >= 130 && tick < 170 ? Math.sin((tick - 130) / 40 * Math.PI) : 0;
-        const pulse = 0.5 + 0.5 * Math.sin(tick * 0.075);
         const p = this._palette;
         const x = cW * 0.5 + (1 - intro) * -220 * sX + exit * 260 * sX;
         const y = cH * 0.48 + (1 - intro) * 36 * sY - exit * 28 * sY;
         const w = Math.min(cW * 0.78, 760 * sX);
         const h = 124 * sY;
-        const skew = 62 * sX;
         const jitterX = glitch > 0 ? Math.sin(tick * 2.7) * 7 * sX * glitch : 0;
         const jitterY = glitch > 0 ? Math.cos(tick * 2.1) * 3 * sY * glitch : 0;
         const alpha = intro * (1 - exit * 0.96);
@@ -427,38 +435,8 @@ class IP2LiveWorldTitle {
         ctx.save();
         ctx.globalAlpha = alpha;
         ctx.translate(x + jitterX, y + jitterY);
-        ctx.rotate((-4 + exit * 2) * Math.PI / 180);
 
-        ctx.fillStyle = 'rgba(0,0,0,0.76)';
-        this._slantedRect(ctx, -w / 2 + 18 * sX, -h / 2 + 18 * sY, w, h, skew);
-        ctx.fill();
-
-        const band = ctx.createLinearGradient(-w / 2, 0, w / 2, 0);
-        band.addColorStop(0, 'rgba(92,16,30,0.78)');
-        band.addColorStop(0.13, 'rgba(53,102,69,0.64)');
-        band.addColorStop(0.30, 'rgba(3,13,16,0.98)');
-        band.addColorStop(1, 'rgba(1,7,10,0.86)');
-        ctx.fillStyle = band;
-        this._slantedRect(ctx, -w / 2, -h / 2, w, h, skew);
-        ctx.fill();
-
-        ctx.strokeStyle = p.stroke;
-        ctx.lineWidth = Math.max(1, 2.2 * sX);
-        this._slantedRect(ctx, -w / 2, -h / 2, w, h, skew);
-        ctx.stroke();
-
-        ctx.save();
-        this._slantedRect(ctx, -w / 2, -h / 2, w, h, skew);
-        ctx.clip();
-        for (let gy = -h / 2 + ((tick * 0.9) % (8 * sY)); gy < h / 2; gy += 8 * sY) {
-            ctx.fillStyle = 'rgba(116,178,151,0.045)';
-            ctx.fillRect(-w / 2, gy, w, Math.max(1, 1.3 * sY));
-        }
-        const scanX = -w + ((tick * 7) % (w * 1.5));
-        ctx.fillStyle = 'rgba(105,177,131,' + (0.08 + pulse * 0.05) + ')';
-        ctx.transform(1, 0, -0.30, 1, 0, 0);
-        ctx.fillRect(scanX, -h, 44 * sX, h * 2.2);
-        ctx.restore();
+        this._drawPanelSurface(ctx, -w / 2, -h / 2, w, h, sX, sY, false);
 
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
@@ -489,14 +467,12 @@ class IP2LiveWorldTitle {
 
         const subW = Math.min(w * 0.58, 480 * sX);
         const subH = 40 * sY;
-        const subX = -subW / 2 + 26 * sX;
+        const subX = -subW / 2;
         const subY = h / 2 - 8 * sY;
-        ctx.fillStyle = 'rgba(44,124,111,0.86)';
-        this._slantedRect(ctx, subX, subY, subW, subH, 22 * sX);
-        ctx.fill();
+        this._drawPanelSurface(ctx, subX, subY, subW, subH, sX, sY, true);
         ctx.fillStyle = '#03100B';
         ctx.font = 'bold ' + Math.round(20 * sX) + 'px ' + this._bodyFont();
-        ctx.fillText(this._levelName, subX + subW / 2, subY + subH / 2 + 1 * sY);
+        ctx.fillText(this._levelName, subX + subW / 2, subY + subH / 2 + 1 * sY, subW - 32 * sX);
 
         ctx.fillStyle = p.deadAmber;
         ctx.fillRect(-w / 2 + 20 * sX, -h / 2 + 14 * sY, 92 * sX, 8 * sY);
