@@ -362,7 +362,8 @@ class IP2LiveCreditsScene extends Scene.Base {
         } catch (error) {}
 
         if (Manager && Manager.Stack) {
-            Manager.Stack.pop();
+            if (IP2Live.MenuTransition) IP2Live.MenuTransition.back();
+            else Manager.Stack.pop();
         }
     }
 

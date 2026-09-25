@@ -217,8 +217,8 @@ function testFailQuestButtonRollsBackWithinCurrentLevel() {
     const rect = manager._questFailButtonRect;
     assert.equal(rect.y, 16, 'fail button works independently of skip buttons');
     assert.equal(rect.active, true);
-    assert.deepEqual(labels, ['SIMULATE FAIL QUEST']);
-    assert.equal(manager._updateQuestHudAnchorRect(), rect);
+    assert.deepEqual(labels, ['Simulate fail quest']);
+    assert.deepEqual(manager._updateQuestHudAnchorRect(), { x: rect.x, y: rect.y, w: rect.w, h: rect.h });
     assert.equal(manager._onMapMouseUp(rect.x + 1, rect.y + 1, scene), true);
     assert.equal(Manager.Stack.requestPaintHUD, true);
     assert.equal(qm.activeQuestId, previousId);
@@ -246,9 +246,11 @@ function testFailQuestButtonRollsBackWithinCurrentLevel() {
     manager._drawSingleQuestSkipButton(ctx, scene);
     manager._drawQuestFailButton(ctx, scene);
     manager._drawQuestSkipButton(ctx, scene);
-    assert.ok(manager._questFailButtonRect.y > manager._singleQuestSkipButtonRect.y + manager._singleQuestSkipButtonRect.h);
-    assert.ok(manager._skipQuestButtonRect.y > manager._questFailButtonRect.y + manager._questFailButtonRect.h);
-    assert.equal(manager._updateQuestHudAnchorRect(), manager._skipQuestButtonRect);
+    assert.equal(manager._questFailButtonRect.y, manager._singleQuestSkipButtonRect.y);
+    assert.equal(manager._skipQuestButtonRect.y, manager._questFailButtonRect.y);
+    assert.ok(manager._questFailButtonRect.x > manager._singleQuestSkipButtonRect.x + manager._singleQuestSkipButtonRect.w);
+    assert.ok(manager._skipQuestButtonRect.x > manager._questFailButtonRect.x + manager._questFailButtonRect.w);
+    assert.equal(manager._updateQuestHudAnchorRect().h, 34);
 
     IP2Live.NeuralLifeForce.isRunOver = () => true;
     assert.equal(manager.failCurrentQuest(8), false);

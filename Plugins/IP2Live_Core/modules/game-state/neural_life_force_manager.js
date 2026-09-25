@@ -68,6 +68,19 @@
             return !!this._state().runOver;
         },
 
+        /** Developer shortcut using the same persistent state and game-over screen. */
+        simulateGameOver(payload) {
+            const state = this._state();
+            if (state.runOver) return false;
+            state.lifeForce = Math.max(0, (Number(state.lifeForce) || 0) - 100);
+            state.successStreak = 0;
+            state.runOver = true;
+            state.lastChange = this._changeRecord('developer-game-over', -100, payload || {});
+            this._requestHudPaint();
+            this._showGameOver();
+            return true;
+        },
+
         /**
          * Adds the current critical-mode options immediately before a gameplay
          * screen is created. Unsupported gameplays still receive the marker so

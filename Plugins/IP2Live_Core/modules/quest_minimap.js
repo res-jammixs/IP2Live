@@ -7,7 +7,7 @@
 
 (function () {
     const QuestMinimap = {
-        VERSION: 'quest-minimap-20260918-05',
+        VERSION: 'quest-minimap-20260925-compact-hud',
         DEBUG: false,
 
         _container: null,
@@ -115,28 +115,32 @@
         _buildDOM() {
             const container = document.createElement('div');
             this._style(container, {
-                background: '#090f1f',
-                border: '1.5px solid #e31c3d',
-                borderRadius: '3px',
-                padding: '7px 8px 8px',
+                background: 'linear-gradient(145deg, rgba(17,32,47,0.96), rgba(6,14,25,0.96))',
+                boxShadow: '0 12px 32px rgba(0,0,0,0.32), inset 0 1px 0 rgba(198,237,255,0.06)',
+                border: '1px solid rgba(113,174,198,0.28)',
+                borderRadius: '14px',
+                padding: '12px',
                 boxSizing: 'border-box',
                 width: '100%',
-                fontFamily: 'monospace',
+                fontFamily: 'Oxanium-Medium, sans-serif',
             });
 
             const topRow = document.createElement('div');
             this._style(topRow, {
                 display: 'flex',
                 justifyContent: 'space-between',
-                marginBottom: '5px',
+                marginBottom: '10px',
+                alignItems: 'center',
+                gap: '8px',
+                flexWrap: 'wrap',
             });
 
             const labelEl = document.createElement('span');
-            labelEl.textContent = '■ QUEST MAP';
+            labelEl.textContent = 'QUEST MAP';
             this._style(labelEl, {
-                color: '#ff3355',
-                fontSize: '9px',
-                fontFamily: 'monospace',
+                color: '#E1F5FA',
+                fontSize: '10px',
+                fontFamily: 'Oxanium-Medium, sans-serif',
                 textTransform: 'uppercase',
                 letterSpacing: '0.12em',
                 fontWeight: '700',
@@ -146,9 +150,9 @@
             const stageEl = document.createElement('span');
             stageEl.textContent = 'STAGE -- · LEVEL --';
             this._style(stageEl, {
-                color: '#ff9900',
-                fontSize: '9px',
-                fontFamily: 'monospace',
+                color: '#92CED9',
+                fontSize: '10px',
+                fontFamily: 'Oxanium-Medium, sans-serif',
                 textTransform: 'uppercase',
                 letterSpacing: '0.08em',
                 whiteSpace: 'nowrap',
@@ -164,8 +168,10 @@
                 width: '100%',
                 height: 'auto',
                 display: 'block',
-                imageRendering: 'pixelated',
-                border: '1px solid #1a2535',
+                imageRendering: 'auto',
+                boxSizing: 'border-box',
+                borderRadius: '8px',
+                border: '1px solid rgba(113,174,198,0.14)',
                 background: '#06090f',
             });
 
@@ -174,13 +180,14 @@
                 display: 'flex',
                 flexDirection: 'column',
                 alignItems: 'stretch',
-                marginTop: '5px',
-                gap: '4px',
+                marginTop: '10px',
+                gap: '9px',
             });
 
             const metricsRow = document.createElement('div');
             this._style(metricsRow, {
                 display: 'flex',
+                flexWrap: 'wrap',
                 justifyContent: 'space-between',
                 alignItems: 'center',
                 gap: '8px',
@@ -191,8 +198,8 @@
             coordEl.textContent = 'X:--  Z:--';
             this._style(coordEl, {
                 color: '#00cfff',
-                fontSize: '9px',
-                fontFamily: 'monospace',
+                fontSize: '10px',
+                fontFamily: 'Oxanium-Medium, sans-serif',
                 letterSpacing: '0.05em',
                 whiteSpace: 'nowrap',
             });
@@ -200,9 +207,9 @@
             const counterEl = document.createElement('span');
             counterEl.textContent = 'QUESTS --/--';
             this._style(counterEl, {
-                color: '#ff9900',
-                fontSize: '9px',
-                fontFamily: 'monospace',
+                color: '#92CED9',
+                fontSize: '10px',
+                fontFamily: 'Oxanium-Medium, sans-serif',
                 letterSpacing: '0.05em',
                 whiteSpace: 'nowrap',
             });
@@ -212,9 +219,9 @@
                 debugEl = document.createElement('span');
                 debugEl.textContent = '';
                 this._style(debugEl, {
-                    color: '#607080',
+                    color: '#91A9BC',
                     fontSize: '8px',
-                    fontFamily: 'monospace',
+                    fontFamily: 'Oxanium-Medium, sans-serif',
                     letterSpacing: '0.03em',
                     whiteSpace: 'nowrap',
                     marginLeft: '6px',
@@ -228,7 +235,7 @@
                 gap: '7px',
                 alignItems: 'center',
                 flexWrap: 'wrap',
-                justifyContent: 'flex-end',
+                justifyContent: 'space-between',
                 width: '100%',
                 minHeight: '12px',
             });
@@ -271,9 +278,9 @@
             const text = document.createElement('span');
             text.textContent = label;
             this._style(text, {
-                color: '#607080',
+                color: '#91A9BC',
                 fontSize: '8px',
-                fontFamily: 'monospace',
+                fontFamily: 'Oxanium-Medium, sans-serif',
                 whiteSpace: 'nowrap',
             });
 
@@ -283,21 +290,11 @@
         },
 
         _insertWidget(container) {
-            const skipButton = this._findSkipQuestDOMButton();
-            if (skipButton && skipButton.parentNode) {
-                skipButton.parentNode.insertBefore(container, skipButton.nextSibling);
-                return;
-            }
-
             const host = document.createElement('div');
             this._fallbackHost = host;
             this._style(host, {
-                position: 'fixed',
-                top: '68px',
-                right: '18px',
-                width: '220px',
-                zIndex: '2147483000',
-                pointerEvents: 'none',
+                position: 'fixed', top: '16px', right: '18px', width: '220px',
+                zIndex: '2147483000', pointerEvents: 'none',
             });
             host.appendChild(container);
             document.body.appendChild(host);
@@ -307,69 +304,26 @@
         _syncPlacement() {
             const host = this._fallbackHost;
             if (!host || !this._container) return false;
-
-            const rectInfo = this._skipQuestCanvasRect();
-            if (!rectInfo) {
-                this._style(host, {
-                    top: '68px',
-                    right: '18px',
-                    left: 'auto',
-                    width: '220px',
-                });
+            const gm = IP2Live.GameManager;
+            const ctx = Common && Common.Platform ? Common.Platform.ctx : null;
+            const canvas = ctx && ctx.canvas;
+            const scene = Scene && Scene.Map ? Scene.Map.current : null;
+            const layout = gm && typeof gm.getQuestHudLayout === 'function' ? gm.getQuestHudLayout(ctx, scene) : null;
+            if (!layout || !canvas || typeof canvas.getBoundingClientRect !== 'function') {
+                this._style(host, { top: '16px', right: '18px', left: 'auto', width: '220px' });
                 return false;
             }
-
-            const gap = Math.max(6, Math.round(6 * rectInfo.scaleY));
-            const left = Math.round(rectInfo.left);
-            const top = Math.round(rectInfo.top + rectInfo.height + gap);
-            const width = Math.max(220, Math.round(rectInfo.width));
-
+            const bounds = canvas.getBoundingClientRect();
+            const scaleX = bounds.width / canvas.width;
+            const scaleY = bounds.height / canvas.height;
+            if (!(scaleX > 0) || !(scaleY > 0)) return false;
+            // Read current flags and canvas bounds, never a stale button rectangle.
             this._style(host, {
-                position: 'fixed',
-                left: left + 'px',
-                top: top + 'px',
-                right: 'auto',
-                width: width + 'px',
-                zIndex: '2147483000',
-                pointerEvents: 'none',
+                left: Math.round(bounds.left + layout.x * scaleX) + 'px',
+                top: Math.round(bounds.top + layout.y * scaleY) + 'px',
+                right: 'auto', width: Math.round(layout.w * scaleX) + 'px',
             });
             return true;
-        },
-
-        _skipQuestCanvasRect() {
-            const gm = IP2Live.GameManager || IP2LiveGameManager || null;
-            const buttonRect = gm
-                ? (gm._questHudAnchorRect || gm._singleQuestSkipButtonRect || gm._skipQuestButtonRect)
-                : null;
-            const ctx = Common && Common.Platform ? Common.Platform.ctx : null;
-            const canvas = ctx && ctx.canvas ? ctx.canvas : null;
-            if (!buttonRect || !canvas || typeof canvas.getBoundingClientRect !== 'function') return null;
-
-            const canvasRect = canvas.getBoundingClientRect();
-            const canvasW = Number(canvas.width) || canvasRect.width || 1;
-            const canvasH = Number(canvas.height) || canvasRect.height || 1;
-            const scaleX = canvasRect.width / canvasW;
-            const scaleY = canvasRect.height / canvasH;
-            if (!(scaleX > 0) || !(scaleY > 0)) return null;
-
-            return {
-                left: canvasRect.left + Number(buttonRect.x || 0) * scaleX,
-                top: canvasRect.top + Number(buttonRect.y || 0) * scaleY,
-                width: Number(buttonRect.w || 0) * scaleX,
-                height: Number(buttonRect.h || 0) * scaleY,
-                scaleX,
-                scaleY,
-            };
-        },
-
-        _findSkipQuestDOMButton() {
-            const candidates = Array.prototype.slice.call(document.querySelectorAll('button, [role="button"], input[type="button"]'));
-            for (let i = 0; i < candidates.length; i++) {
-                const el = candidates[i];
-                const text = String(el.textContent || el.value || '').toUpperCase();
-                if (text.indexOf('SKIP CURRENT QUEST') !== -1 || text.indexOf('SKIP FLOOR QUESTS') !== -1) return el;
-            }
-            return null;
         },
 
         _readLiveData() {
@@ -1049,7 +1003,7 @@
             if (!this._tutorialHighlighted) {
                 this._container.style.outline = '';
                 this._container.style.outlineOffset = '';
-                this._container.style.boxShadow = '';
+                this._container.style.boxShadow = '0 12px 32px rgba(0,0,0,0.32), inset 0 1px 0 rgba(198,237,255,0.06)';
                 return true;
             }
 
@@ -1147,7 +1101,13 @@
             const ctx = this._ctx;
             if (!ctx) return;
             this._t += 0.045;
-            ctx.imageSmoothingEnabled = false;
+            const size = Math.max(200, Math.round((this._canvas.clientWidth || 200) * (window.devicePixelRatio || 1)));
+            if (this._canvas.width !== size || this._canvas.height !== size) {
+                this._canvas.width = size;
+                this._canvas.height = size;
+            }
+            ctx.setTransform(size / 200, 0, 0, size / 200, 0, 0);
+            ctx.imageSmoothingEnabled = true;
             ctx.clearRect(0, 0, 200, 200);
             this._drawBackground(ctx);
             this._drawGrid(ctx);
@@ -1156,7 +1116,10 @@
         },
 
         _drawBackground(ctx) {
-            ctx.fillStyle = '#06090f';
+            const background = ctx.createRadialGradient(100, 80, 0, 100, 100, 150);
+            background.addColorStop(0, '#102333');
+            background.addColorStop(1, '#060E19');
+            ctx.fillStyle = background;
             ctx.fillRect(0, 0, 200, 200);
         },
 

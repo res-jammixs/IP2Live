@@ -285,7 +285,8 @@ class IP2LivePauseMenu extends Scene.Base {
             return;
         }
         Data.Systems.soundConfirmation.playSound();
-        Manager.Stack.push(new IP2LiveSettingsMenu());
+        if (IP2Live.MenuTransition) IP2Live.MenuTransition.open(() => new IP2LiveSettingsMenu());
+        else Manager.Stack.push(new IP2LiveSettingsMenu());
     }
 
     _confirmSelection() {
@@ -324,6 +325,7 @@ class IP2LivePauseMenu extends Scene.Base {
     }
 
     _quitAfterCheckpoint() {
+        if (IP2Live.MenuTransition) return IP2Live.MenuTransition.quit('pause_menu_quit');
         if (this._quitInProgress) return;
         this._quitInProgress = true;
         const manager = IP2Live.GameManager;

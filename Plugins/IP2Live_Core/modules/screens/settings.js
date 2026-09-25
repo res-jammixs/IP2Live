@@ -2375,7 +2375,8 @@ class IP2LiveSettingsMenu extends Scene.Base {
             Data.Systems.soundCancel.playSound();
         } catch (error) {}
 
-        Manager.Stack.pop();
+        if (IP2Live.MenuTransition) IP2Live.MenuTransition.back();
+        else Manager.Stack.pop();
     }
 
     _executeAction(idx) {

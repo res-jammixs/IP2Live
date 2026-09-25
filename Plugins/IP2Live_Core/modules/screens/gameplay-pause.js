@@ -2204,9 +2204,10 @@
                 return false;
             }
 
-            Manager.Stack.push(
-                new IP2LiveSettingsMenu()
-            );
+            if (IP2Live.MenuTransition) {
+                return IP2Live.MenuTransition.open(() => new IP2LiveSettingsMenu());
+            }
+            Manager.Stack.push(new IP2LiveSettingsMenu());
 
             return true;
         }

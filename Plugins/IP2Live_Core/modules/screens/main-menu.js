@@ -22,13 +22,15 @@ class IP2LiveTitleScreenImplementation extends Scene.Base {
         this.startAtLoop = startAtLoop;
         this._ip2LiveTitleInitialized = true;
         this.selectedIndex = 0;
-        this.menuItems = ["NEW GAME", "LOAD GAME", "SETTINGS", "CREDITS", "QUIT GAME"];
+        this.menuPage = 'main';
+        this.menuItems = ["PLAY GAME", "SETTINGS", "CREDITS", "QUIT GAME"];
         this.scanlineOffset = 0;
         this.glitchTimer = 0;
         this.glitchActive = false;
         this.hoverIndex = -1;
         this.animTick = 0;
         this.btnProgress = Array(this.menuItems.length).fill(0);
+        this._buttonEntranceStartedAt = null;
         this.deckNodes = [];
 
         // Title decrypt animation
@@ -53,7 +55,7 @@ class IP2LiveTitleScreenImplementation extends Scene.Base {
         this._musicStartPending = false;
         this._musicAttemptToken = 0;
         this.networkBackdrop = (window.IP2LiveBackgroundScreen)
-            ? new window.IP2LiveBackgroundScreen()
+            ? new window.IP2LiveBackgroundScreen({ showDeckHeading: false })
             : null;
     }
 
@@ -77,6 +79,7 @@ class IP2LiveTitleScreenImplementation extends Scene.Base {
         this._seedParticles(80);
         this._seedDeckNodes(28);
         this.loading = false;
+        this._buttonEntranceStartedAt = Date.now() + 500;
         Manager.Stack.requestPaintHUD = true;
         // Attempt to start music immediately — works if autoplay is allowed.
         // If blocked, keyboard or mouse input retries after unlocking Howler.
@@ -167,16 +170,51 @@ class IP2LiveTitleScreenImplementation extends Scene.Base {
     }
 
     _menuLayout() {
+        const SW = Common.ScreenResolution.SCREEN_X;
         const SH = Common.ScreenResolution.SCREEN_Y;
         const btnW = 388;
         const btnH = 54;
         const gap = 13;
+        const count = this.menuItems.length + (this.menuPage === 'main' ? 0 : 1);
+        const stackH = count * btnH + (count - 1) * gap;
+        const contentTop = 230;
+        const contentBottom = SH - 72;
         return {
-            btnX: 82,
+            btnX: (SW * 0.5 - btnW) / 2 - 24,
             btnW,
             btnH,
             gap,
-            startY: SH - 82 - this.menuItems.length * (btnH + gap)
+            startY: contentTop + (contentBottom - contentTop - stackH) / 2
+        };
+    }
+
+    _showMenuPage(page) {
+        const pages = {
+            main: ['PLAY GAME', 'SETTINGS', 'CREDITS', 'QUIT GAME'],
+            play: ['STORY MODE', 'ENDLESS MODE', 'PRACTICE MODE'],
+            story: ['NEW STORY', 'AUTOSAVED', 'LOAD STORY'],
+        };
+        this.menuPage = page;
+        this.menuItems = pages[page];
+        this.selectedIndex = 0;
+        this.hoverIndex = -1;
+        this.btnProgress = Array(this.menuItems.length).fill(0);
+        this._buttonEntranceStartedAt = Date.now();
+        Manager.Stack.requestPaintHUD = true;
+    }
+
+    _backMenuPage() {
+        if (this.menuPage === 'main') return;
+        this._showMenuPage(this.menuPage === 'story' ? 'play' : 'main');
+    }
+
+    _backButtonLayout() {
+        const layout = this._menuLayout();
+        return {
+            x: layout.btnX,
+            y: layout.startY + this.menuItems.length * (layout.btnH + layout.gap),
+            w: layout.btnW,
+            h: layout.btnH,
         };
     }
 
@@ -188,16 +226,20 @@ class IP2LiveTitleScreenImplementation extends Scene.Base {
         if (Data.Keyboards.checkActionMenu(key)) {
             this._confirmSelection();
         } else if (Data.Keyboards.checkCancelMenu(key)) {
-            // no-op on main menu
+            if (this.menuPage !== 'main') {
+                Data.Systems.soundCursor.playSound();
+                this._backMenuPage();
+            }
         }
     }
 
     onKeyPressedAndRepeat(key) {
         const prev = this.selectedIndex;
+        const count = this.menuItems.length + (this.menuPage === 'main' ? 0 : 1);
         if (Data.Keyboards.isKeyEqual(key, Data.Keyboards.menuControls.Up)) {
-            this.selectedIndex = (this.selectedIndex - 1 + this.menuItems.length) % this.menuItems.length;
+            this.selectedIndex = (this.selectedIndex - 1 + count) % count;
         } else if (Data.Keyboards.isKeyEqual(key, Data.Keyboards.menuControls.Down)) {
-            this.selectedIndex = (this.selectedIndex + 1) % this.menuItems.length;
+            this.selectedIndex = (this.selectedIndex + 1) % count;
         }
         if (this.selectedIndex !== prev) {
             this.hoverIndex = -1;   // keyboard took over — clear mouse hover
@@ -232,6 +274,13 @@ class IP2LiveTitleScreenImplementation extends Scene.Base {
     }
 
     _getButtonAt(x, y) {
+        if (this.menuPage !== 'main') {
+            const back = this._backButtonLayout();
+            const sx = Common.ScreenResolution.getScreenX(back.x);
+            const sy = Common.ScreenResolution.getScreenY(back.y);
+            if (x >= sx && x <= sx + Common.ScreenResolution.getScreenX(back.w)
+                && y >= sy && y <= sy + Common.ScreenResolution.getScreenY(back.h)) return this.menuItems.length;
+        }
         const layout = this._menuLayout();
         for (let i = 0; i < this.menuItems.length; i++) {
             const by = layout.startY + i * (layout.btnH + layout.gap);
@@ -245,15 +294,24 @@ class IP2LiveTitleScreenImplementation extends Scene.Base {
     }
 
     _confirmSelection() {
+        if (IP2Live.MenuTransition && IP2Live.MenuTransition.active) return;
         const idx = this.selectedIndex;
         Data.Systems.soundConfirmation.playSound();
 
-        if (idx === 0) {
+        if (this.menuPage !== 'main' && idx === this.menuItems.length) {
+            this._backMenuPage();
+            return;
+        }
+        const action = this.menuItems[idx];
+        if (action === 'PLAY GAME') return this._showMenuPage('play');
+        if (action === 'STORY MODE') return this._showMenuPage('story');
+
+        if (action === 'NEW STORY') {
             // New Game bridge into profile entry.
             if (IP2Live.LoadingScreen && typeof IP2Live.LoadingScreen.show === 'function') {
                 IP2Live.LoadingScreen.show({
                     mode: 'push',
-                    status: 'Loading New Game',
+                    status: 'Loading New Story',
                     detail: 'Opening infiltrator profile channel',
                     onComplete: function () {
                         Manager.Stack.replace(new IP2LiveNameInputScreen());
@@ -264,23 +322,33 @@ class IP2LiveTitleScreenImplementation extends Scene.Base {
             }
             Manager.Stack.requestPaintHUD = true;
         } else {
-            this.glitchActive = true;
-            this.glitchTimer = 8;
-            Manager.Stack.requestPaintHUD = true;
-            setTimeout(() => {
-                switch (idx) {
-                    case 1: this._openLoadGame();                            break;
-                    case 2: Manager.Stack.push(new IP2LiveSettingsMenu());    break;
-                    case 3: Manager.Stack.push(new IP2LiveCreditsScene());    break;
-                    case 4: this._openQuitConfirmation();                    break;
-                }
-            }, 120);
+            switch (action) {
+                // Reserved modes acknowledge the click without leaving this menu.
+                case 'ENDLESS MODE':
+                case 'PRACTICE MODE':
+                case 'AUTOSAVED': break;
+                case 'LOAD STORY': this._openLoadGame(); break;
+                case 'SETTINGS': this._openMenu(() => new IP2LiveSettingsMenu()); break;
+                case 'CREDITS': this._openMenu(() => new IP2LiveCreditsScene()); break;
+                case 'QUIT GAME': this._openQuitConfirmation(); break;
+            }
         }
+    }
+
+    _openMenu(factory) {
+        if (IP2Live.MenuTransition) return IP2Live.MenuTransition.open(factory);
+        Manager.Stack.push(factory());
     }
 
     // â”€â”€ Update â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
     _openLoadGame() {
+        if (IP2Live.MenuTransition) {
+            return IP2Live.MenuTransition.open(async () => {
+                if (Main && typeof Main.waitForGameData === 'function') await Main.waitForGameData();
+                return new IP2LiveLoadGameMenu();
+            });
+        }
         if (this._waitingForGameData) return;
         this._waitingForGameData = true;
 
@@ -324,19 +392,15 @@ class IP2LiveTitleScreenImplementation extends Scene.Base {
                 confirmLabel: 'QUIT',
                 cancelLabel: 'CANCEL',
                 danger: true,
-                onConfirm: function () {
-                    const manager = IP2Live.GameManager;
-                    if (manager && typeof manager.prepareForShutdown === 'function') {
-                        manager.prepareForShutdown('main_menu_quit')
-                            .catch(function (error) { console.warn('[IP2Live] Shutdown flush failed:', error); })
-                            .finally(function () { Common.Platform.quit(); });
-                    } else {
-                        Common.Platform.quit();
-                    }
-                },
+                onConfirm: () => this._quitAfterCheckpoint(),
             });
             return;
         }
+        this._quitAfterCheckpoint();
+    }
+
+    _quitAfterCheckpoint() {
+        if (IP2Live.MenuTransition) return IP2Live.MenuTransition.quit('main_menu_quit');
         const manager = IP2Live.GameManager;
         if (manager && typeof manager.prepareForShutdown === 'function') {
             manager.prepareForShutdown('main_menu_quit')
@@ -475,33 +539,16 @@ class IP2LiveTitleScreenImplementation extends Scene.Base {
         }
         ctx.globalAlpha = 1;
 
-        const lineX = 4 * scaleX;
-        ctx.strokeStyle = '#00FFFF';
-        ctx.lineWidth = 2 * scaleX;
-        ctx.shadowBlur = 0;
-        ctx.beginPath();
-        ctx.moveTo(lineX, cH * 0.08);
-        ctx.lineTo(lineX, cH * 0.92);
-        ctx.stroke();
-
         this._drawTitle(ctx, scaleX, scaleY, cW, cH);
-
-        ctx.font = (10 * scaleX) + 'px ' + (IP2Live.Assets.nebulaLoaded ? 'Nebula-Regular' : 'monospace');
-        ctx.fillStyle = '#00FFFF';
-        ctx.globalAlpha = 0.7;
-        ctx.textAlign = 'left';
-        ctx.fillText('// INFILTRATION PROTOCOL v1.0', 25 * scaleX, 195 * scaleY);
-        ctx.globalAlpha = 1;
 
         const layout = this._menuLayout();
 
+        if (this.menuPage !== 'main') this._drawMenuBackButton(ctx, scaleX, scaleY);
         for (let i = 0; i < this.menuItems.length; i++) {
             const by = layout.startY + i * (layout.btnH + layout.gap);
             this._drawButton(ctx, scaleX, scaleY, layout.btnX, by, layout.btnW, layout.btnH,
                 this.menuItems[i], i === this.selectedIndex, i === this.hoverIndex, i);
         }
-
-        this._drawCornerDeco(ctx, scaleX, scaleY, cH);
 
         // Black fade-out overlay for New Game transition
         if (this.fadeOut > 0) {
@@ -527,14 +574,30 @@ class IP2LiveTitleScreenImplementation extends Scene.Base {
         ctx.font = 'bold ' + (72 * scaleX) + 'px ' + fontName;
         ctx.fillStyle = '#FFFFFF';
         ctx.shadowBlur = 0;
-        ctx.fillText(displayTitle, 25 * scaleX, 148 * scaleY);
+        ctx.fillText(displayTitle, this._menuLayout().btnX * scaleX, 148 * scaleY);
         ctx.globalAlpha = 1;
     }
 
+    _drawMenuBackButton(ctx, scaleX, scaleY) {
+        const back = this._backButtonLayout();
+        const index = this.menuItems.length;
+        this._drawButton(ctx, scaleX, scaleY, back.x, back.y, back.w, back.h,
+            'BACK', this.selectedIndex === index, this.hoverIndex === index, index);
+    }
+
     _drawButton(ctx, scaleX, scaleY, bx, by, bw, bh, label, isSelected, isHover, index) {
+        // Leave the loaded title visible for 0.5 seconds before revealing the buttons.
+        if (this._buttonEntranceStartedAt == null) this._buttonEntranceStartedAt = Date.now() + 500;
+        const elapsed = Date.now() - this._buttonEntranceStartedAt - index * 90;
+        const progress = Math.max(0, Math.min(1, elapsed / 700));
+        const eased = 1 - Math.pow(1 - progress, 3);
         const isActive = isSelected || isHover;
-        const scrambleText = isActive ? this._getScrambledText(label, this.btnProgress[index]) : undefined;
+        const scrambleText = isActive && label !== 'BACK' ? this._getScrambledText(label, this.btnProgress[index]) : undefined;
+        ctx.save();
+        ctx.globalAlpha *= eased;
+        ctx.translate(-24 * scaleX * (1 - eased), 0);
         this._drawPersonaButton(ctx, scaleX, scaleY, bx, by, bw, bh, label, isActive, label === 'QUIT GAME', scrambleText, index);
+        ctx.restore();
     }
 
     _drawPersonaButton(ctx, scaleX, scaleY, bx, by, bw, bh, label, isActive, isDanger, displayLabel, index) {
@@ -548,12 +611,12 @@ class IP2LiveTitleScreenImplementation extends Scene.Base {
         const red = isDanger ? '#FF335F' : '#FF003C';
         const cyan = '#00F0FF';
         const yellow = '#FFE600';
+        const isBack = label === 'BACK';
         const active = isDanger ? red : yellow;
         const labelText = displayLabel || label;
         const pulse = 0.55 + 0.45 * Math.sin(this.animTick * 0.12);
 
         ctx.save();
-        ctx.translate(isActive ? 12 * scaleX : 0, 0);
 
         ctx.beginPath();
         ctx.moveTo(x + slant, y);
@@ -580,8 +643,8 @@ class IP2LiveTitleScreenImplementation extends Scene.Base {
         ctx.fill();
 
         ctx.shadowBlur = 0;
-        ctx.lineWidth = (isActive ? 2.4 : 1.1) * scaleX;
-        ctx.strokeStyle = isActive ? active : (isDanger ? 'rgba(255,0,60,0.54)' : 'rgba(0,240,255,0.54)');
+        ctx.lineWidth = (isActive ? 2.4 : isBack ? 1.8 : 1.1) * scaleX;
+        ctx.strokeStyle = isBack ? yellow : isActive ? active : (isDanger ? 'rgba(255,0,60,0.54)' : 'rgba(0,240,255,0.54)');
         ctx.stroke();
 
         ctx.save();
@@ -604,7 +667,7 @@ class IP2LiveTitleScreenImplementation extends Scene.Base {
         ctx.lineTo(x + tab - 12 * scaleX, y + 19 * scaleY);
         ctx.lineTo(x, y + 24 * scaleY);
         ctx.closePath();
-        ctx.fillStyle = isActive ? red : 'rgba(0,240,255,0.82)';
+        ctx.fillStyle = isBack ? yellow : isActive ? red : 'rgba(0,240,255,0.82)';
         ctx.fill();
 
         if (isActive) {
@@ -1046,21 +1109,6 @@ class IP2LiveTitleScreenImplementation extends Scene.Base {
     }
 
 
-    _drawCornerDeco(ctx, scaleX, scaleY, cH) {
-        ctx.strokeStyle = 'rgba(0,255,255,0.3)';
-        ctx.lineWidth = 1 * scaleX;
-        ctx.shadowBlur = 0;
-        const bx = 25 * scaleX, by = cH - 40 * scaleY;
-        ctx.beginPath();
-        ctx.moveTo(bx, by); ctx.lineTo(bx + 60 * scaleX, by);
-        ctx.moveTo(bx, by); ctx.lineTo(bx, by + 20 * scaleY);
-        ctx.stroke();
-        ctx.font = (8 * scaleX) + 'px monospace';
-        ctx.fillStyle = 'rgba(0,255,255,0.4)';
-        ctx.textAlign = 'left';
-        ctx.fillText('SYS::CONNECTED', 25 * scaleX, cH - 20 * scaleY);
-    }
-
     _getScrambledText(target, progress) {
         if (progress >= target.length * 3 + 10) return target;
         let result = '';
@@ -1138,4 +1186,3 @@ function installIP2LiveTitleScreen() {
 installIP2LiveTitleScreen();
 
 console.log('[IP2Live] main-menu.js loaded into Scene.TitleScreen.');
-

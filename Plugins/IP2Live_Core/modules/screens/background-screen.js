@@ -6,7 +6,8 @@
  */
 
 class IP2LiveBackgroundScreen {
-    constructor() {
+    constructor(options = {}) {
+        this.showDeckHeading = options.showDeckHeading !== false;
         this._lastW = 0;
         this._lastH = 0;
         this._packetLines = [];
@@ -334,13 +335,15 @@ class IP2LiveBackgroundScreen {
             }
         }
 
-        // Anchor header for right composition.
-        ctx.font = 'bold ' + Math.round(height * 0.016) + 'px monospace';
-        ctx.fillStyle = 'rgba(255,255,255,0.92)';
-        ctx.fillText('INFILTRATOR NETWORK DECK', width * 0.645, height * 0.12);
-        ctx.font = Math.round(height * 0.010) + 'px monospace';
-        ctx.fillStyle = 'rgba(0,240,255,0.74)';
-        ctx.fillText('IT // HACKING // ENGINEERING // SUBNETTING', width * 0.645, height * 0.145);
+        // Other screens may retain the deck heading; the title menu omits it.
+        if (this.showDeckHeading) {
+            ctx.font = 'bold ' + Math.round(height * 0.016) + 'px monospace';
+            ctx.fillStyle = 'rgba(255,255,255,0.92)';
+            ctx.fillText('INFILTRATOR NETWORK DECK', width * 0.645, height * 0.12);
+            ctx.font = Math.round(height * 0.010) + 'px monospace';
+            ctx.fillStyle = 'rgba(0,240,255,0.74)';
+            ctx.fillText('IT // HACKING // ENGINEERING // SUBNETTING', width * 0.645, height * 0.145);
+        }
 
         ctx.restore();
     }
