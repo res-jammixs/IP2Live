@@ -481,6 +481,7 @@
                 onComplete: (result) => this._completeHarderGameplay(opts, result),
                 onFailed: (result) => this._failHarderGameplay(opts, result),
                 onCancel: () => {
+                    if (IP2Live.GameManager && IP2Live.GameManager.finishTutorialReplay && IP2Live.GameManager.finishTutorialReplay('ip_class_wires_harder', opts, 'cancelled')) return;
                     this._activeAttempt = null;
                     this._lockUntilStepOff(spec);
                     if (IP2Live.GameManager && typeof IP2Live.GameManager.handleGameplayCancelled === 'function') {
@@ -501,7 +502,10 @@
             const openGameplay = () => {
                 this._playMusicZone('GAMEPLAY_1');
                 const screen = createScreen();
-                Manager.Stack.replace(screen);
+                if (opts.tutorialReplay) {
+                    IP2Live.GameManager.prepareTutorialReplayScreen(screen, opts);
+                    Manager.Stack.push(screen);
+                } else Manager.Stack.replace(screen);
                 if (spec.tutorial && !opts._ip2liveResumeGameplay && IP2Live.IPWiresHarderTutorial && typeof IP2Live.IPWiresHarderTutorial.showIntro === 'function') {
                     setTimeout(() => {
                         IP2Live.IPWiresHarderTutorial.showIntro(screen);
@@ -509,6 +513,7 @@
                 }
             };
 
+            if (opts.tutorialReplay) { openGameplay(); return true; }
             const ScreenClass = IP2Live.LoadingScreen2 || IP2Live.LoadingScreen;
             if (ScreenClass && typeof ScreenClass.show === 'function') {
                 ScreenClass.show({
@@ -525,6 +530,7 @@
         },
 
         _completeHarderGameplay(options, result) {
+            if (IP2Live.GameManager && IP2Live.GameManager.finishTutorialReplay && IP2Live.GameManager.finishTutorialReplay('ip_class_wires_harder', options, 'completed', result)) return true;
             const opts = options || {};
             const spec = opts.spec || this._gameplayQuestSpec();
             this._activeAttempt = null;
@@ -556,6 +562,7 @@
         },
 
         _failHarderGameplay(options, result) {
+            if (IP2Live.GameManager && IP2Live.GameManager.finishTutorialReplay && IP2Live.GameManager.finishTutorialReplay('ip_class_wires_harder', options, 'failed', result)) return true;
             const opts = options || {};
             const spec = opts.spec || this._gameplayQuestSpec();
             this._activeAttempt = null;
@@ -563,15 +570,6 @@
             Manager.Stack.pop();
             this._restoreStageMusic();
 
-            if (!spec.tutorial) {
-                this._tutorialReturnCycles++;
-                if (this._tutorialReturnCycles >= 3) {
-                    this._tutorialReturnCycles = 0;
-                    this._sendBackToFirstFloor();
-                } else {
-                    this._sendBackToHarderTutorial();
-                }
-            }
 
             if (IP2Live.GameManager && typeof IP2Live.GameManager.handleGameplayFailed === 'function') {
                 IP2Live.GameManager.handleGameplayFailed('ip_class_wires_harder', {

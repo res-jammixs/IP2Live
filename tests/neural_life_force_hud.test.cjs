@@ -104,7 +104,7 @@ assert.equal(ctx.text.includes('WIN STREAK'), false);
 assert.ok(ctx.text.includes('084 / 100'));
 assert.equal(ctx.text.includes('NEURAL LIFE FORCE'), false);
 assert.equal(ctx.text.some((value) => value.includes('SYNC STABLE')), false);
-assert.ok(ctx.bezierCalls >= 3, 'HUD should include layered conduit and cable paths');
+assert.ok(ctx.text.includes('NEURAL DECK'), 'HUD uses the shared Neural Deck identity');
 assert.ok(ctx.gradientStops.some(([, color]) => color === '#FF174D'));
 assert.ok(ctx.gradientStops.some(([, color]) => color === '#FF8A00'));
 assert.ok(ctx.gradientStops.some(([, color]) => color === '#FFE600'));
@@ -135,6 +135,31 @@ assert.equal(manager.drawHUD(ctx), true);
 assert.ok(ctx.text.includes('0'));
 assert.equal(ctx.text.includes('NEUTRAL'), false);
 assert.ok(ctx.text.includes('DANGER // LIFE FORCE CRITICAL'));
+
+state.lifeForce = 60;
+manager._animHp = 60;
+manager._ghostHp = 60;
+for (const streak of [1, 2, 3]) {
+    state.successStreak = streak;
+    state.lastChange = { kind: 'success', delta: streak < 3 ? 0 : 12, at: Date.now() };
+    const previousWinIcons = winIcons;
+    const previousLossIcons = lossIcons;
+    ctx = createContext();
+    assert.equal(manager.drawHUD(ctx), true);
+    assert.ok(ctx.text.includes(String(streak)), 'the neutral icon shows progress toward three wins');
+    assert.equal(winIcons - previousWinIcons, streak >= 3 ? 1 : 0, 'the win icon activates at three consecutive wins');
+    assert.equal(lossIcons, previousLossIcons);
+    assert.equal(ctx.text.some((value) => value.startsWith('RECOVERY +')), streak >= 3, 'no recovery feedback before win three');
+}
+
+state.successStreak = 0;
+state.failureStreak = 1;
+state.lastChange = { kind: 'failure', delta: -10, at: Date.now() };
+const previousLossIcons = lossIcons;
+ctx = createContext();
+assert.equal(manager.drawHUD(ctx), true);
+assert.equal(lossIcons, previousLossIcons + 1, 'the loss icon activates immediately on the first failure');
+assert.ok(ctx.text.includes('DAMAGE -10 // FAILURE'));
 
 assert.match(source, /oxaniumMediumLoaded\s*\?\s*'Oxanium-Medium'/);
 assert.doesNotMatch(source, /fillText\('QUEST CHAIN'|fillText\(statusLabel/);

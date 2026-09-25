@@ -1347,6 +1347,14 @@ IP2Live.GameManagerReady = (async function () {
     const root = Common.Platform.ROOT_DIRECTORY;
     const src  = root + 'Plugins/IP2Live_Core/modules/game_manager.js';
     try {
+        const replaySrc = root + 'Plugins/IP2Live_Core/modules/tutorial_replay.js';
+        const replayResponse = await fetch(replaySrc + '?v=' + Date.now(), { cache: 'no-store' });
+        if (!replayResponse.ok) throw new Error('TutorialReplay HTTP ' + replayResponse.status);
+        new Function(
+            'Common', 'Core', 'Data', 'Graphic',
+            'Manager', 'Scene', 'Model', 'Main', 'THREE', 'IP2Live', 'inject',
+            await replayResponse.text()
+        )(Common, Core, Data, Graphic, Manager, Scene, Model, Main, THREE, IP2Live, inject);
         const versionedSrc = src + '?v=20260918_game_manager_14_' + Date.now();
         let resp = await fetch(versionedSrc, { cache: 'no-store' });
         if (!resp.ok) {

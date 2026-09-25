@@ -448,6 +448,7 @@
             gameplayId,
             payload
         ) {
+            if (payload && (payload.tutorialReplay || (payload.spec && payload.spec.tutorialReplay))) return null;
             const sessions =
                 this._sessions(false);
 
@@ -571,6 +572,7 @@
             screen,
             reason
         ) {
+            if (screen && screen.options && screen.options.tutorialReplay) return null;
             if (
                 !screen ||
                 screen._ip2liveGameplayExited
@@ -1417,6 +1419,7 @@
 
             if (
                 gameManager &&
+                !(screen.options && screen.options.tutorialReplay) &&
                 typeof gameManager.saveProgressToActiveSlot === 'function'
             ) {
                 Promise.resolve(
@@ -1450,6 +1453,13 @@
         },
 
         async exitQuest(screen) {
+            if (screen && screen.options && screen.options.tutorialReplay && IP2Live.TutorialReplay) {
+                const replay = IP2Live.TutorialReplay.session;
+                if (!replay || replay.screen !== screen) return { saved: false, reason: 'no-active-tutorial' };
+                if (Manager.Stack.top && Manager.Stack.top.sourceScreen === screen) Manager.Stack.pop();
+                this.closeMenu();
+                return { saved: false, reason: 'tutorial-finished', finished: IP2Live.TutorialReplay.finishScreen(screen) };
+            }
             if (
                 !screen ||
                 screen._ip2liveGameplayExited
@@ -1826,13 +1836,15 @@
                 this.sourceScreen ||
                 GameplayPause.activeScreen;
 
+            const replay = !!(this.sourceScreen && this.sourceScreen.options && this.sourceScreen.options.tutorialReplay);
+
             this.menuItems = [
                 {
                     title:
                         'RESUME',
 
                     subtitle:
-                        'RETURN TO ACTIVE QUEST',
+                        replay ? 'RETURN TO TUTORIAL' : 'RETURN TO ACTIVE QUEST',
 
                     danger:
                         false,
@@ -1849,10 +1861,10 @@
                 },
                 {
                     title:
-                        'EXIT QUEST',
+                        replay ? 'FINISH TUTORIAL' : 'EXIT QUEST',
 
                     subtitle:
-                        'SAVE STATE & LEAVE QUEST',
+                        replay ? 'RETURN TO CURRENT QUEST' : 'SAVE STATE & LEAVE QUEST',
 
                     danger:
                         true,

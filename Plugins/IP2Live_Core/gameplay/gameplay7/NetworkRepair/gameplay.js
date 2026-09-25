@@ -1233,9 +1233,11 @@ const NetworkRepairGameplayManager = {
 
             var openGameplay = function () {
                 self._playMusicZone('GAMEPLAY_1');
-                if (Manager && Manager.Stack && typeof Manager.Stack.replace === 'function') Manager.Stack.replace(screen);
+                if (opts.tutorialReplay) IP2Live.GameManager.prepareTutorialReplayScreen(screen, opts);
+                if (opts.tutorialReplay && Manager && Manager.Stack) { Manager.Stack.push(screen); }
+                else if (Manager && Manager.Stack && typeof Manager.Stack.replace === 'function') Manager.Stack.replace(screen);
                 else if (Manager && Manager.Stack && typeof Manager.Stack.push === 'function') Manager.Stack.push(screen);
-                if (shouldShowIntro && IP2Live.IPNetworkRepairTutorial && typeof IP2Live.IPNetworkRepairTutorial.showIntro === 'function') {
+                if ((opts.tutorialReplay || shouldShowIntro) && IP2Live.IPNetworkRepairTutorial && typeof IP2Live.IPNetworkRepairTutorial.showIntro === 'function') {
                     IP2Live.IPNetworkRepairTutorial.showIntro(screen.scenario, function () {});
                 }
             };
@@ -1255,6 +1257,7 @@ const NetworkRepairGameplayManager = {
                 self._active = false;
                 self._activeAttempt = null;
                 console.warn('[IP2Live] NetworkRepairGameplayManager failed to open gameplay:', e);
+                if (opts.tutorialReplay && IP2Live.GameManager) IP2Live.GameManager.finishTutorialReplay('ip_network_repair', opts, 'unavailable');
                 if (Manager && Manager.Stack) Manager.Stack.requestPaintHUD = true;
             }
         };
@@ -1289,6 +1292,7 @@ const NetworkRepairGameplayManager = {
     },
 
     _onComplete(options, result) {
+        if (IP2Live.GameManager && IP2Live.GameManager.finishTutorialReplay && IP2Live.GameManager.finishTutorialReplay('ip_network_repair', options, 'completed', result)) return true;
         var opts = options || {};
         var spec = opts.spec || this._defaultQuestSpec();
         this._active = false;
@@ -1331,6 +1335,7 @@ const NetworkRepairGameplayManager = {
     },
 
     _onFailed(options, result) {
+        if (IP2Live.GameManager && IP2Live.GameManager.finishTutorialReplay && IP2Live.GameManager.finishTutorialReplay('ip_network_repair', options, 'failed', result)) return true;
         var opts = options || {};
         var spec = opts.spec || this._defaultQuestSpec();
         this._active = false;
@@ -1349,8 +1354,6 @@ const NetworkRepairGameplayManager = {
                     mapId: opts.mapId || 15,
                     result: result,
                 });
-            } else {
-                self._sendBackToFirstRepair(spec);
             }
             if (Manager && Manager.Stack) Manager.Stack.requestPaintHUD = true;
         };
@@ -1358,12 +1361,13 @@ const NetworkRepairGameplayManager = {
         if (!this._showLoadingScreen2({
             mode: 'replace',
             status: 'Loading Stage',
-            detail: 'Rollback circuit engaged',
+            detail: 'Returning to the active repair quest',
             onComplete: finalizeExit,
         })) finalizeExit();
     },
 
     _onCancel(options) {
+        if (IP2Live.GameManager && IP2Live.GameManager.finishTutorialReplay && IP2Live.GameManager.finishTutorialReplay('ip_network_repair', options, 'cancelled', null)) return true;
         var opts = options || {};
         var spec = opts.spec || this._defaultQuestSpec();
         this._active = false;

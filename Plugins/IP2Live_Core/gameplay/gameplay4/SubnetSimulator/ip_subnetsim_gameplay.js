@@ -4330,7 +4330,7 @@ const SubnetSimulatorGameplayManager = {
                 questId: opts.questId,
                 objectiveId: opts.objectiveId,
                 timeSeconds: configuredTimeSeconds,
-                guidedTutorial: shouldShowIntro,
+                guidedTutorial: !!opts.tutorialReplay || shouldShowIntro,
                 enforceAttemptLimit: !!opts.enforceAttemptLimit,
                 maxAttempts: opts.maxAttempts || 3,
                 onComplete: (result) => this._onComplete(opts, result),
@@ -4340,7 +4340,9 @@ const SubnetSimulatorGameplayManager = {
 
             const openGameplay = () => {
                 this._playMusicZone('GAMEPLAY_1');
-                if (Manager && Manager.Stack && typeof Manager.Stack.replace === 'function') {
+                if (opts.tutorialReplay) IP2Live.GameManager.prepareTutorialReplayScreen(screen, opts);
+                if (opts.tutorialReplay && Manager && Manager.Stack) { Manager.Stack.push(screen); }
+                else if (Manager && Manager.Stack && typeof Manager.Stack.replace === 'function') {
                     Manager.Stack.replace(screen);
                 } else if (Manager && Manager.Stack && typeof Manager.Stack.push === 'function') {
                     Manager.Stack.push(screen);
@@ -4362,6 +4364,7 @@ const SubnetSimulatorGameplayManager = {
                 this._active = false;
                 this._activeAttempt = null;
                 console.warn('[IP2Live] SubnetSimulatorGameplayManager failed to open gameplay:', e);
+                if (opts.tutorialReplay && IP2Live.GameManager) IP2Live.GameManager.finishTutorialReplay('ip_subnet_simulator', opts, 'unavailable');
                 if (Manager && Manager.Stack) Manager.Stack.requestPaintHUD = true;
             }
         };
@@ -4371,6 +4374,7 @@ const SubnetSimulatorGameplayManager = {
     },
 
     _onComplete(options, result) {
+        if (IP2Live.GameManager && IP2Live.GameManager.finishTutorialReplay && IP2Live.GameManager.finishTutorialReplay('ip_subnet_simulator', options, 'completed', result)) return true;
         const opts = options || {};
         const spec = opts.spec || this._defaultQuestSpec();
         this._active = false;
@@ -4413,6 +4417,7 @@ const SubnetSimulatorGameplayManager = {
     },
 
     _onFailed(options, result) {
+        if (IP2Live.GameManager && IP2Live.GameManager.finishTutorialReplay && IP2Live.GameManager.finishTutorialReplay('ip_subnet_simulator', options, 'failed', result)) return true;
         const opts = options || {};
         const spec = opts.spec || this._defaultQuestSpec();
         this._active = false;
@@ -4422,9 +4427,6 @@ const SubnetSimulatorGameplayManager = {
         const finalizeExit = () => {
             if (Manager && Manager.Stack && typeof Manager.Stack.pop === 'function') Manager.Stack.pop();
             this._restoreStageMusic();
-            if (Number(opts.mapId || spec.mapId) === 8) {
-                this._sendBackToSubnetTutorial(result && result.reason);
-            }
             if (typeof opts.onFailed === 'function') opts.onFailed(result);
             if (IP2Live.GameManager && typeof IP2Live.GameManager.handleGameplayFailed === 'function') {
                 IP2Live.GameManager.handleGameplayFailed('ip_subnet_simulator', {
@@ -4481,6 +4483,7 @@ const SubnetSimulatorGameplayManager = {
     },
 
     _onCancel(options) {
+        if (IP2Live.GameManager && IP2Live.GameManager.finishTutorialReplay && IP2Live.GameManager.finishTutorialReplay('ip_subnet_simulator', options, 'cancelled', null)) return true;
         const opts = options || {};
         const spec = opts.spec || this._defaultQuestSpec();
         this._active = false;

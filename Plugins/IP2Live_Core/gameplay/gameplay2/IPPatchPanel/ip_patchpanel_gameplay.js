@@ -2668,7 +2668,9 @@ const PatchPanelGameplayManager = {
 
             const openGameplay = () => {
                 this._playMusicZone('GAMEPLAY_2');
-                if (Manager && Manager.Stack && typeof Manager.Stack.replace === 'function') {
+                if (opts.tutorialReplay) IP2Live.GameManager.prepareTutorialReplayScreen(screen, opts);
+                if (opts.tutorialReplay && Manager && Manager.Stack) { Manager.Stack.push(screen); }
+                else if (Manager && Manager.Stack && typeof Manager.Stack.replace === 'function') {
                     Manager.Stack.replace(screen);
                 } else if (Manager && Manager.Stack && typeof Manager.Stack.push === 'function') {
                     Manager.Stack.push(screen);
@@ -2694,6 +2696,7 @@ const PatchPanelGameplayManager = {
                 this._active = false;
                 this._activeAttempt = null;
                 console.warn('[IP2Live] PatchPanelGameplayManager failed to open gameplay:', e);
+                if (opts.tutorialReplay && IP2Live.GameManager) IP2Live.GameManager.finishTutorialReplay('ip_patch_panel_classes', opts, 'unavailable');
                 if (Manager && Manager.Stack) Manager.Stack.requestPaintHUD = true;
             }
         };
@@ -2710,6 +2713,7 @@ const PatchPanelGameplayManager = {
     },
 
     _onComplete(options, result) {
+        if (IP2Live.GameManager && IP2Live.GameManager.finishTutorialReplay && IP2Live.GameManager.finishTutorialReplay('ip_patch_panel_classes', options, 'completed', result)) return true;
         const opts = options || {};
         const spec = opts.spec || this._defaultQuestSpec();
         const completionResult = Object.assign({}, result || {}, {
@@ -2771,6 +2775,7 @@ const PatchPanelGameplayManager = {
     },
 
     _onFailed(options, result) {
+        if (IP2Live.GameManager && IP2Live.GameManager.finishTutorialReplay && IP2Live.GameManager.finishTutorialReplay('ip_patch_panel_classes', options, 'failed', result)) return true;
         const opts = options || {};
         const spec = opts.spec || this._defaultQuestSpec();
         const failureResult = Object.assign({}, result || {}, {
@@ -2854,6 +2859,7 @@ const PatchPanelGameplayManager = {
     },
 
     _onCancel(options) {
+        if (IP2Live.GameManager && IP2Live.GameManager.finishTutorialReplay && IP2Live.GameManager.finishTutorialReplay('ip_patch_panel_classes', options, 'cancelled', null)) return true;
         const opts = options || {};
         const spec = opts.spec || this._defaultQuestSpec();
         this._active = false;

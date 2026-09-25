@@ -2242,6 +2242,7 @@ const CIDRQuarantineGameplayManager = {
             });
             const openGameplay = () => {
                 this._playMusicZone('GAMEPLAY_1');
+                if (opts.tutorialReplay) IP2Live.GameManager.prepareTutorialReplayScreen(screen, opts);
                 const stack = Manager && Manager.Stack ? Manager.Stack : null;
                 if (stack) {
                     if (opts.mode === 'push' && typeof stack.push === 'function') stack.push(screen);
@@ -2253,7 +2254,12 @@ const CIDRQuarantineGameplayManager = {
             if (opts.useLoading === true && this._showLoadingScreen2({ mode: 'push', status: 'Loading Gameplay', detail: 'Opening CIDR Quarantine', onComplete: openGameplay })) return;
             openGameplay();
         };
-        const openSafely = () => { try { open(); } catch (e) { this._active = false; this._activeAttempt = null; console.warn('[IP2Live] CIDRQuarantineGameplayManager failed to open gameplay:', e); } };
+        const openSafely = () => {
+            try { open(); } catch (e) {
+                this._active = false; this._activeAttempt = null; console.warn('[IP2Live] CIDRQuarantineGameplayManager failed to open gameplay:', e);
+                if (opts.tutorialReplay && IP2Live.GameManager) IP2Live.GameManager.finishTutorialReplay('ip_cidr_quarantine', opts, 'unavailable');
+            }
+        };
         openSafely();
         return true;
     },
@@ -2264,6 +2270,7 @@ const CIDRQuarantineGameplayManager = {
     },
 
     _onComplete(options, result) {
+        if (IP2Live.GameManager && IP2Live.GameManager.finishTutorialReplay && IP2Live.GameManager.finishTutorialReplay('ip_cidr_quarantine', options, 'completed', result)) return true;
         const opts = options || {};
         const spec = opts.spec || this._defaultQuestSpec(opts.mapId);
         const mapId = Number(opts.mapId || spec.mapId) || 12;
@@ -2298,6 +2305,7 @@ const CIDRQuarantineGameplayManager = {
     },
 
     _onFailed(options, result) {
+        if (IP2Live.GameManager && IP2Live.GameManager.finishTutorialReplay && IP2Live.GameManager.finishTutorialReplay('ip_cidr_quarantine', options, 'failed', result)) return true;
         const opts = options || {};
         const spec = opts.spec || this._defaultQuestSpec(opts.mapId);
         const mapId = Number(opts.mapId || spec.mapId) || 12;
@@ -2309,8 +2317,6 @@ const CIDRQuarantineGameplayManager = {
             this._restoreStageMusic();
             if (IP2Live.GameManager && typeof IP2Live.GameManager.handleGameplayFailed === 'function') {
                 IP2Live.GameManager.handleGameplayFailed('ip_cidr_quarantine', { gameplayId: 'ip_cidr_quarantine', spec, questId: opts.questId, objectiveId: opts.objectiveId, mapId, result });
-            } else {
-                this._recoverToTutorial(spec);
             }
             if (Manager && Manager.Stack) Manager.Stack.requestPaintHUD = true;
         };
@@ -2339,6 +2345,7 @@ const CIDRQuarantineGameplayManager = {
     },
 
     _onCancel(options) {
+        if (IP2Live.GameManager && IP2Live.GameManager.finishTutorialReplay && IP2Live.GameManager.finishTutorialReplay('ip_cidr_quarantine', options, 'cancelled', null)) return true;
         const opts = options || {};
         const spec = opts.spec || this._defaultQuestSpec(opts.mapId);
         this._active = false;

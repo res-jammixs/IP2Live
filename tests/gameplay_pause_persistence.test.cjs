@@ -94,6 +94,7 @@ function harness() {
         pauseSource + '\nreturn { system: IP2Live.GameplayPause, Menu: window.IP2LiveGameplayPauseMenu };'
     );
     const loaded = load(Common, Core, Data, {}, { Stack: stack }, { Base: BaseScene }, {}, {}, {}, IP2Live, function () {}, windowObject);
+    loaded.system._capturePauseBackdrop = () => null;
     return { ...loaded, Common, Core, Data, IP2Live, stack };
 }
 
@@ -117,7 +118,7 @@ async function testPauseInputAndDurableRestore() {
     assert.equal(original.oldEscapeHandlerReached, undefined, 'Escape must not reach the old immediate-cancel handler');
     assert.equal(h.stack.pushed.length, 1);
     h.stack.pushed[0].initialize();
-    assert.deepEqual(h.stack.pushed[0].menuItems, ['RESUME', 'SETTINGS', 'EXIT QUEST']);
+    assert.deepEqual(h.stack.pushed[0].menuItems.map(item => item.title), ['RESUME', 'SETTINGS', 'EXIT QUEST']);
 
     const sessions = h.Core.Game.current.ip2liveGameStates.gameplaySessions;
     const keys = Object.keys(sessions);

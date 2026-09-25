@@ -2127,6 +2127,7 @@
                 onComplete: (result) => this._completeWireGameplay(opts, result),
                 onFailed: (result) => this._failWireGameplay(opts, result),
                 onCancel: () => {
+                    if (IP2Live.GameManager && IP2Live.GameManager.finishTutorialReplay && IP2Live.GameManager.finishTutorialReplay('ip_class_wires', opts, 'cancelled')) return;
                     this._activeAttempt = null;
                     this._lockUntilStepOff(spec);
                     if (IP2Live.GameManager && typeof IP2Live.GameManager.handleGameplayCancelled === 'function') {
@@ -2147,7 +2148,10 @@
             const openGameplay = () => {
                 this._playMusicZone('GAMEPLAY_1');
                 const screen = createScreen();
-                Manager.Stack.replace(screen);
+                if (opts.tutorialReplay) {
+                    IP2Live.GameManager.prepareTutorialReplayScreen(screen, opts);
+                    Manager.Stack.push(screen);
+                } else Manager.Stack.replace(screen);
                 if (spec.tutorial && !opts._ip2liveResumeGameplay && IP2Live.IPWiresTutorial && typeof IP2Live.IPWiresTutorial.activateGuidedSession === 'function') {
                     setTimeout(() => {
                         IP2Live.IPWiresTutorial.activateGuidedSession(screen);
@@ -2155,6 +2159,7 @@
                 }
             };
 
+            if (opts.tutorialReplay) { openGameplay(); return true; }
             const ScreenClass = IP2Live.LoadingScreen2 || IP2Live.LoadingScreen;
             if (ScreenClass && typeof ScreenClass.show === 'function') {
                 ScreenClass.show({
@@ -2171,6 +2176,7 @@
         },
 
         _completeWireGameplay(options, result) {
+            if (IP2Live.GameManager && IP2Live.GameManager.finishTutorialReplay && IP2Live.GameManager.finishTutorialReplay('ip_class_wires', options, 'completed', result)) return true;
             const opts = options || {};
             const spec = opts.spec || this._defaultQuestSpec();
             const mapId = Number(opts.mapId || spec.mapId) || 3;
@@ -2201,6 +2207,7 @@
         },
 
         _failWireGameplay(options, result) {
+            if (IP2Live.GameManager && IP2Live.GameManager.finishTutorialReplay && IP2Live.GameManager.finishTutorialReplay('ip_class_wires', options, 'failed', result)) return true;
             const opts = options || {};
             const spec = opts.spec || this._defaultQuestSpec();
             const mapId = Number(opts.mapId || spec.mapId) || 3;
@@ -2219,14 +2226,6 @@
                 });
                 if (Manager && Manager.Stack) Manager.Stack.requestPaintHUD = true;
                 return result;
-            }
-
-            if (spec.tutorial) {
-                if (IP2Live.IPWiresTutorial && typeof IP2Live.IPWiresTutorial.showPacketsShifted === 'function') {
-                    setTimeout(() => IP2Live.IPWiresTutorial.showPacketsShifted(), 220);
-                }
-            } else {
-                this._sendStageBackToFirstWire(spec);
             }
 
             if (Manager && Manager.Stack) Manager.Stack.requestPaintHUD = true;

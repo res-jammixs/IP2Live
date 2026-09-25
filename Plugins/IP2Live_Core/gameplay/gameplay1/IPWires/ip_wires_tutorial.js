@@ -75,7 +75,11 @@
 
         _runIntroSequence(screen) {
             this._clearHighlight(screen);
-            this._startDynamicDialogue('stage1.ipwires.guided.welcome.', {
+            const welcome = (options) => {
+                if (screen.options && screen.options.tutorialReplay) options.onComplete();
+                else this._startDynamicDialogue('stage1.ipwires.guided.welcome.', options);
+            };
+            welcome({
                 title: 'WIRE PATCH',
                 speaker: 'SYSTEM',
                 timing: 'during',

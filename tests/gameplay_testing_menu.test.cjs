@@ -11,17 +11,21 @@ function read(relativePath) {
 
 function loadGameManager() {
     const IP2Live = {};
+    const Common = { ScreenResolution: { SCREEN_X: 1280, SCREEN_Y: 720 } };
+    const Core = { Game: { current: { currentMapID: 3 } } };
+    const Manager = { Stack: {} };
+    const Scene = { Map: { current: null } };
     const load = new Function(
         'Common', 'Core', 'Data', 'Graphic', 'Manager', 'Scene', 'Model', 'Main', 'THREE', 'IP2Live', 'inject', 'window',
         read('modules/game_manager.js') + '\nreturn IP2Live.GameManager;'
     );
     const manager = load(
-        {},
-        { Game: { current: { currentMapID: 3 } } },
+        Common,
+        Core,
         { Systems: { saveSlots: 9 } },
         {},
-        { Stack: {} },
-        { Map: { current: null } },
+        Manager,
+        Scene,
         {},
         {},
         {},
@@ -29,7 +33,7 @@ function loadGameManager() {
         function () {},
         {}
     );
-    return { manager, IP2Live };
+    return { manager, IP2Live, Common, Core, Manager, Scene };
 }
 
 function testCatalogCoverageAndNames() {
@@ -144,6 +148,111 @@ function testSingleQuestSkipUsesNormalCompletionPipeline() {
 
     IP2Live.DialogueManager = { isActive() { return true; } };
     assert.equal(manager._hasSkippableSingleQuest(8), false, 'the control must wait for active dialogue');
+}
+
+function testFailQuestButtonRollsBackWithinCurrentLevel() {
+    const { manager, IP2Live, Core, Manager, Scene } = loadGameManager();
+    Core.Game.current.currentMapID = 8;
+    const quests = {};
+    for (const index of ['01', '02']) {
+        const id = 'stage.8.cidr_chain.' + index;
+        quests[id] = {
+            id,
+            objectives: [
+                { id: 'solve_cidr_chain_' + index + '_panel' },
+                { id: 'solve_cidr_chain_' + index + '_subnet' },
+            ],
+        };
+    }
+    const previousId = 'stage.8.cidr_chain.01';
+    const currentId = 'stage.8.cidr_chain.02';
+    const qm = IP2Live.QuestManager = {
+        activeMapId: 8,
+        activeQuestId: currentId,
+        activeObjectiveId: 'solve_cidr_chain_02_subnet',
+        quests,
+        mapQuestQueues: { 8: { questIds: [previousId, currentId] } },
+        completedObjectives: {
+            [previousId]: { solve_cidr_chain_01_panel: true, solve_cidr_chain_01_subnet: true },
+            [currentId]: { solve_cidr_chain_02_panel: true },
+        },
+        currentQuest() { return this.quests[this.activeQuestId]; },
+        currentObjective() { return this.currentQuest().objectives.find((o) => o.id === this.activeObjectiveId); },
+        startQuest(id, options) {
+            if (options && options.restart) this.completedObjectives[id] = options.completedObjectives || {};
+            this.activeQuestId = id;
+            this.activeObjectiveId = this.quests[id].objectives.find((o) => !this.completedObjectives[id][o.id]).id;
+            return true;
+        },
+    };
+    new Function('Core', 'IP2Live', 'Manager', 'Scene', 'window',
+        read('modules/game-state/neural_life_force_manager.js'))(Core, IP2Live, Manager, Scene, {});
+    const failures = [];
+    const reports = [];
+    const checkpoints = [];
+    manager.on(manager.EVENT.GAMEPLAY_FAILED, (data) => failures.push(data));
+    manager._closeReportAttempt = (gameplayId, data, passed) => reports.push({ gameplayId, data, passed });
+    manager._queueCheckpoint = (reason) => checkpoints.push(reason);
+    manager._playConfirm = () => {};
+    manager._playCursor = () => {};
+
+    manager.enableQuestFailButton = false;
+    assert.equal(manager.failCurrentQuest(8), false);
+    manager.enableQuestFailButton = true;
+    manager.enableSingleQuestSkipButton = false;
+    manager.enableQuestSkipButton = false;
+    assert.equal(manager.failCurrentQuest(9), false, 'a stale map must not fail the active quest');
+    manager._activeGameplayNode = {};
+    assert.equal(manager.failCurrentQuest(8), false, 'do not interrupt a running gameplay');
+    manager._activeGameplayNode = null;
+    IP2Live.DialogueManager = { isActive: () => true };
+    assert.equal(manager.failCurrentQuest(8), false);
+    IP2Live.DialogueManager.isActive = () => false;
+
+    const scene = { id: 8 };
+    const ctx = { canvas: { width: 1280, height: 720 } };
+    const labels = [];
+    manager._drawDeveloperQuestButton = (context, options) => labels.push(options.title);
+    manager._drawQuestFailButton(ctx, scene);
+    const rect = manager._questFailButtonRect;
+    assert.equal(rect.y, 16, 'fail button works independently of skip buttons');
+    assert.equal(rect.active, true);
+    assert.deepEqual(labels, ['SIMULATE FAIL QUEST']);
+    assert.equal(manager._updateQuestHudAnchorRect(), rect);
+    assert.equal(manager._onMapMouseUp(rect.x + 1, rect.y + 1, scene), true);
+    assert.equal(Manager.Stack.requestPaintHUD, true);
+    assert.equal(qm.activeQuestId, previousId);
+    assert.equal(qm.activeObjectiveId, 'solve_cidr_chain_01_panel', 'rollback reopens the previous quest from its first objective');
+    assert.deepEqual(qm.completedObjectives[previousId], {});
+    assert.equal(qm.completedObjectives[currentId].solve_cidr_chain_02_panel, true);
+    assert.equal(IP2Live.NeuralLifeForce.getState().lifeForce, 90);
+    assert.equal(failures.length, 1);
+    assert.equal(failures[0].result.reason, 'attempts_exhausted');
+    assert.equal(failures[0].developerQuestFail, true);
+    assert.equal(failures[0].neuralRecoveryHandled, true);
+    assert.equal(failures[0].rollbackQuestId, previousId);
+    assert.equal(reports.length, 1);
+    assert.equal(reports[0].passed, false);
+    assert.deepEqual(checkpoints, ['neural_life_force_failure']);
+
+    assert.equal(manager.failCurrentQuest(8), true);
+    assert.equal(qm.activeQuestId, previousId, 'failure at the first quest stays at the first quest');
+    assert.equal(qm.activeObjectiveId, 'solve_cidr_chain_01_panel');
+    assert.equal(IP2Live.NeuralLifeForce.getState().lifeForce, 78);
+    assert.equal(failures[1].rollbackQuestId, null);
+
+    manager.enableSingleQuestSkipButton = true;
+    manager.enableQuestSkipButton = true;
+    manager._drawSingleQuestSkipButton(ctx, scene);
+    manager._drawQuestFailButton(ctx, scene);
+    manager._drawQuestSkipButton(ctx, scene);
+    assert.ok(manager._questFailButtonRect.y > manager._singleQuestSkipButtonRect.y + manager._singleQuestSkipButtonRect.h);
+    assert.ok(manager._skipQuestButtonRect.y > manager._questFailButtonRect.y + manager._questFailButtonRect.h);
+    assert.equal(manager._updateQuestHudAnchorRect(), manager._skipQuestButtonRect);
+
+    IP2Live.NeuralLifeForce.isRunOver = () => true;
+    assert.equal(manager.failCurrentQuest(8), false);
+    assert.equal(failures.length, 2);
 }
 
 function testLaunchIsIsolatedFromQuestProgress() {
@@ -279,6 +388,7 @@ function testPauseHeaderButtonPlacementAndFlag() {
 
 testCatalogCoverageAndNames();
 testSingleQuestSkipUsesNormalCompletionPipeline();
+testFailQuestButtonRollsBackWithinCurrentLevel();
 testLaunchIsIsolatedFromQuestProgress();
 testDialogueAliasResolution();
 testDeveloperRunsBypassPersistentSystems();

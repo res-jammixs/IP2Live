@@ -3276,7 +3276,7 @@ const CIDRPanelGameplayManager = {
                 handoffKey: opts.handoffKey,
                 timeSeconds: configuredTimeSeconds,
                 tutorialMode: !!opts.tutorialMode,
-                guidedTutorial: shouldShowIntro && !!opts.tutorialMode,
+                guidedTutorial: !!opts.tutorialReplay || (shouldShowIntro && !!opts.tutorialMode),
                 enforceAttemptLimit: !!opts.enforceAttemptLimit,
                 maxAttempts: opts.maxAttempts || 3,
                 mapId: opts.mapId,
@@ -3289,7 +3289,9 @@ const CIDRPanelGameplayManager = {
 
             const openGameplay = () => {
                 this._playMusicZone('GAMEPLAY_1');
-                if (Manager && Manager.Stack && typeof Manager.Stack.replace === 'function') {
+                if (opts.tutorialReplay) IP2Live.GameManager.prepareTutorialReplayScreen(screen, opts);
+                if (opts.tutorialReplay && Manager && Manager.Stack) { Manager.Stack.push(screen); }
+                else if (Manager && Manager.Stack && typeof Manager.Stack.replace === 'function') {
                     Manager.Stack.replace(screen);
                 } else if (Manager && Manager.Stack && typeof Manager.Stack.push === 'function') {
                     Manager.Stack.push(screen);
@@ -3314,6 +3316,7 @@ const CIDRPanelGameplayManager = {
                 this._active = false;
                 this._activeAttempt = null;
                 console.warn('[IP2Live] CIDRPanelGameplayManager failed to open gameplay:', e);
+                if (opts.tutorialReplay && IP2Live.GameManager) IP2Live.GameManager.finishTutorialReplay('ip_cidr_binary_panel', opts, 'unavailable');
                 if (Manager && Manager.Stack) Manager.Stack.requestPaintHUD = true;
             }
         };
@@ -3324,6 +3327,7 @@ const CIDRPanelGameplayManager = {
     },
 
     _onComplete(options, result) {
+        if (IP2Live.GameManager && IP2Live.GameManager.finishTutorialReplay && IP2Live.GameManager.finishTutorialReplay('ip_cidr_binary_panel', options, 'completed', result)) return true;
         const opts = options || {};
         const spec = opts.spec || this._defaultQuestSpec();
         this._active = false;
@@ -3369,6 +3373,7 @@ const CIDRPanelGameplayManager = {
     },
 
     _onFailed(options, result) {
+        if (IP2Live.GameManager && IP2Live.GameManager.finishTutorialReplay && IP2Live.GameManager.finishTutorialReplay('ip_cidr_binary_panel', options, 'failed', result)) return true;
         const opts = options || {};
         const spec = opts.spec || this._defaultQuestSpec();
         this._active = false;
@@ -3395,10 +3400,10 @@ const CIDRPanelGameplayManager = {
         const timedOut = result && result.reason === 'time_expired';
         if (!this._showLoadingScreen2({
             mode: 'replace',
-            status: timedOut ? 'Signal Lost' : 'Loading CIDR Training',
+            status: timedOut ? 'Signal Lost' : 'CIDR Attempt Complete',
             detail: timedOut
-                ? 'CIDR console timed out - returning to the training relay'
-                : 'Retry budget exhausted - returning to the tutorial relay',
+                ? 'CIDR console timed out - returning to the active quest'
+                : 'Retry budget exhausted - returning to the active quest',
             onComplete: finalizeExit,
         })) finalizeExit();
     },
@@ -3427,6 +3432,7 @@ const CIDRPanelGameplayManager = {
     },
 
     _onCancel(options) {
+        if (IP2Live.GameManager && IP2Live.GameManager.finishTutorialReplay && IP2Live.GameManager.finishTutorialReplay('ip_cidr_binary_panel', options, 'cancelled', null)) return true;
         const opts = options || {};
         const spec = opts.spec || this._defaultQuestSpec();
         this._active = false;

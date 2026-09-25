@@ -42,6 +42,7 @@ function createHarness() {
         activeMapId: 4,
         startQuest(questId, options) {
             starts.push({ questId, options });
+            if (options && options.restart) this.completedObjectives[questId] = options.completedObjectives || {};
             this.activeQuestId = questId;
             this.activeObjectiveId = this.quests[questId].objectives.find((objective) =>
                 !this.completedObjectives[questId][objective.id]
@@ -105,41 +106,80 @@ function terminalFailure() {
 }
 
 {
-    const { manager } = createHarness();
+    const { manager, game } = createHarness();
+    game.ip2liveGameStates.neuralLifeForce.lifeForce = 40;
     const deltas = [];
+    const hp = [];
     for (let i = 0; i < 7; i++) {
         const payload = { gameplayId: 'ip_class_wires', questId: 'q' + i, objectiveId: 'o' + i };
         deltas.push(manager.handleCompletion(payload).delta);
+        hp.push(manager.getState().lifeForce);
+        assert.equal(payload.neuralLifeForceDelta, deltas[i]);
     }
-    assert.deepEqual(deltas, [10, 11, 12, 13, 14, 15, 15]);
+    assert.deepEqual(deltas, [0, 0, 12, 13, 14, 15, 15]);
+    assert.deepEqual(hp, [40, 40, 52, 65, 79, 94, 100], 'HP recovery begins on win three and remains capped at 100');
 
     const first = manager.handleTerminalFailure(terminalFailure());
+    assert.equal(manager.getState().lifeForce, 90, 'the first failure immediately removes HP');
     const second = manager.handleTerminalFailure(terminalFailure());
     assert.equal(first.delta, -10);
     assert.equal(second.delta, -12);
     assert.equal(manager.getState().successStreak, 0);
+    assert.equal(manager.getState().lifeForce, 78);
+
+    for (const expectedHp of [78, 78, 90]) {
+        manager.handleCompletion({ gameplayId: 'ip_class_wires', questId: 'new-win', objectiveId: 'win' });
+        assert.equal(manager.getState().lifeForce, expectedHp, 'a failure requires rebuilding the three-win streak');
+        assert.equal(manager.getState().failureStreak, 0);
+    }
 }
 
 {
-    const { manager, questManager, starts, overlays } = createHarness();
-    manager.handleTerminalFailure(terminalFailure());
-    manager.handleTerminalFailure(terminalFailure());
-    const third = manager.handleTerminalFailure(terminalFailure());
-
-    assert.equal(third.kind, 'tutorial-recovery');
-    assert.equal(starts.at(-1).questId, 'wire.tutorial');
-    assert.deepEqual(questManager.completedObjectives['wire.tutorial'], {});
-    assert.deepEqual(questManager.completedObjectives['wire.one'], {});
+    const { manager, questManager, starts, overlays, game, IP2Live } = createHarness();
+    questManager.mapQuestQueues[4].questIds = ['wire.two'];
+    questManager.activeQuestId = 'wire.two';
+    questManager.activeObjectiveId = 'two';
+    const choices = [];
+    IP2Live.GameManager.launchTutorialReplay = (id, data) => { choices.push(id); return true; };
+    for (let i = 1; i <= 15; i++) {
+        // Isolate warning thresholds from the separately tested game-over rule.
+        game.ip2liveGameStates.neuralLifeForce.lifeForce = 100;
+        const failure = terminalFailure();
+        const response = manager.handleTerminalFailure(failure);
+        assert.equal(response.kind, 'retry-first-quest');
+        assert.equal(failure.neuralRecoveryHandled, true);
+        assert.equal(overlays.length, Math.floor(i / 5));
+        assert.equal(manager.getState().gameplayTerminalFailures.ip_class_wires, i);
+        manager.handleCompletion({ gameplayId: 'ip_class_wires', questId: 'other', objectiveId: 'other' });
+    }
+    assert.deepEqual(overlays.map((o) => o.failureCount), [5, 10, 15]);
+    assert.equal(starts.length, 15, 'each failure restarts the first quest');
     assert.deepEqual(questManager.completedObjectives['wire.two'], {});
-    assert.equal(overlays.length, 1);
-    assert.equal(manager.getState().questTerminalFailures['ip_class_wires::wire.two::two'], undefined);
+    assert.deepEqual(questManager.completedObjectives['wire.one'], { one: true });
+    assert.deepEqual(questManager.completedObjectives['wire.tutorial'], { tutorial: true });
+    overlays[0].actions[1].onSelect();
+    assert.equal(choices.length, 0);
+    overlays[1].actions[0].onSelect();
+    assert.deepEqual(choices, ['ip_class_wires']);
+    assert.equal(manager.getState().acknowledgedFailureMilestones.ip_class_wires, 15);
+    const saved = JSON.parse(JSON.stringify(game.ip2liveGameStates));
+    game.ip2liveGameStates = saved;
+    manager.handleMapEntered(4);
+    assert.equal(overlays.length, 3, 'loading does not re-display acknowledged milestones');
+    assert.equal(manager.getState().gameplayTerminalFailures.ip_class_wires, 15);
+
+    game.ip2liveGameStates.neuralLifeForce.pendingTutorialRecovery = { mapId: 3, questId: 'old-tutorial' };
+    delete game.ip2liveGameStates.neuralLifeForce.acknowledgedFailureMilestones;
+    manager.handleMapEntered(3);
+    assert.equal(manager.getState().pendingTutorialRecovery, null);
+    assert.equal(manager.getState().gameplayTerminalFailures.ip_class_wires, 15);
+    assert.equal(manager.getState().acknowledgedFailureMilestones.ip_class_wires, 15);
+    assert.equal(starts.length, 15, 'loading must not restart another quest');
 }
 
 {
-    // Regression: map 4 interleaves wires and patch-panel objectives. Even
-    // if a stale launcher reports the wire gameplay id, recovery must use the
-    // map assignment for the failed patch-panel quest and never roll back to a
-    // completed wire quest.
+    // Map 4 interleaves gameplay types. Failure classification follows the
+    // failed assignment while quest recovery follows the map's quest order.
     const { manager, questManager, starts, IP2Live } = createHarness();
     questManager.mapQuestQueues[4] = {
         questIds: ['wire.one', 'patch.tutorial', 'wire.two', 'patch.normal'],
@@ -172,10 +212,35 @@ function terminalFailure() {
         result: { reason: 'attempts_exhausted' },
     });
 
-    assert.equal(result.kind, 'rollback');
-    assert.equal(result.rollbackQuestId, 'patch.tutorial');
-    assert.equal(starts.at(-1).questId, 'patch.tutorial');
+    assert.equal(result.kind, 'rollback-previous-quest');
+    assert.equal(result.rollbackQuestId, 'wire.two');
+    assert.equal(starts.length, 1);
+    assert.deepEqual(questManager.completedObjectives['wire.two'], {});
+    assert.equal(questManager.completedObjectives['wire.one'].one, true);
     assert.equal(manager.getState().questTerminalFailures['ip_patch_panel_classes::patch.normal::patch.secure'], 1);
+}
+
+{
+    const { manager, questManager, starts, game } = createHarness();
+    game.ip2liveGameStates.neuralLifeForce.lifeForce = 100;
+    questManager.activeQuestId = 'wire.two';
+    questManager.activeObjectiveId = 'two';
+
+    const fromThird = manager.handleTerminalFailure(terminalFailure());
+    assert.equal(fromThird.rollbackQuestId, 'wire.one');
+    assert.equal(questManager.activeQuestId, 'wire.one');
+    assert.deepEqual(questManager.completedObjectives['wire.one'], {});
+
+    game.ip2liveGameStates.neuralLifeForce.lifeForce = 100;
+    const fromSecond = manager.handleTerminalFailure({
+        gameplayId: 'ip_class_wires', mapId: 4, questId: 'wire.one', objectiveId: 'one',
+        spec: { id: 'wire.one', objectiveId: 'one', mapId: 4 },
+        result: { reason: 'attempts_exhausted' },
+    });
+    assert.equal(fromSecond.rollbackQuestId, 'wire.tutorial');
+    assert.equal(questManager.activeQuestId, 'wire.tutorial');
+    assert.deepEqual(questManager.completedObjectives['wire.tutorial'], {});
+    assert.deepEqual(starts.map((entry) => entry.questId), ['wire.one', 'wire.tutorial']);
 }
 
 {
@@ -192,8 +257,8 @@ function terminalFailure() {
     });
     assert.equal(result.handled, true);
     assert.equal(result.kind, 'tutorial-retry');
-    assert.equal(starts.at(-1).questId, 'wire.tutorial');
-    assert.deepEqual(questManager.completedObjectives['wire.tutorial'], {});
+    assert.equal(starts.length, 0);
+    assert.deepEqual(questManager.completedObjectives['wire.tutorial'], { tutorial: true });
 }
 
 {
@@ -211,6 +276,33 @@ function terminalFailure() {
     assert.equal(finalFailure.gameOver, true);
     assert.equal(manager.isRunOver(), true);
     assert.equal(gameOver.length, 1);
+}
+
+{
+    const { manager, game, overlays, gameOver } = createHarness();
+    game.ip2liveGameStates.neuralLifeForce.successStreak = 2;
+    game.ip2liveGameStates.neuralLifeForce.failureStreak = 1;
+    const before = manager.getState();
+    for (const spec of [{ tutorial: true }, { harderIntro: true }, { tutorialReplay: true }]) {
+        manager.handleCompletion({ spec });
+        manager.handleTerminalFailure({ spec, result: { reason: 'attempts_exhausted' } });
+        assert.deepEqual(manager.getState(), before, 'tutorials change neither HP nor either streak');
+    }
+    manager.handleTerminalFailure({ gameplayId: 'ip_class_wires', result: { reason: 'wrong_answer' } });
+    assert.deepEqual(manager.getState(), before);
+    for (const id of ['ip_class_wires', 'ip_class_wires_harder']) {
+        game.ip2liveGameStates.neuralLifeForce.lifeForce = 100;
+        manager.handleTerminalFailure({ gameplayId: id, result: { reason: 'attempts_exhausted' } });
+    }
+    assert.equal(manager.getState().gameplayTerminalFailures.ip_class_wires, 1);
+    assert.equal(manager.getState().gameplayTerminalFailures.ip_class_wires_harder, 1);
+    game.ip2liveGameStates.neuralLifeForce.gameplayTerminalFailures.ip_class_wires = 4;
+    game.ip2liveGameStates.neuralLifeForce.lifeForce = 1;
+    manager.handleTerminalFailure(terminalFailure());
+    assert.equal(gameOver.length, 1);
+    assert.equal(overlays.length, 0, 'game over takes precedence over the fifth-failure offer');
+    manager.reset();
+    assert.deepEqual(manager.getState().gameplayTerminalFailures, {});
 }
 
 {

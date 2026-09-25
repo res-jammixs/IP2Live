@@ -61,6 +61,15 @@ const context = {
 
 vm.runInNewContext(source, context);
 const tutorial = context.window.IP2LiveIPWiresTutorial;
+for (const replay of [false, true]) {
+    const lessonScreen = {
+        options: { tutorialReplay: replay },
+        leftItems: [{ id: 'source-01', ip: '10.0.0.1', className: 'A' }],
+    };
+    tutorial.activateGuidedSession(lessonScreen);
+    assert.ok(starts.at(-1).id.startsWith(replay ? 'stage1.ipwires.guided.left.' : 'stage1.ipwires.guided.welcome.'),
+        'replays begin with the gameplay controls while first-time tutorials keep the welcome');
+}
 const screen = {
     _ipGuide: {
         active: true,
@@ -120,8 +129,10 @@ const hudOnboarding = firstQuestSuccess.slides
     .flat()
     .join(' ');
 assert.match(hudOnboarding, /\{\{highlight:Health Bar\}\}/);
-assert.match(hudOnboarding, /\{\{highlight:Win streak: \+10, \+11, and so on up to \+15 points\.\}\}/);
+assert.match(hudOnboarding, /\{\{highlight:Win streak: no recovery on wins 1-2\. Win 3 restores \+12, then \+13, \+14, up to \+15 points\.\}\}/);
 assert.match(hudOnboarding, /\{\{highlight:Non-tutorial loss streak: -10, -12, and so on up to -16 points\.\}\}/);
+assert.match(hudOnboarding, /Tutorials do not change HP or streaks/);
+assert.match(hudOnboarding, /Every five failed runs of a gameplay/);
 assert.match(hudOnboarding, /\{\{highlight:Quest Area\}\}/);
 assert.match(hudOnboarding, /\{\{highlight:quest minimap\}\}/);
 assert.match(hudOnboarding, /\{\{highlight:Distance tab\}\}/);

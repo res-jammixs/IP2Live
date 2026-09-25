@@ -3,8 +3,8 @@
  *
  * Owns the cross-gameplay survivability loop. Gameplay screens only report
  * their normal completed / terminal-failed lifecycle events; this module
- * applies Life Force, rollback, tutorial recovery, critical pressure, and
- * persistent HUD state in one place.
+ * applies Life Force, level-local quest rollback, optional tutorial support,
+ * critical pressure, and persistent HUD state in one place.
  */
 
 (function () {
@@ -13,8 +13,8 @@
     const DEFAULT_LIFE_FORCE = 100;
     const MAX_LIFE_FORCE = 100;
     const CRITICAL_LIFE_FORCE = 35;
-    const QUEST_FAILURE_TUTORIAL_LIMIT = 3;
-    const GAMEPLAY_FAILURE_TUTORIAL_LIMIT = 10;
+    const RECOVERY_WIN_STREAK = 3;
+    const GAMEPLAY_WARNING_INTERVAL = 5;
 
     function clone(value) {
         try { return JSON.parse(JSON.stringify(value || null)); }
@@ -22,13 +22,13 @@
     }
 
     const NeuralLifeForce = {
-        VERSION: 'neural-life-force-20260915-06',
+        VERSION: 'neural-life-force-20260925-developer-failure-rollback',
         SETTINGS: {
             defaultLifeForce: DEFAULT_LIFE_FORCE,
             maxLifeForce: MAX_LIFE_FORCE,
             criticalLifeForce: CRITICAL_LIFE_FORCE,
-            exactQuestTutorialLimit: QUEST_FAILURE_TUTORIAL_LIMIT,
-            gameplayTypeTutorialLimit: GAMEPLAY_FAILURE_TUTORIAL_LIMIT,
+            recoveryWinStreak: RECOVERY_WIN_STREAK,
+            gameplayWarningInterval: GAMEPLAY_WARNING_INTERVAL,
             criticalTimerMultiplier: 0.75,
             criticalPatchSpeedMultiplier: 1.25,
         },
@@ -103,10 +103,16 @@
             const data = payload || {};
             const state = this._state();
             if (state.runOver) return { handled: false, reason: 'run-over' };
+            if (this._isTutorial(data)) {
+                this._attachState(data, state, 0);
+                return { handled: true, delta: 0, reason: 'tutorial', state: this.getState() };
+            }
 
             state.successStreak = Math.max(0, Number(state.successStreak) || 0) + 1;
             state.failureStreak = 0;
-            const reward = Math.min(15, 9 + state.successStreak);
+            const reward = state.successStreak >= RECOVERY_WIN_STREAK
+                ? Math.min(15, 9 + state.successStreak)
+                : 0;
             state.lifeForce = Math.min(MAX_LIFE_FORCE, Math.max(0, Number(state.lifeForce) || 0) + reward);
             delete state.questTerminalFailures[this._questFailureKey(data)];
             state.lastChange = this._changeRecord('success', reward, data);
@@ -126,13 +132,16 @@
             const state = this._state();
             if (state.runOver) return { handled: true, gameOver: true, reason: 'run-over' };
             if (String(result.reason || '') !== 'attempts_exhausted') return { handled: false, reason: 'not-terminal' };
-            if (this._isTutorial(data)) {
-                const tutorialRecovery = this._retryTutorial(data);
-                data.neuralRecovery = tutorialRecovery.kind;
-                data.neuralRecoveryHandled = !!tutorialRecovery.handled;
-                if (data.neuralRecoveryHandled) data.recoveryAction = 'neural_tutorial_retry';
-                this._requestHudPaint();
-                return Object.assign({ handled: !!data.neuralRecoveryHandled, state: this.getState() }, tutorialRecovery);
+            // Actual tutorials stay penalty-free. The developer button explicitly
+            // simulates a campaign failure, including at tutorial quest locations.
+            // Optional replays remain isolated even if a caller sets the dev flag.
+            const tutorialReplay = data.tutorialReplay || (data.spec && data.spec.tutorialReplay);
+            if (this._isTutorial(data) && (!data.developerQuestFail || tutorialReplay)) {
+                this._attachState(data, state, 0);
+                data.neuralRecovery = 'tutorial-retry';
+                data.neuralRecoveryHandled = true;
+                data.recoveryAction = 'neural_tutorial_retry';
+                return { handled: true, kind: 'tutorial-retry', delta: 0, state: this.getState() };
             }
 
             const gameplayId = this._canonicalGameplayId(data);
@@ -158,45 +167,130 @@
                 return { handled: true, gameOver: true, delta: -loss, state: this.getState() };
             }
 
-            const exactFailures = state.questTerminalFailures[questKey];
-            const gameplayFailures = state.gameplayTerminalFailures[gameplayId];
-            let recovery = null;
-            if (exactFailures >= QUEST_FAILURE_TUTORIAL_LIMIT || gameplayFailures >= GAMEPLAY_FAILURE_TUTORIAL_LIMIT) {
-                const reason = exactFailures >= QUEST_FAILURE_TUTORIAL_LIMIT
-                    ? 'exact-quest-limit'
-                    : 'gameplay-type-limit';
-                recovery = this._beginTutorialRecovery(data, reason);
-                delete state.questTerminalFailures[questKey];
-                if (gameplayFailures >= GAMEPLAY_FAILURE_TUTORIAL_LIMIT) {
-                    state.gameplayTerminalFailures[gameplayId] = 0;
-                }
-            } else {
-                recovery = this._applyRollback(data);
+            const count = state.gameplayTerminalFailures[gameplayId];
+            const rollback = this._rollbackToPreviousQuest(data);
+            data.neuralRecovery = rollback.rolledBack ? 'rollback-previous-quest' : 'retry-first-quest';
+            data.neuralRecoveryHandled = true;
+            data.recoveryAction = rollback.rolledBack
+                ? 'neural_previous_quest_rollback'
+                : 'neural_retry_first_quest';
+            const milestone = Math.floor(count / GAMEPLAY_WARNING_INTERVAL) * GAMEPLAY_WARNING_INTERVAL;
+            if (count % GAMEPLAY_WARNING_INTERVAL === 0 && milestone > (state.acknowledgedFailureMilestones[gameplayId] || 0)) {
+                state.acknowledgedFailureMilestones[gameplayId] = milestone;
+                data.recoveryAction = rollback.rolledBack
+                    ? 'neural_previous_quest_rollback_with_tutorial_offer'
+                    : 'neural_first_quest_retry_with_tutorial_offer';
+                // Finish the failed screen's lifecycle before opening another screen.
+                const root = this._root(false);
+                setTimeout(() => {
+                    if (this._root(false) === root && !this.isRunOver()) this._showTutorialOffer(data, count);
+                }, 0);
             }
-
-            this._dimRollbackLighting(data, recovery);
-            data.neuralRecovery = recovery && recovery.kind ? recovery.kind : null;
-            if (!data.recoveryAction && data.neuralRecovery) {
-                data.recoveryAction = data.neuralRecovery === 'tutorial-recovery'
-                    ? 'neural_tutorial_recovery'
-                    : 'neural_matching_gameplay_rollback';
-            }
-            data.neuralRecoveryHandled = !!(recovery && recovery.handled);
             this._requestHudPaint();
-            return Object.assign({ handled: !!data.neuralRecoveryHandled, delta: -loss, state: this.getState() }, recovery || {});
+            return {
+                handled: true,
+                kind: data.neuralRecovery,
+                delta: -loss,
+                rollbackQuestId: data.rollbackQuestId || null,
+                rollbackObjectiveId: data.rollbackObjectiveId || null,
+                state: this.getState(),
+            };
         },
 
-        handleMapEntered(mapId, context) {
-            const state = this._state();
-            const pending = state.pendingTutorialRecovery;
-            if (!pending || Number(pending.mapId) !== Number(mapId)) return false;
-            const applied = this._applyPendingTutorialRecovery(pending);
-            if (applied) {
-                state.pendingTutorialRecovery = null;
-                this._requestHudPaint();
-                setTimeout(() => this._showRecoveryOverlay(pending), 180);
+        /**
+         * Reopen the immediately preceding quest in the current map queue.
+         * Each later failure therefore walks backward one quest at a time and
+         * stops at the first quest without changing maps or stages.
+         */
+        _rollbackToPreviousQuest(data) {
+            const qm = IP2Live.QuestManager;
+            if (!qm) return { rolledBack: false, reason: 'quest-manager-unavailable' };
+            const spec = data.spec || {};
+            const mapId = Number(data.mapId || spec.mapId || qm.activeMapId || this._currentMapId()) || 0;
+            const queue = qm.mapQuestQueues && qm.mapQuestQueues[mapId];
+            const questIds = queue && Array.isArray(queue.questIds) ? queue.questIds.slice() : [];
+            const failedQuestId = String(qm.activeQuestId || data.questId || spec.id || '');
+            const failedIndex = questIds.indexOf(failedQuestId);
+            if (failedIndex < 0) {
+                data.rollbackQuestId = null;
+                data.rollbackObjectiveId = qm.activeObjectiveId || data.objectiveId || spec.objectiveId || null;
+                return { rolledBack: false, reason: 'quest-not-in-map-queue', questId: null, objectiveId: data.rollbackObjectiveId };
             }
-            return applied;
+
+            // At the level boundary, restart quest one itself. This also resets
+            // partial objective completion in multi-gameplay quests.
+            const rolledBack = failedIndex > 0;
+            const rollbackQuestId = questIds[Math.max(0, failedIndex - 1)];
+            const rollbackQuest = qm.quests && qm.quests[rollbackQuestId];
+            if (!rollbackQuest) return { rolledBack: false, reason: 'previous-quest-unavailable' };
+            const objectives = Array.isArray(rollbackQuest.objectives) ? rollbackQuest.objectives : [];
+            const rollbackObjectiveId = objectives.length ? objectives[0].id : null;
+            if (!qm.completedObjectives || typeof qm.completedObjectives !== 'object') qm.completedObjectives = {};
+            qm.completedObjectives[rollbackQuestId] = {};
+
+            const options = {
+                mapId,
+                mapQuestMode: true,
+                keepLastCompletion: true,
+                visible: true,
+                preview: false,
+                guideActive: true,
+                allowCompletion: true,
+                restart: true,
+                completedObjectives: {},
+            };
+            let started = false;
+            if (typeof qm.startQuest === 'function') started = qm.startQuest(rollbackQuestId, options) !== false;
+            if (!started) {
+                qm.activeQuestId = rollbackQuestId;
+                qm.activeObjectiveId = rollbackObjectiveId;
+                qm.activeMapId = mapId || qm.activeMapId;
+            }
+            data.rollbackQuestId = rolledBack ? rollbackQuestId : null;
+            data.rollbackObjectiveId = rollbackObjectiveId;
+            data.rollbackQuestLabel = rollbackQuest.title || rollbackQuest.label || rollbackQuest.questLabel || rollbackQuestId;
+            return { rolledBack, questId: rollbackQuestId, objectiveId: rollbackObjectiveId };
+        },
+
+        handleMapEntered() {
+            // Normalize older saves without following their obsolete tutorial route.
+            this._state();
+            return false;
+        },
+
+        _showTutorialOffer(data, count) {
+            const gm = IP2Live.GameManager;
+            const overlay = IP2Live.ARDiagnosticRewind;
+            if (!overlay || typeof overlay.show !== 'function') return false;
+            const gameplayId = this._canonicalGameplayId(data);
+            const catalog = gm && gm.gameplayCatalog && gm.gameplayCatalog[gameplayId];
+            const stage = gm && typeof gm._stageFor === 'function' ? gm._stageFor(data.mapId) : null;
+            const log = (choice) => {
+                if (gm && typeof gm._logTelemetryEvent === 'function') gm._logTelemetryEvent('neural_tutorial_offer', {
+                    gameplayId, mapId: data.mapId, questId: data.questId, objectiveId: data.objectiveId,
+                    payload: { failureCount: count, choice },
+                });
+                if (gm && typeof gm._queueCheckpoint === 'function') gm._queueCheckpoint('neural_tutorial_offer');
+            };
+            log('shown');
+            return overlay.show({
+                title: 'APEX SECURITY ALERT',
+                eyebrow: 'NEURAL DECK / AR DIAGNOSTIC',
+                gameplayLabel: catalog ? catalog.label : gameplayId,
+                statusLabel: stage && stage.name ? stage.name : 'SECURITY LEVEL ' + data.mapId,
+                failureCount: count,
+                lines: ["We've made repeated mistakes in this APEX security level. If we keep making mistakes, APEX could detect us. Review this gameplay's tutorial, or continue and try again."],
+                tutorialSection: true,
+                actions: [
+                    { id: 'tutorial', label: 'See Tutorial Again', onSelect: () => {
+                        log('tutorial');
+                        if (!gm || typeof gm.launchTutorialReplay !== 'function' || !gm.launchTutorialReplay(gameplayId, data)) {
+                            overlay.show({ title: 'TUTORIAL UNAVAILABLE', lines: ['Your current quest is ready to retry. The tutorial could not be opened right now.'] });
+                        }
+                    } },
+                    { id: 'continue', label: 'Continue', onSelect: () => log('continue') },
+                ],
+            });
         },
 
         _newState() {
@@ -209,6 +303,7 @@
                 gameplayTerminalFailures: {},
                 lastChange: null,
                 pendingTutorialRecovery: null,
+                acknowledgedFailureMilestones: {},
                 runOver: false,
             };
         },
@@ -233,6 +328,14 @@
             state.failureStreak = Math.max(0, Number(state.failureStreak) || 0);
             if (!state.questTerminalFailures || typeof state.questTerminalFailures !== 'object') state.questTerminalFailures = {};
             if (!state.gameplayTerminalFailures || typeof state.gameplayTerminalFailures !== 'object') state.gameplayTerminalFailures = {};
+            if (!state.acknowledgedFailureMilestones || typeof state.acknowledgedFailureMilestones !== 'object') {
+                state.acknowledgedFailureMilestones = {};
+                for (const id of Object.keys(state.gameplayTerminalFailures)) {
+                    state.acknowledgedFailureMilestones[id] = Math.floor((Number(state.gameplayTerminalFailures[id]) || 0) / GAMEPLAY_WARNING_INTERVAL) * GAMEPLAY_WARNING_INTERVAL;
+                }
+            }
+            state.pendingTutorialRecovery = null;
+            state.version = this.VERSION;
             state.runOver = !!state.runOver;
             return state;
         },
@@ -240,7 +343,7 @@
         _isTutorial(data) {
             const source = data || {};
             const spec = source.spec || {};
-            return !!(source.tutorial || spec.tutorial || spec.harderIntro || source.harderIntro);
+            return !!(source.tutorialReplay || spec.tutorialReplay || source.tutorialMode || source.tutorial || spec.tutorial || spec.harderIntro || source.harderIntro);
         },
 
         _questFailureKey(data, gameplayId) {
@@ -273,115 +376,6 @@
             data.neuralFailureStreak = Number(state.failureStreak) || 0;
         },
 
-        _entriesForMap(mapId) {
-            const qm = IP2Live.QuestManager;
-            const queue = qm && qm.mapQuestQueues ? qm.mapQuestQueues[Number(mapId)] : null;
-            const ids = queue && Array.isArray(queue.questIds) ? queue.questIds : [];
-            const entries = [];
-            for (let i = 0; i < ids.length; i++) {
-                const quest = qm && qm.quests ? qm.quests[ids[i]] : null;
-                if (!quest || !Array.isArray(quest.objectives)) continue;
-                for (let o = 0; o < quest.objectives.length; o++) {
-                    const objective = quest.objectives[o];
-                    if (!objective || !objective.id) continue;
-                    entries.push({
-                        questId: quest.id,
-                        objectiveId: objective.id,
-                        gameplayId: this._gameplayIdForQuestObjective(quest.id, objective.id) ||
-                            objective.neuralGameplayId || objective.gameplayId || null,
-                        tutorial: !!(objective.neuralTutorial || objective.tutorial || objective.harderIntro),
-                        questIndex: i,
-                        objectiveIndex: o,
-                    });
-                }
-            }
-            return entries;
-        },
-
-        _isObjectiveCompleted(questId, objectiveId) {
-            const qm = IP2Live.QuestManager;
-            return !!(qm && qm.completedObjectives && qm.completedObjectives[questId] && qm.completedObjectives[questId][objectiveId]);
-        },
-
-        _clearObjective(questId, objectiveId) {
-            const qm = IP2Live.QuestManager;
-            if (!qm || !questId || !objectiveId) return false;
-            if (!qm.completedObjectives[questId]) qm.completedObjectives[questId] = {};
-            delete qm.completedObjectives[questId][objectiveId];
-            return true;
-        },
-
-        _startQuest(questId, mapId) {
-            const qm = IP2Live.QuestManager;
-            if (!qm || typeof qm.startQuest !== 'function' || !questId) return false;
-            return qm.startQuest(questId, {
-                mapId: Number(mapId) || qm.activeMapId,
-                mapQuestMode: true,
-                keepLastCompletion: true,
-                visible: true,
-                preview: false,
-                guideActive: true,
-                allowCompletion: true,
-            });
-        },
-
-        _applyRollback(data) {
-            const mapId = Number(data.mapId || (data.spec && data.spec.mapId));
-            const gameplayId = this._canonicalGameplayId(data);
-            const questId = data.questId || (data.spec && data.spec.id);
-            const objectiveId = data.objectiveId || (data.spec && data.spec.objectiveId);
-            if (!mapId || !gameplayId || !questId || !objectiveId) return { handled: false, reason: 'rollback-context-missing' };
-
-            const entries = this._entriesForMap(mapId);
-            let failedIndex = entries.findIndex((entry) => entry.questId === questId && entry.objectiveId === objectiveId);
-            if (failedIndex < 0) failedIndex = entries.length;
-            let rollback = null;
-            for (let i = failedIndex - 1; i >= 0; i--) {
-                const entry = entries[i];
-                if (entry.gameplayId !== gameplayId) continue;
-                if (this._isObjectiveCompleted(entry.questId, entry.objectiveId)) {
-                    rollback = entry;
-                    break;
-                }
-            }
-            if (!rollback) rollback = { questId, objectiveId, gameplayId };
-
-            this._clearObjective(questId, objectiveId);
-            this._clearObjective(rollback.questId, rollback.objectiveId);
-            const started = this._startQuest(rollback.questId, mapId);
-            data.rollbackQuestId = rollback.questId;
-            data.rollbackObjectiveId = rollback.objectiveId;
-            data.rollbackQuestLabel = this._questLabel(rollback.questId, rollback.objectiveId);
-            return {
-                handled: !!started,
-                kind: 'rollback',
-                rollbackQuestId: rollback.questId,
-                rollbackObjectiveId: rollback.objectiveId,
-            };
-        },
-
-        _retryTutorial(data) {
-            const source = data || {};
-            const spec = source.spec || {};
-            const mapId = Number(source.mapId || spec.mapId);
-            const questId = source.questId || spec.id;
-            const objectiveId = source.objectiveId || spec.objectiveId;
-            if (!mapId || !questId || !objectiveId) {
-                return { handled: false, kind: 'tutorial-retry', reason: 'tutorial-context-missing' };
-            }
-            this._clearObjective(questId, objectiveId);
-            const started = this._startQuest(questId, mapId);
-            source.rollbackQuestId = questId;
-            source.rollbackObjectiveId = objectiveId;
-            source.rollbackQuestLabel = this._questLabel(questId, objectiveId);
-            return {
-                handled: !!started,
-                kind: 'tutorial-retry',
-                rollbackQuestId: questId,
-                rollbackObjectiveId: objectiveId,
-            };
-        },
-
         _canonicalGameplayId(data) {
             const source = data || {};
             const spec = source.spec || {};
@@ -408,120 +402,6 @@
             return null;
         },
 
-        _beginTutorialRecovery(data, reason) {
-            const target = this._tutorialTargetForGameplay(this._canonicalGameplayId(data));
-            if (!target) return this._applyRollback(data);
-            const state = this._state();
-            const pending = {
-                kind: 'tutorial-recovery',
-                reason,
-                gameplayId: target.gameplayId,
-                mapId: target.mapId,
-                questId: target.questId,
-                objectiveId: target.objectiveId,
-                label: target.label || this._questLabel(target.questId, target.objectiveId),
-                failedQuestId: data.questId || null,
-                failedObjectiveId: data.objectiveId || null,
-                requestedAt: Date.now(),
-            };
-            state.pendingTutorialRecovery = pending;
-            data.neuralTutorialRecovery = true;
-            data.neuralTutorialReason = reason;
-            data.rollbackQuestId = target.questId;
-            data.rollbackObjectiveId = target.objectiveId;
-
-            const currentMapId = this._currentMapId();
-            if (Number(currentMapId) === Number(target.mapId)) {
-                const applied = this._applyPendingTutorialRecovery(pending);
-                if (applied) {
-                    state.pendingTutorialRecovery = null;
-                    setTimeout(() => this._showRecoveryOverlay(pending), 180);
-                }
-                return { handled: applied, kind: 'tutorial-recovery', tutorialTarget: clone(pending) };
-            }
-
-            const gm = IP2Live.GameManager;
-            const transitioned = !!(gm && typeof gm.startMapFlow === 'function' && gm.startMapFlow(target.mapId, null, {
-                mode: 'stage',
-                status: 'APEX Countermeasure',
-                detail: 'Routing to ' + (target.label || 'tutorial relay'),
-                neuralTutorialRecovery: true,
-                skipStageIntro: true,
-                cleanMapSession: true,
-                discardDialogue: true,
-            }));
-            return { handled: transitioned, kind: 'tutorial-recovery', tutorialTarget: clone(pending) };
-        },
-
-        _applyPendingTutorialRecovery(pending) {
-            const recovery = pending || this._state().pendingTutorialRecovery;
-            const qm = IP2Live.QuestManager;
-            if (!recovery || !qm || !qm.mapQuestQueues || !qm.quests) return false;
-            const queue = qm.mapQuestQueues[Number(recovery.mapId)];
-            const ids = queue && Array.isArray(queue.questIds) ? queue.questIds : [];
-            const tutorialQuestIndex = ids.indexOf(recovery.questId);
-            const tutorialQuest = qm.quests[recovery.questId];
-            if (tutorialQuestIndex < 0 || !tutorialQuest || !Array.isArray(tutorialQuest.objectives)) return false;
-
-            for (let i = tutorialQuestIndex; i < ids.length; i++) {
-                const id = ids[i];
-                const quest = qm.quests[id];
-                if (!quest || !Array.isArray(quest.objectives)) continue;
-                qm.completedObjectives[id] = {};
-                if (i !== tutorialQuestIndex) continue;
-                for (let o = 0; o < quest.objectives.length; o++) {
-                    if (quest.objectives[o] && quest.objectives[o].id === recovery.objectiveId) break;
-                    if (quest.objectives[o] && quest.objectives[o].id) {
-                        qm.completedObjectives[id][quest.objectives[o].id] = true;
-                    }
-                }
-            }
-            return this._startQuest(recovery.questId, recovery.mapId);
-        },
-
-        _tutorialTargetForGameplay(gameplayId) {
-            const gm = IP2Live.GameManager;
-            const wanted = String(gameplayId || '');
-            const candidates = [];
-            const specs = gm && typeof gm.getGameplayQuestSpecs === 'function'
-                ? gm.getGameplayQuestSpecs(wanted)
-                : [];
-            for (let i = 0; i < specs.length; i++) {
-                const spec = specs[i] || {};
-                if (!(spec.tutorial || spec.harderIntro)) continue;
-                candidates.push({
-                    gameplayId: wanted,
-                    mapId: Number(spec.mapId),
-                    questId: spec.id,
-                    objectiveId: spec.objectiveId,
-                    label: spec.label || spec.title || wanted,
-                    specIndex: i,
-                });
-            }
-            candidates.sort((a, b) => a.mapId - b.mapId || a.specIndex - b.specIndex);
-            return candidates[0] || null;
-        },
-
-        _dimRollbackLighting(data, recovery) {
-            if (!recovery || !recovery.handled || recovery.kind === 'tutorial-recovery') return false;
-            const gsm = IP2Live.GameStateManager;
-            if (!gsm || typeof gsm.recordDarklightsRollback !== 'function') return false;
-            const mapId = Number(data.mapId || (data.spec && data.spec.mapId));
-            const objectiveId = recovery.rollbackObjectiveId || data.objectiveId;
-            const stored = gsm.recordDarklightsRollback('neural-life-force-rollback', mapId, objectiveId);
-            data.darklightsDimmed = !!stored;
-            return !!stored;
-        },
-
-        _questLabel(questId, objectiveId) {
-            const qm = IP2Live.QuestManager;
-            const quest = qm && qm.quests ? qm.quests[questId] : null;
-            const objective = quest && Array.isArray(quest.objectives)
-                ? quest.objectives.find((entry) => entry && entry.id === objectiveId)
-                : null;
-            return (objective && objective.title) || (quest && quest.title) || questId || 'the active relay';
-        },
-
         _currentMapId() {
             const scene = Scene && Scene.Map ? Scene.Map.current : null;
             return Number(
@@ -529,29 +409,6 @@
                 (Core && Core.Game && Core.Game.current && Core.Game.current.currentMapID) ||
                 0
             ) || 0;
-        },
-
-        _showRecoveryOverlay(recovery) {
-            const overlay = IP2Live.ARDiagnosticRewind;
-            const targetLabel = recovery && recovery.label ? recovery.label : 'the tutorial relay';
-            const title = recovery && recovery.kind === 'tutorial-recovery'
-                ? 'APEX COUNTERMEASURE // TUTORIAL ROUTE'
-                : 'APEX COUNTERMEASURE // ROLLBACK';
-            const lines = recovery && recovery.kind === 'tutorial-recovery'
-                ? [
-                    'APEX has traced repeated failures in this breach pattern.',
-                    'Control is falling back to ' + targetLabel + '.',
-                    'Relearn the compromised gameplay, then rebuild this route.',
-                ]
-                : [
-                    'APEX detected the unstable breach path.',
-                    'A prior matching relay has been reclaimed: ' + targetLabel + '.',
-                    'Stabilize it again before advancing.',
-                ];
-            if (overlay && typeof overlay.show === 'function') {
-                return overlay.show({ title, lines, onComplete: function () {} });
-            }
-            return false;
         },
 
         _showGameOver() {
@@ -614,7 +471,7 @@
         _drawWinStreakIcon(ctx, cx, cy, radius, count, sX, sY) {
             ctx.save();
             const r = radius;
-            ctx.shadowColor = 'rgba(0, 255, 210, 0.82)';
+            ctx.shadowColor = 'rgba(255, 230, 0, 0.4)';
             ctx.shadowBlur = 12 * sX;
 
             // An offset black extrusion and cyan diamond make the emblem feel
@@ -656,7 +513,7 @@
             ctx.closePath();
             ctx.fillStyle = 'rgba(0, 18, 24, 0.98)';
             ctx.fill();
-            ctx.strokeStyle = '#54FFD2';
+            ctx.strokeStyle = '#FFE600';
             ctx.lineWidth = 1.7 * sX;
             ctx.stroke();
 
@@ -813,8 +670,8 @@
 
         _drawQuestChainCard(ctx, x, y, w, h, state, sX, sY, pulse) {
             const losing = Number(state.failureStreak) > 0;
-            const winning = !losing && Number(state.successStreak) > 0;
-            const count = losing ? Number(state.failureStreak) : (winning ? Number(state.successStreak) : 0);
+            const winning = !losing && Number(state.successStreak) >= RECOVERY_WIN_STREAK;
+            const count = losing ? Number(state.failureStreak) : (Number(state.successStreak) || 0);
             const iconX = x + w * 0.5;
             const iconY = y + h * 0.5;
             const iconRadius = Math.min(18 * sY, h * 0.34);
@@ -836,14 +693,14 @@
                 ctx.closePath();
                 ctx.fillStyle = 'rgba(8, 21, 29, 0.94)';
                 ctx.fill();
-                ctx.strokeStyle = 'rgba(105, 221, 235, 0.6)';
+                ctx.strokeStyle = '#625765';
                 ctx.lineWidth = 1.2 * sX;
                 ctx.stroke();
                 ctx.font = 'bold ' + Math.round(12 * sY) + 'px ' + numberFont;
                 ctx.textAlign = 'center';
                 ctx.textBaseline = 'middle';
                 ctx.fillStyle = '#BDECF2';
-                ctx.fillText('0', iconX, iconY);
+                ctx.fillText(String(count), iconX, iconY);
             }
             ctx.restore();
         },
@@ -853,295 +710,60 @@
          */
         drawHUD(ctx) {
             if (!ctx || !ctx.canvas || this.isRunOver() || !this._shouldDrawWithQuestPanel()) return false;
-            const cW = ctx.canvas.width;
-            const cH = ctx.canvas.height;
-            const sX = cW / 1280;
-            const sY = cH / 720;
-            const unit = Math.min(sX, sY);
-            const hudFont = IP2Live.Assets && IP2Live.Assets.oxaniumMediumLoaded
-                ? 'Oxanium-Medium'
-                : 'sans-serif';
-            const qm = IP2Live.QuestManager;
-            const panel = qm && typeof qm._questPanelRect === 'function'
-                ? qm._questPanelRect(ctx)
-                : { x: 18 * sX, y: 88 * sY, w: 430 * sX };
-
+            const sX = ctx.canvas.width / 1280, sY = ctx.canvas.height / 720;
             const state = this._state();
-            const targetHp = Number(state.lifeForce) || 0;
-
-            // Initialize or smoothly interpolate animated HP values
-            if (this._animHp === undefined) this._animHp = targetHp;
-            if (this._ghostHp === undefined) this._ghostHp = targetHp;
-
-            const hpDelta = targetHp - this._animHp;
-            let animating = false;
-            if (Math.abs(hpDelta) > 0.08) {
-                this._animHp += hpDelta * 0.14;
-                animating = true;
-            } else {
-                this._animHp = targetHp;
-            }
-
-            // Ghost bar trailing down for damage feedback
-            const ghostDelta = this._animHp - this._ghostHp;
-            if (ghostDelta < -0.08) {
-                this._ghostHp += ghostDelta * 0.045;
-                animating = true;
-            } else {
-                this._ghostHp = this._animHp;
-            }
-
-            if (animating) {
-                this._requestHudPaint();
-            }
-
+            const target = Number(state.lifeForce) || 0;
+            const panel = IP2Live.QuestManager._questPanelRect
+                ? IP2Live.QuestManager._questPanelRect(ctx) : { x: 18 * sX, y: 88 * sY, w: 430 * sX };
+            const x = panel.x, y = Math.max(8 * sY, panel.y - 78 * sY), w = panel.w, h = 70 * sY;
+            const body = IP2Live.Assets && IP2Live.Assets.oxaniumMediumLoaded ? 'Oxanium-Medium' : 'sans-serif';
             const critical = this.isCritical();
-            const warning = !critical && this._animHp <= 50;
-            const x = panel.x;
-            const y = Math.max(8 * sY, panel.y - 80 * sY);
-            const w = Math.min(panel.w, 460 * sX);
-            const h = 70 * sY;
-            const pulse = 0.5 + 0.5 * Math.sin(Date.now() / 160);
+            const pulse = 0.5 + 0.5 * Math.sin(Date.now() / 550);
+            if (this._animHp === undefined) this._animHp = target;
+            if (this._ghostHp === undefined) this._ghostHp = target;
+            this._animHp += (target - this._animHp) * 0.16;
+            if (Math.abs(target - this._animHp) < 0.1) this._animHp = target;
+            this._ghostHp = this._ghostHp < this._animHp ? this._animHp : this._ghostHp + (this._animHp - this._ghostHp) * 0.045;
+            if (Math.abs(this._ghostHp - target) > 0.1 || critical) this._requestHudPaint();
+            const badgeW = 58 * sX;
+            const barX = x + 16 * sX, barY = y + 29 * sY;
+            const barW = w - badgeW - 36 * sX, barH = 11 * sY;
+            ctx.save();
+            this._drawCyberPlate(ctx, x, y, w, h, 8 * sX);
+            ctx.fillStyle = '#11121D'; ctx.fill();
+            ctx.strokeStyle = critical ? '#FF3158' : '#373541'; ctx.lineWidth = 1.5 * sX; ctx.stroke();
+            ctx.fillStyle = '#FF174D'; ctx.fillRect(x, y + 14 * sY, 3 * sX, h - 28 * sY);
+            ctx.fillStyle = '#FFE600'; ctx.fillRect(x + w - 28 * sX, y, 18 * sX, 2 * sY);
+            ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
+            ctx.font = 'bold ' + Math.round(9 * sY) + 'px ' + body;
+            ctx.fillStyle = '#D8D3E2'; ctx.fillText('NEURAL DECK', barX, y + 19 * sY);
+            ctx.textAlign = 'right'; ctx.font = 'bold ' + Math.round(12 * sY) + 'px ' + body;
+            ctx.fillStyle = critical ? '#FF7896' : '#FFFFFF';
+            ctx.fillText(String(Math.round(target)).padStart(3, '0') + ' / 100', barX + barW, y + 19 * sY);
+            ctx.fillStyle = '#29232F'; ctx.fillRect(barX, barY, barW, barH);
+            ctx.fillStyle = '#FF8DA6'; ctx.fillRect(barX, barY, barW * this._ghostHp / 100, barH);
+            const barGrad = ctx.createLinearGradient(barX, barY, barX + barW, barY);
+            barGrad.addColorStop(0, '#FF174D');
+            barGrad.addColorStop(0.52, '#FF8A00');
+            barGrad.addColorStop(1, '#FFE600');
+            ctx.fillStyle = barGrad; ctx.fillRect(barX, barY, barW * this._animHp / 100, barH);
+            ctx.fillStyle = '#11121D';
+            for (let i = 1; i < 10; i++) ctx.fillRect(barX + barW * i / 10, barY, 2 * sX, barH);
+            ctx.fillStyle = '#34303F'; ctx.fillRect(x + w - badgeW - 7 * sX, y + 13 * sY, sX, 43 * sY);
+            this._drawQuestChainCard(ctx, x + w - badgeW, y + 6 * sY, badgeW, h - 12 * sY, state, sX, sY, pulse);
+            ctx.textAlign = 'left'; ctx.font = 'bold ' + Math.round(7.5 * sY) + 'px ' + body;
             const change = state.lastChange;
-            const accent = critical ? '#FF315F' : (warning ? '#FFE04A' : '#FF174D');
-            const streakW = Math.min(64 * sX, w * 0.18);
-            const streakX = x + w - streakW;
-            const contentLeft = x + 18 * sX;
-            const contentRight = streakX - 8 * sX;
-
-            ctx.save();
-
-            // Offset Persona-style shards give the plate an asymmetric silhouette.
-            ctx.beginPath();
-            ctx.moveTo(x + 14 * sX, y - 3 * sY);
-            ctx.lineTo(x + w - 36 * sX, y - 3 * sY);
-            ctx.lineTo(x + w - 26 * sX, y + 2 * sY);
-            ctx.lineTo(x + 9 * sX, y + 2 * sY);
-            ctx.closePath();
-            ctx.fillStyle = critical ? '#FF315F' : '#FFE04A';
-            ctx.fill();
-
-            ctx.beginPath();
-            ctx.moveTo(x - 4 * sX, y + 14 * sY);
-            ctx.lineTo(x + 5 * sX, y + 4 * sY);
-            ctx.lineTo(x + 5 * sX, y + h - 5 * sY);
-            ctx.lineTo(x - 4 * sX, y + h - 14 * sY);
-            ctx.closePath();
-            ctx.fillStyle = '#FF174D';
-            ctx.fill();
-
-            // A heavy offset body gives the whole HUD tangible depth.
-            this._drawCyberPlate(ctx, x + 5 * sX, y + 6 * sY, w, h, 7 * sX);
-            ctx.fillStyle = 'rgba(0, 2, 7, 0.88)';
-            ctx.fill();
-
-            // Main dark plate.
-            this._drawCyberPlate(ctx, x, y, w, h, 7 * sX);
-            const bgGrad = ctx.createLinearGradient(x, y, x + w, y + h);
-            if (critical) {
-                bgGrad.addColorStop(0, 'rgba(48, 3, 17, 0.98)');
-                bgGrad.addColorStop(0.58, 'rgba(16, 7, 18, 0.99)');
-                bgGrad.addColorStop(1, 'rgba(5, 8, 14, 0.99)');
-            } else {
-                bgGrad.addColorStop(0, 'rgba(39, 3, 17, 0.98)');
-                bgGrad.addColorStop(0.55, 'rgba(15, 4, 13, 0.99)');
-                bgGrad.addColorStop(1, 'rgba(5, 5, 12, 0.99)');
-            }
-            ctx.fillStyle = bgGrad;
-            ctx.fill();
-
-            // Restrained scan texture and diagonal interference marks.
-            ctx.save();
-            this._drawCyberPlate(ctx, x, y, w, h, 7 * sX);
-            ctx.clip();
-            for (let lineY = y + 5 * sY; lineY < y + h; lineY += 4 * sY) {
-                ctx.fillStyle = 'rgba(220, 250, 255, 0.025)';
-                ctx.fillRect(x, lineY, w, Math.max(1, 0.5 * sY));
-            }
-            ctx.strokeStyle = 'rgba(255,23,77,0.09)';
-            ctx.lineWidth = 5 * unit;
-            for (let slashX = x + w * 0.58; slashX < streakX; slashX += 18 * sX) {
-                ctx.beginPath();
-                ctx.moveTo(slashX, y + h);
-                ctx.lineTo(slashX + 28 * sX, y);
-                ctx.stroke();
-            }
-
-            // Submerged cable routes add depth without crossing the telemetry copy.
-            this._drawHudConduit(
-                ctx,
-                x + 8 * sX,
-                y + 50 * sY,
-                streakX - 12 * sX,
-                y + 47 * sY,
-                -8 * sY,
-                critical ? 'rgba(111, 38, 55, 0.34)' : 'rgba(112, 18, 48, 0.34)',
-                2.2 * unit,
-                unit
-            );
-            this._drawHudConduit(
-                ctx,
-                x + 34 * sX,
-                y + 65 * sY,
-                streakX - 10 * sX,
-                y + 60 * sY,
-                7 * sY,
-                warning ? 'rgba(132, 95, 49, 0.30)' : 'rgba(82, 20, 39, 0.30)',
-                1.5 * unit,
-                unit
-            );
-            ctx.restore();
-
-            // High-contrast outer keyline.
-            this._drawCyberPlate(ctx, x, y, w, h, 7 * sX);
-            ctx.strokeStyle = accent;
-            ctx.lineWidth = 1.4 * unit;
-            ctx.shadowColor = 'rgba(255,23,77,0.68)';
-            ctx.shadowBlur = critical ? (6 + pulse * 5) * unit : 5 * unit;
-            ctx.stroke();
-            ctx.shadowBlur = 0;
-
-            // Top rail and hard-stop marker.
-            ctx.fillStyle = accent;
-            ctx.fillRect(x + 16 * sX, y + 4 * sY, contentRight - x - 23 * sX, Math.max(1, 1.2 * sY));
-            ctx.fillStyle = critical ? '#FFE04A' : '#FF315F';
-            ctx.beginPath();
-            ctx.moveTo(x + 16 * sX, y + 4 * sY);
-            ctx.lineTo(x + 40 * sX, y + 4 * sY);
-            ctx.lineTo(x + 34 * sX, y + 8 * sY);
-            ctx.lineTo(x + 12 * sX, y + 8 * sY);
-            ctx.closePath();
-            ctx.fill();
-
-            // Compact status glyph replaces the old explanatory labels.
-            ctx.fillStyle = accent;
-            for (let glyph = 0; glyph < 3; glyph++) {
-                const gx = contentLeft + glyph * 8 * sX;
-                ctx.beginPath();
-                ctx.moveTo(gx + 3 * sX, y + 11 * sY);
-                ctx.lineTo(gx + 9 * sX, y + 11 * sY);
-                ctx.lineTo(gx + 6 * sX, y + 21 * sY);
-                ctx.lineTo(gx, y + 21 * sY);
-                ctx.closePath();
-                ctx.fill();
-            }
-
-            const displayVal = Math.round(this._animHp);
-            ctx.textAlign = 'right';
-            ctx.textBaseline = 'alphabetic';
-            ctx.font = '900 ' + Math.round(12 * sY) + 'px ' + hudFont;
-            ctx.fillStyle = critical ? '#FF6B8C' : (warning ? '#FFE04A' : '#FF7899');
-            ctx.fillText(String(displayVal).padStart(3, '0') + ' / ' + MAX_LIFE_FORCE, contentRight, y + 20 * sY);
-
-            // Layered life-force rail.
-            const barX = contentLeft;
-            const barY = y + 27 * sY;
-            const barW = contentRight - contentLeft;
-            const barH = 17 * sY;
-            const activeRatio = Math.max(0, Math.min(1, this._animHp / MAX_LIFE_FORCE));
-            const ghostRatio = Math.max(0, Math.min(1, this._ghostHp / MAX_LIFE_FORCE));
-
-            // Red-black recessed housing matches the Quest Area without a metallic finish.
-            this._drawCyberPlate(ctx, barX - 3 * sX, barY - 3 * sY, barW + 6 * sX, barH + 6 * sY, 4 * sX);
-            const housingGrad = ctx.createLinearGradient(barX, barY - 3 * sY, barX, barY + barH + 3 * sY);
-            housingGrad.addColorStop(0, '#240510');
-            housingGrad.addColorStop(0.38, '#12040B');
-            housingGrad.addColorStop(1, '#050308');
-            ctx.fillStyle = housingGrad;
-            ctx.fill();
-            ctx.strokeStyle = 'rgba(255, 49, 95, 0.38)';
-            ctx.lineWidth = Math.max(1, unit);
-            ctx.stroke();
-
-            this._drawCyberPlate(ctx, barX, barY, barW, barH, 3 * sX);
-            ctx.fillStyle = 'rgba(9, 1, 7, 0.9)';
-            ctx.fill();
-            ctx.strokeStyle = 'rgba(255, 88, 126, 0.34)';
-            ctx.lineWidth = Math.max(1, unit);
-            ctx.stroke();
-
-            if (ghostRatio > activeRatio) {
-                ctx.save();
-                ctx.beginPath();
-                ctx.rect(barX + barW * activeRatio, barY, barW * (ghostRatio - activeRatio), barH);
-                ctx.clip();
-                ctx.fillStyle = 'rgba(255, 207, 49, 0.46)';
-                ctx.fillRect(barX, barY, barW * ghostRatio, barH);
-                ctx.restore();
-            }
-
-            if (activeRatio > 0) {
-                ctx.save();
-                const fillW = Math.max(7 * sX, barW * activeRatio);
-                this._drawCyberPlate(ctx, barX, barY, fillW, barH, 3 * sX);
-                ctx.clip();
-
-                const barGrad = ctx.createLinearGradient(barX, barY, barX + barW, barY);
-                barGrad.addColorStop(0, '#FF174D');
-                barGrad.addColorStop(0.52, '#FF8A00');
-                barGrad.addColorStop(1, '#FFE600');
-                ctx.fillStyle = barGrad;
-                ctx.fillRect(barX, barY, fillW, barH);
-
-                // Horizontal light bands give the fill depth without diagonal marks.
-                ctx.fillStyle = 'rgba(255, 210, 221, 0.13)';
-                ctx.fillRect(barX, barY + 2 * sY, fillW, 1.5 * sY);
-                ctx.fillStyle = 'rgba(74, 7, 16, 0.2)';
-                ctx.fillRect(barX, barY + barH - 3 * sY, fillW, 2 * sY);
-
-                const edgeX = barX + barW * activeRatio;
-                ctx.fillStyle = critical ? '#FF8BA4' : (warning ? '#C3AD7A' : '#FF8AA7');
-                ctx.shadowColor = 'rgba(0, 0, 0, 0.45)';
-                ctx.shadowBlur = 2 * unit;
-                ctx.fillRect(edgeX - 2 * sX, barY + 1 * sY, 2.5 * sX, barH - 2 * sY);
-                ctx.fillStyle = 'rgba(8, 15, 18, 0.62)';
-                ctx.fillRect(edgeX - 5 * sX, barY + 2 * sY, 1.2 * sX, barH - 4 * sY);
-                ctx.fillRect(edgeX - 8 * sX, barY + 3 * sY, 1.2 * sX, barH - 6 * sY);
-
-                ctx.restore();
-            }
-
-            // Straight vertical divisions create a clean segmented energy readout.
-            ctx.fillStyle = 'rgba(16, 2, 8, 0.42)';
-            const segmentStep = barW / 12;
-            for (let seg = barX + segmentStep; seg < barX + barW - 1; seg += segmentStep) {
-                ctx.fillRect(seg, barY + 2 * sY, Math.max(1, 1 * sX), barH - 4 * sY);
-            }
-
-            // Critical and transient feedback stays available; the quiet state
-            // is intentionally label-free to keep the compact HUD clean.
-            ctx.font = 'bold ' + Math.round(7.5 * sY) + 'px ' + hudFont;
-            ctx.textAlign = 'left';
-            ctx.textBaseline = 'alphabetic';
             if (critical) {
                 ctx.fillStyle = '#FF7896';
-                ctx.fillText('DANGER // LIFE FORCE CRITICAL', barX, y + 59 * sY);
-            } else if (change && Date.now() - Number(change.at || 0) < 6000) {
-                const deltaPos = change.delta >= 0;
-                ctx.fillStyle = deltaPos ? '#54FFD2' : '#FF7896';
-                ctx.fillText(
-                    (deltaPos ? 'RECOVERY +' : 'DAMAGE ') + change.delta + ' // ' + String(change.kind || '').toUpperCase(),
-                    barX,
-                    y + 59 * sY
-                );
+                ctx.fillText('DANGER // LIFE FORCE CRITICAL', barX, y + 57 * sY);
+            } else if (change && change.delta !== 0 && Date.now() - Number(change.at || 0) < 6000) {
+                ctx.fillStyle = change.delta > 0 ? '#FFE600' : '#FF7896';
+                ctx.fillText((change.delta > 0 ? 'RECOVERY +' : 'DAMAGE ') + change.delta + ' // ' + String(change.kind || '').toUpperCase(), barX, y + 57 * sY);
             } else {
-                ctx.fillStyle = 'rgba(255,23,77,0.32)';
-                ctx.fillRect(barX, y + 55 * sY, barW * 0.34, Math.max(1, 1 * sY));
-                ctx.fillStyle = 'rgba(255,230,0,0.4)';
-                ctx.fillRect(barX, y + 58 * sY, barW * 0.13, Math.max(1, 0.7 * sY));
+                ctx.fillStyle = '#B6B5C6';
+                const wins = Number(state.successStreak) || 0;
+                ctx.fillText(wins >= RECOVERY_WIN_STREAK ? 'RECOVERY ACTIVE' : 'RECOVERY AT 3 WINS / ' + wins + ' OF 3', barX, y + 57 * sY);
             }
-
-            // Standalone streak icon; the count is rendered inside the symbol.
-            this._drawQuestChainCard(ctx, streakX, y + 5 * sY, streakW, h - 10 * sY, state, sX, sY, pulse);
-
-            // Critical tint never covers text or the quest-chain card.
-            if (critical) {
-                ctx.globalAlpha = 0.05 + pulse * 0.05;
-                ctx.fillStyle = '#FF315F';
-                this._drawCyberPlate(ctx, x, y, streakX - x - 8 * sX, h, 7 * sX);
-                ctx.fill();
-            }
-
             ctx.restore();
             return true;
         },

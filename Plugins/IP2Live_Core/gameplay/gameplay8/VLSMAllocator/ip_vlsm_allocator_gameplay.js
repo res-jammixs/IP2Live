@@ -1112,9 +1112,11 @@ const VLSMAllocatorGameplayManager = {
 
             const openGameplay = function () {
                 self._playMusicZone('GAMEPLAY_1');
-                if (Manager && Manager.Stack && typeof Manager.Stack.replace === 'function') Manager.Stack.replace(screen);
+                if (opts.tutorialReplay) IP2Live.GameManager.prepareTutorialReplayScreen(screen, opts);
+                if (opts.tutorialReplay && Manager && Manager.Stack) { Manager.Stack.push(screen); }
+                else if (Manager && Manager.Stack && typeof Manager.Stack.replace === 'function') Manager.Stack.replace(screen);
                 else if (Manager && Manager.Stack && typeof Manager.Stack.push === 'function') Manager.Stack.push(screen);
-                if (shouldShowIntro && IP2Live.IPVLSMAllocatorTutorial && typeof IP2Live.IPVLSMAllocatorTutorial.showIntro === 'function') {
+                if ((opts.tutorialReplay || shouldShowIntro) && IP2Live.IPVLSMAllocatorTutorial && typeof IP2Live.IPVLSMAllocatorTutorial.showIntro === 'function') {
                     IP2Live.IPVLSMAllocatorTutorial.showIntro(screen.scenario, function () {});
                 }
             };
@@ -1134,6 +1136,7 @@ const VLSMAllocatorGameplayManager = {
                 self._active = false;
                 self._activeAttempt = null;
                 console.warn('[IP2Live] VLSMAllocatorGameplayManager failed to open gameplay:', e);
+                if (opts.tutorialReplay && IP2Live.GameManager) IP2Live.GameManager.finishTutorialReplay('ip_vlsm_allocator', opts, 'unavailable');
                 if (Manager && Manager.Stack) Manager.Stack.requestPaintHUD = true;
             }
         };
@@ -1168,6 +1171,7 @@ const VLSMAllocatorGameplayManager = {
     },
 
     _onComplete(options, result) {
+        if (IP2Live.GameManager && IP2Live.GameManager.finishTutorialReplay && IP2Live.GameManager.finishTutorialReplay('ip_vlsm_allocator', options, 'completed', result)) return true;
         const opts = options || {};
         const spec = opts.spec || this._defaultQuestSpec();
         this._active = false;
@@ -1210,6 +1214,7 @@ const VLSMAllocatorGameplayManager = {
     },
 
     _onFailed(options, result) {
+        if (IP2Live.GameManager && IP2Live.GameManager.finishTutorialReplay && IP2Live.GameManager.finishTutorialReplay('ip_vlsm_allocator', options, 'failed', result)) return true;
         const opts = options || {};
         const spec = opts.spec || this._defaultQuestSpec();
         this._active = false;
@@ -1242,6 +1247,7 @@ const VLSMAllocatorGameplayManager = {
     },
 
     _onCancel(options) {
+        if (IP2Live.GameManager && IP2Live.GameManager.finishTutorialReplay && IP2Live.GameManager.finishTutorialReplay('ip_vlsm_allocator', options, 'cancelled', null)) return true;
         const opts = options || {};
         const spec = opts.spec || this._defaultQuestSpec();
         this._active = false;
