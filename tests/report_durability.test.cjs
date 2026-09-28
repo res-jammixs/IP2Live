@@ -96,10 +96,10 @@ async function main() {
 
         const Scene = { Base: class {} };
         const loadExportScreen = new Function(
-            'Scene', 'window',
+            'Scene', 'window', 'IP2Live',
             exportScreenSource + '\nreturn window.IP2LiveExportReportMenu;'
         );
-        const ExportScreen = loadExportScreen(Scene, global.window);
+        const ExportScreen = loadExportScreen(Scene, global.window, {PopupChrome:{capture:()=>null}});
         const exportScreen = new ExportScreen();
         exportScreen.filename = 'Teacher_Report';
         const firstArchiveBase = exportScreen._exportFilenameBase(Date.UTC(2026, 7, 21, 4, 5, 6, 7));

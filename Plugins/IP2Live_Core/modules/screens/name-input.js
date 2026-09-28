@@ -430,8 +430,6 @@ class IP2LiveNameInputScreen extends Scene.Base {
         ctx.fillStyle = 'rgba(0,0,0,0.62)';
         ctx.fillRect(0, 0, cW, cH);
 
-        const easeIn = this._easeOutCubic(Math.min(this.fadeIn, 1));
-        const panelLift = (1 - easeIn) * 24 * sY;
 
         const layout = this._getPanelLayout(SW, SH);
         const panelW = layout.panelW;
@@ -442,32 +440,23 @@ class IP2LiveNameInputScreen extends Scene.Base {
         const pw = panelW * sX, ph = panelH * sY;
 
         ctx.save();
-        ctx.globalAlpha = easeIn;
-        ctx.translate(0, panelLift);
+        IP2Live.PopupChrome.animate(ctx,{x:px,y:py,w:pw,h:ph},this.animTick*0.085);
 
-        this._ensureCornerGlitches(pw, ph, sX, sY);
         this._drawHologramPanel(ctx, px, py, pw, ph, sX, sY);
 
         ctx.font = 'bold ' + (21 * sX) + 'px ' + font;
         ctx.fillStyle = '#FFFFFF';
         ctx.shadowBlur = 0;
         ctx.textAlign = 'center';
-        ctx.fillText('INFILTRATOR DESIGNATION', (panelX + panelW / 2) * sX, (panelY + 38) * sY);
+        IP2Live.PopupChrome.text(ctx, 'INFILTRATOR DESIGNATION', (panelX + panelW / 2) * sX, (panelY + 34) * sY, 1.2 * sX);
 
-        this._drawSectionRail(
-            ctx,
-            (panelX + 34) * sX,
-            (panelY + 49) * sY,
-            (panelW - 68) * sX,
-            4 * sY,
-            sX,
-            sY
-        );
+        ctx.fillStyle = '#75c8d030';
+        ctx.fillRect((panelX + 28) * sX, (panelY + 51) * sY, (panelW - 56) * sX, sY);
 
         ctx.font = 'bold ' + (10 * sX) + 'px ' + font;
         ctx.fillStyle = 'rgba(0,240,255,0.82)';
         ctx.textAlign = 'left';
-        ctx.fillText('INFILTRATOR NAME', (panelX + 28) * sX, (panelY + 73) * sY);
+        ctx.fillText('INFILTRATOR NAME', (panelX + 28) * sX, (panelY + 76) * sY);
 
         const inputX = layout.inputX;
         const inputY = layout.inputY;
@@ -480,68 +469,10 @@ class IP2LiveNameInputScreen extends Scene.Base {
         const iy = inputY * sY;
         const iw = inputW * sX;
         const ih = inputH * sY;
-        const sl = 9 * sX;
-
-        this._traceBeveledRect(ctx, ix + 3 * sX, iy + 5 * sY, iw, ih, sl);
-        const inputDepth = ctx.createLinearGradient(ix, iy, ix + iw, iy + ih);
-        inputDepth.addColorStop(0, 'rgba(0,77,101,0.82)');
-        inputDepth.addColorStop(0.72, 'rgba(0,19,34,0.94)');
-        inputDepth.addColorStop(1, 'rgba(91,0,42,0.74)');
-        ctx.fillStyle = inputDepth;
-        ctx.fill();
-        ctx.strokeStyle = 'rgba(255,0,60,0.28)';
-        ctx.lineWidth = 1 * sX;
-        ctx.stroke();
-
-        this._traceBeveledRect(ctx, ix, iy, iw, ih, sl);
-        ctx.shadowColor = 'rgba(0,240,255,0.46)';
-        ctx.shadowBlur = (5 + this.inputActivity * 11) * sX;
-        const inputGrad = ctx.createLinearGradient(ix, iy, ix + iw, iy);
-        inputGrad.addColorStop(0, 'rgba(4,14,28,0.98)');
-        inputGrad.addColorStop(0.46, 'rgba(3,18,34,0.98)');
-        inputGrad.addColorStop(0.72, 'rgba(3,10,22,0.98)');
-        inputGrad.addColorStop(1, 'rgba(19,4,18,0.94)');
-        ctx.fillStyle = inputGrad;
-        ctx.fill();
-        ctx.strokeStyle = 'rgba(0,240,255,' + (0.68 + this.inputActivity * 0.25).toFixed(3) + ')';
-        ctx.lineWidth = 1.2 * sX;
-        ctx.stroke();
-        ctx.shadowBlur = 0;
-        this._drawBevelFacets(ctx, ix, iy, iw, ih, sl, 3 * Math.min(sX, sY), '#00F0FF');
-
-        // Recessed glass bevel and a low-opacity packet scan inside the field.
-        this._traceBeveledRect(
-            ctx,
-            ix + 4 * sX,
-            iy + 4 * sY,
-            iw - 8 * sX,
-            ih - 8 * sY,
-            Math.max(2 * sX, sl - 4 * sX)
-        );
-        ctx.strokeStyle = 'rgba(184,247,255,0.12)';
-        ctx.lineWidth = Math.max(1, 0.65 * sX);
-        ctx.stroke();
-
-        ctx.save();
-        this._traceBeveledRect(ctx, ix, iy, iw, ih, sl);
-        ctx.clip();
-        const inputSweepX = ix - 90 * sX + ((this.animTick * 2.1) % (iw + 180 * sX));
-        const inputSweep = ctx.createLinearGradient(inputSweepX, iy, inputSweepX + 90 * sX, iy);
-        inputSweep.addColorStop(0, 'rgba(0,240,255,0)');
-        inputSweep.addColorStop(0.5, 'rgba(0,240,255,0.075)');
-        inputSweep.addColorStop(1, 'rgba(0,240,255,0)');
-        ctx.fillStyle = inputSweep;
-        ctx.fillRect(inputSweepX, iy, 90 * sX, ih);
-        for (let segment = 0; segment < 16; segment++) {
-            ctx.fillStyle = segment < currentText.length
-                ? 'rgba(0,240,255,0.14)'
-                : 'rgba(98,150,172,0.045)';
-            ctx.fillRect(ix + (15 + segment * 25) * sX, iy + 5 * sY, 1 * sX, 4 * sY);
-        }
-        ctx.restore();
-
-        this._drawEdgePlate(ctx, ix + 12 * sX, iy + ih - 4.5 * sY, 54 * sX, 3 * sY, 4 * sX, '#00F0FF');
-        this._drawEdgePlate(ctx, ix + iw - 42 * sX, iy + ih - 4.5 * sY, 24 * sX, 3 * sY, 3 * sX, '#FF003C');
+        this._traceBeveledRect(ctx, ix, iy, iw, ih, 4 * Math.min(sX, sY));
+        ctx.fillStyle = '#070e17'; ctx.fill();
+        ctx.strokeStyle = this.inputActivity > 0.1 ? '#7dcbd2' : '#486d7b';
+        ctx.lineWidth = Math.min(sX, sY); ctx.stroke();
 
         if (currentText) {
             this._drawAnimatedInputText(
@@ -580,17 +511,11 @@ class IP2LiveNameInputScreen extends Scene.Base {
             'CONFIRM', this.hoverConfirm, false, font
         );
 
-        this._drawCornerGlitchBursts(ctx, px, py, pw, ph, sX, sY);
+
 
         ctx.restore();
         ctx.globalAlpha = 1;
 
-        if (this.entryFade > 0) {
-            ctx.globalAlpha = this._easeInOutCubic(this.entryFade);
-            ctx.fillStyle = '#000000';
-            ctx.fillRect(0, 0, cW, cH);
-            ctx.globalAlpha = 1;
-        }
 
         if (this.isFadingOut) {
             ctx.globalAlpha = Math.min(this.fadeOut, 1);
@@ -796,158 +721,7 @@ class IP2LiveNameInputScreen extends Scene.Base {
     }
 
     _drawHologramPanel(ctx, px, py, pw, ph, sX, sY) {
-        const unit = Math.min(sX, sY);
-        const cut = 14 * unit;
-        const tick = this.animTick || 0;
-
-        // Offset chassis layers make the hologram feel mounted instead of flat.
-        ctx.save();
-        this._traceBeveledRect(ctx, px + 8 * sX, py + 10 * sY, pw, ph, cut);
-        ctx.fillStyle = 'rgba(0,0,8,0.72)';
-        ctx.shadowColor = 'rgba(0,0,0,0.92)';
-        ctx.shadowBlur = 28 * unit;
-        ctx.fill();
-        ctx.shadowBlur = 0;
-        ctx.strokeStyle = 'rgba(255,0,60,0.26)';
-        ctx.lineWidth = 1.2 * unit;
-        ctx.stroke();
-
-        this._traceBeveledRect(ctx, px - 5 * sX, py + 5 * sY, pw, ph, cut);
-        ctx.fillStyle = 'rgba(1,18,31,0.56)';
-        ctx.fill();
-        ctx.strokeStyle = 'rgba(0,240,255,0.18)';
-        ctx.stroke();
-
-        // Visible sidewalls connect the bright face to the darker rear chassis.
-        const depthX = 8 * sX;
-        const depthY = 10 * sY;
-        ctx.beginPath();
-        ctx.moveTo(px + cut, py + ph);
-        ctx.lineTo(px + pw - cut, py + ph);
-        ctx.lineTo(px + pw - cut + depthX, py + ph + depthY);
-        ctx.lineTo(px + cut + depthX, py + ph + depthY);
-        ctx.closePath();
-        const lowerWall = ctx.createLinearGradient(0, py + ph, 0, py + ph + depthY);
-        lowerWall.addColorStop(0, 'rgba(0,99,126,0.52)');
-        lowerWall.addColorStop(0.42, 'rgba(1,17,31,0.86)');
-        lowerWall.addColorStop(1, 'rgba(64,0,31,0.72)');
-        ctx.fillStyle = lowerWall;
-        ctx.fill();
-
-        ctx.beginPath();
-        ctx.moveTo(px + pw, py + cut);
-        ctx.lineTo(px + pw, py + ph - cut);
-        ctx.lineTo(px + pw - cut, py + ph);
-        ctx.lineTo(px + pw - cut + depthX, py + ph + depthY);
-        ctx.lineTo(px + pw + depthX, py + ph - cut + depthY);
-        ctx.lineTo(px + pw + depthX, py + cut + depthY);
-        ctx.closePath();
-        const rightWall = ctx.createLinearGradient(px + pw, 0, px + pw + depthX, 0);
-        rightWall.addColorStop(0, 'rgba(0,134,158,0.4)');
-        rightWall.addColorStop(1, 'rgba(39,0,30,0.7)');
-        ctx.fillStyle = rightWall;
-        ctx.fill();
-
-        this._traceBeveledRect(ctx, px, py, pw, ph, cut);
-        const shellGrad = ctx.createLinearGradient(px, py, px + pw, py + ph);
-        shellGrad.addColorStop(0, 'rgba(5,24,43,0.985)');
-        shellGrad.addColorStop(0.45, 'rgba(2,10,25,0.985)');
-        shellGrad.addColorStop(0.78, 'rgba(3,12,27,0.985)');
-        shellGrad.addColorStop(1, 'rgba(26,3,24,0.96)');
-        ctx.fillStyle = shellGrad;
-        ctx.shadowColor = 'rgba(0,240,255,0.4)';
-        ctx.shadowBlur = 15 * unit;
-        ctx.fill();
-        ctx.shadowBlur = 0;
-
-        // Etched micro-grid, circuit paths, and a travelling scan plane.
-        ctx.save();
-        this._traceBeveledRect(ctx, px, py, pw, ph, cut);
-        ctx.clip();
-
-        for (let y = py + 3 * sY; y < py + ph; y += 5 * sY) {
-            ctx.fillStyle = 'rgba(177,238,255,0.018)';
-            ctx.fillRect(px, y, pw, Math.max(1, 0.55 * sY));
-        }
-        for (let x = px + 22 * sX; x < px + pw; x += 32 * sX) {
-            ctx.strokeStyle = 'rgba(0,240,255,0.035)';
-            ctx.lineWidth = Math.max(1, 0.5 * unit);
-            ctx.beginPath();
-            ctx.moveTo(x, py);
-            ctx.lineTo(x - 26 * sX, py + ph);
-            ctx.stroke();
-        }
-
-        const circuitRows = [28, 60, 137, 207];
-        for (let i = 0; i < circuitRows.length; i++) {
-            const cy = py + circuitRows[i] * sY;
-            const direction = i % 2 === 0 ? 1 : -1;
-            const startX = direction > 0 ? px + 8 * sX : px + pw - 8 * sX;
-            ctx.strokeStyle = i === 3 ? 'rgba(255,0,60,0.13)' : 'rgba(0,240,255,0.11)';
-            ctx.lineWidth = Math.max(1, 0.7 * unit);
-            ctx.beginPath();
-            ctx.moveTo(startX, cy);
-            ctx.lineTo(startX + direction * 52 * sX, cy);
-            ctx.lineTo(startX + direction * 64 * sX, cy + (i % 2 ? -8 : 8) * sY);
-            ctx.lineTo(startX + direction * 118 * sX, cy + (i % 2 ? -8 : 8) * sY);
-            ctx.stroke();
-            ctx.fillStyle = i === 3 ? 'rgba(255,0,60,0.48)' : 'rgba(0,240,255,0.48)';
-            ctx.fillRect(
-                startX + direction * 116 * sX - (direction < 0 ? 3 * sX : 0),
-                cy + (i % 2 ? -9 : 7) * sY,
-                3 * sX,
-                3 * sY
-            );
-        }
-
-        const scanY = py - 30 * sY + ((tick * 1.25) % (ph + 60 * sY));
-        const scanGrad = ctx.createLinearGradient(0, scanY - 18 * sY, 0, scanY + 18 * sY);
-        scanGrad.addColorStop(0, 'rgba(0,240,255,0)');
-        scanGrad.addColorStop(0.5, 'rgba(0,240,255,0.075)');
-        scanGrad.addColorStop(1, 'rgba(0,240,255,0)');
-        ctx.fillStyle = scanGrad;
-        ctx.fillRect(px, scanY - 18 * sY, pw, 36 * sY);
-
-        const glassSheen = ctx.createLinearGradient(px, py, px + pw * 0.72, py + ph);
-        glassSheen.addColorStop(0, 'rgba(255,255,255,0.055)');
-        glassSheen.addColorStop(0.24, 'rgba(255,255,255,0.008)');
-        glassSheen.addColorStop(0.5, 'rgba(0,240,255,0.025)');
-        glassSheen.addColorStop(1, 'rgba(255,255,255,0)');
-        ctx.fillStyle = glassSheen;
-        ctx.fillRect(px, py, pw, ph);
-        ctx.restore();
-
-        // Triple rim: bright face edge, recessed inner bevel, and hot corner clamps.
-        this._traceBeveledRect(ctx, px, py, pw, ph, cut);
-        ctx.strokeStyle = 'rgba(0,240,255,0.86)';
-        ctx.lineWidth = 1.25 * unit;
-        ctx.shadowColor = 'rgba(0,240,255,0.55)';
-        ctx.shadowBlur = 8 * unit;
-        ctx.stroke();
-        ctx.shadowBlur = 0;
-        this._drawBevelFacets(ctx, px, py, pw, ph, cut, 5 * unit, '#00F0FF');
-
-        this._traceBeveledRect(ctx, px + 5 * sX, py + 5 * sY, pw - 10 * sX, ph - 10 * sY, Math.max(3 * unit, cut - 4 * unit));
-        ctx.strokeStyle = 'rgba(166,239,255,0.13)';
-        ctx.lineWidth = Math.max(1, 0.7 * unit);
-        ctx.stroke();
-
-        this._drawCornerArmor(ctx, px + cut, py, 1, 1, unit, '#00F0FF');
-        this._drawCornerArmor(ctx, px + pw - cut, py, -1, 1, unit, '#00F0FF');
-        this._drawCornerArmor(ctx, px + cut, py + ph, 1, -1, unit, '#FF003C');
-        this._drawCornerArmor(ctx, px + pw - cut, py + ph, -1, -1, unit, '#00F0FF');
-
-        // Raised edge plates break up the long outline like fitted armor sections.
-        this._drawEdgePlate(ctx, px + 36 * sX, py - 1.6 * sY, 58 * sX, 3.4 * sY, 5 * unit, '#00F0FF');
-        this._drawEdgePlate(ctx, px + pw * 0.34, py - 1.6 * sY, pw * 0.32, 3.4 * sY, 6 * unit, '#00F0FF');
-        this._drawEdgePlate(ctx, px + pw - 94 * sX, py - 1.6 * sY, 58 * sX, 3.4 * sY, 5 * unit, '#00F0FF');
-        this._drawEdgePlate(ctx, px + 34 * sX, py + ph - 1.6 * sY, 66 * sX, 3.6 * sY, 5 * unit, '#FF003C');
-        this._drawEdgePlate(ctx, px + pw * 0.32, py + ph - 1.6 * sY, pw * 0.42, 3.6 * sY, 7 * unit, '#00F0FF');
-
-        const packetX = px + 36 * sX + ((tick * 1.65) % (pw - 72 * sX));
-        this._drawEdgePlate(ctx, packetX, py - 2.4 * sY, 13 * sX, 4 * sY, 3 * unit, '#FFE600');
-
-        ctx.restore();
+        IP2Live.PopupChrome.panel(ctx, px, py, pw, ph, sX, sY, false, this.animTick);
     }
 
     _getAnimatedNameGlyph(target, animation, index) {
@@ -1019,119 +793,10 @@ class IP2LiveNameInputScreen extends Scene.Base {
     }
 
     _drawBtn(ctx, scaleX, scaleY, bx, by, bw, bh, label, isHover, isDanger, font) {
-        const x = bx * scaleX;
-        const y = by * scaleY;
-        const w = bw * scaleX;
-        const h = bh * scaleY;
-
-        const accent = isDanger ? '#FF003C' : '#00F0FF';
-        const hoverMix = this.buttonHoverMix
-            ? (isDanger ? this.buttonHoverMix.back : this.buttonHoverMix.confirm)
-            : (isHover ? 1 : 0);
-        const easedHover = this._easeOutCubic(hoverMix);
-        const accentSoft = isDanger ? 'rgba(255,0,60,0.3)' : 'rgba(0,240,255,0.3)';
-        const baseGrad = ctx.createLinearGradient(x, y, x + w, y + h);
-        baseGrad.addColorStop(0, isDanger
-            ? 'rgba(25,' + Math.round(5 + easedHover * 5) + ',15,0.98)'
-            : 'rgba(3,' + Math.round(12 + easedHover * 15) + ',' + Math.round(24 + easedHover * 18) + ',0.98)');
-        baseGrad.addColorStop(0.58, 'rgba(4,9,20,0.98)');
-        baseGrad.addColorStop(1, isDanger ? 'rgba(20,2,13,0.98)' : 'rgba(1,14,23,0.98)');
-
-        const cut = 8 * Math.min(scaleX, scaleY);
-        ctx.save();
-
-        this._traceBeveledRect(ctx, x + 4 * scaleX, y + 5 * scaleY, w, h, cut);
-        ctx.fillStyle = 'rgba(0,0,5,0.72)';
-        ctx.fill();
-        ctx.strokeStyle = isDanger ? 'rgba(255,0,60,0.2)' : 'rgba(0,240,255,0.2)';
-        ctx.lineWidth = 1 * scaleX;
-        ctx.stroke();
-
-        this._traceBeveledRect(ctx, x, y, w, h, cut);
-
-        ctx.fillStyle = baseGrad;
-        ctx.fill();
-
-        ctx.save();
-        this._traceBeveledRect(ctx, x, y, w, h, cut);
-        ctx.clip();
-        ctx.globalAlpha = easedHover;
-        const energyWidth = w * (0.18 + easedHover * 0.82);
-        const chargeGrad = ctx.createLinearGradient(x, y, x + energyWidth, y);
-        chargeGrad.addColorStop(0, 'rgba(255,255,255,0.04)');
-        chargeGrad.addColorStop(0.58, accentSoft);
-        chargeGrad.addColorStop(1, 'rgba(255,255,255,0.16)');
-        ctx.fillStyle = chargeGrad;
-        ctx.fillRect(x, y, energyWidth, h);
-
-        const sweepX = x - 36 * scaleX + ((this.animTick * 3.2) % (w + 72 * scaleX));
-        ctx.globalAlpha = easedHover * 0.42;
-        ctx.fillStyle = '#FFFFFF';
-        ctx.translate(sweepX + 5 * scaleX, y);
-        ctx.transform(1, 0, -0.32, 1, 0, 0);
-        ctx.fillRect(-5 * scaleX, 0, 10 * scaleX, h);
-        ctx.restore();
-
-        this._traceBeveledRect(ctx, x, y, w, h, cut);
-        ctx.strokeStyle = accent;
-        ctx.globalAlpha = 0.66 + easedHover * 0.34;
-        ctx.lineWidth = (1.1 + easedHover * 0.9) * scaleX;
-        ctx.shadowColor = accent;
-        ctx.shadowBlur = (4 + easedHover * 12) * scaleX;
-        ctx.stroke();
-        ctx.shadowBlur = 0;
-        ctx.globalAlpha = 1;
-        this._drawBevelFacets(
-            ctx,
-            x,
-            y,
-            w,
-            h,
-            cut,
-            (2.6 + easedHover * 1.2) * Math.min(scaleX, scaleY),
-            accent
-        );
-
-        const railInset = (18 - easedHover * 10) * scaleX;
-        this._drawEdgePlate(
-            ctx,
-            x + railInset,
-            y + h - (3.6 + easedHover) * scaleY,
-            w - railInset * 2,
-            (2.4 + easedHover * 0.8) * scaleY,
-            4 * Math.min(scaleX, scaleY),
-            accent
-        );
-
-        const detailAccent = easedHover > 0.55 ? '#FFE600' : accent;
-        this._drawEdgePlate(
-            ctx,
-            x + 8 * scaleX,
-            y + 6 * scaleY,
-            (7 + easedHover * 13) * scaleX,
-            3 * scaleY,
-            2.5 * scaleX,
-            detailAccent
-        );
-        this._drawEdgePlate(
-            ctx,
-            x + w - (15 + easedHover * 13) * scaleX,
-            y + h - 10 * scaleY,
-            (7 + easedHover * 13) * scaleX,
-            3 * scaleY,
-            2.5 * scaleX,
-            detailAccent
-        );
-
-        ctx.font = 'bold ' + (12 * scaleX) + 'px ' + font;
-        ctx.fillStyle = '#FFFFFF';
-        ctx.textAlign = 'center';
-        ctx.shadowColor = hoverMix > 0.02 ? accent : 'transparent';
-        ctx.shadowBlur = easedHover * 9 * scaleX;
-        const displayLabel = this._getButtonTransitionLabel(label, hoverMix, isDanger ? 11 : 29);
-        ctx.fillText(displayLabel, x + w / 2, y + h / 2 + 4 * scaleY);
-        ctx.shadowBlur = 0;
-        ctx.restore();
+        const mix = this.buttonHoverMix
+            ? (isDanger ? this.buttonHoverMix.back : this.buttonHoverMix.confirm) : (isHover ? 1 : 0);
+        IP2Live.PopupChrome.button(ctx, { x: bx, y: by, w: bw, h: bh }, scaleX, scaleY,
+            label, font, mix, this.animTick, isDanger);
     }
 
     _seedNetBackdrop(cW, cH) {
@@ -1445,4 +1110,3 @@ class IP2LiveNameInputScreen extends Scene.Base {
 }
 window.IP2LiveNameInputScreen = IP2LiveNameInputScreen;
 console.log('[IP2Live] name-input.js loaded.');
-

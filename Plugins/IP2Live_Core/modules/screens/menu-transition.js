@@ -17,7 +17,10 @@ class IP2LiveMenuTransitionScene extends Scene.Base {
         const canvas = Common.Platform.ctx.canvas;
         this.frame.width = canvas.width;
         this.frame.height = canvas.height;
-        this.frame.getContext('2d').drawImage(canvas, 0, 0);
+        const frameContext = this.frame.getContext('2d');
+        const renderer = Manager.GL && Manager.GL.renderer;
+        if (renderer && renderer.domElement) frameContext.drawImage(renderer.domElement, 0, 0, canvas.width, canvas.height);
+        frameContext.drawImage(canvas, 0, 0);
     }
 
     update() {
@@ -34,7 +37,7 @@ class IP2LiveMenuTransitionScene extends Scene.Base {
                 this._recover(new Error('Menu did not become ready in time.'));
             }
         } else if (this.phase === 'in') {
-            if (this.target && typeof this.target.update === 'function') this.target.update();
+            if (!this.options.freezeTarget && this.target && typeof this.target.update === 'function') this.target.update();
             if (this.elapsed >= this.duration && Manager.Stack.top === this) Manager.Stack.pop();
         }
         Manager.Stack.requestPaintHUD = true;
@@ -42,6 +45,22 @@ class IP2LiveMenuTransitionScene extends Scene.Base {
 
     _startAction() {
         this.actionStarted = true;
+        if (this.options.launch) {
+            // Gameplay launchers push their own scenes. Move only the overlay;
+            // never pop/recreate a puzzle, which would discard its fresh session.
+            this.moving = true;
+            Manager.Stack.pop();
+            let failure;
+            try {
+                if (this.options.action() === false) failure = new Error('Gameplay could not be opened.');
+            } catch (error) { failure = error; }
+            this.target = Manager.Stack.top || this.source;
+            this.stackedTarget = true;
+            Manager.Stack.push(this);
+            this.moving = false;
+            if (failure) this._recover(failure);
+            return;
+        }
         if (this.options.back) {
             this.target = this.options.parent;
             if (!this.target) this._recover(new Error('No parent menu to return to.'));
@@ -61,12 +80,22 @@ class IP2LiveMenuTransitionScene extends Scene.Base {
 
     _revealTarget() {
         if (Manager.Stack.top !== this) return;
-        this.moving = true;
-        Manager.Stack.pop();
-        if (this.options.back) Manager.Stack.pop();
-        else Manager.Stack.push(this.target);
-        Manager.Stack.push(this);
-        this.moving = false;
+        if (this.options.onReady) {
+            const ready = this.options.onReady; this.options.onReady = null;
+            try { ready(this.target); } catch (error) { this._recover(error); return; }
+        }
+        if (!this.stackedTarget) {
+            this.moving = true;
+            Manager.Stack.pop();
+            if (this.options.back) Manager.Stack.pop();
+            else {
+                if (this.options.replaceStack) this.options.replaceStack(this.target);
+                else if (this.options.replace) Manager.Stack.popAll();
+                Manager.Stack.push(this.target);
+            }
+            Manager.Stack.push(this);
+            this.moving = false;
+        }
         this.phase = 'in';
         this.duration = 460;
         this.startedAt = Date.now();
@@ -76,8 +105,13 @@ class IP2LiveMenuTransitionScene extends Scene.Base {
     _recover(error) {
         if (IP2Live.MenuTransition.active !== this) return;
         console.error('[IP2Live] Menu transition failed:', error);
-        if (this.target && this.target !== this.source && typeof this.target.close === 'function') this.target.close();
-        this.target = this.source;
+        if (!this.stackedTarget) {
+            if (this.target && this.target !== this.source && typeof this.target.close === 'function') this.target.close();
+            this.target = this.source;
+        }
+        if (this.options.onFailure) {
+            const failed = this.options.onFailure; this.options.onFailure = null; failed(error);
+        }
         this.phase = 'in';
         this.startedAt = Date.now();
         this.elapsed = 0;
@@ -85,7 +119,10 @@ class IP2LiveMenuTransitionScene extends Scene.Base {
     }
 
     close() {
-        if (!this.moving && IP2Live.MenuTransition.active === this) IP2Live.MenuTransition.active = null;
+        if (!this.moving && IP2Live.MenuTransition.active === this) {
+            IP2Live.MenuTransition.active = null;
+            if (this.options.onClosed) setTimeout(this.options.onClosed,0);
+        }
     }
 
     // The overlay owns all input until the full image has returned.
@@ -98,7 +135,8 @@ class IP2LiveMenuTransitionScene extends Scene.Base {
     onMouseMove() { return true; }
 
     draw3D() {
-        if (Manager.GL && Manager.GL.renderer) Manager.GL.renderer.clear();
+        if (this.phase === 'in' && this.target && typeof this.target.draw3D === 'function') this.target.draw3D();
+        else if (Manager.GL && Manager.GL.renderer) Manager.GL.renderer.clear();
     }
 
     drawHUD() {
@@ -107,6 +145,7 @@ class IP2LiveMenuTransitionScene extends Scene.Base {
         const progress = Math.min(1, this.elapsed / this.duration);
         if (this.phase === 'in' && this.target) {
             ctx.save();
+            ctx.clearRect(0, 0, w, h);
             this.target.drawHUD();
             ctx.restore();
             if (this.frame.width !== w || this.frame.height !== h) {
@@ -114,6 +153,8 @@ class IP2LiveMenuTransitionScene extends Scene.Base {
             }
             const frameContext = this.frame.getContext('2d');
             frameContext.clearRect(0, 0, w, h);
+            const renderer = Manager.GL && Manager.GL.renderer;
+            if (renderer && renderer.domElement) frameContext.drawImage(renderer.domElement, 0, 0, w, h);
             frameContext.drawImage(ctx.canvas, 0, 0);
         }
         ctx.save();
@@ -185,9 +226,12 @@ IP2Live.MenuTransition = {
         return true;
     },
     open(factory) { return this._start({ action: factory }); },
-    back() {
+    // The action synchronously pushes a scene; its asynchronous load stays covered.
+    launch(action) { return this._start({ action, launch: true }); },
+    replace(factory, options = {}) { return this._start({ ...options, action: factory, replace: true, freezeTarget: true }); },
+    back(options = {}) {
         if (!Manager.Stack.subTop) return false;
-        return this._start({ back: true, parent: Manager.Stack.subTop });
+        return this._start({ back: true, parent: Manager.Stack.subTop, freezeTarget: !!options.freezeTarget });
     },
     close(action) { return this._start({ action, closeOnly: true }); },
     quit(reason) {

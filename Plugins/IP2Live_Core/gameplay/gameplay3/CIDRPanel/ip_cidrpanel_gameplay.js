@@ -3276,7 +3276,7 @@ const CIDRPanelGameplayManager = {
                 handoffKey: opts.handoffKey,
                 timeSeconds: configuredTimeSeconds,
                 tutorialMode: !!opts.tutorialMode,
-                guidedTutorial: !!opts.tutorialReplay || (shouldShowIntro && !!opts.tutorialMode),
+                guidedTutorial: !opts.practiceGameplay && (!!opts.tutorialReplay || (shouldShowIntro && !!opts.tutorialMode)),
                 enforceAttemptLimit: !!opts.enforceAttemptLimit,
                 maxAttempts: opts.maxAttempts || 3,
                 mapId: opts.mapId,

@@ -7,6 +7,146 @@
  * Loaded through code.js with the standard Paper Maker plugin globals.
  */
 
+// Shared, restrained holographic treatment for confirmation and name entry.
+IP2Live.PopupChrome = {
+    // All menu popups share the confirmation dialog's short, soft overshoot.
+    animate(ctx, rect, progress) {
+        const t = Math.max(0, Math.min(1, progress));
+        const ease = 1 + 2.70158 * Math.pow(t - 1, 3) + 1.70158 * Math.pow(t - 1, 2);
+        const cx = rect.x + rect.w / 2, cy = rect.y + rect.h / 2;
+        ctx.translate(cx, cy); ctx.scale(0.88 + ease * 0.12, 0.88 + ease * 0.12); ctx.translate(-cx, -cy);
+        ctx.globalAlpha *= Math.min(1, t * 1.8);
+    },
+    capture() {
+        const active = IP2Live.MenuTransition && IP2Live.MenuTransition.active;
+        const canvas = document.createElement('canvas'), source = active ? active.frame : Common.Platform.ctx.canvas;
+        canvas.width = source.width; canvas.height = source.height;
+        const ctx = canvas.getContext('2d');
+        const renderer = Manager.GL && Manager.GL.renderer;
+        if (renderer && renderer.domElement) ctx.drawImage(renderer.domElement, 0, 0, canvas.width, canvas.height);
+        ctx.drawImage(source, 0, 0); return canvas;
+    },
+    backdrop(ctx, frame, progress = 1) {
+        if (frame) ctx.drawImage(frame, 0, 0, ctx.canvas.width, ctx.canvas.height);
+        ctx.fillStyle = 'rgba(1,5,10,' + (0.78 * Math.min(1, progress)) + ')'; ctx.fillRect(0, 0, ctx.canvas.width, ctx.canvas.height);
+    },
+    heading(ctx, label, x, y, w) {
+        ctx.font = 'bold 23px Oxanium-Medium, sans-serif'; ctx.fillStyle = '#edf5f6'; ctx.textBaseline = 'alphabetic';
+        this.text(ctx, label, x + w / 2, y + 38, 1.6);
+        ctx.fillStyle = 'rgba(117,200,208,0.23)'; ctx.fillRect(x + 30, y + 54, w - 60, 1);
+    },
+    row(ctx, x, y, w, h, active) {
+        ctx.fillStyle = active ? 'rgba(109,185,191,0.12)' : 'rgba(3,12,19,0.65)';
+        ctx.fillRect(x, y, w, h);
+        ctx.strokeStyle = active ? '#8ccbd0' : 'rgba(117,200,208,0.18)'; ctx.lineWidth = 1;
+        ctx.strokeRect(x + .5, y + .5, w - 1, h - 1);
+        ctx.fillStyle = active ? '#e5d779' : '#47767d'; ctx.fillRect(x, y + 9, 2, h - 18);
+    },
+    textWidth(ctx, text, tracking = 0) {
+        const glyphs = Array.from(String(text));
+        return glyphs.reduce((width, glyph) => width + ctx.measureText(glyph).width, 0) + Math.max(0, glyphs.length - 1) * tracking;
+    },
+    text(ctx, text, centerX, y, tracking = 0) {
+        ctx.save(); ctx.textAlign = 'left';
+        let x = centerX - this.textWidth(ctx, text, tracking) / 2;
+        for (const glyph of Array.from(String(text))) {
+            ctx.fillText(glyph, x, y);
+            x += ctx.measureText(glyph).width + tracking;
+        }
+        ctx.restore();
+    },
+    path(ctx, x, y, w, h, cut) {
+        ctx.beginPath(); ctx.moveTo(x + cut, y); ctx.lineTo(x + w - cut, y);
+        ctx.lineTo(x + w, y + cut); ctx.lineTo(x + w, y + h - cut);
+        ctx.lineTo(x + w - cut, y + h); ctx.lineTo(x + cut, y + h);
+        ctx.lineTo(x, y + h - cut); ctx.lineTo(x, y + cut); ctx.closePath();
+    },
+    panel(ctx, x, y, w, h, sx, sy, danger, tick = 0) {
+        const unit = Math.min(sx, sy), accent = danger ? '#e86b85' : '#75c8d0';
+        ctx.save();
+        this.path(ctx, x + 6 * sx, y + 5 * sy, w - 12 * sx, h - 10 * sy, 2 * unit);
+        const ink = ctx.createLinearGradient(x, y, x + w, y + h);
+        ink.addColorStop(0, danger ? '#191119' : '#101c26'); ink.addColorStop(1, '#090e17');
+        ctx.fillStyle = ink; ctx.shadowColor = '#000000aa'; ctx.shadowBlur = 24 * unit; ctx.fill();
+        ctx.shadowBlur = 0; ctx.strokeStyle = accent + '18'; ctx.lineWidth = unit; ctx.stroke();
+        ctx.save(); ctx.clip(); ctx.fillStyle = '#bed7e005';
+        for (let yy = y + 3 * sy; yy < y + h; yy += 4 * sy) ctx.fillRect(x, yy, w, Math.max(0.5, sy * 0.5));
+        ctx.restore();
+        // Small illuminated corner brackets and gold registration marks echo the HUD frame.
+        ctx.strokeStyle = accent; ctx.lineWidth = 1.5 * unit;
+        ctx.shadowColor = accent; ctx.shadowBlur = 4 * unit;
+        for (const [cx, cy, dx, dy] of [[x, y, 1, 1], [x + w, y, -1, 1], [x, y + h, 1, -1], [x + w, y + h, -1, -1]]) {
+            ctx.beginPath(); ctx.moveTo(cx, cy + dy * 17 * sy);
+            ctx.lineTo(cx, cy); ctx.lineTo(cx + dx * 33 * sx, cy); ctx.stroke();
+            ctx.shadowBlur = 0; ctx.strokeStyle = accent + '70'; ctx.lineWidth = unit;
+            ctx.beginPath(); ctx.moveTo(cx + dx * 4 * sx, cy + dy * 11 * sy);
+            ctx.lineTo(cx + dx * 4 * sx, cy + dy * 4 * sy);
+            ctx.lineTo(cx + dx * 12 * sx, cy + dy * 4 * sy); ctx.stroke();
+            ctx.fillStyle = accent; ctx.fillRect(cx - sx, cy - sy, 3 * sx, 3 * sy);
+            ctx.strokeStyle = accent; ctx.lineWidth = 1.5 * unit; ctx.shadowBlur = 4 * unit;
+        }
+        ctx.shadowBlur = 0; ctx.fillStyle = '#e3cd72';
+        for (const yy of [y, y + h]) {
+            ctx.beginPath(); ctx.moveTo(x + 35 * sx, yy); ctx.lineTo(x + 40 * sx, yy);
+            ctx.lineTo(x + 37 * sx, yy + (yy === y ? 2 : -2) * sy); ctx.closePath(); ctx.fill();
+            ctx.beginPath(); ctx.moveTo(x + w - 35 * sx, yy); ctx.lineTo(x + w - 40 * sx, yy);
+            ctx.lineTo(x + w - 37 * sx, yy + (yy === y ? 2 : -2) * sy); ctx.closePath(); ctx.fill();
+        }
+        // Fixed edge chips with sparse fragments drifting away from the frame.
+        // Seed positions by index so the wear stays stable rather than flickering.
+        for (let i = 0; i < 24; i++) {
+            const side = i % 4, along = 0.12 + ((i * 37) % 79) / 100;
+            const horizontal = side < 2;
+            const nx = side === 2 ? -1 : side === 3 ? 1 : 0;
+            const ny = side === 0 ? -1 : side === 1 ? 1 : 0;
+            const ex = horizontal ? x + along * w : x + (side === 2 ? 6 * sx : w - 6 * sx);
+            const ey = horizontal ? y + (side === 0 ? 5 * sy : h - 5 * sy) : y + along * h;
+            const chipW = (horizontal ? 3 + i % 5 : 2) * sx;
+            const chipH = (horizontal ? 2 : 3 + i % 4) * sy;
+            ctx.fillStyle = '#03070bd9';
+            ctx.fillRect(Math.round(ex - chipW / 2), Math.round(ey - chipH / 2), chipW, chipH);
+            ctx.fillStyle = accent + '42';
+            ctx.fillRect(Math.round(ex - nx * 2 * sx), Math.round(ey - ny * 2 * sy), sx, sy);
+            if (i % 3 === 1) continue;
+            const phase = (tick * 0.0025 + i * 0.137) % 1;
+            const drift = 4 + phase * 11;
+            const tangent = Math.sin(tick * 0.012 + i) * 2;
+            ctx.save(); ctx.globalAlpha *= Math.sin(phase * Math.PI) * 0.5;
+            ctx.fillStyle = i % 6 === 0 ? '#d4ba6e' : accent;
+            const size = 1 + i % 3;
+            ctx.fillRect(Math.round(ex + (nx * drift + (horizontal ? tangent : 0)) * sx),
+                Math.round(ey + (ny * drift + (horizontal ? 0 : tangent)) * sy), size * sx, (i % 4 === 0 ? 1 : 2) * sy);
+            ctx.restore();
+        }
+        ctx.restore();
+    },
+    button(ctx, rect, sx, sy, label, font, mix, tick, danger) {
+        // Match Game Over's borderless wash, feathered rails and moving focus light.
+        ctx.save(); ctx.scale(sx, sy);
+        const { x, y, w, h } = rect;
+        const rgb = danger ? '231,105,143' : '117,206,215';
+        const wash = ctx.createLinearGradient(x, 0, x + w, 0);
+        wash.addColorStop(0, 'transparent'); wash.addColorStop(0.3, 'rgba(' + rgb + ',' + (0.04 + mix * 0.12) + ')');
+        wash.addColorStop(0.7, 'rgba(' + rgb + ',' + (0.04 + mix * 0.12) + ')'); wash.addColorStop(1, 'transparent');
+        ctx.fillStyle = wash; ctx.fillRect(x, y, w, h);
+        const rail = ctx.createLinearGradient(x, 0, x + w, 0);
+        rail.addColorStop(0, 'transparent'); rail.addColorStop(0.5, 'rgba(' + rgb + ',' + (0.25 + mix * 0.5) + ')'); rail.addColorStop(1, 'transparent');
+        ctx.fillStyle = rail; ctx.fillRect(x, y, w, 1); ctx.fillRect(x, y + h, w, 1);
+        let size = 13;
+        ctx.font = 'bold ' + size + 'px ' + font;
+        while (ctx.measureText(label).width > w - 24 && size > 9) ctx.font = 'bold ' + (--size) + 'px ' + font;
+        ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+        ctx.fillStyle = mix > 0.15 ? '#f5f7fc' : '#b4bfcb';
+        ctx.shadowColor = danger ? '#d96b8c' : '#7cc9d2'; ctx.shadowBlur = 2 + mix * 5;
+        ctx.fillText(label, x + w / 2, y + h / 2); ctx.shadowBlur = 0;
+        const sweepX = x + (0.5 + Math.sin(tick * 0.022) * 0.5) * (w - 54);
+        const sweep = ctx.createLinearGradient(sweepX, 0, sweepX + 54, 0);
+        sweep.addColorStop(0, 'transparent'); sweep.addColorStop(0.5, '#eefaff'); sweep.addColorStop(1, 'transparent');
+        ctx.globalAlpha *= mix * 0.55; ctx.fillStyle = sweep; ctx.fillRect(sweepX, y + h, 54, 1);
+        ctx.restore();
+    },
+};
+
 class confirPopup extends Scene.Base {
     constructor(options) {
         super(false);
@@ -32,6 +172,7 @@ class confirPopup extends Scene.Base {
         this.resolved = false;
         this.onConfirm = null;
         this.onCancel = null;
+        this.onDismiss = null;
         this.signalBars = [];
         this._seedSignalBars();
     }
@@ -52,6 +193,7 @@ class confirPopup extends Scene.Base {
         this.buttonMix = this.selectedIndex === 1 ? [0, 1] : [1, 0];
         this.onConfirm = typeof options.onConfirm === 'function' ? options.onConfirm : null;
         this.onCancel = typeof options.onCancel === 'function' ? options.onCancel : null;
+        this.onDismiss = typeof options.onDismiss === 'function' ? options.onDismiss : null;
     }
 
     _seedSignalBars() {
@@ -82,7 +224,7 @@ class confirPopup extends Scene.Base {
         if (Data.Keyboards.checkActionMenu(key)) {
             this._activateSelection();
         } else if (Data.Keyboards.checkCancelMenu(key)) {
-            this._resolve(false);
+            this._resolve(false, true);
         }
     }
 
@@ -133,7 +275,7 @@ class confirPopup extends Scene.Base {
         this._resolve(this.selectedIndex === 1);
     }
 
-    _resolve(confirmed) {
+    _resolve(confirmed, dismissed = false) {
         if (this.resolved) return;
         this.resolved = true;
 
@@ -143,7 +285,7 @@ class confirPopup extends Scene.Base {
         if (Manager.Stack.top === this) Manager.Stack.pop();
         Manager.Stack.requestPaintHUD = true;
 
-        const callback = confirmed ? this.onConfirm : this.onCancel;
+        const callback = dismissed && this.onDismiss ? this.onDismiss : (confirmed ? this.onConfirm : this.onCancel);
         if (!callback) return;
         try {
             const result = callback();
@@ -161,13 +303,24 @@ class confirPopup extends Scene.Base {
         const SW = Common.ScreenResolution.SCREEN_X;
         const SH = Common.ScreenResolution.SCREEN_Y;
         const panelW = 560;
-        const panelH = this.value ? 286 : 232;
+        let panelH = this.value ? 248 : 192;
+        // Keep longer, tracked copy clear of the buttons, including save-slot confirmations.
+        const ctx = Common.Platform.ctx;
+        if (typeof ctx.measureText === 'function') {
+            const font = IP2Live.Assets && IP2Live.Assets.oxaniumMediumLoaded ? 'Oxanium-Medium' : 'sans-serif';
+            ctx.save(); ctx.font = '13px ' + font;
+            const messageRows = this._wrapText(ctx, this.message, panelW - 72, 0.45).length;
+            ctx.font = '11px ' + font;
+            const detailRows = this._wrapText(ctx, this.detail, panelW - 72, 0.35).length;
+            panelH = Math.max(panelH, 131 + messageRows * 16 + (this.value ? 64 : 0) + (detailRows ? 4 + detailRows * 15 : 0));
+            ctx.restore();
+        }
         const panelX = (SW - panelW) / 2;
         const panelY = (SH - panelH) / 2;
         const buttonW = 172;
         const buttonH = 42;
         const buttonGap = 20;
-        const buttonY = panelY + panelH - 64;
+        const buttonY = panelY + panelH - 58;
         const buttonStartX = panelX + (panelW - buttonW * 2 - buttonGap) / 2;
         return {
             SW,
@@ -231,7 +384,7 @@ class confirPopup extends Scene.Base {
         const cH = ctx.canvas.height;
         const scaleX = cW / layout.SW;
         const scaleY = cH / layout.SH;
-        const progress = this._easeOutBack(this.openProgress);
+
         const font = IP2Live.Assets && IP2Live.Assets.oxaniumMediumLoaded
             ? 'Oxanium-Medium'
             : 'sans-serif';
@@ -239,12 +392,7 @@ class confirPopup extends Scene.Base {
         ctx.save();
         this._drawScreenVeil(ctx, cW, cH, scaleX, scaleY);
 
-        const panelCenterX = (layout.panelX + layout.panelW / 2) * scaleX;
-        const panelCenterY = (layout.panelY + layout.panelH / 2) * scaleY;
-        ctx.translate(panelCenterX, panelCenterY);
-        ctx.scale(0.88 + progress * 0.12, 0.88 + progress * 0.12);
-        ctx.translate(-panelCenterX, -panelCenterY);
-        ctx.globalAlpha = Math.min(1, this.openProgress * 1.8);
+        IP2Live.PopupChrome.animate(ctx, {x:layout.panelX*scaleX,y:layout.panelY*scaleY,w:layout.panelW*scaleX,h:layout.panelH*scaleY}, this.openProgress);
 
         this._drawPanel(ctx, layout, scaleX, scaleY, font);
         ctx.restore();
@@ -275,227 +423,56 @@ class confirPopup extends Scene.Base {
     }
 
     _drawPanel(ctx, layout, scaleX, scaleY, font) {
-        const x = layout.panelX * scaleX;
-        const y = layout.panelY * scaleY;
-        const w = layout.panelW * scaleX;
-        const h = layout.panelH * scaleY;
-        const unit = Math.min(scaleX, scaleY);
-        const cut = 14 * unit;
-        const frameAccent = this.danger ? '#FF003C' : '#00F0FF';
-        const confirmAccent = this.danger ? '#FF003C' : '#FFE600';
-        const cancelAccent = this.danger ? '#FF3B64' : '#00F0FF';
-        const pulse = 0.55 + Math.sin(this.animTick * 0.12) * 0.25;
-
-        this._traceBeveledRect(ctx, x + 8 * scaleX, y + 9 * scaleY, w, h, cut);
-        ctx.fillStyle = this.danger ? 'rgba(43,0,17,0.68)' : 'rgba(0,16,29,0.72)';
-        ctx.shadowColor = 'rgba(0,0,0,0.9)';
-        ctx.shadowBlur = 24 * unit;
-        ctx.fill();
-        ctx.shadowBlur = 0;
-
-        this._traceBeveledRect(ctx, x - 4 * scaleX, y + 4 * scaleY, w, h, cut);
-        ctx.fillStyle = this.danger ? 'rgba(80,0,28,0.24)' : 'rgba(0,87,108,0.24)';
-        ctx.fill();
-
-        this._traceBeveledRect(ctx, x, y, w, h, cut);
-        const panelGradient = ctx.createLinearGradient(x, y, x + w, y + h);
-        panelGradient.addColorStop(0, this.danger ? 'rgba(28,4,15,0.985)' : 'rgba(5,24,43,0.985)');
-        panelGradient.addColorStop(0.48, 'rgba(2,9,22,0.99)');
-        panelGradient.addColorStop(1, this.danger ? 'rgba(31,2,13,0.98)' : 'rgba(16,7,25,0.98)');
-        ctx.fillStyle = panelGradient;
-        ctx.shadowColor = frameAccent;
-        ctx.shadowBlur = 14 * unit;
-        ctx.fill();
-        ctx.shadowBlur = 0;
-
-        ctx.save();
-        this._traceBeveledRect(ctx, x, y, w, h, cut);
-        ctx.clip();
-        for (let sy = y + 3 * scaleY; sy < y + h; sy += 5 * scaleY) {
-            ctx.fillStyle = this.danger ? 'rgba(255,104,137,0.018)' : 'rgba(177,238,255,0.018)';
-            ctx.fillRect(x, sy, w, Math.max(1, 0.55 * scaleY));
+        const x = layout.panelX * scaleX, y = layout.panelY * scaleY;
+        const w = layout.panelW * scaleX, h = layout.panelH * scaleY;
+        IP2Live.PopupChrome.panel(ctx, x, y, w, h, scaleX, scaleY, this.danger, this.animTick);
+        ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
+        ctx.font = (13 * scaleX) + 'px ' + font;
+        const messages = this._wrapText(ctx, this.message, w - 72 * scaleX, 0.45 * scaleX);
+        ctx.font = (11 * scaleX) + 'px ' + font;
+        const details = this._wrapText(ctx, this.detail, w - 72 * scaleX, 0.35 * scaleX);
+        const bodyH = messages.length * 16 + (this.value ? 64 : 0) + (details.length ? 4 + details.length * 15 : 0);
+        const contentTop = 18 + Math.max(0, (layout.panelH - 92 - 35 - bodyH) / 2);
+        let titleSize = 21;
+        ctx.font = 'bold ' + (titleSize * scaleX) + 'px ' + font;
+        while (IP2Live.PopupChrome.textWidth(ctx, this.title, 1.6 * scaleX) > w - 72 * scaleX && titleSize > 12) {
+            ctx.font = 'bold ' + (--titleSize * scaleX) + 'px ' + font;
         }
-        for (let sx = x + 24 * scaleX; sx < x + w; sx += 36 * scaleX) {
-            ctx.strokeStyle = this.danger ? 'rgba(255,0,60,0.035)' : 'rgba(0,240,255,0.035)';
-            ctx.lineWidth = Math.max(1, 0.5 * unit);
-            ctx.beginPath();
-            ctx.moveTo(sx, y);
-            ctx.lineTo(sx - 24 * scaleX, y + h);
-            ctx.stroke();
-        }
-        const scanY = y - 24 * scaleY + ((this.animTick * 1.1) % (h + 48 * scaleY));
-        const scan = ctx.createLinearGradient(0, scanY - 14 * scaleY, 0, scanY + 14 * scaleY);
-        scan.addColorStop(0, 'rgba(255,255,255,0)');
-        scan.addColorStop(0.5, this.danger ? 'rgba(255,0,60,0.065)' : 'rgba(0,240,255,0.07)');
-        scan.addColorStop(1, 'rgba(255,255,255,0)');
-        ctx.fillStyle = scan;
-        ctx.fillRect(x, scanY - 14 * scaleY, w, 28 * scaleY);
-        ctx.restore();
-
-        this._traceBeveledRect(ctx, x, y, w, h, cut);
-        ctx.strokeStyle = frameAccent;
-        ctx.lineWidth = 1.3 * unit;
-        ctx.shadowColor = frameAccent;
-        ctx.shadowBlur = 8 * unit;
-        ctx.stroke();
-        ctx.shadowBlur = 0;
-        this._drawBevelFacets(ctx, x, y, w, h, cut, 5 * unit, frameAccent);
-
-        this._traceBeveledRect(ctx, x + 5 * scaleX, y + 5 * scaleY, w - 10 * scaleX, h - 10 * scaleY, Math.max(3 * unit, cut - 4 * unit));
-        ctx.strokeStyle = this.danger ? 'rgba(255,168,190,0.13)' : 'rgba(174,242,255,0.14)';
-        ctx.lineWidth = Math.max(1, 0.7 * unit);
-        ctx.stroke();
-
-        this._drawCornerArmor(ctx, x + cut, y, 1, 1, unit, frameAccent);
-        this._drawCornerArmor(ctx, x + w - cut, y, -1, 1, unit, frameAccent);
-        this._drawCornerArmor(ctx, x + cut, y + h, 1, -1, unit, this.danger ? '#FF003C' : '#FFE600');
-        this._drawCornerArmor(ctx, x + w - cut, y + h, -1, -1, unit, frameAccent);
-        this._drawEdgePlate(ctx, x + 34 * scaleX, y - 1.5 * scaleY, 62 * scaleX, 3.5 * scaleY, 5 * unit, frameAccent);
-        this._drawEdgePlate(ctx, x + w * 0.36, y - 1.5 * scaleY, w * 0.28, 3.5 * scaleY, 6 * unit, frameAccent);
-        this._drawEdgePlate(ctx, x + w - 96 * scaleX, y - 1.5 * scaleY, 62 * scaleX, 3.5 * scaleY, 5 * unit, frameAccent);
-
-        ctx.font = 'bold ' + Math.round(21 * scaleX) + 'px ' + font;
-        ctx.fillStyle = '#FFFFFF';
-        ctx.textAlign = 'center';
-        ctx.shadowColor = frameAccent;
-        ctx.shadowBlur = 7 * scaleX;
-        ctx.fillText(this.title, x + w / 2, y + 38 * scaleY);
-        ctx.shadowBlur = 0;
-
-        this._drawSectionRail(ctx, x + 34 * scaleX, y + 49 * scaleY, w - 68 * scaleX, 4 * scaleY, scaleX, scaleY, frameAccent);
-
-        ctx.font = Math.round(11 * scaleX) + 'px ' + font;
-        ctx.fillStyle = 'rgba(225,242,251,0.88)';
-        const messageLines = this._wrapText(ctx, this.message, w - 88 * scaleX);
-        for (let i = 0; i < Math.min(2, messageLines.length); i++) {
-            ctx.fillText(messageLines[i], x + w / 2, y + (77 + i * 16) * scaleY);
-        }
-
+        ctx.fillStyle = '#f1f5fa';
+        IP2Live.PopupChrome.text(ctx, this.title, x + w / 2, y + (contentTop + 14) * scaleY, 1.6 * scaleX);
+        const divider = ctx.createLinearGradient(x + 48 * scaleX, 0, x + w - 48 * scaleX, 0);
+        divider.addColorStop(0, 'transparent'); divider.addColorStop(0.5, this.danger ? '#b4627866' : '#75c8d060'); divider.addColorStop(1, 'transparent');
+        ctx.fillStyle = divider; ctx.fillRect(x + 48 * scaleX, y + (contentTop + 27) * scaleY, w - 96 * scaleX, scaleY);
+        let baseline = y + (contentTop + 48) * scaleY;
+        ctx.font = (13 * scaleX) + 'px ' + font; ctx.fillStyle = '#c8d4df';
+        for (const line of messages) { IP2Live.PopupChrome.text(ctx, line, x + w / 2, baseline, 0.45 * scaleX); baseline += 16 * scaleY; }
         if (this.value) {
-            this._drawValueDeck(ctx, x, y, w, scaleX, scaleY, font, confirmAccent, pulse);
+            this._drawValueDeck(ctx, x, baseline + 2 * scaleY, w, scaleX, scaleY, font);
+            baseline += 64 * scaleY;
         }
-
-        if (this.detail) {
-            ctx.font = Math.round(9 * scaleX) + 'px ' + font;
-            ctx.fillStyle = this.danger ? 'rgba(255,142,165,0.86)' : 'rgba(156,226,241,0.74)';
-            ctx.fillText(this.detail, x + w / 2, y + (this.value ? 184 : 124) * scaleY);
+        if (details.length) {
+            baseline += 4 * scaleY;
+            ctx.font = (11 * scaleX) + 'px ' + font;
+            ctx.fillStyle = this.danger ? '#dba4b1' : '#93b1bf';
+            for (const line of details) { IP2Live.PopupChrome.text(ctx, line, x + w / 2, baseline, 0.35 * scaleX); baseline += 15 * scaleY; }
         }
-
-        this._drawButton(ctx, layout.cancel, scaleX, scaleY, this.cancelLabel, 0, cancelAccent, font);
-        this._drawButton(ctx, layout.confirm, scaleX, scaleY, this.confirmLabel, 1, confirmAccent, font);
+        this._drawButton(ctx, layout.cancel, scaleX, scaleY, this.cancelLabel, 0, font);
+        this._drawButton(ctx, layout.confirm, scaleX, scaleY, this.confirmLabel, 1, font);
     }
 
-    _drawValueDeck(ctx, x, y, w, scaleX, scaleY, font, accent, pulse) {
-        const deckX = x + 54 * scaleX;
-        const deckY = y + 104 * scaleY;
-        const deckW = w - 108 * scaleX;
-        const deckH = 58 * scaleY;
-        const cut = 9 * Math.min(scaleX, scaleY);
-
-        this._traceBeveledRect(ctx, deckX + 3 * scaleX, deckY + 5 * scaleY, deckW, deckH, cut);
-        ctx.fillStyle = this.danger ? 'rgba(75,0,29,0.72)' : 'rgba(0,60,78,0.68)';
-        ctx.fill();
-
-        this._traceBeveledRect(ctx, deckX, deckY, deckW, deckH, cut);
-        const gradient = ctx.createLinearGradient(deckX, deckY, deckX + deckW, deckY);
-        gradient.addColorStop(0, this.danger ? 'rgba(255,0,60,0.15)' : 'rgba(0,240,255,0.14)');
-        gradient.addColorStop(0.58, 'rgba(5,12,25,0.96)');
-        gradient.addColorStop(1, this.danger ? 'rgba(255,0,60,0.11)' : 'rgba(255,230,0,0.13)');
-        ctx.fillStyle = gradient;
-        ctx.fill();
-        ctx.strokeStyle = accent;
-        ctx.lineWidth = 1.2 * scaleX;
-        ctx.shadowColor = accent;
-        ctx.shadowBlur = (4 + pulse * 4) * scaleX;
-        ctx.stroke();
-        ctx.shadowBlur = 0;
-        this._drawBevelFacets(ctx, deckX, deckY, deckW, deckH, cut, 3 * Math.min(scaleX, scaleY), accent);
-
-        ctx.textAlign = 'left';
-        ctx.font = 'bold ' + Math.round(8 * scaleX) + 'px ' + font;
-        ctx.fillStyle = this.danger ? 'rgba(255,151,176,0.8)' : 'rgba(113,231,246,0.8)';
-        ctx.fillText(this.valueLabel, deckX + 15 * scaleX, deckY + 18 * scaleY);
-
-        ctx.textAlign = 'center';
-        ctx.font = 'bold ' + Math.round(16 * scaleX) + 'px ' + font;
-        ctx.fillStyle = '#FFFFFF';
-        ctx.shadowColor = accent;
-        ctx.shadowBlur = (4 + pulse * 4) * scaleX;
-        const maxValue = this.value.length > 42 ? this.value.slice(0, 39) + '...' : this.value;
-        ctx.fillText(maxValue, deckX + deckW / 2, deckY + 43 * scaleY);
-        ctx.shadowBlur = 0;
-
-        this._drawEdgePlate(ctx, deckX + 13 * scaleX, deckY + deckH - 4 * scaleY, 48 * scaleX, 3 * scaleY, 4 * scaleX, this.danger ? '#FF003C' : '#00F0FF');
-        this._drawEdgePlate(ctx, deckX + deckW - 43 * scaleX, deckY + deckH - 4 * scaleY, 28 * scaleX, 3 * scaleY, 3 * scaleX, accent);
-    }
-
-    _drawButton(ctx, rect, scaleX, scaleY, label, index, accent, font) {
-        const x = rect.x * scaleX;
-        const y = rect.y * scaleY;
-        const w = rect.w * scaleX;
-        const h = rect.h * scaleY;
-        const unit = Math.min(scaleX, scaleY);
-        const cut = 8 * unit;
-        const mix = this.buttonMix ? this.buttonMix[index] : (this.selectedIndex === index ? 1 : 0);
-        const activeMix = 1 - Math.pow(1 - mix, 3);
-        const isYellow = accent === '#FFE600';
-        const isRed = accent === '#FF003C' || accent === '#FF3B64';
-        const soft = isYellow ? 'rgba(255,230,0,0.34)' : (isRed ? 'rgba(255,0,60,0.3)' : 'rgba(0,240,255,0.3)');
-
-        this._traceBeveledRect(ctx, x + 4 * scaleX, y + 5 * scaleY, w, h, cut);
-        ctx.fillStyle = 'rgba(0,0,6,0.76)';
-        ctx.fill();
-        ctx.strokeStyle = isRed ? 'rgba(255,0,60,0.24)' : 'rgba(0,240,255,0.2)';
-        ctx.lineWidth = 1 * scaleX;
-        ctx.stroke();
-
-        this._traceBeveledRect(ctx, x, y, w, h, cut);
-        const buttonGradient = ctx.createLinearGradient(x, y, x + w, y + h);
-        buttonGradient.addColorStop(0, activeMix > 0.01 ? soft : 'rgba(7,12,24,0.98)');
-        buttonGradient.addColorStop(0.58, 'rgba(4,9,20,0.99)');
-        buttonGradient.addColorStop(1, isRed ? 'rgba(24,2,13,0.99)' : 'rgba(1,14,23,0.99)');
-        ctx.fillStyle = buttonGradient;
-        ctx.fill();
-
+    _drawValueDeck(ctx, x, y, w, sx, sy, font) {
         ctx.save();
-        this._traceBeveledRect(ctx, x, y, w, h, cut);
-        ctx.clip();
-        ctx.globalAlpha = activeMix;
-        const energyWidth = w * (0.18 + activeMix * 0.82);
-        const energy = ctx.createLinearGradient(x, y, x + energyWidth, y);
-        energy.addColorStop(0, 'rgba(255,255,255,0.035)');
-        energy.addColorStop(0.6, soft);
-        energy.addColorStop(1, 'rgba(255,255,255,0.15)');
-        ctx.fillStyle = energy;
-        ctx.fillRect(x, y, energyWidth, h);
-        const sweepX = x - 34 * scaleX + ((this.animTick * 3) % (w + 68 * scaleX));
-        ctx.globalAlpha = activeMix * 0.36;
-        ctx.translate(sweepX + 5 * scaleX, y);
-        ctx.transform(1, 0, -0.3, 1, 0, 0);
-        ctx.fillStyle = '#FFFFFF';
-        ctx.fillRect(-5 * scaleX, 0, 10 * scaleX, h);
+        ctx.fillStyle = '#040a1280'; ctx.fillRect(x + 36 * sx, y, w - 72 * sx, 48 * sy);
+        ctx.textAlign = 'center'; ctx.font = (9 * sx) + 'px ' + font; ctx.fillStyle = '#89a9b6';
+        IP2Live.PopupChrome.text(ctx, this.valueLabel, x + w / 2, y + 17 * sy, 0.7 * sx);
+        ctx.font = 'bold ' + (16 * sx) + 'px ' + font; ctx.fillStyle = '#eef6fa';
+        ctx.fillText(this.value, x + w / 2, y + 36 * sy, w - 104 * sx);
         ctx.restore();
+    }
 
-        this._traceBeveledRect(ctx, x, y, w, h, cut);
-        ctx.strokeStyle = accent;
-        ctx.lineWidth = (1.1 + activeMix * 0.8) * scaleX;
-        ctx.shadowColor = accent;
-        ctx.shadowBlur = (4 + activeMix * 10) * scaleX;
-        ctx.stroke();
-        ctx.shadowBlur = 0;
-        this._drawBevelFacets(ctx, x, y, w, h, cut, (2.6 + activeMix) * unit, accent);
-
-        const railInset = (18 - activeMix * 9) * scaleX;
-        this._drawEdgePlate(ctx, x + railInset, y + h - (3.8 + activeMix) * scaleY, w - railInset * 2, (2.6 + activeMix * 0.6) * scaleY, 4 * unit, accent);
-        this._drawEdgePlate(ctx, x + 8 * scaleX, y + 6 * scaleY, (7 + activeMix * 10) * scaleX, 3 * scaleY, 2.5 * unit, activeMix > 0.55 && !this.danger ? '#FFE600' : accent);
-
-        ctx.font = 'bold ' + Math.round(12 * scaleX) + 'px ' + font;
-        ctx.fillStyle = '#FFFFFF';
-        ctx.textAlign = 'center';
-        ctx.shadowColor = activeMix > 0.02 ? accent : 'transparent';
-        ctx.shadowBlur = activeMix * 8 * scaleX;
-        ctx.fillText(this._getButtonTransitionLabel(label, mix, index), x + w / 2, y + h / 2 + 4 * scaleY);
-        ctx.shadowBlur = 0;
+    _drawButton(ctx, rect, sx, sy, label, index, font) {
+        const mix = this.buttonMix ? this.buttonMix[index] : (this.selectedIndex === index ? 1 : 0);
+        IP2Live.PopupChrome.button(ctx, rect, sx, sy, label, font, mix, this.animTick, this.danger);
     }
 
     _getButtonTransitionLabel(label, mix, seed) {
@@ -673,13 +650,13 @@ class confirPopup extends Scene.Base {
         ctx.restore();
     }
 
-    _wrapText(ctx, text, maxWidth) {
+    _wrapText(ctx, text, maxWidth, tracking = 0) {
         const words = String(text || '').split(/\s+/);
         const lines = [];
         let line = '';
         for (const word of words) {
             const candidate = line ? line + ' ' + word : word;
-            if (line && ctx.measureText(candidate).width > maxWidth) {
+            if (line && IP2Live.PopupChrome.textWidth(ctx, candidate, tracking) > maxWidth) {
                 lines.push(line);
                 line = word;
             } else {

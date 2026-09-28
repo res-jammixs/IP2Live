@@ -1141,13 +1141,23 @@ const IP2LiveGameManager = {
     },
 
     startNewGameFlow(playerName) {
+        const game = Core.Game.current;
+        const states = IP2Live.GameStateManager;
+        if (states && typeof states.resetStoryState === 'function') states.resetStoryState(game);
+        else if (game) game.ip2liveGameStates = {};
+        const quests = IP2Live.QuestManager;
+        if (quests && typeof quests.resetStoryProgress === 'function') quests.resetStoryProgress();
         this.clearActiveSaveSlot();
         if (IP2Live.NeuralLifeForce && typeof IP2Live.NeuralLifeForce.reset === 'function') {
             IP2Live.NeuralLifeForce.reset();
         }
+        // The first checkpoint must contain only this new run's progress.
+        // beginStory retains the previous durable autosave until that commits.
+        if (IP2Live.StoryAutosave) IP2Live.StoryAutosave.beginStory(game);
         return this.startTutorialFlow({
             playerName,
             useLoading: false,
+            cleanMapSession: true,
             source: 'GameManager.startNewGameFlow',
         });
     },
@@ -1431,6 +1441,10 @@ const IP2LiveGameManager = {
     },
 
     handleGameplayMistake(gameplayId, payload) {
+        if (IP2Live.PracticeMode && IP2Live.PracticeMode.active && IP2Live.PracticeMode.kind === 'gameplay') {
+            if (payload && typeof payload.onComplete === 'function') payload.onComplete();
+            return true;
+        }
         const data = Object.assign({}, payload || {}, {
             gameplayId,
             trigger: 'gameplay.mistake',
@@ -1523,6 +1537,7 @@ const IP2LiveGameManager = {
 
     handleGameplayCompleted(gameplayId, payload) {
         if (this.finishTutorialReplay(gameplayId, payload, 'completed', payload && payload.result)) return true;
+        if (IP2Live.PracticeMode) IP2Live.PracticeMode.recordCompletion(gameplayId, payload);
         const data = Object.assign({}, payload || {}, {
             gameplayId,
             trigger: 'gameplay.completed',
@@ -1628,6 +1643,7 @@ const IP2LiveGameManager = {
         }
         this.emit(this.EVENT.QUEST_OBJECTIVE_COMPLETED, result || {});
         this._queueCheckpoint('quest_objective_completed');
+        if (result && result.questCompleted && IP2Live.StoryAutosave) IP2Live.StoryAutosave.checkpoint('quest_completed', result);
         return true;
     },
 
@@ -2330,6 +2346,7 @@ const IP2LiveGameManager = {
     },
 
     _queueCheckpoint(reason) {
+        if (IP2Live.PracticeMode && IP2Live.PracticeMode.active) return false;
         if (!this._hasExplicitSaveSlot() || this._checkpointInFlight || typeof setTimeout !== 'function') return false;
         if (this._checkpointDebounceTimer) clearTimeout(this._checkpointDebounceTimer);
         const self = this;
@@ -2687,22 +2704,21 @@ const IP2LiveGameManager = {
         return true;
     },
 
-    saveProgressToActiveSlot(preferredSlot, saveName, options) {
-        const self = this;
-        const previous = this._saveQueue || Promise.resolve();
-        const queued = previous.catch(function () {}).then(function () {
-            return self._saveProgressToActiveSlotNow(preferredSlot, saveName, options);
-        });
+    enqueueSaveTask(task) {
+        const queued = (this._saveQueue || Promise.resolve()).catch(function () {}).then(task);
         this._saveQueue = queued;
-        queued.then(function () {
-            if (self._saveQueue === queued) self._saveQueue = null;
-        }, function () {
-            if (self._saveQueue === queued) self._saveQueue = null;
-        });
+        const clear = () => { if (this._saveQueue === queued) this._saveQueue = null; };
+        queued.then(clear, clear);
         return queued;
     },
 
+    saveProgressToActiveSlot(preferredSlot, saveName, options) {
+        if (IP2Live.PracticeMode && IP2Live.PracticeMode.active) return Promise.resolve({ saved: false, reason: 'practice-mode' });
+        return this.enqueueSaveTask(() => this._saveProgressToActiveSlotNow(preferredSlot, saveName, options));
+    },
+
     async _saveProgressToActiveSlotNow(preferredSlot, saveName, options) {
+        if (IP2Live.PracticeMode && IP2Live.PracticeMode.active) return { saved: false, reason: 'practice-mode' };
         const game = Core && Core.Game ? Core.Game.current : null;
         if (!game) return { saved: false, reason: 'no-game' };
         const opts = options || {};
@@ -2740,6 +2756,7 @@ const IP2LiveGameManager = {
         const requestedSaveName = String(saveName || '').trim();
         const snapshot = {
             slot: slot,
+            storyRunId: game._ip2liveStoryRunId || null,
             saveName: requestedSaveName || (previousSnapshot && previousSnapshot.saveName) || null,
             profileName: profileName || null,
             profileId: profileId || null,
@@ -2850,6 +2867,11 @@ const IP2LiveGameManager = {
             };
         }
 
+        return this.restoreProgressFromSnapshot(snapshot, game, slot);
+    },
+
+    restoreProgressFromSnapshot(snapshot, game, slot = 0) {
+        if (snapshot.storyRunId) game._ip2liveStoryRunId = snapshot.storyRunId;
         const profileName = String(snapshot.profileName || '').trim();
         if (profileName) {
             game._ip2liveProfileName = profileName;

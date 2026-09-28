@@ -8,11 +8,7 @@ const popupPath = path.join(root, 'Plugins', 'IP2Live_Core', 'modules', 'screens
 const source = fs.readFileSync(popupPath, 'utf8');
 
 assert.match(source, /const panelW = 560/);
-assert.match(source, /const panelH = this\.value \? 286 : 232/);
 assert.match(source, /oxaniumMediumLoaded/);
-assert.match(source, /_drawBevelFacets\(/);
-assert.match(source, /_drawCornerArmor\(/);
-assert.match(source, /const confirmAccent = this\.danger \? '#FF003C' : '#FFE600'/);
 assert.doesNotMatch(source, /systemLabel|SYS::|ESC \/\/|ENTER \/\/|monospace/);
 
 class BaseScene {
@@ -43,14 +39,14 @@ const identityPopup = new Popup({
 });
 const identityLayout = identityPopup._layout();
 assert.equal(identityLayout.panelW, 560);
-assert.equal(identityLayout.panelH, 286);
+assert.equal(identityLayout.panelH, 248);
 assert.equal(identityLayout.cancel.w, 172);
 assert.equal(identityLayout.confirm.w, 172);
 assert.ok(identityLayout.confirm.x > identityLayout.cancel.x + identityLayout.cancel.w);
 
 const quitPopup = new Popup({ title: 'QUIT GAME?', danger: true });
 const quitLayout = quitPopup._layout();
-assert.equal(quitLayout.panelH, 232);
+assert.equal(quitLayout.panelH, 192);
 assert.equal(quitPopup.danger, true);
 assert.deepEqual(Array.from(quitPopup.buttonMix), [1, 0]);
 

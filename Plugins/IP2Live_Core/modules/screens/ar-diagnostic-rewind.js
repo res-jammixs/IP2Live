@@ -846,3 +846,25 @@ class IP2LiveARDiagnosticRewindScreen extends Scene.Base {
 }
 IP2Live.ARDiagnosticRewind = IP2LiveARDiagnosticRewindScreen;
 window.IP2LiveARDiagnosticRewind = IP2LiveARDiagnosticRewindScreen;
+
+// Standalone visual state: reuse Game Over's renderer without constructing a scene.
+IP2Live.GameOverBackdrop = {
+    create() {
+        const proto = IP2Live.ARDiagnosticRewind.prototype;
+        const state = {tick:0};
+        for (const method of ['_seedSpaceVisuals','_drawSpaceBackdrop','_linear','_radial']) state[method] = proto[method];
+        state._seedSpaceVisuals();
+        return {
+            update() {
+                state.tick++;
+                for (const particle of state.particles) {
+                    particle.y -= particle.speed; particle.x += particle.drift;
+                    if (particle.y < -4) particle.y = 724;
+                    if (particle.x < -4) particle.x = 1284;
+                    if (particle.x > 1284) particle.x = -4;
+                }
+            },
+            draw(ctx,w,h) { state._drawSpaceBackdrop(ctx,{sw:w,sh:h},1); }
+        };
+    }
+};

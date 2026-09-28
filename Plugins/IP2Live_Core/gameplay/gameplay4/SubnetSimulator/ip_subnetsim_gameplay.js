@@ -4330,7 +4330,7 @@ const SubnetSimulatorGameplayManager = {
                 questId: opts.questId,
                 objectiveId: opts.objectiveId,
                 timeSeconds: configuredTimeSeconds,
-                guidedTutorial: !!opts.tutorialReplay || shouldShowIntro,
+                guidedTutorial: !opts.practiceGameplay && (!!opts.tutorialReplay || shouldShowIntro),
                 enforceAttemptLimit: !!opts.enforceAttemptLimit,
                 maxAttempts: opts.maxAttempts || 3,
                 onComplete: (result) => this._onComplete(opts, result),

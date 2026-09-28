@@ -248,6 +248,7 @@
             }
 
             this.activeScreen = screen;
+            if (IP2Live.PracticeMode) IP2Live.PracticeMode.configureScreen(screen);
 
             if (fallbackGameplayId) {
                 this._screenFallbackIds.set(
@@ -1407,12 +1408,10 @@
                 return false;
             }
 
-            Manager.Stack.push(
-                new IP2LiveGameplayPauseMenu(
-                    screen,
-                    pauseBackdrop
-                )
-            );
+            const makePause = () => new IP2LiveGameplayPauseMenu(screen, pauseBackdrop);
+            if (IP2Live.MenuTransition) {
+                if (!IP2Live.MenuTransition.open(makePause)) { this.menuOpen = false; return false; }
+            } else Manager.Stack.push(makePause());
 
             const gameManager =
                 IP2Live.GameManager;
@@ -1456,6 +1455,10 @@
             if (screen && screen.options && screen.options.tutorialReplay && IP2Live.TutorialReplay) {
                 const replay = IP2Live.TutorialReplay.session;
                 if (!replay || replay.screen !== screen) return { saved: false, reason: 'no-active-tutorial' };
+                if (screen.options.practiceMode && IP2Live.PracticeMode && IP2Live.MenuTransition &&
+                    typeof IP2Live.MenuTransition.launch === 'function') {
+                    return { saved: false, reason: 'practice-finishing', finished: IP2Live.PracticeMode.finishFromPause(screen) };
+                }
                 if (Manager.Stack.top && Manager.Stack.top.sourceScreen === screen) Manager.Stack.pop();
                 this.closeMenu();
                 return { saved: false, reason: 'tutorial-finished', finished: IP2Live.TutorialReplay.finishScreen(screen) };
@@ -1837,6 +1840,8 @@
                 GameplayPause.activeScreen;
 
             const replay = !!(this.sourceScreen && this.sourceScreen.options && this.sourceScreen.options.tutorialReplay);
+            const practice = !!(this.sourceScreen && this.sourceScreen.options && this.sourceScreen.options.practiceMode);
+            const practiceGameplay = practice && !!this.sourceScreen.options.practiceGameplay;
 
             this.menuItems = [
                 {
@@ -1844,7 +1849,7 @@
                         'RESUME',
 
                     subtitle:
-                        replay ? 'RETURN TO TUTORIAL' : 'RETURN TO ACTIVE QUEST',
+                        practiceGameplay ? 'RETURN TO PRACTICE' : replay ? 'RETURN TO TUTORIAL' : 'RETURN TO ACTIVE QUEST',
 
                     danger:
                         false,
@@ -1861,10 +1866,10 @@
                 },
                 {
                     title:
-                        replay ? 'FINISH TUTORIAL' : 'EXIT QUEST',
+                        practiceGameplay ? 'FINISH PRACTICE' : replay ? 'FINISH TUTORIAL' : 'EXIT QUEST',
 
                     subtitle:
-                        replay ? 'RETURN TO CURRENT QUEST' : 'SAVE STATE & LEAVE QUEST',
+                        practice ? 'RETURN TO PRACTICE GRID' : replay ? 'RETURN TO CURRENT QUEST' : 'SAVE STATE & LEAVE QUEST',
 
                     danger:
                         true,
@@ -2181,6 +2186,10 @@
                 }
             } catch (error) {}
 
+            if (IP2Live.MenuTransition && IP2Live.MenuTransition.back({freezeTarget:true})) {
+                GameplayPause.closeMenu();
+                return true;
+            }
             GameplayPause.closeMenu();
 
             if (

@@ -15,6 +15,9 @@ class IP2LiveTitleScreenImplementation extends Scene.Base {
         this.selectedIndex = 0;
         this.menuPage = 'main';
         this.menuItems = ['PLAY GAME', 'SETTINGS', 'CREDITS', 'QUIT GAME'];
+        this._practiceHintUntil = 0;
+        this._autosaveSummary = null;
+        this._autosaveReadError = false;
 
         this.scanlineOffset = 0;
         this.hoverIndex = -1;
@@ -44,6 +47,7 @@ class IP2LiveTitleScreenImplementation extends Scene.Base {
     }
 
     async load() {
+        if (IP2Live.PracticeMode) IP2Live.PracticeMode.syncFromCampaign();
         if (Core && Core.Game) Core.Game.current = null;
         if (Manager.Videos && typeof Manager.Videos.stop === 'function') {
             Manager.Videos.stop();
@@ -58,6 +62,7 @@ class IP2LiveTitleScreenImplementation extends Scene.Base {
         Manager.Stack.displayedPictures = [];
 
         await IP2Live.Assets.loadAll();
+        await this._refreshAutosave();
 
         this._seedParticles(48);
         this._seedDust(430);
@@ -276,11 +281,13 @@ class IP2LiveTitleScreenImplementation extends Scene.Base {
                 'NEW STORY',
                 'AUTOSAVED',
                 'LOAD STORY'
-            ]
+            ],
+            practice: ['TUTORIAL', 'GAMEPLAY']
         };
 
         this.menuPage =
             page;
+        if (page === 'story') this._refreshAutosave();
 
         this.menuItems =
             pages[page];
@@ -313,8 +320,7 @@ class IP2LiveTitleScreenImplementation extends Scene.Base {
         }
 
         this._showMenuPage(
-            this.menuPage ===
-                'story'
+            (this.menuPage === 'story' || this.menuPage === 'practice')
                 ? 'play'
                 : 'main'
         );
@@ -631,6 +637,13 @@ class IP2LiveTitleScreenImplementation extends Scene.Base {
         const index =
             this.selectedIndex;
 
+        if (this._lockedModeMessage(this.menuItems[index])) {
+            this._practiceHintUntil = Date.now() + 5500;
+            if (Data.Systems.soundImpossible) Data.Systems.soundImpossible.playSound();
+            Manager.Stack.requestPaintHUD = true;
+            return;
+        }
+
         Data.Systems
             .soundConfirmation
             .playSound();
@@ -672,54 +685,26 @@ class IP2LiveTitleScreenImplementation extends Scene.Base {
                 );
         }
 
-        if (
-            action ===
-            'NEW STORY'
-        ) {
-            if (
-                IP2Live
-                    .LoadingScreen &&
-                typeof IP2Live
-                    .LoadingScreen
-                    .show ===
-                    'function'
-            ) {
-                IP2Live
-                    .LoadingScreen
-                    .show({
-                        mode:
-                            'push',
-
-                        status:
-                            'Loading New Story',
-
-                        detail:
-                            'Opening infiltrator profile channel',
-
-                        onComplete:
-                            function () {
-                                Manager.Stack
-                                    .replace(
-                                        new IP2LiveNameInputScreen()
-                                    );
-                            }
-                    });
-            } else {
-                this.fadeTarget =
-                    index;
-            }
-
-            Manager.Stack
-                .requestPaintHUD =
-                true;
-
+        if (action === 'NEW STORY') {
+            if (IP2Live.StoryAutosave) IP2Live.StoryAutosave.confirmNewStory(() => this._startNewStory());
+            else this._startNewStory();
             return;
         }
 
         switch (action) {
-            case 'ENDLESS MODE':
             case 'PRACTICE MODE':
+                this._showMenuPage('practice');
+                break;
+            case 'TUTORIAL':
+            case 'GAMEPLAY':
+                if (this.menuPage === 'practice' && IP2Live.PracticeGrid) {
+                    this._openMenu(() => new IP2Live.PracticeGrid(action.toLowerCase()));
+                }
+                break;
+            case 'ENDLESS MODE':
+                break;
             case 'AUTOSAVED':
+                if (IP2Live.StoryAutosave) IP2Live.StoryAutosave.confirmResume();
                 break;
 
             case 'LOAD STORY':
@@ -868,7 +853,10 @@ class IP2LiveTitleScreenImplementation extends Scene.Base {
                         'QUIT GAME?',
 
                     message:
-                        'Close IP2Live?',
+                        'Please save your game progress before quitting.',
+
+                    detail:
+                        'Unsaved changes will be lost. Quit to desktop?',
 
                     confirmLabel:
                         'QUIT',
@@ -1232,6 +1220,8 @@ class IP2LiveTitleScreenImplementation extends Scene.Base {
             );
         }
 
+        this._drawPracticeHint(ctx, scaleX, scaleY);
+
         if (
             this.fadeOut >
             0
@@ -1270,6 +1260,94 @@ class IP2LiveTitleScreenImplementation extends Scene.Base {
     // ============================================================
     // BACKDROP
     // ============================================================
+
+    _practiceLocked() {
+        return !IP2Live.PracticeMode || !IP2Live.PracticeMode.isUnlocked();
+    }
+
+    async _refreshAutosave() {
+        if (!IP2Live.StoryAutosave) return;
+        try {
+            this._autosaveSummary = await IP2Live.StoryAutosave.getSummary();
+            this._autosaveReadError = false;
+        } catch (error) { this._autosaveSummary = null; this._autosaveReadError = true; }
+        Manager.Stack.requestPaintHUD = true;
+    }
+
+    _startNewStory() {
+            if (
+                IP2Live
+                    .LoadingScreen &&
+                typeof IP2Live
+                    .LoadingScreen
+                    .show ===
+                    'function'
+            ) {
+                IP2Live
+                    .LoadingScreen
+                    .show({
+                        mode:
+                            'push',
+
+                        status:
+                            'Loading New Story',
+
+                        detail:
+                            'Opening infiltrator profile channel',
+
+                        onComplete:
+                            function () {
+                                Manager.Stack
+                                    .replace(
+                                        new IP2LiveNameInputScreen()
+                                    );
+                            }
+                    });
+            } else {
+                this.fadeTarget =
+                    this.selectedIndex;
+            }
+
+            Manager.Stack
+                .requestPaintHUD =
+                true;
+
+            return;
+    }
+
+    _lockedModeMessage(label) {
+        if (label === 'AUTOSAVED' && !this._autosaveSummary) return this._autosaveReadError
+            ? 'Could not read the autosave. Reopen Story Mode to retry.' : 'No autosaved story yet. A checkpoint is created when your story begins.';
+        // Endless remains a locked placeholder until the story-ending unlock is implemented.
+        if (label === 'ENDLESS MODE') return 'Endless Mode will be unlocked once you finish Story Mode.';
+        if (label === 'PRACTICE MODE' && this._practiceLocked()) {
+            return IP2Live.PracticeMode ? IP2Live.PracticeMode.lockedMessage
+                : 'Practice Mode will be unlocked once you encounter your first Networking Gameplay';
+        }
+        return '';
+    }
+
+    _drawPracticeHint(ctx, scaleX, scaleY) {
+        if (this.menuPage !== 'play' && this.menuPage !== 'story') return;
+        const index = this.hoverIndex >= 0 ? this.hoverIndex : this.selectedIndex;
+        const message = this._lockedModeMessage(this.menuItems[index]);
+        if (!message) return;
+        const layout = this._menuLayout();
+        const y = layout.startY + 4 * (layout.btnH + layout.gap) + 7;
+        ctx.save(); ctx.scale(scaleX, scaleY);
+        ctx.fillStyle = '#aeb5c1'; ctx.textAlign = 'left';
+        ctx.font = '12px ' + (IP2Live.Assets.oxaniumMediumLoaded ? 'Oxanium-Medium' : 'sans-serif');
+        let line = '', row = 0;
+        for (const word of message.split(' ')) {
+            const next = line ? line + ' ' + word : word;
+            if (line && ctx.measureText(next).width > layout.btnW) {
+                ctx.fillText(line, layout.btnX, y + row++ * 18);
+                line = word;
+            } else line = next;
+        }
+        ctx.fillText(line, layout.btnX, y + row * 18);
+        ctx.restore();
+    }
 
     _drawBackdrop(ctx, cW, cH, scaleX, scaleY) {
         ctx.save();
@@ -1754,6 +1832,22 @@ class IP2LiveTitleScreenImplementation extends Scene.Base {
                 ),
             0
         );
+
+        if (this._lockedModeMessage(label)) {
+            ctx.save(); ctx.scale(scaleX, scaleY);
+            ctx.beginPath(); ctx.moveTo(bx + 12, by); ctx.lineTo(bx + bw - 8, by);
+            ctx.lineTo(bx + bw, by + 12); ctx.lineTo(bx + bw - 16, by + bh);
+            ctx.lineTo(bx + 12, by + bh); ctx.lineTo(bx, by + bh - 12); ctx.closePath();
+            ctx.fillStyle = active ? '#22252e' : '#14171d'; ctx.fill();
+            ctx.strokeStyle = active ? '#808896' : '#414751'; ctx.lineWidth = 1; ctx.stroke();
+            ctx.fillStyle = '#9198a3'; ctx.textAlign = 'left';
+            ctx.font = '18px ' + (IP2Live.Assets.nebulaLoaded ? 'Nebula-Regular' : 'sans-serif');
+            ctx.fillText(label, bx + 32, by + 34);
+            ctx.strokeStyle = '#9198a3'; ctx.strokeRect(bx + bw - 43, by + 25, 13, 11);
+            ctx.beginPath(); ctx.arc(bx + bw - 36.5, by + 25, 4.5, Math.PI, 0); ctx.stroke();
+            ctx.restore(); ctx.restore();
+            return;
+        }
 
         this._drawPersonaButton(
             ctx,

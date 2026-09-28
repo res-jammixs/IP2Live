@@ -722,6 +722,7 @@
          * Futuristic Canvas HUD Renderer
          */
         drawHUD(ctx) {
+            if (IP2Live.PracticeMode && IP2Live.PracticeMode.active) return false;
             if (!ctx || !ctx.canvas || this.isRunOver() || !this._shouldDrawWithQuestPanel()) return false;
             const sX = ctx.canvas.width / 1280, sY = ctx.canvas.height / 720;
             const state = this._state();

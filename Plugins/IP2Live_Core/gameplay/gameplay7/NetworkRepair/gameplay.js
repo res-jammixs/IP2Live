@@ -695,7 +695,7 @@ class IP2LiveNetworkRepairGameplayScreen extends Scene.Base {
         ctx.fillStyle = '#F7FBFF';
         ctx.font = 'bold ' + (12 * m.sY).toFixed(1) + 'px ' + mono;
         ctx.textAlign = 'right';
-        ctx.fillText('CHANCES ' + this.chances + '/' + this.maxChances,
+        ctx.fillText(this.options.practiceMode ? 'PRACTICE // UNLIMITED ATTEMPTS' : 'CHANCES ' + this.chances + '/' + this.maxChances,
             m.panelX + m.panelW - 52 * m.sX, m.panelY + m.panelH - 50 * m.sY);
     }
 
@@ -1237,7 +1237,7 @@ const NetworkRepairGameplayManager = {
                 if (opts.tutorialReplay && Manager && Manager.Stack) { Manager.Stack.push(screen); }
                 else if (Manager && Manager.Stack && typeof Manager.Stack.replace === 'function') Manager.Stack.replace(screen);
                 else if (Manager && Manager.Stack && typeof Manager.Stack.push === 'function') Manager.Stack.push(screen);
-                if ((opts.tutorialReplay || shouldShowIntro) && IP2Live.IPNetworkRepairTutorial && typeof IP2Live.IPNetworkRepairTutorial.showIntro === 'function') {
+                if (!opts.practiceGameplay && (opts.tutorialReplay || shouldShowIntro) && IP2Live.IPNetworkRepairTutorial && typeof IP2Live.IPNetworkRepairTutorial.showIntro === 'function') {
                     IP2Live.IPNetworkRepairTutorial.showIntro(screen.scenario, function () {});
                 }
             };

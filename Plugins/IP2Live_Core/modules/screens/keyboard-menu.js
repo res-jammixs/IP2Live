@@ -7,7 +7,7 @@
  */
 
 class IP2LiveKeyboardMenu extends Scene.Base {
-    constructor() { super(true); }
+    constructor() { super(true); this.backdrop = IP2Live.PopupChrome.capture(); }
 
     initialize() {
         this.selectedIndex = 0;
@@ -72,6 +72,12 @@ class IP2LiveKeyboardMenu extends Scene.Base {
             this.selectedIndex = (this.selectedIndex + 1) % totalItems;
         }
 
+        const rows = Math.ceil(this.kbItems.length / 2);
+        if (Data.Keyboards.isKeyEqual(key, Data.Keyboards.menuControls.Left)) {
+            this.selectedIndex = this.selectedIndex >= this.kbItems.length ? this.kbItems.length : Math.max(0, this.selectedIndex - rows);
+        } else if (Data.Keyboards.isKeyEqual(key, Data.Keyboards.menuControls.Right)) {
+            this.selectedIndex = this.selectedIndex >= this.kbItems.length ? this.kbItems.length + 1 : Math.min(this.kbItems.length - 1, this.selectedIndex + rows);
+        }
         if (this.selectedIndex !== prev) {
             this.hoverIndex = -1;
             if (this.selectedIndex < this.kbItems.length) {
@@ -111,46 +117,17 @@ class IP2LiveKeyboardMenu extends Scene.Base {
         }
     }
 
+    _layout() {
+        const c = Common.Platform.ctx.canvas, scale = Math.min(c.width / 1280, c.height / 720);
+        const rows = Math.ceil(this.kbItems.length / 2), w = 880, h = 140 + rows * 46;
+        const x = (c.width / scale - w) / 2, y = (c.height / scale - h) / 2;
+        const cells = this.kbItems.map((kb, i) => ({ x: x + 28 + Math.floor(i / rows) * 420, y: y + 74 + (i % rows) * 46, w: 404, h: 38 }));
+        cells.push({x:x+28,y:y+h-54,w:200,h:38}, {x:x+w-228,y:y+h-54,w:200,h:38});
+        return {scale,x,y,w,h,cells,rows};
+    }
     _getButtonAt(x, y) {
-        const SW = Common.ScreenResolution.SCREEN_X;
-        const SH = Common.ScreenResolution.SCREEN_Y;
-        const cW = Common.Platform.ctx.canvas.width;
-        const cH = Common.Platform.ctx.canvas.height;
-        const scaleX = cW / SW;
-        const scaleY = cH / SH;
-
-        const panelW = 540, panelH = 480;
-        const panelX = (SW - panelW) / 2;
-        const panelY = (SH - panelH) / 2;
-
-        const listStartY = panelY + 60;
-        const itemH = 40;
-
-        for (let i = 0; i < this.maxVisible; i++) {
-            const dataIdx = this.scrollY + i;
-            if (dataIdx >= this.kbItems.length) break;
-            const bx = panelX + 30;
-            const by = listStartY + i * (itemH + 5);
-            const bw = panelW - 60;
-            if (x >= bx * scaleX && x <= (bx + bw) * scaleX &&
-                y >= by * scaleY && y <= (by + itemH) * scaleY) {
-                return dataIdx;
-            }
-        }
-
-        const btnW = 200, btnH = 40;
-        const btnY = panelY + panelH - 60;
-
-        if (x >= (panelX + 30) * scaleX && x <= (panelX + 30 + btnW) * scaleX &&
-            y >= btnY * scaleY && y <= (btnY + btnH) * scaleY) {
-            return this.kbItems.length;
-        }
-        if (x >= (panelX + panelW - 30 - btnW) * scaleX && x <= (panelX + panelW - 30) * scaleX &&
-            y >= btnY * scaleY && y <= (btnY + btnH) * scaleY) {
-            return this.kbItems.length + 1;
-        }
-
-        return -1;
+        const l = this._layout(); x /= l.scale; y /= l.scale;
+        return l.cells.findIndex(r => x >= r.x && x <= r.x+r.w && y >= r.y && y <= r.y+r.h);
     }
 
     _confirmSelection() {
@@ -199,157 +176,22 @@ class IP2LiveKeyboardMenu extends Scene.Base {
     draw3D() { Manager.GL.renderer.clear(); }
 
     drawHUD() {
-        const ctx = Common.Platform.ctx;
-        const SW = Common.ScreenResolution.SCREEN_X;
-        const SH = Common.ScreenResolution.SCREEN_Y;
-        const cW = ctx.canvas.width;
-        const cH = ctx.canvas.height;
-        const scaleX = cW / SW;
-        const scaleY = cH / SH;
-
-        ctx.save();
-
-        this.bgFx.drawBg(ctx, IP2Live.Assets.bgImage, cW, cH);
-        this.bgFx.drawParticles(ctx, scaleX);
-
-        ctx.fillStyle = 'rgba(0,0,10,0.78)';
-        ctx.fillRect(0, 0, cW, cH);
-
-        ctx.globalAlpha = 0.05;
-        ctx.fillStyle = '#000';
-        for (let ly = this.scanlineOffset * scaleY; ly < cH; ly += 4 * scaleY) {
-            ctx.fillRect(0, ly, cW, 1.5 * scaleY);
-        }
-        ctx.globalAlpha = 1;
-
-        const panelW = 540, panelH = 480;
-        const panelX = (SW - panelW) / 2;
-        const panelY = (SH - panelH) / 2;
-        const px = panelX * scaleX, py = panelY * scaleY;
-        const pw = panelW * scaleX, ph = panelH * scaleY;
-
-        IP2Live.UI.drawCyberPanel({
-            ctx,
-            x: px,
-            y: py,
-            w: pw,
-            h: ph,
-            scaleX,
-            accent: '#00F0FF',
-            title: 'SYS::KEYMAP'
+        const ctx = Common.Platform.ctx, l = this._layout(), chrome = IP2Live.PopupChrome;
+        ctx.save(); chrome.backdrop(ctx, this.backdrop,this.animTick*0.085); ctx.scale(l.scale,l.scale);
+        chrome.animate(ctx,l,this.animTick*0.085);
+        chrome.panel(ctx,l.x,l.y,l.w,l.h,1,1,false,this.animTick); chrome.heading(ctx,'KEY BINDINGS',l.x,l.y,l.w);
+        this.kbItems.forEach((kb,i) => {
+            const r=l.cells[i], active=i===this.selectedIndex;
+            chrome.row(ctx,r.x,r.y,r.w,r.h,active);
+            ctx.font='14px Oxanium-Medium, sans-serif'; ctx.fillStyle='#dde9ec'; ctx.textAlign='left';
+            const name=typeof kb.name==='function'?kb.name():kb.name;
+            ctx.fillText(name,r.x+14,r.y+24,250);
+            const keys={ArrowUp:'Up',ArrowDown:'Down',ArrowLeft:'Left',ArrowRight:'Right',Escape:'Esc',' ':'Space'};
+            const value=this.listeningMode && active ? 'Press a key...' : [...new Set((kb.sc||[]).map(group=>group.map(k=>keys[k]||String(k).toUpperCase()).join(' + ')))].join(' / ');
+            ctx.textAlign='right'; ctx.fillStyle=active?'#e5d779':'#80b8c1'; ctx.fillText(value||'None',r.x+r.w-14,r.y+24,125);
         });
-
-        ctx.textAlign = 'center';
-        ctx.fillStyle = '#FFFFFF';
-        ctx.shadowBlur = 0;
-        ctx.font = 'bold ' + (24 * scaleX) + 'px ' + (IP2Live.Assets.abnesLoaded ? 'Abnes' : 'Arial Black');
-        ctx.fillText('KEY BINDINGS', (panelX + panelW / 2) * scaleX, (panelY + 36) * scaleY);
-        ctx.textAlign = 'left';
-
-        const divY = (panelY + 50) * scaleY;
-        ctx.strokeStyle = 'rgba(0,255,255,0.25)';
-        ctx.lineWidth = 1 * scaleX;
-        ctx.beginPath();
-        ctx.moveTo((panelX + 20) * scaleX, divY);
-        ctx.lineTo((panelX + panelW - 20) * scaleX, divY);
-        ctx.stroke();
-
-        const listStartY = panelY + 60;
-        const itemH = 40;
-
-        for (let i = 0; i < this.maxVisible; i++) {
-            const dataIdx = this.scrollY + i;
-            if (dataIdx >= this.kbItems.length) break;
-            const kb = this.kbItems[dataIdx];
-            const isSel = (this.selectedIndex === dataIdx);
-            const itemY = listStartY + i * (itemH + 5);
-            this._drawListItem(ctx, scaleX, scaleY, panelX + 30, itemY, panelW - 60, itemH, kb, isSel);
-        }
-
-        const btnW = 200, btnH = 40;
-        const btnY = panelY + panelH - 60;
-
-        this._drawButton(ctx, scaleX, scaleY, panelX + 30, btnY, btnW, btnH, "RESET DEFAULTS",
-            this.selectedIndex === this.kbItems.length, this.kbItems.length);
-        this._drawButton(ctx, scaleX, scaleY, panelX + panelW - 30 - btnW, btnY, btnW, btnH, "BACK",
-            this.selectedIndex === this.kbItems.length + 1, this.kbItems.length + 1);
-
-        if (this.listeningMode) {
-            ctx.fillStyle = 'rgba(0,0,0,0.85)';
-            ctx.fillRect(px, py, pw, ph);
-            ctx.textAlign = 'center';
-            ctx.fillStyle = '#FFE600';
-            ctx.shadowBlur = 0;
-            ctx.font = 'bold ' + (24 * scaleX) + 'px ' + (IP2Live.Assets.nebulaLoaded ? 'Nebula-Regular' : 'monospace');
-            ctx.fillText('[ PRESS ANY KEY ]', (panelX + panelW / 2) * scaleX, (panelY + panelH / 2) * scaleY);
-            ctx.textAlign = 'left';
-        }
-
+        ['RESET DEFAULTS','BACK'].forEach((label,i)=>chrome.button(ctx,l.cells[this.kbItems.length+i],1,1,label,'Oxanium-Medium',this.selectedIndex===this.kbItems.length+i?1:0,this.animTick,i===1));
         ctx.restore();
-    }
-
-    _drawListItem(ctx, scaleX, scaleY, bx, by, bw, bh, kb, isSelected) {
-        const x = bx * scaleX, y = by * scaleY, w = bw * scaleX, h = bh * scaleY;
-        const accentColor = isSelected ? '#FFE600' : '#00F0FF';
-        const sl = 12 * scaleX;
-
-        ctx.beginPath();
-        ctx.moveTo(x + sl, y);
-        ctx.lineTo(x + w, y);
-        ctx.lineTo(x + w - sl, y + h);
-        ctx.lineTo(x, y + h);
-        ctx.closePath();
-        ctx.fillStyle = isSelected ? 'rgba(255,230,0,0.82)' : 'rgba(3,7,20,0.68)';
-        ctx.fill();
-
-        ctx.strokeStyle = accentColor;
-        ctx.lineWidth = (isSelected ? 2 : 1) * scaleX;
-        ctx.shadowBlur = 0;
-        ctx.stroke();
-
-        ctx.fillStyle = isSelected ? '#FF003C' : 'rgba(0,240,255,0.82)';
-        ctx.beginPath();
-        ctx.moveTo(x, y);
-        ctx.lineTo(x + 34 * scaleX, y);
-        ctx.lineTo(x + 22 * scaleX, y + h);
-        ctx.lineTo(x, y + h);
-        ctx.closePath();
-        ctx.fill();
-
-        const nameStr = typeof kb.name === 'function' ? kb.name() : kb.name;
-        ctx.font = (16 * scaleX) + 'px ' + (IP2Live.Assets.nebulaLoaded ? 'Nebula-Regular' : 'monospace');
-        ctx.fillStyle = isSelected ? '#111111' : '#FFFFFF';
-        ctx.fillText(nameStr, (bx + 15) * scaleX, (by + bh * 0.65) * scaleY);
-
-        let scStr = (kb.sc && kb.sc.length > 0)
-            ? kb.sc.map(arr => arr.join(' / ')).join(' | ')
-            : 'NONE';
-
-        ctx.textAlign = 'right';
-        ctx.fillStyle = isSelected ? '#111111' : '#00F0FF';
-        ctx.fillText(scStr.toUpperCase(), (bx + bw - 15) * scaleX, (by + bh * 0.65) * scaleY);
-        ctx.textAlign = 'left';
-    }
-
-    _drawButton(ctx, scaleX, scaleY, bx, by, bw, bh, label, isSelected, index) {
-        const isActive = isSelected || this.hoverIndex === index;
-        const isDanger = (label === 'RESET DEFAULTS' || label === 'BACK');
-        
-        IP2Live.UI.drawCyberButton({
-            ctx,
-            x: bx * scaleX,
-            y: by * scaleY,
-            w: bw * scaleX,
-            h: bh * scaleY,
-            scaleX, scaleY,
-            label,
-            isActive,
-            isDanger,
-            scrambleText: this.scramble ? this.scramble.getText(index, label) : undefined,
-            animTick: this.animTick
-        });
     }
 }
 window.IP2LiveKeyboardMenu = IP2LiveKeyboardMenu;
-console.log('[IP2Live] keyboard-menu.js loaded.');
-

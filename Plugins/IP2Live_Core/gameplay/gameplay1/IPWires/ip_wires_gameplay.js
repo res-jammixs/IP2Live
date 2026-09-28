@@ -427,7 +427,7 @@
             ctx.fillText('SYS::IP_CLASS_ROUTER // LIVE', p.x + p.w - 26 * layout.sX, p.y + 30 * layout.sY);
             ctx.fillStyle = this.attemptsUsed > 0 ? '#FFE600' : 'rgba(218,238,255,0.70)';
             ctx.fillText(
-                'CHANCES ' + Math.max(0, this.maxAttempts - this.attemptsUsed) + '/' + this.maxAttempts,
+                this.options.practiceMode ? 'PRACTICE // UNLIMITED ATTEMPTS' : 'CHANCES ' + Math.max(0, this.maxAttempts - this.attemptsUsed) + '/' + this.maxAttempts,
                 p.x + p.w - 26 * layout.sX,
                 p.y + 48 * layout.sY
             );
