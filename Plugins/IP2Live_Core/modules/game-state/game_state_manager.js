@@ -94,6 +94,34 @@
         _fallbackStore: {},
         _sceneHooksInstalled: false,
 
+        resetStoryState(game) {
+            const target = game || (Core && Core.Game && Core.Game.current);
+            if (!target) return false;
+
+            // Detach first: never mutate a previous game's state or a restored
+            // snapshot through a shared reference during runtime cleanup.
+            target.ip2liveGameStates = {};
+            this._fallbackStore = {};
+            for (const key of [DARKLIGHTS_KEY, SECURITY_LIGHT_KEY]) {
+                if (this.activeStates[key]) this.clear(key, { newStory: true });
+            }
+            const lighting = IP2Live.LightingManager;
+            if (lighting) {
+                // Darklights creates per-map presets, including for maps that
+                // are no longer active. Keep authored ambience presets intact.
+                for (const id of Object.keys(lighting.presets || {})) {
+                    if (/^Darklights - /.test(lighting.presets[id].name || '')) {
+                        lighting.clearPreset(id);
+                    }
+                }
+                if (typeof lighting.clearLighting === 'function') lighting.clearLighting();
+            }
+            // State clear hooks may create empty records; start with no progress.
+            target.ip2liveGameStates = {};
+            if (Manager && Manager.Stack) Manager.Stack.requestPaintHUD = true;
+            return true;
+        },
+
         registerState(name, definition) {
             const key = String(name || '').trim();
             if (!key || !definition) return false;

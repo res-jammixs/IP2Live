@@ -1535,7 +1535,7 @@ class IP2LivePatchPanelGameplayScreen extends Scene.Base {
         ctx.fillText('SYS::IP_CLASS_ROUTER // LIVE', statusX, m.panelY + 28 * m.sY);
         ctx.fillStyle = '#D6E8EE';
         ctx.fillText(
-            'ATTEMPT ' + String(this.roundNumber).padStart(2, '0') + '/' + String(this.maxAttempts).padStart(2, '0') +
+            (this.options.practiceMode ? 'PRACTICE // UNLIMITED' : 'ATTEMPT ' + String(this.roundNumber).padStart(2, '0') + '/' + String(this.maxAttempts).padStart(2, '0')) +
             '  //  SCORE ' + this.score + '/' + this.targetScore +
             '  //  FLOW ' + this.delivered + '/' + this.totalPackets,
             statusX,

@@ -10,6 +10,7 @@ class IP2LiveLoadGameMenu extends Scene.Base {
     constructor(options) {
         super(true);
         this.options = options || {};
+        this.backdrop = IP2Live.PopupChrome.capture();
         this._applyModeOptions();
     }
 
@@ -32,14 +33,14 @@ class IP2LiveLoadGameMenu extends Scene.Base {
 
     _applyModeOptions() {
         this.saveMode = !!(this.options && this.options.saveMode);
-        this.titleText = this.saveMode ? 'SAVE GAME' : 'LOAD GAME';
+        this.titleText = this.saveMode ? 'SAVE STORY' : 'LOAD GAME';
         this.panelTitle = this.saveMode ? 'SYS::SAVE_ARCHIVE_WRITE' : 'SYS::SAVE_ARCHIVE';
         this.onSaved = this.options && typeof this.options.onSaved === 'function' ? this.options.onSaved : null;
     }
 
     _getLayout(SW, SH) {
-        const panelW = Math.min(920, SW - 56);
-        const panelH = Math.min(552, SH - 48);
+        const panelW = this.saveMode ? Math.min(920, SW - 56) : SW - 80;
+        const panelH = this.saveMode ? Math.min(552, SH - 48) : SH - 64;
         const panelX = (SW - panelW) / 2, panelY = (SH - panelH) / 2;
         const rightW = Math.min(252, panelW * 0.3);
         const listX = panelX + 28, listW = panelW - rightW - 80;
@@ -64,6 +65,7 @@ class IP2LiveLoadGameMenu extends Scene.Base {
 
         if (!IP2Live.Assets.oxaniumMediumLoaded) await IP2Live.Assets.loadAll();
 
+        const enumerate = async () => {
         const currentGame = Core.Game.current;
         try {
             let currentName = currentGame && currentGame.infiltratorName ? currentGame.infiltratorName : null;
@@ -80,6 +82,11 @@ class IP2LiveLoadGameMenu extends Scene.Base {
         } finally {
             Core.Game.current = currentGame;
         }
+
+        };
+        const gm = IP2Live.GameManager;
+        if (gm && gm.enqueueSaveTask) await gm.enqueueSaveTask(enumerate);
+        else await enumerate();
 
         this.loading = false;
         Manager.Stack.requestPaintHUD = true;
@@ -208,6 +215,7 @@ class IP2LiveLoadGameMenu extends Scene.Base {
             hasExistingSave: hasExistingSave,
             existingDisplayName: existingDisplayName,
             blink: 0,
+            animTick: 0,
             error: '',
             errorTimer: 0,
         };
@@ -467,7 +475,32 @@ class IP2LiveLoadGameMenu extends Scene.Base {
         }
     }
 
-    async _loadSelectedGame(game, selectedSlot, slotLabel) {
+    async _loadSelectedGame(game, selectedSlot, slotLabel, autosaveConfirmed = false) {
+        if (IP2Live.StoryAutosave && !autosaveConfirmed) {
+            return IP2Live.StoryAutosave.confirmManualLoad(game, selectedSlot,
+                () => this._loadSelectedGame(game, selectedSlot, slotLabel, true));
+        }
+        if (IP2Live.MenuTransition && IP2Live.MenuTransition.replace) {
+            const replace = IP2Live.StoryAutosave
+                ? factory => IP2Live.StoryAutosave.replaceWithStory(factory)
+                : factory => IP2Live.MenuTransition.replace(factory);
+            return replace(async (assertActive = () => {}) => {
+                const previousGame = Core.Game.current, gm = IP2Live.GameManager;
+                try {
+                    Core.Game.current = game;
+                    if (Data.TitlescreenGameover.isTitleBackgroundVideo) Manager.Videos.stop();
+                    await game.loadPositions(); game.hero.initializeProperties();
+                    assertActive();
+                    if (gm && gm.restoreProgressFromSlot) await gm.restoreProgressFromSlot(selectedSlot, game);
+                    assertActive();
+                    if (gm && gm.setActiveSaveSlot) gm.setActiveSaveSlot(selectedSlot);
+                    const restoredScene = new Scene.Map(game.currentMapID);
+                    if (gm && gm.prepareLoadedMapScene) gm.prepareLoadedMapScene(restoredScene, game.currentMapID);
+                    return restoredScene;
+                } catch (error) { Core.Game.current = previousGame; throw error; }
+            });
+        }
+
         if (IP2Live.LoadingScreen && typeof IP2Live.LoadingScreen.show === 'function') {
             IP2Live.LoadingScreen.show({
                 mode: 'replace',
@@ -529,8 +562,13 @@ class IP2LiveLoadGameMenu extends Scene.Base {
 
     update() {
         this.animTick++;
+        if (!this.saveMode && IP2Live.GameOverBackdrop) {
+            if (!this.spaceBackdrop) this.spaceBackdrop = IP2Live.GameOverBackdrop.create();
+            this.spaceBackdrop.update();
+        }
         this.scanlineOffset = (this.scanlineOffset + 0.5) % 4;
         if (this.saveNameDialog) {
+            this.saveNameDialog.animTick++;
             this.saveNameDialog.blink = (this.saveNameDialog.blink + 1) % 60;
             this.saveNameDialog.errorTimer = Math.max(0, (this.saveNameDialog.errorTimer || 0) - 1);
         }
@@ -560,64 +598,11 @@ class IP2LiveLoadGameMenu extends Scene.Base {
         ctx.lineTo(x, y + h - cut); ctx.lineTo(x, y + cut); ctx.closePath();
     }
 
-    _drawArchiveFrame(ctx, layout) {
-        const { panelX: x, panelY: y, panelW: w, panelH: h } = layout;
-        ctx.save();
-        // Offset chassis, inset glass, and segmented edge rails echo Settings.
-        this._bevelPath(ctx, x + 7, y + 7, w, h, 18);
-        ctx.fillStyle = '#06070D'; ctx.fill();
-        ctx.strokeStyle = 'rgba(200,45,78,0.42)'; ctx.lineWidth = 1; ctx.stroke();
-        this._bevelPath(ctx, x - 4, y + 3, w, h, 18);
-        ctx.strokeStyle = 'rgba(72,183,202,0.24)'; ctx.stroke();
-        this._holoPanel(ctx, x, y, w, h, false);
-        this._bevelPath(ctx, x + 5, y + 5, w - 10, h - 10, 13);
-        ctx.strokeStyle = 'rgba(127,158,177,0.19)'; ctx.stroke();
-        for (const railY of [y, y + h - 2]) {
-            for (let i = 0; i < 4; i++) {
-                const railX = x + 34 + i * (w - 68) / 4;
-                const railW = (w - 100) / 4;
-                ctx.beginPath(); ctx.moveTo(railX + 5, railY); ctx.lineTo(railX + railW, railY);
-                ctx.lineTo(railX + railW - 5, railY + 3); ctx.lineTo(railX, railY + 3); ctx.closePath();
-                ctx.fillStyle = i === 0 ? '#E94067' : (i === 2 ? '#65A8B8' : '#723249'); ctx.fill();
-            }
-        }
-        ctx.restore();
+    _drawArchiveFrame(ctx, l) {
+        IP2Live.PopupChrome.panel(ctx,l.panelX,l.panelY,l.panelW,l.panelH,1,1,false,this.animTick);
     }
 
-    _holoPanel(ctx, x, y, w, h, selected) {
-        ctx.save();
-        const cut = Math.min(13, h * 0.17);
-        this._bevelPath(ctx, x + 3, y + 4, w, h, cut);
-        ctx.fillStyle = 'rgba(0,0,0,0.72)'; ctx.fill();
-        ctx.strokeStyle = selected ? 'rgba(242,187,86,0.30)' : 'rgba(79,127,149,0.16)';
-        ctx.lineWidth = 1; ctx.stroke();
-        this._bevelPath(ctx, x, y, w, h, cut);
-        const glass = ctx.createLinearGradient(x, y, x + w, y + h);
-        glass.addColorStop(0, selected ? 'rgba(63,36,28,0.98)' : 'rgba(21,18,28,0.98)');
-        glass.addColorStop(0.3, 'rgba(12,13,20,0.98)');
-        glass.addColorStop(1, 'rgba(7,9,15,0.98)');
-        ctx.fillStyle = glass; ctx.fill();
-        ctx.strokeStyle = selected ? '#EEC479' : 'rgba(164,81,107,0.58)';
-        ctx.shadowColor = selected ? 'rgba(241,178,61,0.3)' : 'rgba(198,43,83,0.12)';
-        ctx.shadowBlur = selected ? 10 : 4; ctx.stroke(); ctx.shadowBlur = 0;
-        ctx.clip();
-        this._bevelPath(ctx, x + 3, y + 3, w - 6, h - 6, Math.max(2, cut - 2));
-        ctx.strokeStyle = selected ? 'rgba(255,211,132,0.22)' : 'rgba(86,155,178,0.17)'; ctx.stroke();
-        ctx.fillStyle = 'rgba(176,197,217,0.018)';
-        for (let row = y + 5; row < y + h; row += 5) ctx.fillRect(x, row, w, 1);
-        ctx.fillStyle = selected ? 'rgba(243,191,99,0.1)' : 'rgba(174,103,126,0.065)';
-        for (let dx = x + w - Math.min(72, w * 0.16); dx < x + w; dx += 8) {
-            for (let dy = y + 10; dy < y + h; dy += 8) ctx.fillRect(dx, dy, 1, 1);
-        }
-        ctx.fillStyle = selected ? '#EBC277' : '#90405A';
-        ctx.fillRect(x + 1, y + cut, selected ? 4 : 2, Math.max(0, h - cut * 2));
-        const rail = ctx.createLinearGradient(x, 0, x + w, 0);
-        rail.addColorStop(0, selected ? '#F4DDA2' : '#6A9FAC');
-        rail.addColorStop(0.4, selected ? '#94693C' : '#283B50');
-        rail.addColorStop(1, 'rgba(30,28,41,0)');
-        ctx.fillStyle = rail; ctx.fillRect(x + cut + 5, y + h - 3, w - cut * 2 - 10, 2);
-        ctx.restore();
-    }
+    _holoPanel(ctx,x,y,w,h,selected) { IP2Live.PopupChrome.row(ctx,x,y,w,h,selected); }
 
     _archiveIcon(ctx, x, y, size, empty) {
         ctx.save();
@@ -658,31 +643,22 @@ class IP2LiveLoadGameMenu extends Scene.Base {
         const SW = Common.ScreenResolution.SCREEN_X, SH = Common.ScreenResolution.SCREEN_Y;
         const layout = this._getLayout(SW, SH);
         ctx.save();
+        if (this.saveMode) IP2Live.PopupChrome.backdrop(ctx, this.backdrop, this.animTick*0.085);
         ctx.scale(ctx.canvas.width / SW, ctx.canvas.height / SH);
         ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
-        this._drawSpaceBackground(ctx, SW, SH);
-        this._drawArchiveFrame(ctx, layout);
+
+        if (this.saveMode) {
+            IP2Live.PopupChrome.animate(ctx,{x:layout.panelX,y:layout.panelY,w:layout.panelW,h:layout.panelH},this.animTick*0.085);
+            this._drawArchiveFrame(ctx, layout);
+        } else {
+            if (!this.spaceBackdrop && IP2Live.GameOverBackdrop) this.spaceBackdrop = IP2Live.GameOverBackdrop.create();
+            if (this.spaceBackdrop) this.spaceBackdrop.draw(ctx,SW,SH);
+            else this._drawSpaceBackground(ctx,SW,SH);
+        }
         const x = layout.panelX + 28;
-        const headerGlow = ctx.createLinearGradient(x, 0, layout.panelX + layout.panelW, 0);
-        headerGlow.addColorStop(0, 'rgba(161,24,54,0.18)'); headerGlow.addColorStop(1, 'rgba(161,24,54,0)');
-        ctx.fillStyle = headerGlow; ctx.fillRect(layout.panelX + 1, layout.panelY + 1, layout.panelW - 2, 96);
-        this._archiveIcon(ctx, x + 2, layout.panelY + 28, 30, false);
-        this._text(ctx, 'SAVE ARCHIVE', x + 52, layout.panelY + 28, 10, '#F1859B');
-        this._text(ctx, this.titleText, x + 50, layout.panelY + 61, 28, '#FFF0F3');
-        this._text(ctx, this.saveMode ? 'Choose a slot to preserve your progress.' : 'Your mission. Ready to resume.', x + 52, layout.panelY + 82, 11, '#AC929E', layout.listW - 52);
-        const used = this.gamesData.filter(game => game && !game.isEmpty).length;
-        const capacityX = layout.rightX, capacityW = layout.rightW;
-        ctx.textAlign = 'right';
-        this._text(ctx, used + ' / ' + this.gamesData.length + ' SAVED SESSIONS', capacityX + capacityW, layout.panelY + 38, 10, '#C5A3B0', capacityW);
-        ctx.textAlign = 'left';
-        const cellW = Math.min(30, (capacityW - 5 * (this.gamesData.length - 1)) / Math.max(1, this.gamesData.length));
-        const capacityStart = capacityX + capacityW - this.gamesData.length * (cellW + 5) + 5;
-        this.gamesData.forEach((game, index) => {
-            ctx.fillStyle = game && !game.isEmpty ? '#D94464' : '#2A2029';
-            ctx.fillRect(capacityStart + index * (cellW + 5), layout.panelY + 52, cellW, 5);
-        });
-        ctx.fillStyle = 'rgba(148,82,104,0.22)';
-        ctx.fillRect(x, layout.panelY + 97, layout.panelW - 56, 1);
+        IP2Live.PopupChrome.heading(ctx,this.titleText,layout.panelX,layout.panelY+12,layout.panelW);
+        ctx.font='12px '+this._font();ctx.fillStyle='#96b2ba';
+        IP2Live.PopupChrome.text(ctx,this.saveMode?'Choose a slot to save your progress.':'Choose a save to resume.',layout.panelX+layout.panelW/2,layout.panelY+88,.4);
         for (let i = 0; i < this.maxVisible; i++) {
             const index = this.scrollY + i;
             if (index >= this.gamesData.length) break;
@@ -707,7 +683,9 @@ class IP2LiveLoadGameMenu extends Scene.Base {
         ctx.fillStyle = 'rgba(0,0,0,0.62)';
         ctx.fillRect(0, 0, Common.ScreenResolution.SCREEN_X, Common.ScreenResolution.SCREEN_Y);
 
-        this._holoPanel(ctx, cx, cy, cw, ch, true);
+        ctx.save();
+        IP2Live.PopupChrome.animate(ctx,{x:cx,y:cy,w:cw,h:ch},(this.saveNameDialog.animTick||0)*0.085);
+        IP2Live.PopupChrome.panel(ctx,cx,cy,cw,ch,scaleX,scaleY,false,this.animTick);
 
         ctx.fillStyle = '#FFFFFF';
         ctx.font = 'bold ' + Math.round(16 * scaleX) + 'px ' + this._font();
@@ -751,6 +729,7 @@ class IP2LiveLoadGameMenu extends Scene.Base {
             ? 'SAVING...'
             : (this.saveNameDialog.hasExistingSave ? 'OVERWRITE' : 'SAVE');
         this._drawButton(ctx, scaleX, scaleY, d.saveBtn.x, d.saveBtn.y, d.saveBtn.w, d.saveBtn.h, actionLabel, false, -102);
+        ctx.restore();
     }
 
     _slotDetails(index) {
@@ -864,12 +843,8 @@ class IP2LiveLoadGameMenu extends Scene.Base {
         ctx.restore();
     }
 
-    _drawButton(ctx, scaleX, scaleY, bx, by, bw, bh, label, isSelected, index) {
-        const active = isSelected || this.hoverIndex === index;
-        this._holoPanel(ctx, bx * scaleX, by * scaleY, bw * scaleX, bh * scaleY, active);
-        ctx.save(); ctx.textAlign = 'center';
-        this._text(ctx, label, (bx + bw / 2) * scaleX, (by + bh / 2 + 5) * scaleY, 13 * scaleX, active ? '#FFE2EB' : '#C4A2B2', (bw - 20) * scaleX);
-        ctx.restore();
+    _drawButton(ctx,scaleX,scaleY,bx,by,bw,bh,label,isSelected,index) {
+        IP2Live.PopupChrome.button(ctx,{x:bx,y:by,w:bw,h:bh},scaleX,scaleY,label,this._font(),isSelected||this.hoverIndex===index?1:0,this.animTick,label==='BACK'||label==='CANCEL');
     }
 
 }

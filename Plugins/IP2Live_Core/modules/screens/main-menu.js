@@ -1,68 +1,53 @@
 /**
- * IP2Live â€” Main Menu Screen
- * @file Plugins/IP2Live_Core/modules/screens/main-menu.js
- * Loaded via fetch + new Function() by code.js â€” all engine globals are
- * injected as function parameters (Common, Core, Data, Graphic, Manager,
- * Scene, Model, Main, THREE, IP2Live).
+ * IP2Live — Main Menu Screen
+ * Fully hardcoded Canvas 2D redesign.
+ * No image assets are used for the right-side hero artwork.
  *
- * NOTE: This file must be loaded LAST among screen modules because it
- * references IP2LiveNameInputScreen, IP2LiveLoadGameMenu,
- * IP2LiveSettingsMenu, and IP2LiveCreditsScene.
- *
- * Paper Maker 3.2+ always enters the title through Scene.TitleScreen. The
- * implementation below is therefore installed into that engine-owned scene
- * instead of replacing Manager.Stack.pushTitleScreen with a separate scene.
- * Keeping the default entry point also preserves startAtLoop and any future
- * stack lifecycle changes made by the engine.
+ * Drop-in replacement for:
+ * Plugins/IP2Live_Core/modules/screens/main-menu.js
  */
 
 class IP2LiveTitleScreenImplementation extends Scene.Base {
     initialize(startAtLoop = false) {
-        // Retain the current Scene.TitleScreen constructor contract.
         this.startAtLoop = startAtLoop;
         this._ip2LiveTitleInitialized = true;
+
         this.selectedIndex = 0;
         this.menuPage = 'main';
-        this.menuItems = ["PLAY GAME", "SETTINGS", "CREDITS", "QUIT GAME"];
+        this.menuItems = ['PLAY GAME', 'SETTINGS', 'CREDITS', 'QUIT GAME'];
+        this._practiceHintUntil = 0;
+        this._autosaveSummary = null;
+        this._autosaveReadError = false;
+
         this.scanlineOffset = 0;
-        this.glitchTimer = 0;
-        this.glitchActive = false;
         this.hoverIndex = -1;
         this.animTick = 0;
         this.btnProgress = Array(this.menuItems.length).fill(0);
         this._buttonEntranceStartedAt = null;
-        this.deckNodes = [];
 
-        // Title decrypt animation
-        this.titleTarget   = 'IP2LIVE';
+        this.titleTarget = 'IP2LIVE';
         this.titleProgress = 0;
-        this.titleDone     = false;
+        this.titleDone = false;
 
-        // Floating binary / hacker particles
         this.particles = [];
+        this.dust = [];
+        this._heroTexture = null;
 
-        // Background shake — constant sine-wave breathing
         this.shakeX = 0;
         this.shakeY = 0;
 
-        // Fade-out transition (for New Game)
-        this.fadeOut       = 0;   // 0..1, opacity of black overlay
-        this.fadeTarget    = null; // null or 0 (New Game case index)
+        this.fadeOut = 0;
+        this.fadeTarget = null;
+        this.isFadingIn = false;
         this._waitingForGameData = false;
 
-        // Music guard — ensure we only call play() once per session
         this._musicStarted = false;
         this._musicStartPending = false;
         this._musicAttemptToken = 0;
-        this.networkBackdrop = (window.IP2LiveBackgroundScreen)
-            ? new window.IP2LiveBackgroundScreen({ showDeckHeading: false })
-            : null;
     }
 
     async load() {
-        // Mirror the current default title-scene cleanup before drawing the
-        // IP2Live deck. This is especially important when returning from a map
-        // or when upgrading a default title scene that was already on screen.
+        if (IP2Live.PracticeMode) IP2Live.PracticeMode.syncFromCampaign();
         if (Core && Core.Game) Core.Game.current = null;
         if (Manager.Videos && typeof Manager.Videos.stop === 'function') {
             Manager.Videos.stop();
@@ -73,1116 +58,2667 @@ class IP2LiveTitleScreenImplementation extends Scene.Base {
         if (Manager.GL && Manager.GL.screenTone) {
             Manager.GL.screenTone.set(0, 0, 0, 1);
         }
+
         Manager.Stack.displayedPictures = [];
 
         await IP2Live.Assets.loadAll();
-        this._seedParticles(80);
-        this._seedDeckNodes(28);
+        await this._refreshAutosave();
+
+        this._seedParticles(48);
+        this._seedDust(430);
+
         this.loading = false;
         this._buttonEntranceStartedAt = Date.now() + 500;
+
         Manager.Stack.requestPaintHUD = true;
-        // Attempt to start music immediately — works if autoplay is allowed.
-        // If blocked, keyboard or mouse input retries after unlocking Howler.
         this._tryStartMusic(false);
     }
 
-    // The cyberpunk labels are canvas-rendered rather than WindowChoices
-    // contents, so the default title translation hook must not access the
-    // engine window that this implementation intentionally does not create.
     translate() {
         Manager.Stack.requestPaintHUD = true;
     }
 
-    // Ensures music starts on the very first user key interaction if
-    // autoplay was blocked by the browser.
     _tryStartMusic(fromUserGesture = false) {
         const music = IP2Live.MusicManager;
-        if (!music || !music.ZONE) return Promise.resolve(false);
 
-        if (fromUserGesture && typeof music.unlock === 'function') {
-            // Invoke resume() directly inside the keyboard/mouse handler so
-            // browser autoplay policies recognize the user gesture.
+        if (!music || !music.ZONE) {
+            return Promise.resolve(false);
+        }
+
+        if (
+            fromUserGesture &&
+            typeof music.unlock === 'function'
+        ) {
             music.unlock();
         }
-        if (this._musicStarted) return Promise.resolve(true);
-        // A direct user gesture may replace an earlier autoplay request that
-        // is still decoding or waiting for AudioContext resume. Ignoring that
-        // gesture could leave long BGM files silent even while click SFX work.
-        if (this._musicStartPending && !fromUserGesture) return Promise.resolve(false);
+
+        if (this._musicStarted) {
+            return Promise.resolve(true);
+        }
+
+        if (
+            this._musicStartPending &&
+            !fromUserGesture
+        ) {
+            return Promise.resolve(false);
+        }
 
         const attemptToken = ++this._musicAttemptToken;
+
         this._musicStartPending = true;
-        const attempt = fromUserGesture && typeof music.retry === 'function'
-            ? music.retry()
-            : music.play(music.ZONE.MAIN_MENU);
+
+        const attempt =
+            fromUserGesture &&
+            typeof music.retry === 'function'
+                ? music.retry()
+                : music.play(
+                    music.ZONE.MAIN_MENU
+                );
 
         return Promise.resolve(attempt)
             .then((started) => {
-                if (attemptToken !== this._musicAttemptToken) return false;
-                const isActuallyPlaying = typeof music.isPlaying === 'function'
-                    ? music.isPlaying()
-                    : started !== false;
-                this._musicStarted = started !== false && isActuallyPlaying;
+                if (
+                    attemptToken !==
+                    this._musicAttemptToken
+                ) {
+                    return false;
+                }
+
+                const playing =
+                    typeof music.isPlaying ===
+                    'function'
+                        ? music.isPlaying()
+                        : started !== false;
+
+                this._musicStarted =
+                    started !== false &&
+                    playing;
+
                 return this._musicStarted;
             })
             .catch((error) => {
-                if (attemptToken !== this._musicAttemptToken) return false;
+                if (
+                    attemptToken !==
+                    this._musicAttemptToken
+                ) {
+                    return false;
+                }
+
                 this._musicStarted = false;
-                console.warn('[IP2Live] Main-menu music start failed:', error);
+
+                console.warn(
+                    '[IP2Live] Main-menu music start failed:',
+                    error
+                );
+
                 return false;
             })
             .finally(() => {
-                if (attemptToken === this._musicAttemptToken) this._musicStartPending = false;
+                if (
+                    attemptToken ===
+                    this._musicAttemptToken
+                ) {
+                    this._musicStartPending =
+                        false;
+                }
             });
     }
+
+    // ============================================================
+    // PARTICLES
+    // ============================================================
 
     _seedParticles(count) {
-        const CHARS = ['0','1','01','10','0x','FF','>>','{}','//','::','$_','&&','!=','<>','10','01'];
-        const cW = Common.ScreenResolution.CANVAS_WIDTH  || Common.ScreenResolution.SCREEN_X;
-        const cH = Common.ScreenResolution.CANVAS_HEIGHT || Common.ScreenResolution.SCREEN_Y;
-        for (let i = 0; i < count; i++) {
-            this.particles.push({
-                x:     Math.random() * cW,
-                y:     Math.random() * cH,
-                vy:    0.3 + Math.random() * 0.7,
-                vx:    (Math.random() - 0.5) * 0.3,
-                size:  7 + Math.random() * 8,
-                alpha: 0.04 + Math.random() * 0.18,
-                char:  CHARS[Math.floor(Math.random() * CHARS.length)],
-                flipTimer: Math.floor(Math.random() * 90),
-                cW, cH
-            });
-        }
+        const chars = ['0', '1', '01', '10', '0x', '//', '::'];
+        // Normalized positions keep the field spread across resized windows.
+        this.particles = Array.from({ length: count }, () => ({
+            x: Math.random(), y: Math.random(),
+            vx: (Math.random() - 0.5) * 0.000035,
+            vy: 0.00009 + Math.random() * 0.00018,
+            size: 7 + Math.random() * 4,
+            alpha: 0.045 + Math.random() * 0.075,
+            char: chars[Math.floor(Math.random() * chars.length)],
+            flipTimer: 90 + Math.floor(Math.random() * 180)
+        }));
     }
 
-    _seedDeckNodes(count) {
-        this.deckNodes = [];
-        for (let i = 0; i < count; i++) {
-            this.deckNodes.push({
-                angle: Math.random() * Math.PI * 2,
-                radius: 54 + Math.random() * 210,
-                speed: 0.0018 + Math.random() * 0.005,
-                phase: Math.random() * Math.PI * 2,
-                size: 2 + Math.random() * 4,
-                color: Math.random() > 0.68 ? '#FFE600' : (Math.random() > 0.28 ? '#00F0FF' : '#FF003C')
-            });
-        }
+    _seedDust(count) {
+        // The same small, rising red motes used by the game-over backdrop.
+        this.dust = Array.from({ length: count }, (_, index) => ({
+            x: Math.random(), y: Math.random(),
+            menuLayer: index % 5 < 2,
+            size: 0.5 + Math.random() * 1.8,
+            alpha: 0.14 + Math.random() * 0.30,
+            speed: (0.12 + Math.random() * 0.42) / 720,
+            drift: (Math.random() - 0.5) * 0.12 / 1280,
+            phase: Math.random() * Math.PI * 2
+        }));
     }
+
+    // ============================================================
+    // MENU LAYOUT
+    // ============================================================
 
     _menuLayout() {
-        const SW = Common.ScreenResolution.SCREEN_X;
-        const SH = Common.ScreenResolution.SCREEN_Y;
+        const SW =
+            Common.ScreenResolution
+                .SCREEN_X;
+
+        const SH =
+            Common.ScreenResolution
+                .SCREEN_Y;
+
         const btnW = 388;
         const btnH = 54;
         const gap = 13;
-        const count = this.menuItems.length + (this.menuPage === 'main' ? 0 : 1);
-        const stackH = count * btnH + (count - 1) * gap;
-        const contentTop = 230;
-        const contentBottom = SH - 72;
+
+        const count =
+            this.menuItems.length +
+            (
+                this.menuPage ===
+                'main'
+                    ? 0
+                    : 1
+            );
+
+        const stackH =
+            count *
+                btnH +
+            (
+                count -
+                1
+            ) *
+                gap;
+
+        const contentTop =
+            230;
+
+        const contentBottom =
+            SH -
+            72;
+
         return {
-            btnX: (SW * 0.5 - btnW) / 2 - 24,
+            btnX:
+                (
+                    SW *
+                        0.5 -
+                    btnW
+                ) /
+                    2 -
+                42,
+
             btnW,
             btnH,
             gap,
-            startY: contentTop + (contentBottom - contentTop - stackH) / 2
+
+            startY:
+                contentTop +
+                (
+                    contentBottom -
+                    contentTop -
+                    stackH
+                ) /
+                    2
         };
     }
 
     _showMenuPage(page) {
         const pages = {
-            main: ['PLAY GAME', 'SETTINGS', 'CREDITS', 'QUIT GAME'],
-            play: ['STORY MODE', 'ENDLESS MODE', 'PRACTICE MODE'],
-            story: ['NEW STORY', 'AUTOSAVED', 'LOAD STORY'],
+            main: [
+                'PLAY GAME',
+                'SETTINGS',
+                'CREDITS',
+                'QUIT GAME'
+            ],
+
+            play: [
+                'STORY MODE',
+                'ENDLESS MODE',
+                'PRACTICE MODE'
+            ],
+
+            story: [
+                'NEW STORY',
+                'AUTOSAVED',
+                'LOAD STORY'
+            ],
+            practice: ['TUTORIAL', 'GAMEPLAY']
         };
-        this.menuPage = page;
-        this.menuItems = pages[page];
-        this.selectedIndex = 0;
-        this.hoverIndex = -1;
-        this.btnProgress = Array(this.menuItems.length).fill(0);
-        this._buttonEntranceStartedAt = Date.now();
-        Manager.Stack.requestPaintHUD = true;
+
+        this.menuPage =
+            page;
+        if (page === 'story') this._refreshAutosave();
+
+        this.menuItems =
+            pages[page];
+
+        this.selectedIndex =
+            0;
+
+        this.hoverIndex =
+            -1;
+
+        this.btnProgress =
+            Array(
+                this.menuItems.length
+            ).fill(0);
+
+        this._buttonEntranceStartedAt =
+            Date.now();
+
+        Manager.Stack
+            .requestPaintHUD =
+            true;
     }
 
     _backMenuPage() {
-        if (this.menuPage === 'main') return;
-        this._showMenuPage(this.menuPage === 'story' ? 'play' : 'main');
+        if (
+            this.menuPage ===
+            'main'
+        ) {
+            return;
+        }
+
+        this._showMenuPage(
+            (this.menuPage === 'story' || this.menuPage === 'practice')
+                ? 'play'
+                : 'main'
+        );
     }
 
     _backButtonLayout() {
-        const layout = this._menuLayout();
+        const layout =
+            this._menuLayout();
+
         return {
-            x: layout.btnX,
-            y: layout.startY + this.menuItems.length * (layout.btnH + layout.gap),
-            w: layout.btnW,
-            h: layout.btnH,
+            x:
+                layout.btnX,
+
+            y:
+                layout.startY +
+                this.menuItems.length *
+                    (
+                        layout.btnH +
+                        layout.gap
+                    ),
+
+            w:
+                layout.btnW,
+
+            h:
+                layout.btnH
         };
     }
 
-    // â”€â”€ Input â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // ============================================================
+    // INPUT
+    // ============================================================
 
     onKeyPressed(key) {
-        // First key press = confirmed user interaction → safe to start audio
-        this._tryStartMusic(true);
-        if (Data.Keyboards.checkActionMenu(key)) {
+        this._tryStartMusic(
+            true
+        );
+
+        if (
+            Data.Keyboards
+                .checkActionMenu(
+                    key
+                )
+        ) {
             this._confirmSelection();
-        } else if (Data.Keyboards.checkCancelMenu(key)) {
-            if (this.menuPage !== 'main') {
-                Data.Systems.soundCursor.playSound();
-                this._backMenuPage();
-            }
+        } else if (
+            Data.Keyboards
+                .checkCancelMenu(
+                    key
+                ) &&
+            this.menuPage !==
+                'main'
+        ) {
+            Data.Systems
+                .soundCursor
+                .playSound();
+
+            this._backMenuPage();
         }
     }
 
     onKeyPressedAndRepeat(key) {
-        const prev = this.selectedIndex;
-        const count = this.menuItems.length + (this.menuPage === 'main' ? 0 : 1);
-        if (Data.Keyboards.isKeyEqual(key, Data.Keyboards.menuControls.Up)) {
-            this.selectedIndex = (this.selectedIndex - 1 + count) % count;
-        } else if (Data.Keyboards.isKeyEqual(key, Data.Keyboards.menuControls.Down)) {
-            this.selectedIndex = (this.selectedIndex + 1) % count;
+        const previous =
+            this.selectedIndex;
+
+        const count =
+            this.menuItems.length +
+            (
+                this.menuPage ===
+                'main'
+                    ? 0
+                    : 1
+            );
+
+        if (
+            Data.Keyboards
+                .isKeyEqual(
+                    key,
+                    Data.Keyboards
+                        .menuControls
+                        .Up
+                )
+        ) {
+            this.selectedIndex =
+                (
+                    this.selectedIndex -
+                    1 +
+                    count
+                ) %
+                count;
+        } else if (
+            Data.Keyboards
+                .isKeyEqual(
+                    key,
+                    Data.Keyboards
+                        .menuControls
+                        .Down
+                )
+        ) {
+            this.selectedIndex =
+                (
+                    this.selectedIndex +
+                    1
+                ) %
+                count;
         }
-        if (this.selectedIndex !== prev) {
-            this.hoverIndex = -1;   // keyboard took over — clear mouse hover
-            Data.Systems.soundCursor.playSound();
-            Manager.Stack.requestPaintHUD = true;
+
+        if (
+            previous !==
+            this.selectedIndex
+        ) {
+            this.hoverIndex =
+                -1;
+
+            Data.Systems
+                .soundCursor
+                .playSound();
+
+            Manager.Stack
+                .requestPaintHUD =
+                true;
         }
+
         return true;
     }
 
     onMouseMove(x, y) {
-        const newHover = this._getButtonAt(x, y);
-        if (newHover !== this.hoverIndex) {
-            this.hoverIndex = newHover;
-            if (newHover >= 0 && newHover !== this.selectedIndex) {
-                this.selectedIndex = newHover;  // mouse hover drives selection
-                Data.Systems.soundCursor.playSound();
-            }
-            Manager.Stack.requestPaintHUD = true;
+        const newHover =
+            this._getButtonAt(
+                x,
+                y
+            );
+
+        if (
+            newHover ===
+            this.hoverIndex
+        ) {
+            return;
         }
+
+        this.hoverIndex =
+            newHover;
+
+        if (
+            newHover >= 0 &&
+            newHover !==
+                this.selectedIndex
+        ) {
+            this.selectedIndex =
+                newHover;
+
+            Data.Systems
+                .soundCursor
+                .playSound();
+        }
+
+        Manager.Stack
+            .requestPaintHUD =
+            true;
     }
 
     onMouseUp(x, y) {
-        this._tryStartMusic(true);
-        const idx = this._getButtonAt(x, y);
-        if (idx >= 0) {
-            if (idx !== this.selectedIndex) {
-                this.selectedIndex = idx;
-                Data.Systems.soundCursor.playSound();
-            }
-            this._confirmSelection();
+        this._tryStartMusic(
+            true
+        );
+
+        const index =
+            this._getButtonAt(
+                x,
+                y
+            );
+
+        if (
+            index <
+            0
+        ) {
+            return;
         }
+
+        if (
+            index !==
+            this.selectedIndex
+        ) {
+            this.selectedIndex =
+                index;
+
+            Data.Systems
+                .soundCursor
+                .playSound();
+        }
+
+        this._confirmSelection();
     }
 
     _getButtonAt(x, y) {
-        if (this.menuPage !== 'main') {
-            const back = this._backButtonLayout();
-            const sx = Common.ScreenResolution.getScreenX(back.x);
-            const sy = Common.ScreenResolution.getScreenY(back.y);
-            if (x >= sx && x <= sx + Common.ScreenResolution.getScreenX(back.w)
-                && y >= sy && y <= sy + Common.ScreenResolution.getScreenY(back.h)) return this.menuItems.length;
+        if (
+            this.menuPage !==
+            'main'
+        ) {
+            const back =
+                this._backButtonLayout();
+
+            const sx =
+                Common.ScreenResolution
+                    .getScreenX(
+                        back.x
+                    );
+
+            const sy =
+                Common.ScreenResolution
+                    .getScreenY(
+                        back.y
+                    );
+
+            const sw =
+                Common.ScreenResolution
+                    .getScreenX(
+                        back.w
+                    );
+
+            const sh =
+                Common.ScreenResolution
+                    .getScreenY(
+                        back.h
+                    );
+
+            if (
+                x >= sx &&
+                x <=
+                    sx +
+                    sw &&
+                y >= sy &&
+                y <=
+                    sy +
+                    sh
+            ) {
+                return this
+                    .menuItems
+                    .length;
+            }
         }
-        const layout = this._menuLayout();
-        for (let i = 0; i < this.menuItems.length; i++) {
-            const by = layout.startY + i * (layout.btnH + layout.gap);
-            const sx = Common.ScreenResolution.getScreenX(layout.btnX);
-            const sy = Common.ScreenResolution.getScreenY(by);
-            const sw = Common.ScreenResolution.getScreenX(layout.btnW);
-            const sh = Common.ScreenResolution.getScreenY(layout.btnH);
-            if (x >= sx && x <= sx + sw && y >= sy && y <= sy + sh) return i;
+
+        const layout =
+            this._menuLayout();
+
+        for (
+            let i = 0;
+            i <
+            this.menuItems.length;
+            i++
+        ) {
+            const y0 =
+                layout.startY +
+                i *
+                    (
+                        layout.btnH +
+                        layout.gap
+                    );
+
+            const sx =
+                Common.ScreenResolution
+                    .getScreenX(
+                        layout.btnX
+                    );
+
+            const sy =
+                Common.ScreenResolution
+                    .getScreenY(
+                        y0
+                    );
+
+            const sw =
+                Common.ScreenResolution
+                    .getScreenX(
+                        layout.btnW
+                    );
+
+            const sh =
+                Common.ScreenResolution
+                    .getScreenY(
+                        layout.btnH
+                    );
+
+            if (
+                x >= sx &&
+                x <=
+                    sx +
+                    sw &&
+                y >= sy &&
+                y <=
+                    sy +
+                    sh
+            ) {
+                return i;
+            }
         }
+
         return -1;
     }
 
-    _confirmSelection() {
-        if (IP2Live.MenuTransition && IP2Live.MenuTransition.active) return;
-        const idx = this.selectedIndex;
-        Data.Systems.soundConfirmation.playSound();
+    // ============================================================
+    // ACTIONS
+    // ============================================================
 
-        if (this.menuPage !== 'main' && idx === this.menuItems.length) {
-            this._backMenuPage();
+    _confirmSelection() {
+        if (
+            IP2Live.MenuTransition &&
+            IP2Live.MenuTransition
+                .active
+        ) {
             return;
         }
-        const action = this.menuItems[idx];
-        if (action === 'PLAY GAME') return this._showMenuPage('play');
-        if (action === 'STORY MODE') return this._showMenuPage('story');
+
+        const index =
+            this.selectedIndex;
+
+        if (this._lockedModeMessage(this.menuItems[index])) {
+            this._practiceHintUntil = Date.now() + 5500;
+            if (Data.Systems.soundImpossible) Data.Systems.soundImpossible.playSound();
+            Manager.Stack.requestPaintHUD = true;
+            return;
+        }
+
+        Data.Systems
+            .soundConfirmation
+            .playSound();
+
+        if (
+            this.menuPage !==
+                'main' &&
+            index ===
+                this.menuItems
+                    .length
+        ) {
+            this._backMenuPage();
+
+            return;
+        }
+
+        const action =
+            this.menuItems[
+                index
+            ];
+
+        if (
+            action ===
+            'PLAY GAME'
+        ) {
+            return this
+                ._showMenuPage(
+                    'play'
+                );
+        }
+
+        if (
+            action ===
+            'STORY MODE'
+        ) {
+            return this
+                ._showMenuPage(
+                    'story'
+                );
+        }
 
         if (action === 'NEW STORY') {
-            // New Game bridge into profile entry.
-            if (IP2Live.LoadingScreen && typeof IP2Live.LoadingScreen.show === 'function') {
-                IP2Live.LoadingScreen.show({
-                    mode: 'push',
-                    status: 'Loading New Story',
-                    detail: 'Opening infiltrator profile channel',
-                    onComplete: function () {
-                        Manager.Stack.replace(new IP2LiveNameInputScreen());
-                    },
-                });
-            } else {
-                this.fadeTarget = idx;
-            }
-            Manager.Stack.requestPaintHUD = true;
-        } else {
-            switch (action) {
-                // Reserved modes acknowledge the click without leaving this menu.
-                case 'ENDLESS MODE':
-                case 'PRACTICE MODE':
-                case 'AUTOSAVED': break;
-                case 'LOAD STORY': this._openLoadGame(); break;
-                case 'SETTINGS': this._openMenu(() => new IP2LiveSettingsMenu()); break;
-                case 'CREDITS': this._openMenu(() => new IP2LiveCreditsScene()); break;
-                case 'QUIT GAME': this._openQuitConfirmation(); break;
-            }
+            if (IP2Live.StoryAutosave) IP2Live.StoryAutosave.confirmNewStory(() => this._startNewStory());
+            else this._startNewStory();
+            return;
+        }
+
+        switch (action) {
+            case 'PRACTICE MODE':
+                this._showMenuPage('practice');
+                break;
+            case 'TUTORIAL':
+            case 'GAMEPLAY':
+                if (this.menuPage === 'practice' && IP2Live.PracticeGrid) {
+                    this._openMenu(() => new IP2Live.PracticeGrid(action.toLowerCase()));
+                }
+                break;
+            case 'ENDLESS MODE':
+                break;
+            case 'AUTOSAVED':
+                if (IP2Live.StoryAutosave) IP2Live.StoryAutosave.confirmResume();
+                break;
+
+            case 'LOAD STORY':
+                this._openLoadGame();
+                break;
+
+            case 'SETTINGS':
+                this._openMenu(
+                    () =>
+                        new IP2LiveSettingsMenu()
+                );
+                break;
+
+            case 'CREDITS':
+                this._openMenu(
+                    () =>
+                        new IP2LiveCreditsScene()
+                );
+                break;
+
+            case 'QUIT GAME':
+                this._openQuitConfirmation();
+                break;
         }
     }
 
     _openMenu(factory) {
-        if (IP2Live.MenuTransition) return IP2Live.MenuTransition.open(factory);
-        Manager.Stack.push(factory());
+        if (
+            IP2Live.MenuTransition
+        ) {
+            return IP2Live
+                .MenuTransition
+                .open(
+                    factory
+                );
+        }
+
+        Manager.Stack.push(
+            factory()
+        );
     }
 
-    // â”€â”€ Update â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-
     _openLoadGame() {
-        if (IP2Live.MenuTransition) {
-            return IP2Live.MenuTransition.open(async () => {
-                if (Main && typeof Main.waitForGameData === 'function') await Main.waitForGameData();
-                return new IP2LiveLoadGameMenu();
-            });
+        if (
+            IP2Live.MenuTransition
+        ) {
+            return IP2Live
+                .MenuTransition
+                .open(
+                    async () => {
+                        if (
+                            Main &&
+                            typeof Main
+                                .waitForGameData ===
+                                'function'
+                        ) {
+                            await Main
+                                .waitForGameData();
+                        }
+
+                        return new IP2LiveLoadGameMenu();
+                    }
+                );
         }
-        if (this._waitingForGameData) return;
-        this._waitingForGameData = true;
 
-        // Paper Maker 3.2 displays the title before modelHero, battle data,
-        // and the remaining game database have finished loading. Match the
-        // engine's default TitleCommand behavior and keep this title scene in
-        // its loading state until those dependencies are ready.
-        this.loading = true;
-        Manager.Stack.requestPaintHUD = true;
+        if (
+            this._waitingForGameData
+        ) {
+            return;
+        }
 
-        const gameDataReady = Main && typeof Main.waitForGameData === 'function'
-            ? Main.waitForGameData()
-            : Promise.resolve();
+        this._waitingForGameData =
+            true;
 
-        Promise.resolve(gameDataReady)
+        this.loading =
+            true;
+
+        Manager.Stack
+            .requestPaintHUD =
+            true;
+
+        const ready =
+            Main &&
+            typeof Main
+                .waitForGameData ===
+                'function'
+                ? Main
+                    .waitForGameData()
+                : Promise.resolve();
+
+        Promise.resolve(
+            ready
+        )
             .then(() => {
-                // Ignore a stale completion if another scene replaced this
-                // title while the engine data was still loading.
-                if (Manager.Stack.top === this) {
-                    Manager.Stack.push(new IP2LiveLoadGameMenu());
+                if (
+                    Manager.Stack
+                        .top ===
+                    this
+                ) {
+                    Manager.Stack
+                        .push(
+                            new IP2LiveLoadGameMenu()
+                        );
                 }
             })
             .catch((error) => {
-                console.error('[IP2Live] Unable to open Load Game:', error);
-                if (Data.Systems.soundImpossible) {
-                    Data.Systems.soundImpossible.playSound();
+                console.error(
+                    '[IP2Live] Unable to open Load Game:',
+                    error
+                );
+
+                if (
+                    Data.Systems
+                        .soundImpossible
+                ) {
+                    Data.Systems
+                        .soundImpossible
+                        .playSound();
                 }
             })
             .finally(() => {
-                this.loading = false;
-                this._waitingForGameData = false;
-                Manager.Stack.requestPaintHUD = true;
+                this.loading =
+                    false;
+
+                this._waitingForGameData =
+                    false;
+
+                Manager.Stack
+                    .requestPaintHUD =
+                    true;
             });
     }
 
     _openQuitConfirmation() {
-        if (IP2Live.confirPopup && typeof IP2Live.confirPopup.show === 'function') {
-            IP2Live.confirPopup.show({
-                title: 'QUIT GAME?',
-                message: 'Close IP2Live?',
-                confirmLabel: 'QUIT',
-                cancelLabel: 'CANCEL',
-                danger: true,
-                onConfirm: () => this._quitAfterCheckpoint(),
-            });
+        if (
+            IP2Live.confirPopup &&
+            typeof IP2Live
+                .confirPopup
+                .show ===
+                'function'
+        ) {
+            IP2Live
+                .confirPopup
+                .show({
+                    title:
+                        'QUIT GAME?',
+
+                    message:
+                        'Please save your game progress before quitting.',
+
+                    detail:
+                        'Unsaved changes will be lost. Quit to desktop?',
+
+                    confirmLabel:
+                        'QUIT',
+
+                    cancelLabel:
+                        'CANCEL',
+
+                    danger:
+                        true,
+
+                    onConfirm:
+                        () =>
+                            this._quitAfterCheckpoint()
+                });
+
             return;
         }
+
         this._quitAfterCheckpoint();
     }
 
     _quitAfterCheckpoint() {
-        if (IP2Live.MenuTransition) return IP2Live.MenuTransition.quit('main_menu_quit');
-        const manager = IP2Live.GameManager;
-        if (manager && typeof manager.prepareForShutdown === 'function') {
-            manager.prepareForShutdown('main_menu_quit')
-                .catch(function (error) { console.warn('[IP2Live] Shutdown flush failed:', error); })
-                .finally(function () { Common.Platform.quit(); });
+        if (
+            IP2Live.MenuTransition
+        ) {
+            return IP2Live
+                .MenuTransition
+                .quit(
+                    'main_menu_quit'
+                );
+        }
+
+        const manager =
+            IP2Live.GameManager;
+
+        if (
+            manager &&
+            typeof manager
+                .prepareForShutdown ===
+                'function'
+        ) {
+            manager
+                .prepareForShutdown(
+                    'main_menu_quit'
+                )
+                .catch(
+                    (error) =>
+                        console.warn(
+                            '[IP2Live] Shutdown flush failed:',
+                            error
+                        )
+                )
+                .finally(
+                    () =>
+                        Common.Platform
+                            .quit()
+                );
         } else {
             Common.Platform.quit();
         }
     }
 
+    // ============================================================
+    // UPDATE
+    // ============================================================
+
     update() {
         this.animTick++;
-        this.scanlineOffset = (this.scanlineOffset + 0.4) % 4;
-        if (this.glitchTimer > 0) {
-            this.glitchTimer--;
-            this.glitchActive = this.glitchTimer > 0;
-        }
 
-        // ── Typing scramble (slower) ──────────────────────────────
-        let animatingProgress = false;
-        for (let i = 0; i < this.menuItems.length; i++) {
-            if (i === this.selectedIndex || i === this.hoverIndex) {
-                if (this.btnProgress[i] < this.menuItems[i].length * 3 + 10) {
-                    this.btnProgress[i] += 0.55;   // was 1.5 — slower reveal
-                    animatingProgress = true;
+        this.scanlineOffset =
+            (
+                this.scanlineOffset +
+                0.4
+            ) %
+            4;
+
+        let animating =
+            false;
+
+        for (
+            let i = 0;
+            i <
+            this.menuItems.length;
+            i++
+        ) {
+            if (
+                i ===
+                    this.selectedIndex ||
+                i ===
+                    this.hoverIndex
+            ) {
+                if (
+                    this.btnProgress[
+                        i
+                    ] <
+                    this.menuItems[
+                        i
+                    ].length *
+                        3 +
+                        10
+                ) {
+                    this.btnProgress[
+                        i
+                    ] +=
+                        0.55;
+
+                    animating =
+                        true;
                 }
             } else {
-                this.btnProgress[i] = 0;
+                this.btnProgress[
+                    i
+                ] = 0;
             }
         }
 
-        // ── Title decrypt on boot ─────────────────────────────────
-        if (!this.titleDone) {
-            this.titleProgress += 0.6;
-            if (this.titleProgress >= this.titleTarget.length * 3 + 10) this.titleDone = true;
-            animatingProgress = true;
+        if (
+            !this.titleDone
+        ) {
+            this.titleProgress +=
+                0.6;
+
+            if (
+                this.titleProgress >=
+                this.titleTarget
+                    .length *
+                    3 +
+                    10
+            ) {
+                this.titleDone =
+                    true;
+            }
+
+            animating =
+                true;
         }
 
-        // ── Floating particles ────────────────────────────────────
-        const CHARS = ['0','1','01','10','0x','FF','>>','{}','//','::','$_','&&','!=','<>'];
         for (const p of this.particles) {
-            p.y += p.vy;
-            p.x += p.vx;
-            p.flipTimer--;
-            if (p.flipTimer <= 0) {
-                p.char = CHARS[Math.floor(Math.random() * CHARS.length)];
-                p.flipTimer = 40 + Math.floor(Math.random() * 80);
+            p.x = (p.x + p.vx + 1) % 1;
+            p.y = (p.y - p.vy + 1) % 1;
+            if (--p.flipTimer <= 0) {
+                p.char = ['0', '1', '01', '10', '0x', '//', '::'][Math.floor(Math.random() * 7)];
+                p.flipTimer = 90 + Math.floor(Math.random() * 180);
             }
-            if (p.y > p.cH + 20)  { p.y = -20; p.x = Math.random() * p.cW; }
-            if (p.x < -20)        { p.x = p.cW + 10; }
-            if (p.x > p.cW + 20)  { p.x = -10; }
+        }
+        for (const d of this.dust) {
+            d.x = (d.x + d.drift + 1) % 1;
+            d.y = (d.y - d.speed + 1) % 1;
         }
 
-        // ── Constant sine-wave background breathing ───────────────
-        const t = this.animTick * 0.018;  // slow frequency
-        this.shakeX = Math.sin(t * 1.3) * 1.8 + Math.cos(t * 2.1) * 0.9;
-        this.shakeY = Math.cos(t * 0.9) * 1.4 + Math.sin(t * 2.7) * 0.6;
-        // Small random micro-jolt layered on top
-        if (Math.random() < 0.012) {
-            this.shakeX += (Math.random() - 0.5) * 5;
-            this.shakeY += (Math.random() - 0.5) * 5;
-        }
+        const t =
+            this.animTick *
+            0.018;
 
-        // ── Fade-out transition ───────────────────────────────────
-        if (this.fadeTarget !== null) {
-            this.fadeOut += 0.045;   // ~22 frames to full black (~0.37s)
-            if (this.fadeOut >= 1) {
-                Manager.Stack.push(new IP2LiveNameInputScreen());
-                this.fadeTarget = null;
-                this.fadeOut = 0; // Reset so it's not black when we pop back
+        this.shakeX =
+            Math.sin(
+                t *
+                    1.3
+            ) *
+                1.1 +
+            Math.cos(
+                t *
+                    2.1
+            ) *
+                0.45;
+
+        this.shakeY =
+            Math.cos(
+                t *
+                    0.9
+            ) *
+                0.8 +
+            Math.sin(
+                t *
+                    2.7
+            ) *
+                0.35;
+
+        if (
+            this.fadeTarget !==
+            null
+        ) {
+            this.fadeOut +=
+                0.045;
+
+            if (
+                this.fadeOut >=
+                1
+            ) {
+                Manager.Stack
+                    .push(
+                        new IP2LiveNameInputScreen()
+                    );
+
+                this.fadeTarget =
+                    null;
+
+                this.fadeOut =
+                    0;
             }
-            animatingProgress = true;
+
+            animating =
+                true;
         }
 
-        // ── Fade-in transition (Returning from Name Input) ────────
-        if (this.isFadingIn) {
-            this.fadeOut -= 0.045;
-            if (this.fadeOut <= 0) {
-                this.fadeOut = 0;
-                this.isFadingIn = false;
+        if (
+            this.isFadingIn
+        ) {
+            this.fadeOut -=
+                0.045;
+
+            if (
+                this.fadeOut <=
+                0
+            ) {
+                this.fadeOut =
+                    0;
+
+                this.isFadingIn =
+                    false;
             }
-            animatingProgress = true;
+
+            animating =
+                true;
         }
 
-        if (this.animTick % 2 === 0 || animatingProgress) Manager.Stack.requestPaintHUD = true;
+        if (
+            this.animTick %
+                2 ===
+                0 ||
+            animating
+        ) {
+            Manager.Stack
+                .requestPaintHUD =
+                true;
+        }
     }
 
-    // â”€â”€ Rendering â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // ============================================================
+    // MAIN RENDER
+    // ============================================================
 
-    draw3D() { Manager.GL.renderer.clear(); }
+    draw3D() {
+        if (
+            Manager.GL &&
+            Manager.GL.renderer
+        ) {
+            Manager.GL.renderer
+                .clear();
+        }
+    }
 
     drawHUD() {
-        const ctx = Common.Platform.ctx;
-        const SW = Common.ScreenResolution.SCREEN_X;
-        const SH = Common.ScreenResolution.SCREEN_Y;
-        const cW = Common.ScreenResolution.CANVAS_WIDTH;
-        const cH = Common.ScreenResolution.CANVAS_HEIGHT;
-        const scaleX = cW / SW;
-        const scaleY = cH / SH;
+        const ctx =
+            Common.Platform.ctx;
 
-        ctx.save();
-        // Light full-canvas shake to keep UI organized and readable.
-        ctx.translate(this.shakeX * 0.25, this.shakeY * 0.25);
+        const SW =
+            Common.ScreenResolution
+                .SCREEN_X;
 
-        if (this.networkBackdrop && typeof this.networkBackdrop.draw === 'function') {
-            this.networkBackdrop.draw(ctx, cW, cH, this.animTick, 0, 0);
-        } else {
-            ctx.fillStyle = '#0a0a1a';
-            ctx.fillRect(0, 0, cW, cH);
-        }
+        const SH =
+            Common.ScreenResolution
+                .SCREEN_Y;
 
-        // ── Floating binary / hacker particles ─────────────────────
-        ctx.save();
-        for (const p of this.particles) {
-            ctx.globalAlpha = p.alpha;
-            ctx.fillStyle = '#00FFFF';
-            ctx.font = Math.round(p.size * scaleX) + 'px monospace';
-            ctx.textAlign = 'left';
-            ctx.fillText(p.char, p.x, p.y);
-        }
-        ctx.globalAlpha = 1;
-        ctx.restore();
+        const cW =
+            Common.ScreenResolution
+                .CANVAS_WIDTH;
 
-        const panelW = cW * 0.55;
-        const grad = ctx.createLinearGradient(0, 0, panelW, 0);
-        grad.addColorStop(0, 'rgba(0,0,8,0.92)');
-        grad.addColorStop(0.75, 'rgba(0,0,8,0.75)');
-        grad.addColorStop(1, 'rgba(0,0,8,0)');
-        ctx.fillStyle = grad;
-        ctx.fillRect(0, 0, panelW, cH);
+        const cH =
+            Common.ScreenResolution
+                .CANVAS_HEIGHT;
 
-        ctx.globalAlpha = 0.04;
-        ctx.fillStyle = '#000';
-        for (let y = this.scanlineOffset * scaleY; y < cH; y += 4 * scaleY) {
-            ctx.fillRect(0, y, panelW, 1.5 * scaleY);
-        }
-        ctx.globalAlpha = 1;
+        const scaleX =
+            cW /
+            SW;
 
-        this._drawTitle(ctx, scaleX, scaleY, cW, cH);
-
-        const layout = this._menuLayout();
-
-        if (this.menuPage !== 'main') this._drawMenuBackButton(ctx, scaleX, scaleY);
-        for (let i = 0; i < this.menuItems.length; i++) {
-            const by = layout.startY + i * (layout.btnH + layout.gap);
-            this._drawButton(ctx, scaleX, scaleY, layout.btnX, by, layout.btnW, layout.btnH,
-                this.menuItems[i], i === this.selectedIndex, i === this.hoverIndex, i);
-        }
-
-        // Black fade-out overlay for New Game transition
-        if (this.fadeOut > 0) {
-            ctx.globalAlpha = Math.min(this.fadeOut, 1);
-            ctx.fillStyle = '#000000';
-            ctx.fillRect(0, 0, cW, cH);
-            ctx.globalAlpha = 1;
-        }
-
-        ctx.restore();
-
-        // Draw rare full-screen glitch slices above all menu UI.
-        this._drawGlobalGlitch(ctx, cW, cH, scaleX, scaleY);
-    }
-
-    _drawTitle(ctx, scaleX, scaleY, cW, cH) {
-        const fontName = IP2Live.Assets.abnesLoaded ? 'Abnes' : 'Arial Black';
-        const target   = this.titleTarget;
-        const displayTitle = this.titleDone
-            ? target
-            : this._getScrambledText(target, this.titleProgress);
-        ctx.textAlign = 'left';
-        ctx.font = 'bold ' + (72 * scaleX) + 'px ' + fontName;
-        ctx.fillStyle = '#FFFFFF';
-        ctx.shadowBlur = 0;
-        ctx.fillText(displayTitle, this._menuLayout().btnX * scaleX, 148 * scaleY);
-        ctx.globalAlpha = 1;
-    }
-
-    _drawMenuBackButton(ctx, scaleX, scaleY) {
-        const back = this._backButtonLayout();
-        const index = this.menuItems.length;
-        this._drawButton(ctx, scaleX, scaleY, back.x, back.y, back.w, back.h,
-            'BACK', this.selectedIndex === index, this.hoverIndex === index, index);
-    }
-
-    _drawButton(ctx, scaleX, scaleY, bx, by, bw, bh, label, isSelected, isHover, index) {
-        // Leave the loaded title visible for 0.5 seconds before revealing the buttons.
-        if (this._buttonEntranceStartedAt == null) this._buttonEntranceStartedAt = Date.now() + 500;
-        const elapsed = Date.now() - this._buttonEntranceStartedAt - index * 90;
-        const progress = Math.max(0, Math.min(1, elapsed / 700));
-        const eased = 1 - Math.pow(1 - progress, 3);
-        const isActive = isSelected || isHover;
-        const scrambleText = isActive && label !== 'BACK' ? this._getScrambledText(label, this.btnProgress[index]) : undefined;
-        ctx.save();
-        ctx.globalAlpha *= eased;
-        ctx.translate(-24 * scaleX * (1 - eased), 0);
-        this._drawPersonaButton(ctx, scaleX, scaleY, bx, by, bw, bh, label, isActive, label === 'QUIT GAME', scrambleText, index);
-        ctx.restore();
-    }
-
-    _drawPersonaButton(ctx, scaleX, scaleY, bx, by, bw, bh, label, isActive, isDanger, displayLabel, index) {
-        const x = bx * scaleX;
-        const y = by * scaleY;
-        const w = bw * scaleX;
-        const h = bh * scaleY;
-        const slant = 18 * scaleX;
-        const tab = 38 * scaleX;
-        const fontName = IP2Live.Assets.nebulaLoaded ? 'Nebula-Regular' : 'monospace';
-        const red = isDanger ? '#FF335F' : '#FF003C';
-        const cyan = '#00F0FF';
-        const yellow = '#FFE600';
-        const isBack = label === 'BACK';
-        const active = isDanger ? red : yellow;
-        const labelText = displayLabel || label;
-        const pulse = 0.55 + 0.45 * Math.sin(this.animTick * 0.12);
+        const scaleY =
+            cH /
+            SH;
 
         ctx.save();
 
-        ctx.beginPath();
-        ctx.moveTo(x + slant, y);
-        ctx.lineTo(x + w - slant * 0.4, y);
-        ctx.lineTo(x + w, y + h * 0.22);
-        ctx.lineTo(x + w - slant, y + h);
-        ctx.lineTo(x + slant * 0.7, y + h);
-        ctx.lineTo(x, y + h * 0.74);
-        ctx.closePath();
+        ctx.translate(
+            this.shakeX *
+                0.18,
 
-        const grad = ctx.createLinearGradient(x, y, x + w, y);
-        if (isActive) {
-            grad.addColorStop(0, isDanger ? 'rgba(255,0,60,0.64)' : 'rgba(255,230,0,0.70)');
-            grad.addColorStop(0.42, isDanger ? 'rgba(110,0,28,0.72)' : 'rgba(70,64,0,0.72)');
-            grad.addColorStop(1, 'rgba(3,7,20,0.78)');
-            ctx.shadowColor = active;
-            ctx.shadowBlur = 18 * scaleX;
-        } else {
-            grad.addColorStop(0, 'rgba(3,7,20,0.88)');
-            grad.addColorStop(1, 'rgba(3,7,20,0.36)');
-            ctx.shadowBlur = 0;
-        }
-        ctx.fillStyle = grad;
-        ctx.fill();
+            this.shakeY *
+                0.18
+        );
 
-        ctx.shadowBlur = 0;
-        ctx.lineWidth = (isActive ? 2.4 : isBack ? 1.8 : 1.1) * scaleX;
-        ctx.strokeStyle = isBack ? yellow : isActive ? active : (isDanger ? 'rgba(255,0,60,0.54)' : 'rgba(0,240,255,0.54)');
-        ctx.stroke();
+        this._drawBackdrop(
+            ctx,
+            cW,
+            cH,
+            scaleX,
+            scaleY
+        );
 
-        ctx.save();
-        ctx.clip();
-        for (let sy = y + ((this.animTick * 0.8) % (6 * scaleY)); sy < y + h; sy += 6 * scaleY) {
-            ctx.fillStyle = isActive ? 'rgba(255,255,255,0.06)' : 'rgba(0,240,255,0.025)';
-            ctx.fillRect(x, sy, w, 1 * scaleY);
-        }
-        if (isActive) {
-            const scanX = x - w + ((this.animTick * 5) % (w * 1.8));
-            ctx.fillStyle = 'rgba(255,255,255,0.22)';
-            ctx.transform(1, 0, -0.32, 1, 0, 0);
-            ctx.fillRect(scanX, y - h, 34 * scaleX, h * 3);
-        }
-        ctx.restore();
+        this._drawHeroComposition(
+            ctx,
+            cW,
+            cH
+        );
 
-        ctx.beginPath();
-        ctx.moveTo(x, y);
-        ctx.lineTo(x + tab, y);
-        ctx.lineTo(x + tab - 12 * scaleX, y + 19 * scaleY);
-        ctx.lineTo(x, y + 24 * scaleY);
-        ctx.closePath();
-        ctx.fillStyle = isBack ? yellow : isActive ? red : 'rgba(0,240,255,0.82)';
-        ctx.fill();
+        this._drawMenuVeil(
+            ctx,
+            cW,
+            cH
+        );
 
-        if (isActive) {
-            ctx.beginPath();
-            ctx.moveTo(x + w - 68 * scaleX, y);
-            ctx.lineTo(x + w - 12 * scaleX, y);
-            ctx.lineTo(x + w - 34 * scaleX, y + h);
-            ctx.lineTo(x + w - 88 * scaleX, y + h);
-            ctx.closePath();
-            ctx.fillStyle = isDanger ? 'rgba(255,0,60,0.32)' : 'rgba(255,230,0,0.35)';
-            ctx.fill();
-        }
+        this._drawFloatingParticles(ctx, cW, cH);
 
-        ctx.font = Math.round(8 * scaleX) + 'px monospace';
-        ctx.fillStyle = isActive ? '#080808' : '#00141A';
-        ctx.textAlign = 'left';
-        ctx.fillText('0' + (index + 1), x + 10 * scaleX, y + 15 * scaleY);
+        this._drawTitle(
+            ctx,
+            scaleX,
+            scaleY
+        );
 
-        ctx.font = 'bold ' + Math.round((isActive ? 21 : 19) * scaleX) + 'px ' + fontName;
-        ctx.fillStyle = isActive ? (isDanger ? '#FFFFFF' : '#111111') : '#FFFFFF';
-        ctx.shadowColor = isActive ? 'rgba(255,255,255,' + (0.35 + pulse * 0.25) + ')' : 'transparent';
-        ctx.shadowBlur = isActive ? 3 * scaleX : 0;
-        ctx.textAlign = 'left';
-        ctx.fillText(labelText, x + 34 * scaleX, y + h * 0.64);
+        const layout =
+            this._menuLayout();
 
-        if (isActive) {
-            ctx.shadowBlur = 0;
-            ctx.font = 'bold ' + Math.round(13 * scaleX) + 'px monospace';
-            ctx.fillStyle = isDanger ? '#FFFFFF' : '#111111';
-            ctx.textAlign = 'right';
-            ctx.fillText('>>', x + w - 42 * scaleX, y + h * 0.64);
-        }
-
-        ctx.restore();
-    }
-
-    _drawRightHackDeck(ctx, scaleX, scaleY, cW, cH) {
-        const tick = this.animTick || 0;
-        // Keep icon centered in the middle of the right half.
-        const cx = cW * 0.75;
-        const cy = cH * 0.50;
-        const unit = Math.min(cW, cH) / 1080;
-
-        ctx.save();
-        ctx.globalAlpha = 0.97;
-
-        const halo = ctx.createRadialGradient(cx, cy, 10 * unit, cx, cy, 360 * unit);
-        halo.addColorStop(0, 'rgba(0,240,255,0.20)');
-        halo.addColorStop(0.5, 'rgba(255,0,60,0.16)');
-        halo.addColorStop(1, 'rgba(0,0,0,0)');
-        ctx.fillStyle = halo;
-        ctx.fillRect(cx - 400 * unit, cy - 310 * unit, 800 * unit, 620 * unit);
-
-        this._drawAerialOrbits(ctx, cx, cy, unit, tick);
-        this._drawShardField(ctx, cx, cy, unit, tick);
-        this._drawNeuralTerminal(ctx, cx, cy, unit, tick);
-        this._drawHUDTabs(ctx, cx, cy, unit, tick);
-
-        ctx.restore();
-    }
-
-    _drawAerialOrbits(ctx, cx, cy, unit, tick) {
-        ctx.save();
-        ctx.translate(cx, cy);
-        ctx.rotate(-0.14);
-
-        // A single skewed HUD slab (new layout, no floating side widgets).
-        const slab = [
-            [-278, -190], [236, -176], [314, -34], [224, 186], [-292, 168], [-346, -30]
-        ];
-        ctx.beginPath();
-        for (let i = 0; i < slab.length; i++) {
-            const p = slab[i];
-            const px = p[0] * unit;
-            const py = p[1] * unit;
-            if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
-        }
-        ctx.closePath();
-        const slabGrad = ctx.createLinearGradient(-320 * unit, -200 * unit, 300 * unit, 180 * unit);
-        slabGrad.addColorStop(0, 'rgba(255,0,60,0.16)');
-        slabGrad.addColorStop(0.3, 'rgba(3,7,20,0.86)');
-        slabGrad.addColorStop(0.78, 'rgba(2,6,18,0.92)');
-        slabGrad.addColorStop(1, 'rgba(0,240,255,0.18)');
-        ctx.fillStyle = slabGrad;
-        ctx.fill();
-        ctx.strokeStyle = 'rgba(0,240,255,0.52)';
-        ctx.lineWidth = 2.1 * unit;
-        ctx.stroke();
-
-        // Horizontal data lanes clipped to slab.
-        ctx.save();
-        ctx.clip();
-        ctx.lineWidth = 1.1 * unit;
-        for (let y = -188 * unit; y <= 178 * unit; y += 12 * unit) {
-            const laneGlow = 0.13 + 0.10 * Math.sin(tick * 0.03 + y * 0.02);
-            ctx.strokeStyle = 'rgba(0,240,255,' + laneGlow.toFixed(3) + ')';
-            ctx.beginPath();
-            ctx.moveTo(-354 * unit, y);
-            ctx.lineTo(338 * unit, y);
-            ctx.stroke();
-        }
-        for (let i = -8; i <= 8; i++) {
-            const x = i * 40 * unit + ((tick * 0.8) % (40 * unit));
-            ctx.strokeStyle = i % 2 ? 'rgba(255,230,0,0.13)' : 'rgba(255,0,60,0.10)';
-            ctx.beginPath();
-            ctx.moveTo(x - 140 * unit, -220 * unit);
-            ctx.lineTo(x + 140 * unit, 220 * unit);
-            ctx.stroke();
-        }
-        ctx.restore();
-
-        // CIDR / subnet labels pinned to slab edges.
-        ctx.font = 'bold ' + Math.round(11 * unit) + 'px monospace';
-        ctx.fillStyle = 'rgba(0,240,255,0.72)';
-        ctx.fillText('ROUTE TABLE /24', -256 * unit, -158 * unit);
-        ctx.fillText('VLAN SEGMENT /27', -240 * unit, 150 * unit);
-        ctx.fillStyle = 'rgba(255,230,0,0.62)';
-        ctx.fillText('IP://10.72.14.' + ((Math.floor(tick / 9) % 140) + 24), 98 * unit, 146 * unit);
-
-        ctx.restore();
-    }
-
-    _drawShardField(ctx, cx, cy, unit, tick) {
-        ctx.save();
-        ctx.translate(cx, cy);
-        ctx.rotate(-0.14);
-
-        // Network node graph inside slab.
-        const nodes = [
-            [-210, -84], [-132, -124], [-44, -98], [52, -120], [144, -88],
-            [-188, -18], [-94, -36], [4, -24], [102, -42], [196, -16],
-            [-156, 48], [-62, 36], [34, 56], [132, 42], [226, 64]
-        ];
-        ctx.lineWidth = 1.6 * unit;
-        for (let i = 0; i < nodes.length; i++) {
-            const a = nodes[i];
-            const b = nodes[(i + 1) % nodes.length];
-            if (i % 2 === 0 || i % 5 === 0) {
-                ctx.strokeStyle = i % 4 === 0 ? 'rgba(255,0,60,0.30)' : 'rgba(0,240,255,0.32)';
-                ctx.beginPath();
-                ctx.moveTo(a[0] * unit, a[1] * unit);
-                ctx.lineTo(b[0] * unit, b[1] * unit);
-                ctx.stroke();
-            }
-        }
-        for (let i = 0; i < nodes.length; i++) {
-            const n = nodes[i];
-            const pulse = 0.5 + 0.5 * Math.sin(tick * 0.09 + i * 0.8);
-            const r = (2.2 + (i % 3) * 0.9) * unit;
-            ctx.fillStyle = i % 5 === 0 ? 'rgba(255,230,0,' + (0.6 + pulse * 0.3).toFixed(3) + ')' :
-                (i % 2 === 0 ? 'rgba(0,240,255,' + (0.45 + pulse * 0.4).toFixed(3) + ')' : 'rgba(255,0,60,' + (0.40 + pulse * 0.4).toFixed(3) + ')');
-            ctx.beginPath();
-            ctx.arc(n[0] * unit, n[1] * unit, r, 0, Math.PI * 2);
-            ctx.fill();
-        }
-
-        // Traversing packets.
-        for (let i = 0; i < 5; i++) {
-            const p = (tick * 0.014 + i * 0.19) % 1;
-            const sx = -236 + p * 472;
-            const sy = -106 + Math.sin((p * Math.PI * 2) + i) * 16;
-            ctx.fillStyle = i % 2 ? 'rgba(255,0,60,0.85)' : 'rgba(0,240,255,0.88)';
-            ctx.fillRect((sx - 7) * unit, (sy - 2) * unit, 14 * unit, 4 * unit);
-        }
-        ctx.restore();
-    }
-
-    _drawNeuralTerminal(ctx, cx, cy, unit, tick) {
-        const lean = -0.10 + Math.sin(tick * 0.014) * 0.012;
-        const bob = Math.sin(tick * 0.018) * 2 * unit;
-        const red = '#FF003C';
-        const cyan = '#00F0FF';
-        const yellow = '#FFE600';
-        const pulse = 0.55 + 0.45 * Math.sin(tick * 0.09);
-        ctx.save();
-        ctx.translate(cx, cy + bob);
-        ctx.rotate(lean);
-
-        // New central concept: aggressive chevron + shield core.
-        ctx.save();
-        const wingL = [
-            [-188, -26], [-88, -72], [6, -54], [-86, 2], [-176, 20]
-        ];
-        const wingR = [
-            [188, 26], [90, 70], [-6, 54], [88, -2], [178, -22]
-        ];
-        const drawWing = (pts, colA, colB) => {
-            ctx.beginPath();
-            for (let i = 0; i < pts.length; i++) {
-                const p = pts[i];
-                const x = p[0] * unit;
-                const y = p[1] * unit;
-                if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
-            }
-            ctx.closePath();
-            const g = ctx.createLinearGradient(-180 * unit, -80 * unit, 180 * unit, 80 * unit);
-            g.addColorStop(0, colA);
-            g.addColorStop(1, colB);
-            ctx.fillStyle = g;
-            ctx.fill();
-            ctx.strokeStyle = 'rgba(255,255,255,0.22)';
-            ctx.lineWidth = 1.2 * unit;
-            ctx.stroke();
-        };
-        drawWing(wingL, 'rgba(255,0,60,0.72)', 'rgba(64,0,30,0.35)');
-        drawWing(wingR, 'rgba(0,240,255,0.30)', 'rgba(0,240,255,0.72)');
-        ctx.restore();
-
-        // Shield core.
-        ctx.shadowColor = cyan;
-        ctx.shadowBlur = 22 * unit;
-        ctx.save();
-        ctx.rotate(tick * 0.004);
-        const shield = [
-            [0, -80], [66, -40], [50, 54], [0, 92], [-50, 54], [-66, -40]
-        ];
-        ctx.beginPath();
-        for (let i = 0; i < shield.length; i++) {
-            const p = shield[i];
-            if (i === 0) ctx.moveTo(p[0] * unit, p[1] * unit);
-            else ctx.lineTo(p[0] * unit, p[1] * unit);
-        }
-        ctx.closePath();
-        const coreGrad = ctx.createLinearGradient(-70 * unit, -84 * unit, 70 * unit, 96 * unit);
-        coreGrad.addColorStop(0, 'rgba(255,0,60,0.52)');
-        coreGrad.addColorStop(0.45, 'rgba(4,10,28,0.95)');
-        coreGrad.addColorStop(1, 'rgba(0,240,255,0.50)');
-        ctx.fillStyle = coreGrad;
-        ctx.fill();
-        ctx.strokeStyle = 'rgba(0,240,255,0.94)';
-        ctx.lineWidth = 2.8 * unit;
-        ctx.stroke();
-        ctx.restore();
-        ctx.shadowBlur = 0;
-
-        // Infiltrator glyph inside core.
-        ctx.save();
-        ctx.rotate(-0.56 + Math.sin(tick * 0.01) * 0.04);
-        ctx.lineWidth = 4.2 * unit;
-        ctx.strokeStyle = 'rgba(255,230,0,0.92)';
-        ctx.beginPath();
-        ctx.moveTo(-26 * unit, -18 * unit);
-        ctx.lineTo(8 * unit, -18 * unit);
-        ctx.lineTo(28 * unit, -38 * unit);
-        ctx.stroke();
-        ctx.strokeStyle = 'rgba(0,240,255,0.96)';
-        ctx.beginPath();
-        ctx.moveTo(-24 * unit, 10 * unit);
-        ctx.lineTo(12 * unit, 10 * unit);
-        ctx.lineTo(38 * unit, 34 * unit);
-        ctx.stroke();
-        ctx.fillStyle = 'rgba(255,0,60,0.95)';
-        ctx.beginPath();
-        ctx.arc(-34 * unit, -18 * unit, 4.0 * unit, 0, Math.PI * 2);
-        ctx.arc(-30 * unit, 10 * unit, 3.8 * unit, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.restore();
-
-        // Support struts.
-        for (let i = 0; i < 3; i++) {
-            const a = -0.8 + i * 0.8 + Math.sin(tick * 0.006 + i) * 0.02;
-            const sx = Math.cos(a) * 166 * unit;
-            const sy = Math.sin(a) * 70 * unit;
-            this._drawMenuCoreBlade(
-                ctx, sx, sy,
-                (i === 1 ? 46 : 34) * unit,
-                (i === 1 ? 14 : 28) * unit,
-                i === 0 ? red : (i === 1 ? yellow : cyan),
-                tick + i * 9
+        if (
+            this.menuPage !==
+            'main'
+        ) {
+            this._drawMenuBackButton(
+                ctx,
+                scaleX,
+                scaleY
             );
         }
 
-        // Subnet/IP telemetry labels.
-        ctx.textAlign = 'center';
-        ctx.font = 'bold ' + Math.round(14 * unit) + 'px monospace';
-        ctx.fillStyle = '#FFFFFF';
-        const subnetPct = ((Math.floor(tick * 0.72) % 41) + 58);
-        ctx.fillText(subnetPct + '%', 0, 2 * unit);
+        for (
+            let i = 0;
+            i <
+            this.menuItems.length;
+            i++
+        ) {
+            const y =
+                layout.startY +
+                i *
+                    (
+                        layout.btnH +
+                        layout.gap
+                    );
 
-        ctx.font = Math.round(10 * unit) + 'px monospace';
-        ctx.fillStyle = 'rgba(0,240,255,0.7)';
-        ctx.fillText('INTRUSION VECTOR', 0, 112 * unit);
-        ctx.fillStyle = 'rgba(255,230,0,0.70)';
-        const subnetTail = 20 + (Math.floor(tick / 8) % 176);
-        ctx.fillText('172.19.' + ((Math.floor(tick / 11) % 48) + 4) + '.' + subnetTail + '/27', 0, 127 * unit);
+            this._drawButton(
+                ctx,
+                scaleX,
+                scaleY,
+                layout.btnX,
+                y,
+                layout.btnW,
+                layout.btnH,
+                this.menuItems[i],
+                i ===
+                    this.selectedIndex,
+                i ===
+                    this.hoverIndex,
+                i
+            );
+        }
 
+        this._drawPracticeHint(ctx, scaleX, scaleY);
+
+        if (
+            this.fadeOut >
+            0
+        ) {
+            ctx.globalAlpha =
+                Math.min(
+                    1,
+                    this.fadeOut
+                );
+
+            ctx.fillStyle =
+                '#000000';
+
+            ctx.fillRect(
+                0,
+                0,
+                cW,
+                cH
+            );
+
+            ctx.globalAlpha =
+                1;
+        }
+
+        ctx.restore();
+
+        this._drawGlobalGlitch(
+            ctx,
+            cW,
+            cH,
+            scaleX,
+            scaleY
+        );
+    }
+
+    // ============================================================
+    // BACKDROP
+    // ============================================================
+
+    _practiceLocked() {
+        return !IP2Live.PracticeMode || !IP2Live.PracticeMode.isUnlocked();
+    }
+
+    async _refreshAutosave() {
+        if (!IP2Live.StoryAutosave) return;
+        try {
+            this._autosaveSummary = await IP2Live.StoryAutosave.getSummary();
+            this._autosaveReadError = false;
+        } catch (error) { this._autosaveSummary = null; this._autosaveReadError = true; }
+        Manager.Stack.requestPaintHUD = true;
+    }
+
+    _startNewStory() {
+            if (
+                IP2Live
+                    .LoadingScreen &&
+                typeof IP2Live
+                    .LoadingScreen
+                    .show ===
+                    'function'
+            ) {
+                IP2Live
+                    .LoadingScreen
+                    .show({
+                        mode:
+                            'push',
+
+                        status:
+                            'Loading New Story',
+
+                        detail:
+                            'Opening infiltrator profile channel',
+
+                        onComplete:
+                            function () {
+                                Manager.Stack
+                                    .replace(
+                                        new IP2LiveNameInputScreen()
+                                    );
+                            }
+                    });
+            } else {
+                this.fadeTarget =
+                    this.selectedIndex;
+            }
+
+            Manager.Stack
+                .requestPaintHUD =
+                true;
+
+            return;
+    }
+
+    _lockedModeMessage(label) {
+        if (label === 'AUTOSAVED' && !this._autosaveSummary) return this._autosaveReadError
+            ? 'Could not read the autosave. Reopen Story Mode to retry.' : 'No autosaved story yet. A checkpoint is created when your story begins.';
+        // Endless remains a locked placeholder until the story-ending unlock is implemented.
+        if (label === 'ENDLESS MODE') return 'Endless Mode will be unlocked once you finish Story Mode.';
+        if (label === 'PRACTICE MODE' && this._practiceLocked()) {
+            return IP2Live.PracticeMode ? IP2Live.PracticeMode.lockedMessage
+                : 'Practice Mode will be unlocked once you encounter your first Networking Gameplay';
+        }
+        return '';
+    }
+
+    _drawPracticeHint(ctx, scaleX, scaleY) {
+        if (this.menuPage !== 'play' && this.menuPage !== 'story') return;
+        const index = this.hoverIndex >= 0 ? this.hoverIndex : this.selectedIndex;
+        const message = this._lockedModeMessage(this.menuItems[index]);
+        if (!message) return;
+        const layout = this._menuLayout();
+        const y = layout.startY + 4 * (layout.btnH + layout.gap) + 7;
+        ctx.save(); ctx.scale(scaleX, scaleY);
+        ctx.fillStyle = '#aeb5c1'; ctx.textAlign = 'left';
+        ctx.font = '12px ' + (IP2Live.Assets.oxaniumMediumLoaded ? 'Oxanium-Medium' : 'sans-serif');
+        let line = '', row = 0;
+        for (const word of message.split(' ')) {
+            const next = line ? line + ' ' + word : word;
+            if (line && ctx.measureText(next).width > layout.btnW) {
+                ctx.fillText(line, layout.btnX, y + row++ * 18);
+                line = word;
+            } else line = next;
+        }
+        ctx.fillText(line, layout.btnX, y + row * 18);
         ctx.restore();
     }
 
-    _drawHUDTabs(ctx, cx, cy, unit, tick) {
+    _drawBackdrop(ctx, cW, cH, scaleX, scaleY) {
         ctx.save();
-        ctx.translate(cx, cy);
-        ctx.rotate(-0.14);
+        ctx.fillStyle = '#030205';
+        ctx.fillRect(0, 0, cW, cH);
 
-        // Top command ribbon integrated into same slab.
-        const ribbon = [
-            [-302, -202], [-42, -196], [-10, -164], [-272, -170]
-        ];
-        ctx.beginPath();
-        for (let i = 0; i < ribbon.length; i++) {
-            const p = ribbon[i];
-            if (i === 0) ctx.moveTo(p[0] * unit, p[1] * unit);
-            else ctx.lineTo(p[0] * unit, p[1] * unit);
+        const bloom = ctx.createRadialGradient(
+            cW * 0.755, cH * 0.46, 0, cW * 0.755, cH * 0.46, cH * 0.65
+        );
+        bloom.addColorStop(0, 'rgba(103,13,28,0.24)');
+        bloom.addColorStop(0.5, 'rgba(57,7,18,0.13)');
+        bloom.addColorStop(1, 'rgba(18,2,8,0)');
+        ctx.fillStyle = bloom;
+        ctx.fillRect(0, 0, cW, cH);
+        ctx.restore();
+    }
+
+    _drawMenuVeil(ctx, cW, cH) {
+        ctx.save();
+        const veil = ctx.createLinearGradient(0, 0, cW * 0.57, 0);
+        veil.addColorStop(0, 'rgba(0,0,3,0.45)');
+        veil.addColorStop(0.7, 'rgba(0,0,3,0.25)');
+        veil.addColorStop(1, 'rgba(0,0,3,0)');
+        ctx.fillStyle = veil;
+        ctx.fillRect(0, 0, cW * 0.57, cH);
+        ctx.restore();
+    }
+
+    _drawFloatingParticles(ctx, cW, cH) {
+        const unit = Math.min(cW / 1280, cH / 720);
+        ctx.save();
+        // Draw after the menu veil, before the text and buttons.
+        for (const d of this.dust) {
+            const shimmer = 0.72 + Math.sin(this.animTick * 0.014 + d.phase) * 0.28;
+            const size = Math.max(0.65, d.size * unit);
+            const x = (d.menuLayer ? 0.025 + d.x * 0.48 : d.x) * cW;
+            const y = d.y * cH;
+            ctx.globalAlpha = d.alpha * shimmer;
+            ctx.fillStyle = d.menuLayer ? '#E98B95' : '#FF657A';
+            ctx.fillRect(x, y, size, size);
+            if (d.size > 1.9) {
+                ctx.globalAlpha *= 0.18;
+                ctx.fillRect(x - size, y - size, size * 3, size * 3);
+            }
         }
-        ctx.closePath();
-        const rGrad = ctx.createLinearGradient(-302 * unit, -202 * unit, -10 * unit, -164 * unit);
-        rGrad.addColorStop(0, 'rgba(255,0,60,0.74)');
-        rGrad.addColorStop(1, 'rgba(70,0,34,0.36)');
-        ctx.fillStyle = rGrad;
-        ctx.fill();
-        ctx.strokeStyle = 'rgba(255,0,60,0.52)';
-        ctx.lineWidth = 1.4 * unit;
-        ctx.stroke();
-
-        ctx.font = 'bold ' + Math.round(11 * unit) + 'px monospace';
-        ctx.fillStyle = 'rgba(255,255,255,0.88)';
         ctx.textAlign = 'left';
-        ctx.fillText('// GHOST_TUNNEL :: ACTIVE', -286 * unit, -178 * unit);
-
-        // Bottom command ribbon.
-        const ribbon2 = [
-            [26, 170], [304, 178], [274, 206], [2, 196]
-        ];
-        ctx.beginPath();
-        for (let i = 0; i < ribbon2.length; i++) {
-            const p = ribbon2[i];
-            if (i === 0) ctx.moveTo(p[0] * unit, p[1] * unit);
-            else ctx.lineTo(p[0] * unit, p[1] * unit);
+        ctx.fillStyle = '#BF465B';
+        for (const p of this.particles) {
+            ctx.globalAlpha = p.alpha;
+            ctx.font = Math.max(5, p.size * unit) + 'px monospace';
+            ctx.fillText(p.char, p.x * cW, p.y * cH);
         }
-        ctx.closePath();
-        const yGrad = ctx.createLinearGradient(2 * unit, 170 * unit, 304 * unit, 206 * unit);
-        yGrad.addColorStop(0, 'rgba(255,230,0,0.74)');
-        yGrad.addColorStop(1, 'rgba(80,74,0,0.35)');
-        ctx.fillStyle = yGrad;
-        ctx.fill();
-        ctx.strokeStyle = 'rgba(255,230,0,0.56)';
-        ctx.lineWidth = 1.4 * unit;
+        ctx.restore();
+    }
+
+    _drawHeroTexture(ctx, x, y, width, height, alpha) {
+        // Fixed grain, cached once: texture should not flicker like TV static.
+        if (!this._heroTexture && typeof document !== 'undefined') {
+            const tile = document.createElement('canvas');
+            tile.width = tile.height = 256;
+            const grain = tile.getContext('2d');
+            let seed = 0xA9E317;
+            const random = () => {
+                seed = (seed * 1664525 + 1013904223) >>> 0;
+                return seed / 4294967296;
+            };
+            for (let i = 0; i < 4200; i++) {
+                grain.fillStyle = i % 3 ? 'rgba(173,80,91,0.23)' : 'rgba(0,0,0,0.55)';
+                grain.fillRect(random() * 256, random() * 256, 0.5 + random(), 0.5 + random());
+            }
+            for (let i = 0; i < 65; i++) {
+                grain.fillStyle = 'rgba(194,86,100,0.09)';
+                grain.fillRect(random() * 256, random() * 256, 2 + random() * 15, 0.5);
+            }
+            this._heroTexture = ctx.createPattern(tile, 'repeat');
+        }
+        if (!this._heroTexture) return;
+        ctx.save();
+        ctx.globalAlpha *= alpha;
+        ctx.fillStyle = this._heroTexture;
+        ctx.fillRect(x, y, width, height);
+        ctx.restore();
+    }
+
+    // A lone engineer at the threshold of the infrastructure APEX controls.
+    // One concealed signal crosses the security layers toward the locked core.
+    _drawHeroComposition(ctx, cW, cH) {
+        const unit = Math.min(cW * 0.46 / 560, cH / 720);
+        const tick = this.animTick;
+        const pulse = 0.5 + 0.5 * Math.sin(tick * 0.018);
+        ctx.save();
+        ctx.translate(cW * 0.755, cH * 0.48);
+        ctx.scale(unit, unit);
+
+        // Recessed metal thresholds fade into the surrounding darkness.
+        for (let layer = 3; layer >= 0; layer--) {
+            const w = 97 + layer * 40;
+            const top = -192 - layer * 25;
+            const bottom = 186 + layer * 24;
+            ctx.strokeStyle = 'rgba(159,37,54,' + (0.35 - layer * 0.065) + ')';
+            ctx.lineWidth = 1;
+            ctx.beginPath();
+            ctx.moveTo(-w, bottom);
+            ctx.lineTo(-w, top + 24);
+            ctx.lineTo(-w + 24, top);
+            ctx.lineTo(w - 24, top);
+            ctx.lineTo(w, top + 24);
+            ctx.lineTo(w, bottom - 38);
+            ctx.stroke();
+            for (const side of [-1, 1]) {
+                ctx.save();
+                ctx.beginPath();
+                ctx.moveTo(side * w, top + 24);
+                ctx.lineTo(side * (w - 12), top + 32);
+                ctx.lineTo(side * (w - 12), bottom - 12);
+                ctx.lineTo(side * w, bottom);
+                ctx.closePath();
+                const metal = ctx.createLinearGradient(side * w, 0, side * (w - 12), 0);
+                metal.addColorStop(0, 'rgba(90,26,38,0.22)');
+                metal.addColorStop(1, 'rgba(9,4,9,0.05)');
+                ctx.fillStyle = metal;
+                ctx.fill();
+                ctx.clip();
+                this._drawHeroTexture(ctx, -230, -280, 460, 560, 0.4);
+                ctx.strokeStyle = 'rgba(139,47,60,0.18)';
+                for (let joint = top + 84; joint < bottom; joint += 83) {
+                    ctx.beginPath();
+                    ctx.moveTo(side * w, joint);
+                    ctx.lineTo(side * (w - 12), joint + 7);
+                    ctx.stroke();
+                }
+                ctx.restore();
+            }
+        }
+
+        // The breach: a narrow opening, lit from somewhere deep inside.
+        const glow = ctx.createLinearGradient(-100, 0, 100, 0);
+        glow.addColorStop(0, 'rgba(125,13,30,0)');
+        glow.addColorStop(0.42, 'rgba(168,19,41,0.14)');
+        glow.addColorStop(0.5, 'rgba(236,48,69,0.36)');
+        glow.addColorStop(0.58, 'rgba(168,19,41,0.14)');
+        glow.addColorStop(1, 'rgba(125,13,30,0)');
+        ctx.fillStyle = glow;
+        ctx.fillRect(-100, -190, 200, 378);
+        const door = ctx.createLinearGradient(-88, 0, 88, 0);
+        door.addColorStop(0, '#080409');
+        door.addColorStop(0.4, '#10060C');
+        door.addColorStop(0.5, '#1B0911');
+        door.addColorStop(0.6, '#10060C');
+        door.addColorStop(1, '#080409');
+        ctx.fillStyle = door;
+        ctx.fillRect(-88, -182, 78, 361);
+        ctx.fillRect(10, -182, 78, 361);
+        ctx.save();
+        ctx.beginPath();
+        ctx.rect(-88, -182, 78, 361);
+        ctx.rect(10, -182, 78, 361);
+        ctx.clip();
+        this._drawHeroTexture(ctx, -88, -182, 176, 361, 0.65);
+        ctx.strokeStyle = 'rgba(155,53,68,0.13)';
+        for (const side of [-1, 1]) {
+            ctx.beginPath();
+            ctx.moveTo(side * 74, 170); ctx.lineTo(side * 74, -151);
+            ctx.lineTo(side * 54, -171); ctx.lineTo(side * 22, -171);
+            ctx.moveTo(side * 22, -20); ctx.lineTo(side * 53, 11);
+            ctx.lineTo(side * 53, 140); ctx.stroke();
+            for (let bolt = -144; bolt < 170; bolt += 76) {
+                ctx.fillStyle = 'rgba(170,69,83,0.22)';
+                ctx.fillRect(side * 80 - 1, bolt, 1.5, 2);
+            }
+        }
+        ctx.restore();
+
+        // Fine breaks in the light suggest an unstable encrypted barrier.
+        ctx.fillStyle = 'rgba(18,2,8,0.24)';
+        for (let y = -186; y < 182; y += 4) ctx.fillRect(-9, y, 18, 0.6);
+
+        const seam = ctx.createLinearGradient(0, -190, 0, 186);
+        seam.addColorStop(0, 'rgba(243,54,74,0.05)');
+        seam.addColorStop(0.2, 'rgba(243,54,74,0.65)');
+        seam.addColorStop(0.75, 'rgba(243,54,74,0.38)');
+        seam.addColorStop(1, 'rgba(243,54,74,0)');
+        ctx.strokeStyle = seam;
+        ctx.lineWidth = 1.2;
+        ctx.beginPath();
+        ctx.moveTo(-10, -190); ctx.lineTo(-10, 185);
+        ctx.moveTo(10, -190); ctx.lineTo(10, 185);
         ctx.stroke();
 
-        ctx.fillStyle = 'rgba(16,16,16,0.85)';
-        ctx.textAlign = 'right';
-        ctx.fillText('TARGET: APEX_GATEWAY', 286 * unit, 194 * unit);
-
-        // Right-side compact stats block (not floating panel; attached coordinates to slab zone).
-        ctx.fillStyle = 'rgba(0,240,255,0.78)';
-        ctx.textAlign = 'left';
-        ctx.font = 'bold ' + Math.round(10 * unit) + 'px monospace';
-        ctx.fillText('PING  09ms', 168 * unit, -132 * unit);
-        ctx.fillText('LOSS  00.2%', 168 * unit, -116 * unit);
-        ctx.fillText('AUTH  SSH-T', 168 * unit, -100 * unit);
-
-        // Progress notches.
-        const notchX = 158 * unit;
-        const notchY = -82 * unit;
-        for (let i = 0; i < 6; i++) {
-            ctx.fillStyle = i <= ((Math.floor(tick / 8) % 6)) ? 'rgba(255,0,60,0.90)' : 'rgba(0,240,255,0.24)';
-            ctx.fillRect(notchX + i * 14 * unit, notchY, 10 * unit, 3 * unit);
-        }
-        ctx.restore();
-    }
-
-    _drawMenuCoreBlade(ctx, x, y, w, h, color, tick) {
+        // APEX's watchful core, reduced to a single red aperture.
         ctx.save();
-        ctx.translate(x, y);
-        const light = color === '#FFE600' ? 'rgba(255,244,120,0.96)' : (color === '#FF003C' ? 'rgba(255,82,128,0.95)' : 'rgba(120,250,255,0.95)');
-        const dark = color === '#FFE600' ? 'rgba(140,120,0,0.95)' : (color === '#FF003C' ? 'rgba(120,0,42,0.95)' : 'rgba(0,88,120,0.95)');
-        const grad = ctx.createLinearGradient(-w / 2, -h / 2, w / 2, h / 2);
-        grad.addColorStop(0, light);
-        grad.addColorStop(0.45, color);
-        grad.addColorStop(1, dark);
-
-        const skew = Math.max(3, Math.min(w, h) * 0.28);
+        ctx.translate(0, -100);
+        ctx.rotate(Math.PI / 4);
+        ctx.strokeStyle = 'rgba(191,47,64,0.5)';
+        ctx.strokeRect(-13, -13, 26, 26);
+        ctx.restore();
+        ctx.strokeStyle = 'rgba(240,62,79,0.7)';
         ctx.beginPath();
-        if (w > h) {
-            ctx.moveTo(-w / 2 + skew, -h / 2);
-            ctx.lineTo(w / 2, -h / 2);
-            ctx.lineTo(w / 2 - skew, h / 2);
-            ctx.lineTo(-w / 2, h / 2);
-        } else {
-            ctx.moveTo(-w / 2, -h / 2 + skew);
-            ctx.lineTo(w / 2, -h / 2);
-            ctx.lineTo(w / 2, h / 2 - skew);
-            ctx.lineTo(-w / 2, h / 2);
-        }
-        ctx.closePath();
-        ctx.fillStyle = grad;
-        ctx.fill();
-
-        ctx.strokeStyle = 'rgba(255,255,255,0.42)';
-        ctx.lineWidth = Math.max(1, Math.min(w, h) * 0.08);
+        ctx.moveTo(-20, -100); ctx.lineTo(20, -100);
         ctx.stroke();
+        ctx.shadowColor = '#FF2D4D';
+        ctx.shadowBlur = 12 + pulse * 7;
+        ctx.fillStyle = '#F77483';
+        ctx.fillRect(-2, -102, 4, 4);
+        ctx.shadowBlur = 0;
 
-        ctx.globalAlpha = 0.22 + 0.18 * Math.sin(tick * 0.1);
-        ctx.fillStyle = '#FFFFFF';
-        if (w > h) ctx.fillRect(-w * 0.18, -h * 0.22, w * 0.34, h * 0.18);
-        else ctx.fillRect(-w * 0.20, -h * 0.18, w * 0.26, h * 0.34);
-        ctx.globalAlpha = 1;
-        ctx.restore();
-    }
-
-    _drawGlobalGlitch(ctx, cW, cH, scaleX, scaleY) {
-        if (Math.random() > 0.035) return;
-        const slices = 1 + Math.floor(Math.random() * 2);
-        ctx.save();
-        for (let i = 0; i < slices; i++) {
-            const h = (4 + Math.random() * 10) * scaleY;
-            const y = Math.random() * (cH - h);
-            const dx = (Math.random() - 0.5) * 10 * scaleX;
-            ctx.drawImage(ctx.canvas, 0, y, cW, h, dx, y, cW, h);
-
-            ctx.globalCompositeOperation = 'screen';
-            ctx.fillStyle = i % 2 ? 'rgba(0,240,255,0.05)' : 'rgba(255,0,60,0.05)';
-            ctx.fillRect(0, y, cW, h);
-            ctx.globalCompositeOperation = 'source-over';
+        // Unlabelled circuit branches keep the hacking motif entirely visual.
+        for (let index = 0; index < 3; index++) {
+            const y = -51 + index * 62;
+            ctx.strokeStyle = 'rgba(164,49,63,0.24)';
+            ctx.beginPath();
+            ctx.moveTo(14, y - 15); ctx.lineTo(42, y - 15);
+            ctx.lineTo(57, y); ctx.lineTo(140, y);
+            ctx.stroke();
+            ctx.strokeStyle = 'rgba(197,64,79,0.48)';
+            ctx.strokeRect(140, y - 2, 4, 4);
+            ctx.strokeStyle = 'rgba(135,43,58,0.17)';
+            ctx.beginPath();
+            ctx.moveTo(144, y); ctx.lineTo(165, y);
+            ctx.lineTo(177, y - 12); ctx.lineTo(177, y - 32); ctx.stroke();
+            ctx.fillStyle = 'rgba(201,65,84,' + (0.18 + pulse * 0.15) + ')';
+            ctx.fillRect(175.5, y - 34, 3, 3);
         }
-        ctx.restore();
-    }
 
-    _poly(ctx, x, y, radius, sides, fill, stroke, lineWidth) {
-        if (!ctx || sides < 3 || radius <= 0) return;
+        // A slow packet moves inward along the route, never filling the screen.
+        const route = [[-225, 155], [-147, 155], [-115, 123], [-38, 123], [0, 85], [0, -68]];
+        ctx.strokeStyle = 'rgba(214,73,88,0.34)';
+        ctx.lineWidth = 1;
         ctx.beginPath();
-        for (let i = 0; i < sides; i++) {
-            const a = -Math.PI / 2 + i * (Math.PI * 2 / sides);
-            const px = x + Math.cos(a) * radius;
-            const py = y + Math.sin(a) * radius;
-            if (i === 0) ctx.moveTo(px, py);
-            else ctx.lineTo(px, py);
+        route.forEach(([x, y], i) => i ? ctx.lineTo(x, y) : ctx.moveTo(x, y));
+        ctx.stroke();
+        let distance = (tick * 0.58) % 408;
+        for (let i = 1; i < route.length; i++) {
+            const [ax, ay] = route[i - 1], [bx, by] = route[i];
+            const length = Math.hypot(bx - ax, by - ay);
+            if (distance <= length) {
+                const progress = distance / length;
+                ctx.shadowColor = '#FF6B7F';
+                ctx.shadowBlur = 9;
+                ctx.fillStyle = '#FFD0D5';
+                ctx.fillRect(ax + (bx - ax) * progress - 1.5, ay + (by - ay) * progress - 1.5, 3, 3);
+                ctx.shadowBlur = 0;
+                break;
+            }
+            distance -= length;
         }
-        ctx.closePath();
-        if (fill) {
-            ctx.fillStyle = fill;
-            ctx.fill();
+
+        // Ground haze and a broken reflection anchor the figure in the doorway.
+        ctx.save();
+        ctx.translate(0, 231); ctx.scale(1, 0.2);
+        const floor = ctx.createRadialGradient(0, 0, 1, 0, 0, 160);
+        floor.addColorStop(0, 'rgba(164,28,49,0.23)');
+        floor.addColorStop(0.45, 'rgba(87,17,32,0.12)');
+        floor.addColorStop(1, 'rgba(40,7,15,0)');
+        ctx.fillStyle = floor; ctx.fillRect(-160, -160, 320, 320);
+        ctx.restore();
+        for (let row = 0; row < 18; row++) {
+            const spread = 7 + row * 1.6;
+            ctx.fillStyle = 'rgba(191,42,65,' + (0.085 * (1 - row / 18)) + ')';
+            ctx.fillRect(-spread + Math.sin(row * 7) * 3, 192 + row * 3.5, spread * 2, 0.7);
         }
-        if (stroke && lineWidth > 0) {
-            ctx.strokeStyle = stroke;
-            ctx.lineWidth = lineWidth;
+        ctx.save();
+        ctx.translate(-31, 239); ctx.scale(1, 0.15);
+        const shadow = ctx.createRadialGradient(0, 0, 4, 0, 0, 50);
+        shadow.addColorStop(0, 'rgba(0,0,3,0.8)');
+        shadow.addColorStop(1, 'rgba(0,0,3,0)');
+        ctx.fillStyle = shadow; ctx.fillRect(-50, -50, 100, 100);
+        ctx.restore();
+
+        // Small against the architecture: an infiltrator, not an all-powerful avatar.
+        ctx.save();
+        ctx.translate(-31, 139);
+        const rim = ctx.createLinearGradient(-30, 0, 30, 0);
+        rim.addColorStop(0, '#11080D');
+        rim.addColorStop(0.7, '#1C0B12');
+        rim.addColorStop(1, '#5B1C29');
+        ctx.fillStyle = rim;
+        ctx.beginPath();
+        ctx.moveTo(0, -33);
+        ctx.bezierCurveTo(-17, -31, -19, -13, -15, -3);
+        ctx.lineTo(-25, 9); ctx.lineTo(-33, 68);
+        ctx.quadraticCurveTo(0, 80, 31, 68);
+        ctx.lineTo(23, 9); ctx.lineTo(14, -3);
+        ctx.bezierCurveTo(19, -16, 14, -31, 0, -33);
+        ctx.fill();
+        ctx.save();
+        ctx.clip();
+        this._drawHeroTexture(ctx, -34, -34, 68, 112, 0.75);
+        // Folds catch just enough of the red backlight to reveal worn fabric.
+        for (const fold of [-19, -9, 5, 17]) {
+            ctx.beginPath();
+            ctx.moveTo(fold * 0.45, 4);
+            ctx.quadraticCurveTo(fold * 0.7, 34, fold * 1.35, 76);
+            ctx.strokeStyle = fold > 0 ? 'rgba(121,38,55,0.35)' : 'rgba(0,0,3,0.5)';
+            ctx.lineWidth = fold > 0 ? 1 : 3;
             ctx.stroke();
         }
+        ctx.restore();
+        ctx.strokeStyle = 'rgba(173,56,71,0.6)';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(0, -33); ctx.quadraticCurveTo(20, -28, 14, -3);
+        ctx.lineTo(23, 9); ctx.lineTo(31, 68); ctx.stroke();
+        ctx.fillStyle = '#030205';
+        ctx.beginPath();
+        ctx.ellipse(0, -13, 10, 14, 0, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.strokeStyle = 'rgba(107,38,52,0.5)';
+        ctx.lineWidth = 0.8;
+        ctx.beginPath();
+        ctx.moveTo(0, -29); ctx.quadraticCurveTo(13, -22, 11, -9);
+        ctx.moveTo(-13, -2); ctx.quadraticCurveTo(0, 6, 14, -2);
+        ctx.stroke();
+        ctx.fillStyle = '#080409';
+        ctx.fillRect(-15, 69, 10, 30);
+        ctx.fillRect(6, 69, 10, 30);
+        ctx.restore();
+
+        ctx.restore();
     }
 
+    // ============================================================
+    // TITLE
+    // ============================================================
 
-    _getScrambledText(target, progress) {
-        if (progress >= target.length * 3 + 10) return target;
-        let result = '';
-        for (let i = 0; i < target.length; i++) {
-            if (target[i] === ' ') {
-                result += ' ';
+    _drawTitle(
+        ctx,
+        scaleX,
+        scaleY
+    ) {
+        const fontName =
+            IP2Live.Assets
+                .abnesLoaded
+                ? 'Abnes'
+                : 'Arial Black';
+
+        const displayTitle =
+            this.titleDone
+                ? this.titleTarget
+                : this._getScrambledText(
+                    this.titleTarget,
+                    this.titleProgress
+                );
+
+        const layout =
+            this._menuLayout();
+
+        ctx.textAlign =
+            'left';
+
+        ctx.font =
+            'bold ' +
+            (
+                72 *
+                scaleX
+            ) +
+            'px ' +
+            fontName;
+
+        ctx.fillStyle =
+            '#FFFFFF';
+
+        ctx.shadowBlur =
+            0;
+
+        ctx.fillText(
+            displayTitle,
+
+            layout.btnX *
+                scaleX,
+
+            148 *
+                scaleY
+        );
+    }
+
+    // ============================================================
+    // BUTTONS
+    // ============================================================
+
+    _drawMenuBackButton(
+        ctx,
+        scaleX,
+        scaleY
+    ) {
+        const back =
+            this._backButtonLayout();
+
+        const index =
+            this.menuItems.length;
+
+        this._drawButton(
+            ctx,
+            scaleX,
+            scaleY,
+            back.x,
+            back.y,
+            back.w,
+            back.h,
+            'BACK',
+            this.selectedIndex ===
+                index,
+            this.hoverIndex ===
+                index,
+            index
+        );
+    }
+
+    _drawButton(
+        ctx,
+        scaleX,
+        scaleY,
+        bx,
+        by,
+        bw,
+        bh,
+        label,
+        isSelected,
+        isHover,
+        index
+    ) {
+        if (
+            this._buttonEntranceStartedAt ==
+            null
+        ) {
+            this._buttonEntranceStartedAt =
+                Date.now() +
+                500;
+        }
+
+        const elapsed =
+            Date.now() -
+            this._buttonEntranceStartedAt -
+            index *
+                90;
+
+        const progress =
+            Math.max(
+                0,
+                Math.min(
+                    1,
+                    elapsed /
+                        700
+                )
+            );
+
+        const eased =
+            1 -
+            Math.pow(
+                1 -
+                    progress,
+                3
+            );
+
+        const active =
+            isSelected ||
+            isHover;
+
+        const display =
+            active &&
+            label !==
+                'BACK'
+                ? this._getScrambledText(
+                    label,
+                    this.btnProgress[
+                        index
+                    ]
+                )
+                : undefined;
+
+        ctx.save();
+
+        ctx.globalAlpha *=
+            eased;
+
+        ctx.translate(
+            -24 *
+                scaleX *
+                (
+                    1 -
+                    eased
+                ),
+            0
+        );
+
+        if (this._lockedModeMessage(label)) {
+            ctx.save(); ctx.scale(scaleX, scaleY);
+            ctx.beginPath(); ctx.moveTo(bx + 12, by); ctx.lineTo(bx + bw - 8, by);
+            ctx.lineTo(bx + bw, by + 12); ctx.lineTo(bx + bw - 16, by + bh);
+            ctx.lineTo(bx + 12, by + bh); ctx.lineTo(bx, by + bh - 12); ctx.closePath();
+            ctx.fillStyle = active ? '#22252e' : '#14171d'; ctx.fill();
+            ctx.strokeStyle = active ? '#808896' : '#414751'; ctx.lineWidth = 1; ctx.stroke();
+            ctx.fillStyle = '#9198a3'; ctx.textAlign = 'left';
+            ctx.font = '18px ' + (IP2Live.Assets.nebulaLoaded ? 'Nebula-Regular' : 'sans-serif');
+            ctx.fillText(label, bx + 32, by + 34);
+            ctx.strokeStyle = '#9198a3'; ctx.strokeRect(bx + bw - 43, by + 25, 13, 11);
+            ctx.beginPath(); ctx.arc(bx + bw - 36.5, by + 25, 4.5, Math.PI, 0); ctx.stroke();
+            ctx.restore(); ctx.restore();
+            return;
+        }
+
+        this._drawPersonaButton(
+            ctx,
+            scaleX,
+            scaleY,
+            bx,
+            by,
+            bw,
+            bh,
+            label,
+            active,
+            label ===
+                'QUIT GAME',
+            display,
+            index
+        );
+
+        ctx.restore();
+    }
+
+    _drawPersonaButton(
+        ctx,
+        scaleX,
+        scaleY,
+        bx,
+        by,
+        bw,
+        bh,
+        label,
+        isActive,
+        isDanger,
+        displayLabel,
+        index
+    ) {
+        const x =
+            bx *
+            scaleX;
+
+        const y =
+            by *
+            scaleY;
+
+        const w =
+            bw *
+            scaleX;
+
+        const h =
+            bh *
+            scaleY;
+
+        const slant =
+            18 *
+            scaleX;
+
+        const tab =
+            38 *
+            scaleX;
+
+        const fontName =
+            IP2Live.Assets
+                .nebulaLoaded
+                ? 'Nebula-Regular'
+                : 'monospace';
+
+        const red =
+            isDanger
+                ? '#FF335F'
+                : '#FF003C';
+
+        const yellow =
+            '#FFE600';
+
+        const isBack =
+            label ===
+            'BACK';
+
+        const active =
+            isDanger
+                ? red
+                : yellow;
+
+        const labelText =
+            displayLabel ||
+            label;
+
+        const pulse =
+            0.55 +
+            0.45 *
+                Math.sin(
+                    this.animTick *
+                        0.12
+                );
+
+        ctx.save();
+
+        ctx.beginPath();
+
+        ctx.moveTo(
+            x +
+                slant,
+            y
+        );
+
+        ctx.lineTo(
+            x +
+                w -
+                slant *
+                    0.4,
+            y
+        );
+
+        ctx.lineTo(
+            x +
+                w,
+            y +
+                h *
+                    0.22
+        );
+
+        ctx.lineTo(
+            x +
+                w -
+                slant,
+            y +
+                h
+        );
+
+        ctx.lineTo(
+            x +
+                slant *
+                    0.7,
+            y +
+                h
+        );
+
+        ctx.lineTo(
+            x,
+            y +
+                h *
+                    0.74
+        );
+
+        ctx.closePath();
+
+        const grad =
+            ctx.createLinearGradient(
+                x,
+                y,
+                x +
+                    w,
+                y
+            );
+
+        if (
+            isActive
+        ) {
+            grad.addColorStop(
+                0,
+                isDanger
+                    ? 'rgba(255,0,60,0.64)'
+                    : 'rgba(255,230,0,0.70)'
+            );
+
+            grad.addColorStop(
+                0.42,
+                isDanger
+                    ? 'rgba(110,0,28,0.72)'
+                    : 'rgba(70,64,0,0.72)'
+            );
+
+            grad.addColorStop(
+                1,
+                'rgba(3,7,20,0.78)'
+            );
+
+            ctx.shadowColor =
+                active;
+
+            ctx.shadowBlur =
+                18 *
+                scaleX;
+        } else {
+            grad.addColorStop(
+                0,
+                'rgba(3,7,20,0.88)'
+            );
+
+            grad.addColorStop(
+                1,
+                'rgba(3,7,20,0.36)'
+            );
+
+            ctx.shadowBlur =
+                0;
+        }
+
+        ctx.fillStyle =
+            grad;
+
+        ctx.fill();
+
+        ctx.shadowBlur =
+            0;
+
+        ctx.lineWidth =
+            (
+                isActive
+                    ? 2.4
+                    : isBack
+                        ? 1.8
+                        : 1.1
+            ) *
+            scaleX;
+
+        ctx.strokeStyle =
+            isBack
+                ? yellow
+                : isActive
+                    ? active
+                    : isDanger
+                        ? 'rgba(255,0,60,0.54)'
+                        : 'rgba(0,240,255,0.54)';
+
+        ctx.stroke();
+
+        ctx.save();
+
+        ctx.clip();
+
+        for (
+            let sy =
+                y +
+                (
+                    (
+                        this.animTick *
+                        0.8
+                    ) %
+                    (
+                        6 *
+                        scaleY
+                    )
+                );
+
+            sy <
+            y +
+                h;
+
+            sy +=
+                6 *
+                scaleY
+        ) {
+            ctx.fillStyle =
+                isActive
+                    ? 'rgba(255,255,255,0.06)'
+                    : 'rgba(0,240,255,0.025)';
+
+            ctx.fillRect(
+                x,
+                sy,
+                w,
+                1 *
+                    scaleY
+            );
+        }
+
+        if (
+            isActive
+        ) {
+            const scanX =
+                x -
+                w +
+                (
+                    (
+                        this.animTick *
+                        5
+                    ) %
+                    (
+                        w *
+                        1.8
+                    )
+                );
+
+            ctx.fillStyle =
+                'rgba(255,255,255,0.22)';
+
+            ctx.transform(
+                1,
+                0,
+                -0.32,
+                1,
+                0,
+                0
+            );
+
+            ctx.fillRect(
+                scanX,
+                y -
+                    h,
+                34 *
+                    scaleX,
+                h *
+                    3
+            );
+        }
+
+        ctx.restore();
+
+        ctx.beginPath();
+
+        ctx.moveTo(
+            x,
+            y
+        );
+
+        ctx.lineTo(
+            x +
+                tab,
+            y
+        );
+
+        ctx.lineTo(
+            x +
+                tab -
+                12 *
+                    scaleX,
+
+            y +
+                19 *
+                    scaleY
+        );
+
+        ctx.lineTo(
+            x,
+            y +
+                24 *
+                    scaleY
+        );
+
+        ctx.closePath();
+
+        ctx.fillStyle =
+            isBack
+                ? yellow
+                : isActive
+                    ? red
+                    : 'rgba(0,240,255,0.82)';
+
+        ctx.fill();
+
+        if (
+            isActive
+        ) {
+            ctx.beginPath();
+
+            ctx.moveTo(
+                x +
+                    w -
+                    68 *
+                        scaleX,
+                y
+            );
+
+            ctx.lineTo(
+                x +
+                    w -
+                    12 *
+                        scaleX,
+                y
+            );
+
+            ctx.lineTo(
+                x +
+                    w -
+                    34 *
+                        scaleX,
+                y +
+                    h
+            );
+
+            ctx.lineTo(
+                x +
+                    w -
+                    88 *
+                        scaleX,
+                y +
+                    h
+            );
+
+            ctx.closePath();
+
+            ctx.fillStyle =
+                isDanger
+                    ? 'rgba(255,0,60,0.32)'
+                    : 'rgba(255,230,0,0.35)';
+
+            ctx.fill();
+        }
+
+        ctx.font =
+            Math.round(
+                8 *
+                scaleX
+            ) +
+            'px monospace';
+
+        ctx.fillStyle =
+            isActive
+                ? '#080808'
+                : '#00141A';
+
+        ctx.textAlign =
+            'left';
+
+        ctx.fillText(
+            '0' +
+                (
+                    index +
+                    1
+                ),
+
+            x +
+                10 *
+                    scaleX,
+
+            y +
+                15 *
+                    scaleY
+        );
+
+        ctx.font =
+            'bold ' +
+            Math.round(
+                (
+                    isActive
+                        ? 21
+                        : 19
+                ) *
+                scaleX
+            ) +
+            'px ' +
+            fontName;
+
+        ctx.fillStyle =
+            isActive
+                ? isDanger
+                    ? '#FFFFFF'
+                    : '#111111'
+                : '#FFFFFF';
+
+        ctx.shadowColor =
+            isActive
+                ? 'rgba(255,255,255,' +
+                  (
+                      0.35 +
+                      pulse *
+                          0.25
+                  ) +
+                  ')'
+                : 'transparent';
+
+        ctx.shadowBlur =
+            isActive
+                ? 3 *
+                    scaleX
+                : 0;
+
+        ctx.textAlign =
+            'left';
+
+        ctx.fillText(
+            labelText,
+
+            x +
+                34 *
+                    scaleX,
+
+            y +
+                h *
+                    0.64
+        );
+
+        if (
+            isActive
+        ) {
+            ctx.shadowBlur =
+                0;
+
+            ctx.font =
+                'bold ' +
+                Math.round(
+                    13 *
+                    scaleX
+                ) +
+                'px monospace';
+
+            ctx.fillStyle =
+                isDanger
+                    ? '#FFFFFF'
+                    : '#111111';
+
+            ctx.textAlign =
+                'right';
+
+            ctx.fillText(
+                '>>',
+
+                x +
+                    w -
+                    42 *
+                        scaleX,
+
+                y +
+                    h *
+                        0.64
+            );
+        }
+
+        ctx.restore();
+    }
+
+    // ============================================================
+    // FULL SCREEN GLITCH
+    // ============================================================
+
+    _drawGlobalGlitch(
+        ctx,
+        cW,
+        cH,
+        scaleX,
+        scaleY
+    ) {
+        if (
+            Math.random() >
+            0.030
+        ) {
+            return;
+        }
+
+        const slices =
+            1 +
+            Math.floor(
+                Math.random() *
+                    2
+            );
+
+        ctx.save();
+
+        for (
+            let i = 0;
+            i <
+            slices;
+            i++
+        ) {
+            const h =
+                (
+                    4 +
+                    Math.random() *
+                        9
+                ) *
+                scaleY;
+
+            const y =
+                Math.random() *
+                (
+                    cH -
+                    h
+                );
+
+            const dx =
+                (
+                    Math.random() -
+                    0.5
+                ) *
+                8 *
+                scaleX;
+
+            ctx.drawImage(
+                ctx.canvas,
+                0,
+                y,
+                cW,
+                h,
+                dx,
+                y,
+                cW,
+                h
+            );
+
+            ctx.globalCompositeOperation =
+                'screen';
+
+            ctx.fillStyle =
+                i %
+                    2
+                    ? 'rgba(0,240,255,0.04)'
+                    : 'rgba(255,0,60,0.04)';
+
+            ctx.fillRect(
+                0,
+                y,
+                cW,
+                h
+            );
+
+            ctx.globalCompositeOperation =
+                'source-over';
+        }
+
+        ctx.restore();
+    }
+
+    _rgba(
+        hex,
+        alpha
+    ) {
+        const value =
+            hex.replace(
+                '#',
+                ''
+            );
+
+        const r =
+            parseInt(
+                value.slice(
+                    0,
+                    2
+                ),
+                16
+            );
+
+        const g =
+            parseInt(
+                value.slice(
+                    2,
+                    4
+                ),
+                16
+            );
+
+        const b =
+            parseInt(
+                value.slice(
+                    4,
+                    6
+                ),
+                16
+            );
+
+        return (
+            'rgba(' +
+            r +
+            ',' +
+            g +
+            ',' +
+            b +
+            ',' +
+            alpha +
+            ')'
+        );
+    }
+
+    _getScrambledText(
+        target,
+        progress
+    ) {
+        if (
+            progress >=
+            target.length *
+                3 +
+                10
+        ) {
+            return target;
+        }
+
+        let result =
+            '';
+
+        for (
+            let i = 0;
+            i <
+            target.length;
+            i++
+        ) {
+            if (
+                target[i] ===
+                ' '
+            ) {
+                result +=
+                    ' ';
+
                 continue;
             }
-            const charStart = i * 2;
-            if (progress < charStart) {
-                // Not started revealing yet - random flicker
-                result += String.fromCharCode(65 + Math.floor(Math.random() * 26)); 
+
+            const charStart =
+                i *
+                2;
+
+            if (
+                progress <
+                charStart
+            ) {
+                result +=
+                    String.fromCharCode(
+                        65 +
+                        Math.floor(
+                            Math.random() *
+                                26
+                        )
+                    );
             } else {
-                const charProgress = progress - charStart;
-                if (charProgress > 6) {
-                    result += target[i];
+                const charProgress =
+                    progress -
+                    charStart;
+
+                if (
+                    charProgress >
+                    6
+                ) {
+                    result +=
+                        target[i];
                 } else {
-                    // Start from 'A' and step towards target[i]
-                    const targetCode = target.toUpperCase().charCodeAt(i);
-                    const isLetter = targetCode >= 65 && targetCode <= 90;
-                    if (isLetter) {
-                        const step = Math.floor((targetCode - 65) * (charProgress / 6));
-                        result += String.fromCharCode(65 + step);
+                    const code =
+                        target
+                            .toUpperCase()
+                            .charCodeAt(
+                                i
+                            );
+
+                    if (
+                        code >=
+                            65 &&
+                        code <=
+                            90
+                    ) {
+                        const step =
+                            Math.floor(
+                                (
+                                    code -
+                                    65
+                                ) *
+                                (
+                                    charProgress /
+                                    6
+                                )
+                            );
+
+                        result +=
+                            String.fromCharCode(
+                                65 +
+                                step
+                            );
                     } else {
-                        result += target[i];
+                        result +=
+                            target[i];
                     }
                 }
             }
         }
+
         return result;
     }
 }
 
 /**
- * Install the IP2Live title behavior directly on Paper Maker's default title
- * scene. Copying every method also upgrades an existing Scene.TitleScreen
- * instance because its prototype remains the same object.
+ * Install directly into Paper Maker's engine-owned title screen.
  */
 function installIP2LiveTitleScreen() {
-    const target = Scene.TitleScreen && Scene.TitleScreen.prototype;
-    const source = IP2LiveTitleScreenImplementation.prototype;
-    if (!target) {
-        throw new Error('Scene.TitleScreen is unavailable.');
+    const target =
+        Scene.TitleScreen &&
+        Scene.TitleScreen
+            .prototype;
+
+    const source =
+        IP2LiveTitleScreenImplementation
+            .prototype;
+
+    if (
+        !target
+    ) {
+        throw new Error(
+            'Scene.TitleScreen is unavailable.'
+        );
     }
 
-    for (const name of Object.getOwnPropertyNames(source)) {
-        if (name === 'constructor') continue;
-        Object.defineProperty(target, name, Object.getOwnPropertyDescriptor(source, name));
-    }
-    Object.defineProperty(target, '_ip2LiveTitleInstalled', {
-        value: true,
-        configurable: true,
-        writable: true,
-    });
+    for (
+        const name of
+        Object.getOwnPropertyNames(
+            source
+        )
+    ) {
+        if (
+            name ===
+            'constructor'
+        ) {
+            continue;
+        }
 
-    // Backward-compatible alias for older IP2Live modules and saved routes.
-    // It now resolves to the engine class rather than a parallel menu class.
-    window.IP2LiveMainMenu = Scene.TitleScreen;
-
-    const activeScene = Manager.Stack.top;
-    if (activeScene instanceof Scene.TitleScreen && !activeScene._ip2LiveTitleInitialized) {
-        const startAtLoop = Boolean(activeScene.startAtLoop);
-        activeScene.loading = true;
-        activeScene.initialize(startAtLoop);
-        Promise.resolve(activeScene.load()).catch((error) => {
-            activeScene.loading = false;
-            Manager.Stack.requestPaintHUD = true;
-            console.error('[IP2Live] Failed to activate the default title scene:', error);
-        });
+        Object.defineProperty(
+            target,
+            name,
+            Object.getOwnPropertyDescriptor(
+                source,
+                name
+            )
+        );
     }
 
-    Manager.Stack.requestPaintHUD = true;
+    Object.defineProperty(
+        target,
+        '_ip2LiveTitleInstalled',
+        {
+            value:
+                true,
+            configurable:
+                true,
+            writable:
+                true
+        }
+    );
+
+    window.IP2LiveMainMenu =
+        Scene.TitleScreen;
+
+    const activeScene =
+        Manager.Stack.top;
+
+    if (
+        activeScene instanceof
+            Scene.TitleScreen &&
+        !activeScene
+            ._ip2LiveTitleInitialized
+    ) {
+        const startAtLoop =
+            Boolean(
+                activeScene
+                    .startAtLoop
+            );
+
+        activeScene.loading =
+            true;
+
+        activeScene.initialize(
+            startAtLoop
+        );
+
+        Promise.resolve(
+            activeScene.load()
+        ).catch(
+            (error) => {
+                activeScene.loading =
+                    false;
+
+                Manager.Stack
+                    .requestPaintHUD =
+                    true;
+
+                console.error(
+                    '[IP2Live] Failed to activate the default title scene:',
+                    error
+                );
+            }
+        );
+    }
+
+    Manager.Stack
+        .requestPaintHUD =
+        true;
 }
 
 installIP2LiveTitleScreen();
 
-console.log('[IP2Live] main-menu.js loaded into Scene.TitleScreen.');
+console.log(
+    '[IP2Live] fully hardcoded cinematic main-menu.js loaded into Scene.TitleScreen.'
+);

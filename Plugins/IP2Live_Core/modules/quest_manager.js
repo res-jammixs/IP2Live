@@ -299,6 +299,12 @@ class IP2LiveQuestManager {
         if (this._arrowGuide) this._arrowGuide.clear();
     }
 
+    resetStoryProgress() {
+        // Map transitions keep completion history; a new story must not.
+        this.completedObjectives = {};
+        return this.resetTransitionState({ clearPendingRestore: true });
+    }
+
     resetTransitionState(options) {
         const opts = options || {};
         this.activeQuestId = null;

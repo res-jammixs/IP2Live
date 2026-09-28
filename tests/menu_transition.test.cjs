@@ -18,7 +18,7 @@ function harness() {
         rect(...args) { rectangle = args; }, clip() { clips.push(rectangle); },
         moveTo(...args) { points = [args]; }, lineTo(...args) { points.push(args); },
         closePath() {}, fill() { flares.push(points); },
-        fillRect() {}, drawImage(...args) { images.push(args); },
+        clearRect() {}, fillRect() {}, drawImage(...args) { images.push(args); },
     };
     class Base { close() {} }
     const stack = {

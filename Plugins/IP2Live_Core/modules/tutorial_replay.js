@@ -3,27 +3,40 @@ class IP2LiveTutorialReplay {
     constructor() { this.session = null; this._serial = 0; }
 
     launch(gameplayId, context) {
+        const practice = !!(context && context.practiceMode);
+        const practiceGameplay = practice && !!context.practiceGameplay;
         const gm = IP2Live.GameManager;
         const node = gm.flowConfig.gameplayNodes[gameplayId];
         const owner = node && IP2Live[node.manager];
         const qm = IP2Live.QuestManager;
         if (!owner || typeof owner[node.method] !== 'function' || !qm || this.session || gm._activeGameplayNode) return false;
-        if (IP2Live.NeuralLifeForce && IP2Live.NeuralLifeForce.isRunOver()) return false;
-        const source = gm.getGameplayQuestSpecs(gameplayId).find((entry) => entry.tutorial || entry.harderIntro);
+        if (!practice && IP2Live.NeuralLifeForce && IP2Live.NeuralLifeForce.isRunOver()) return false;
+        const sources = gm.getGameplayQuestSpecs(gameplayId);
+        // Core-gateway commits require a whole campaign's branch allocations;
+        // standalone VLSM practice cycles the independently solvable branches.
+        const regular = sources.filter(entry => !entry.tutorial && !entry.harderIntro && entry.terminalType !== 'core');
+        const source = practiceGameplay
+            ? (regular[((context.round || 1) - 1) % Math.max(1, regular.length)] || sources[0])
+            : sources.find((entry) => entry.tutorial || entry.harderIntro);
         if (!source || !Manager || !Manager.Stack || typeof Manager.Stack.push !== 'function') return false;
 
         const spec = gm._clonePlain(source);
-        const mapId = gm._currentMapId();
+        const mapId = practice ? source.mapId : gm._currentMapId();
         const token = 'neural.tutorial_replay.' + gameplayId + '.' + Date.now() + '.' + (++this._serial);
         spec.tutorialReplay = true;
-        spec.tutorial = true;
+        spec.tutorial = !practiceGameplay;
+        if (practiceGameplay) spec.harderIntro = false;
+        spec.practiceMode = practice;
+        spec.practiceGameplay = practiceGameplay;
         spec.tutorialSource = { mapId: source.mapId, questId: source.id, objectiveId: source.dialogueObjectiveId || source.objectiveId };
         spec.id = token;
         spec.mapId = mapId;
         // A synthetic quest identity keeps replay sessions separate from campaign saves.
         const options = Object.assign({}, spec, {
             spec, tutorialReplay: true, mapId, questId: token, objectiveId: source.objectiveId,
-            tutorialMode: true, guidedTutorial: true, tutorialFeedback: true,
+            tutorialMode: !practiceGameplay, guidedTutorial: !practiceGameplay, tutorialFeedback: !practiceGameplay,
+            practiceMode: practice, practiceGameplay,
+            maxAttempts: practice ? Infinity : 3, enforceAttemptLimit: false,
             showIntro: false, useLoading: false, mode: 'push', _fromGameManager: true,
         });
         const savedOwnerState = {};
@@ -32,10 +45,10 @@ class IP2LiveTutorialReplay {
         }
         const music = IP2Live.MusicManager;
         this.session = {
-            gameplayId, options, owner, savedOwnerState, screen: null,
+            gameplayId, options, owner, savedOwnerState, screen: null, practice,
             cidrState: gm._clonePlain(IP2Live.CIDRGameplayState),
             hadCidrState: Object.prototype.hasOwnProperty.call(IP2Live, 'CIDRGameplayState'),
-            musicZone: music && typeof music._resolveStageZoneFromMap === 'function'
+            musicZone: practice && music && music.ZONE ? music.ZONE.MAIN_MENU : music && typeof music._resolveStageZoneFromMap === 'function'
                 ? music._resolveStageZoneFromMap()
                 : (music && typeof music.currentZone === 'function' ? music.currentZone() : null),
             returnQuestId: qm.activeQuestId, returnObjectiveId: qm.activeObjectiveId,
@@ -44,6 +57,7 @@ class IP2LiveTutorialReplay {
         if ('_introShown' in savedOwnerState) owner._introShown = false;
         if ('_introShownMaps' in savedOwnerState) owner._introShownMaps = {};
         if ('_tutorialShownKeys' in savedOwnerState) owner._tutorialShownKeys = {};
+        if (practice) delete IP2Live.CIDRGameplayState;
         if (owner._musicRestoreTimer) {
             clearTimeout(owner._musicRestoreTimer);
             owner._musicRestoreTimer = null;
@@ -51,14 +65,15 @@ class IP2LiveTutorialReplay {
         gm._activeGameplayNode = token;
         const open = () => {
             if (!this.session || this.session.options !== options) return;
-            gm._setState(gm.STATE.GAMEPLAY_ACTIVE, options);
+            if (practice) gm.state = gm.STATE.GAMEPLAY_ACTIVE;
+            else gm._setState(gm.STATE.GAMEPLAY_ACTIVE, options);
             try {
                 if (owner[node.method](options) === false) this.finish(gameplayId, options, 'unavailable');
             } catch (error) {
                 this.finish(gameplayId, options, 'unavailable');
             }
         };
-        gm._logTelemetryEvent('neural_tutorial_replay', {
+        if (!practice) gm._logTelemetryEvent('neural_tutorial_replay', {
             gameplayId, mapId, questId: qm.activeQuestId, objectiveId: qm.activeObjectiveId,
             payload: { action: 'started', tutorialQuestId: source.id },
         });
@@ -74,8 +89,10 @@ class IP2LiveTutorialReplay {
         screen.options = Object.assign({}, screen.options, {
             tutorialReplay: true, spec: options.spec, gameplayId: replay.gameplayId,
             questId: options.questId, objectiveId: options.objectiveId, mapId: options.mapId,
+            practiceMode: replay.practice, practiceGameplay: options.practiceGameplay,
         });
         replay.screen = screen;
+        if (replay.practice && IP2Live.PracticeMode) IP2Live.PracticeMode.configureScreen(screen);
         return true;
     }
 
@@ -104,12 +121,16 @@ class IP2LiveTutorialReplay {
         if (IP2Live.GameplayPause && typeof IP2Live.GameplayPause.clearSession === 'function') IP2Live.GameplayPause.clearSession(gameplayId, replay.options);
         if (IP2Live.GameplayPause && IP2Live.GameplayPause.activeScreen === replay.screen) IP2Live.GameplayPause.activeScreen = null;
         const music = IP2Live.MusicManager;
-        if (music && replay.musicZone && typeof music.play === 'function') music.play(replay.musicZone);
-        gm._setState(gm.STATE.NEXT_NODE, { gameplayId, tutorialReplay: true, outcome });
-        gm._logTelemetryEvent('neural_tutorial_replay', {
+        if (!replay.practice && music && replay.musicZone && typeof music.play === 'function') music.play(replay.musicZone);
+        if (!replay.practice) gm._setState(gm.STATE.NEXT_NODE, { gameplayId, tutorialReplay: true, outcome });
+        if (!replay.practice) gm._logTelemetryEvent('neural_tutorial_replay', {
             gameplayId, mapId: replay.options.mapId, questId: replay.returnQuestId, objectiveId: replay.returnObjectiveId,
             payload: { action: outcome, tutorialQuestId: replay.options.spec.tutorialSource.questId },
         });
+        if (replay.practice && IP2Live.PracticeMode) {
+            IP2Live.PracticeMode.onReplayFinished(outcome);
+            return true;
+        }
         gm._ensureQuestMinimap();
         if (Manager && Manager.Stack) Manager.Stack.requestPaintHUD = true;
         if ((outcome === 'failed' || outcome === 'unavailable') && IP2Live.ARDiagnosticRewind) {

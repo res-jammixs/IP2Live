@@ -86,7 +86,81 @@ function loadPersistentStateHarness() {
 
     load(moduleSource('Plugins/IP2Live_Core/modules/game-state/game_state_manager.js'));
     load(moduleSource('Plugins/IP2Live_Core/modules/game-state/darklights_state.js'));
-    return { Core, Scene, IP2Live, savedDarklights, applied, refreshed, presets };
+    return { Core, Scene, IP2Live, savedDarklights, applied, refreshed, presets, load };
+}
+
+function testNewStoryDoesNotInheritRepairedLights() {
+    const h = loadPersistentStateHarness();
+    h.load(moduleSource('Plugins/IP2Live_Core/modules/quest_manager.js'));
+    h.load(moduleSource('Plugins/IP2Live_Core/modules/game_manager.js'));
+    const { Core, Scene, IP2Live } = h;
+    const gsm = IP2Live.GameStateManager;
+    const qm = IP2Live.QuestManager;
+    const gm = IP2Live.GameManager;
+    const oldGame = Core.Game.current;
+    const oldScene = Scene.Map.current = new Scene.Map();
+    oldScene.id = oldGame.currentMapID = 3;
+    for (const mapId of [3, 4]) {
+        const config = gsm._darklightsConfigForMap(mapId);
+        for (const { questId, objectiveId } of config.quests) {
+            qm.completedObjectives[questId] = { [objectiveId]: true };
+        }
+        gsm._onMapEntered({ mapId, scene: oldScene });
+        assert.equal(gsm._darklightsStore(mapId).cleared, true);
+    }
+    const savedStates = JSON.parse(JSON.stringify(oldGame.ip2liveGameStates));
+    const savedQuests = qm.snapshotProgress();
+    qm._pendingSlotRestore = { mapId: 3 };
+    gsm._fallbackStore.ip2liveGameStates = oldGame.ip2liveGameStates;
+    gsm.activeStates.darklights = true;
+    gsm.activeStates.neuralLifeForceHud = true;
+    const lighting = IP2Live.LightingManager;
+    lighting.presets = { 1: { name: 'Tutorial ambience' }, 3: { name: 'Darklights - Clear' } };
+    lighting.clearPreset = id => { delete lighting.presets[id]; };
+    let clearedLighting = false;
+    lighting.clearLighting = () => { clearedLighting = true; };
+    let firstCheckpoint;
+    IP2Live.StoryAutosave = { beginStory(game) {
+        firstCheckpoint = { game, quests: qm.snapshotProgress(), states: JSON.parse(JSON.stringify(game.ip2liveGameStates)) };
+    } };
+    // The real entry point runs before construction of the tutorial map.
+    let tutorialOptions;
+    gm.startTutorialFlow = options => { tutorialOptions = options; return true; };
+    const newGame = Core.Game.current = { currentMapID: 1, infiltratorName: 'SAME NAME' };
+    assert.equal(gm.startNewGameFlow('SAME NAME'), true);
+    assert.equal(tutorialOptions.cleanMapSession, true);
+    assert.deepEqual(qm.completedObjectives, {});
+    assert.equal(qm._pendingSlotRestore, null);
+    assert.equal(firstCheckpoint.game, newGame);
+    assert.deepEqual(firstCheckpoint.quests.completedObjectives, {});
+    assert.deepEqual(firstCheckpoint.states, {});
+    assert.equal(clearedLighting, true);
+    assert.equal(lighting.presets[3], undefined);
+    assert.equal(lighting.presets[1].name, 'Tutorial ambience');
+    assert.equal(gsm.activeStates.neuralLifeForceHud, true, 'persistent HUD registration survives');
+    assert.deepEqual(oldGame.ip2liveGameStates, savedStates, 'new story must not mutate the previous save');
+    assert.deepEqual(gsm._fallbackStore, {});
+    for (const mapId of [3, 4]) {
+        const scene = Scene.Map.current = new Scene.Map();
+        scene.id = newGame.currentMapID = mapId;
+        gsm._onMapEntered({ mapId, scene });
+        const lights = gsm._darklightsStore(mapId);
+        assert.equal(lights.cleared, false, 'new story lights start unrepaired');
+        assert.equal(lights.brightnessStep, 1);
+        assert.ok(lights.dimLevel > 0);
+        assert.deepEqual(lights.completedObjectives, {});
+        assert.equal(gsm.activeStates.darklights, true);
+        assert.ok(h.presets.at(-1).preset.dimOverlay > 0.7);
+    }
+    // Restoring the previous story still restores its repaired lighting.
+    Core.Game.current = oldGame;
+    qm.restoreProgress(savedQuests);
+    const restoredScene = Scene.Map.current = new Scene.Map();
+    restoredScene.id = 3;
+    gsm.restoreMapState(3, restoredScene);
+    assert.equal(gsm._darklightsStore(3).cleared, true);
+    assert.equal(gsm.activeStates.darklights, undefined);
+    assert.deepEqual(oldGame.ip2liveGameStates, savedStates);
 }
 
 function testLoadedMapRehydratesOnlyAfterSceneIsReady() {
@@ -223,6 +297,7 @@ function testEarlyLightingPresetIsReappliedAfterNativeLightsExist() {
 }
 
 try {
+    testNewStoryDoesNotInheritRepairedLights();
     testLoadedMapRehydratesOnlyAfterSceneIsReady();
     testCompletedLightingStateDoesNotEraseSavedObjectives();
     testEarlyLightingPresetIsReappliedAfterNativeLightsExist();

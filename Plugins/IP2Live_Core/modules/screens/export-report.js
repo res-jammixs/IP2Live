@@ -8,6 +8,7 @@ class IP2LiveExportReportMenu extends Scene.Base {
     constructor(options) {
         super(true);
         this.options = options || {};
+        this.backdrop = IP2Live.PopupChrome.capture();
     }
 
     initialize() {
@@ -16,10 +17,10 @@ class IP2LiveExportReportMenu extends Scene.Base {
         this.scopeDaysOptions = [7, 30, 90];
         this.scopeIndex = 2;
         this.formatOptions = ['PDF', 'EXCEL', 'BOTH'];
-        this.formatIndex = 2;
+        this.formatIndex = 1;
         this.filename = this._defaultFilename();
         this.editFilename = false;
-        this.statusLine = 'SELECT OPTIONS // PASSWORD-PROTECTED EXPORT';
+        this.statusLine = '';
         this.outputPaths = [];
         this.busy = false;
         this.animTick = 0;
@@ -58,16 +59,17 @@ class IP2LiveExportReportMenu extends Scene.Base {
     }
 
     onKeyPressed(key) {
+        if (this.busy) return true;
         const token = this._keyToken(key).toUpperCase();
         if (this.editFilename) {
             if (Data.Keyboards.checkActionMenu(key) || token === 'ENTER') {
                 this.editFilename = false;
-                this.statusLine = 'FILENAME LOCKED';
+                this.statusLine = '';
                 return true;
             }
             if (Data.Keyboards.checkCancelMenu(key)) {
                 this.editFilename = false;
-                this.statusLine = 'FILENAME EDIT CANCELLED';
+                this.statusLine = '';
                 return true;
             }
             if (token === 'BACKSPACE') {
@@ -134,7 +136,7 @@ class IP2LiveExportReportMenu extends Scene.Base {
         }
         if (this.selectedIndex === 2) {
             this.editFilename = true;
-            this.statusLine = 'EDIT FILENAME, ENTER TO CONFIRM';
+            this.statusLine = 'Enter to confirm filename';
             Data.Systems.soundCursor.playSound();
             return;
         }
@@ -152,7 +154,7 @@ class IP2LiveExportReportMenu extends Scene.Base {
         this.statusLine = 'EXPORTING REPORT...';
         Data.Systems.soundConfirmation.playSound();
         try {
-            const formatRaw = this.formatOptions[this.formatIndex] || 'BOTH';
+            const formatRaw = this.formatOptions[this.formatIndex] || 'EXCEL';
             const format = formatRaw === 'BOTH' ? 'both' : (formatRaw === 'PDF' ? 'pdf' : 'excel');
             const gm = IP2Live.GameManager;
             if (!gm || typeof gm.exportProgressReport !== 'function') {
@@ -170,8 +172,7 @@ class IP2LiveExportReportMenu extends Scene.Base {
             });
             if (result && result.ok) {
                 this.outputPaths = Array.isArray(result.archivedPaths) ? result.archivedPaths.slice() : [];
-                this.statusLine = 'EXPORT COMPLETE: PASSWORD-PROTECTED ' + (result.exported || []).join(' + ').toUpperCase() +
-                    (this.outputPaths.length ? ' // ARCHIVED IN IP2LIVE\\REPORTS' : '');
+                this.statusLine = 'Export complete.';
                 if (this.outputPaths.length) console.log('[IP2Live] Report archive files:', this.outputPaths);
                 Data.Systems.soundConfirmation.playSound();
             } else {
@@ -226,112 +227,20 @@ class IP2LiveExportReportMenu extends Scene.Base {
     }
 
     drawHUD() {
-        const ctx = Common.Platform.ctx;
-        const l = this._layout();
-        const titleFont = IP2Live.Assets.abnesLoaded ? 'Abnes' : 'Arial Black';
-        const bodyFont = IP2Live.Assets.astronomousLoaded
-            ? 'Astronomous'
-            : (IP2Live.Assets.neuropolLoaded
-            ? 'Neuropol'
-            : (IP2Live.Assets.nebulaLoaded ? 'Nebula-Regular' : 'monospace'));
-        const actionPulse = 0.55 + 0.45 * Math.sin(this.animTick * 0.09);
-
-        ctx.save();
-        if (!this._bgSeedSize || this._bgSeedSize[0] !== l.cW || this._bgSeedSize[1] !== l.cH) {
-            this._seedBackdrop(l.cW, l.cH);
-        }
-        this._drawBackdrop(ctx, l);
-
-        ctx.globalAlpha = 0.045;
-        ctx.fillStyle = '#000000';
-        for (let ly = this.scanlineOffset * l.sY; ly < l.cH; ly += 5 * l.sY) {
-            ctx.fillRect(0, ly, l.cW, 1.5 * l.sY);
-        }
-        ctx.globalAlpha = 1;
-
-        IP2Live.UI.drawCyberPanel({
-            ctx: ctx,
-            x: l.x * l.sX,
-            y: l.y * l.sY,
-            w: l.w * l.sX,
-            h: l.h * l.sY,
-            scaleX: l.sX,
-            accent: '#00F0FF',
-            title: 'SYS::PROGRESS_ARCHIVE_EXPORT::NET',
+        const ctx=Common.Platform.ctx,l=this._layout(),chrome=IP2Live.PopupChrome;
+        ctx.save();chrome.backdrop(ctx,this.backdrop,this.animTick*0.085);ctx.scale(l.sX,l.sY);
+        chrome.animate(ctx,l,this.animTick*0.085);
+        chrome.panel(ctx,l.x,l.y,l.w,l.h,1,1,false,this.animTick);chrome.heading(ctx,'EXPORT REPORT',l.x,l.y,l.w);
+        const labels=['Days to cover','File type','File name'];
+        const values=[this.scopeDaysOptions[this.scopeIndex]+' days',this.formatOptions[this.formatIndex]==='EXCEL'?'Excel (.xls)':this.formatOptions[this.formatIndex],this.filename+(this.editFilename && this.animTick%50<25?'|':'')];
+        labels.forEach((label,i)=>{
+            const y=l.rowStartY+i*(l.rowH+l.rowGap);chrome.row(ctx,l.rowX,y,l.rowW,l.rowH,this.selectedIndex===i);
+            ctx.font='11px Oxanium-Medium, sans-serif';ctx.fillStyle='#82a6ae';ctx.textAlign='left';ctx.fillText(label,l.rowX+14,y+16);
+            ctx.font='16px Oxanium-Medium, sans-serif';ctx.fillStyle='#e2edef';ctx.fillText(values[i],l.rowX+14,y+36,l.rowW-60);
+            if(i<2){ctx.textAlign='right';ctx.fillStyle='#b8cba1';ctx.fillText('<  >',l.rowX+l.rowW-14,y+31);}
         });
-
-        this._drawPanelMotif(ctx, l);
-
-        ctx.textAlign = 'left';
-        ctx.fillStyle = 'rgba(184, 236, 255, 0.92)';
-        ctx.font = Math.round(8 * l.sX) + 'px ' + bodyFont;
-        ctx.fillText('NODE-LINKED OUTPUT CHANNEL', (l.x + 146) * l.sX, (l.y + 48) * l.sY);
-
-        ctx.fillStyle = '#FFFFFF';
-        ctx.font = 'bold ' + Math.round(22 * l.sX) + 'px ' + titleFont;
-        ctx.textAlign = 'center';
-        ctx.fillText('EXPORT STUDENT REPORT', (l.x + l.w * 0.5) * l.sX, (l.y + 78) * l.sY);
-
-        ctx.font = Math.round(10 * l.sX) + 'px ' + bodyFont;
-        ctx.fillStyle = 'rgba(191, 247, 255, 0.86)';
-        ctx.fillText('GENERATE PASSWORD-PROTECTED ARCHIVE PACKETS', (l.x + l.w * 0.5) * l.sX, (l.y + 102) * l.sY);
-        ctx.fillStyle = '#FFFFFF';
-        ctx.textAlign = 'left';
-
-        const rows = [
-            { label: 'SCOPE WINDOW', value: String(this.scopeDaysOptions[this.scopeIndex] || 90) + ' DAYS', nav: true },
-            { label: 'EXPORT FORMAT', value: String(this.formatOptions[this.formatIndex] || 'BOTH'), nav: true },
-            {
-                label: 'FILENAME',
-                value: this.filename + (this.editFilename && this.animTick % 40 < 20 ? '_' : ''),
-                nav: false
-            }
-        ];
-
-        for (let i = 0; i < rows.length; i++) {
-            const active = i === this.selectedIndex;
-            const hover = i === this.hoverIndex;
-            this._drawRowCard(ctx, l, i, rows[i], active, hover, bodyFont, titleFont);
-        }
-
-        const actionY = l.actionY * l.sY;
-        const leftActive = this.selectedIndex === 3 || this.hoverIndex === 3;
-        const rightActive = this.selectedIndex === 4 || this.hoverIndex === 4;
-        this._drawActionButton(
-            ctx, l, l.actionLeftX * l.sX, actionY, l.actionBtnW * l.sX, l.rowH * l.sY,
-            'BACK', leftActive, true, 3, titleFont
-        );
-        this._drawActionButton(
-            ctx, l, l.actionRightX * l.sX, actionY, l.actionBtnW * l.sX, l.rowH * l.sY,
-            this.busy ? 'EXPORTING...' : 'RUN EXPORT', rightActive, false, 4, titleFont
-        );
-
-        const statusX = (l.x + 36) * l.sX;
-        const statusY = (l.y + l.h - 46) * l.sY;
-        const statusW = (l.w - 72) * l.sX;
-        const statusH = 28 * l.sY;
-        const statusGrad = ctx.createLinearGradient(statusX, statusY, statusX + statusW, statusY);
-        statusGrad.addColorStop(0, 'rgba(0,240,255,0.16)');
-        statusGrad.addColorStop(0.48, 'rgba(255,230,0,0.14)');
-        statusGrad.addColorStop(1, 'rgba(255,32,96,0.16)');
-        ctx.fillStyle = statusGrad;
-        ctx.fillRect(statusX, statusY, statusW, statusH);
-        ctx.strokeStyle = 'rgba(0,240,255,0.52)';
-        ctx.lineWidth = 1.1 * l.sX;
-        ctx.strokeRect(statusX, statusY, statusW, statusH);
-
-        ctx.fillStyle = this.busy ? '#FFE600' : 'rgba(220, 246, 255, 0.94)';
-        ctx.font = Math.round(10 * l.sX) + 'px ' + bodyFont;
-        ctx.fillText(this.statusLine, (l.x + 44) * l.sX, (l.y + l.h - 28) * l.sY);
-
-        ctx.textAlign = 'right';
-        ctx.fillStyle = 'rgba(200, 232, 255, ' + (0.72 + actionPulse * 0.2).toFixed(3) + ')';
-        ctx.font = Math.round(5.5 * l.sX) + 'px ' + bodyFont;
-        const hint = this.editFilename
-            ? '[TYPE] [BKSP] [ENTER]'
-            : '[ARROWS] NAV/ADJUST  [ENTER] CONFIRM';
-        ctx.fillText(hint, statusX + statusW - 10 * l.sX, statusY + statusH * 0.72);
-        ctx.textAlign = 'left';
+        ['CANCEL',this.busy?'EXPORTING...':'EXPORT'].forEach((label,i)=>chrome.button(ctx,{x:i?l.actionRightX:l.actionLeftX,y:l.actionY,w:l.actionBtnW,h:l.rowH},1,1,label,'Oxanium-Medium',this.selectedIndex===i+3?1:0,this.animTick,!i));
+        if(this.statusLine){ctx.fillStyle='#a6bcc2';ctx.font='11px Oxanium-Medium, sans-serif';chrome.text(ctx,this.statusLine,l.x+l.w/2,l.y+l.h-17,.3);}
         ctx.restore();
     }
 
@@ -342,15 +251,15 @@ class IP2LiveExportReportMenu extends Scene.Base {
         const cH = Common.Platform.ctx.canvas.height;
         const sX = cW / SW;
         const sY = cH / SH;
-        const w = 690;
-        const h = 520;
+        const w = Math.min(560, SW - 40);
+        const h = 350;
         const x = (SW - w) * 0.5;
         const y = (SH - h) * 0.5;
         const rowX = x + 40;
         const rowW = w - 80;
-        const rowH = 52;
-        const rowGap = 14;
-        const rowStartY = y + 146;
+        const rowH = 46;
+        const rowGap = 10;
+        const rowStartY = y + 76;
         const actionGap = 18;
         const actionBtnW = (rowW - actionGap) * 0.5;
         const actionLeftX = rowX;

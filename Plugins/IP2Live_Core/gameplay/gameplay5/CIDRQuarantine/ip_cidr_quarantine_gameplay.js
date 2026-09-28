@@ -1426,11 +1426,11 @@ class IP2LiveCIDRQuarantineGameplayScreen extends Scene.Base {
     }
 
     _attemptLimitLabel() {
-        return this.tutorialMode ? '∞' : String(this.maxAttempts);
+        return (this.tutorialMode || this.options.practiceMode) ? '∞' : String(this.maxAttempts);
     }
 
     _retryLabel(value) {
-        return this.tutorialMode ? '∞' : String(Math.max(0, Number(value) || 0));
+        return (this.tutorialMode || this.options.practiceMode) ? '∞' : String(Math.max(0, Number(value) || 0));
     }
 
     _normalizeDirectionWeights(weights) {

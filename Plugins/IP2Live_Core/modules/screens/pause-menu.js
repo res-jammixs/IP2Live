@@ -36,7 +36,7 @@ class IP2LivePauseMenu extends Scene.Base {
     }
 
     _getMenuItems() {
-        const items = ["RESUME", "SAVE GAME", "EXPORT REPORT"];
+        const items = ["RESUME", "SAVE STORY", "EXPORT REPORT"];
         const gameManager = IP2Live.GameManager;
         if (!gameManager || gameManager.enableDebugMapJumpButton !== false) {
             items.push("DEBUG MAP JUMP");
@@ -305,6 +305,7 @@ class IP2LivePauseMenu extends Scene.Base {
 
     _resume() {
         Data.Systems.soundCancel.playSound();
+        if (IP2Live.MenuTransition && IP2Live.MenuTransition.back({freezeTarget:true})) return;
         Manager.Stack.pop();
     }
 
@@ -312,8 +313,8 @@ class IP2LivePauseMenu extends Scene.Base {
         if (IP2Live.confirPopup && typeof IP2Live.confirPopup.show === 'function') {
             IP2Live.confirPopup.show({
                 title: 'QUIT GAME?',
-                message: 'Return to the desktop?',
-                detail: 'Unsaved progress will be lost.',
+                message: 'Please save your game progress before quitting.',
+                detail: 'Unsaved changes will be lost. Quit to desktop?',
                 confirmLabel: 'QUIT',
                 cancelLabel: 'CANCEL',
                 danger: true,
@@ -345,7 +346,7 @@ class IP2LivePauseMenu extends Scene.Base {
             case "RESUME":
                 this._resume();
                 break;
-            case "SAVE GAME":
+            case "SAVE STORY":
                 await this._saveGameProgress();
                 break;
             case "EXPORT REPORT":
@@ -958,20 +959,15 @@ class IP2LivePauseMenu extends Scene.Base {
             console.warn('[IP2Live] Save failed: Save menu screen is not available.');
             return;
         }
-        const menu = new IP2LiveLoadGameMenu({
+        const makeMenu = () => new window.IP2LiveLoadGameMenu({
             saveMode: true,
             onSaved: function () {
                 Manager.Stack.popAll();
                 Manager.Stack.pushTitleScreen(true);
             },
         });
-        // Safety: enforce save mode even if scene init order differs.
-        menu.options = menu.options || {};
-        menu.options.saveMode = true;
-        menu.saveMode = true;
-        menu.titleText = 'SAVE GAME';
-        menu.panelTitle = 'SYS::SAVE_ARCHIVE_WRITE';
-        Manager.Stack.push(menu);
+        if (IP2Live.MenuTransition) IP2Live.MenuTransition.open(makeMenu);
+        else Manager.Stack.push(makeMenu());
     }
 
     update() {
@@ -1419,12 +1415,12 @@ window.IP2LivePauseMenu = IP2LivePauseMenu;
 inject(Scene.Map, 'onKeyPressed', function (key) {
     if (Data.Keyboards.checkCancelMenu(key)) {
         Data.Systems.soundConfirmation.playSound();
-        Manager.Stack.push(new IP2LivePauseMenu());
+        if (IP2Live.MenuTransition) IP2Live.MenuTransition.open(() => new IP2LivePauseMenu());
+        else Manager.Stack.push(new IP2LivePauseMenu());
     } else {
         this.super(key);
     }
 }, false, true, false);
 
 console.log('[IP2Live] pause-menu.js loaded.');
-
 

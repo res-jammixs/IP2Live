@@ -1116,7 +1116,7 @@ const VLSMAllocatorGameplayManager = {
                 if (opts.tutorialReplay && Manager && Manager.Stack) { Manager.Stack.push(screen); }
                 else if (Manager && Manager.Stack && typeof Manager.Stack.replace === 'function') Manager.Stack.replace(screen);
                 else if (Manager && Manager.Stack && typeof Manager.Stack.push === 'function') Manager.Stack.push(screen);
-                if ((opts.tutorialReplay || shouldShowIntro) && IP2Live.IPVLSMAllocatorTutorial && typeof IP2Live.IPVLSMAllocatorTutorial.showIntro === 'function') {
+                if (!opts.practiceGameplay && (opts.tutorialReplay || shouldShowIntro) && IP2Live.IPVLSMAllocatorTutorial && typeof IP2Live.IPVLSMAllocatorTutorial.showIntro === 'function') {
                     IP2Live.IPVLSMAllocatorTutorial.showIntro(screen.scenario, function () {});
                 }
             };

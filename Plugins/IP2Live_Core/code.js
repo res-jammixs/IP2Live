@@ -14,7 +14,7 @@ const inject = Manager.Plugins.inject;
 const IP2Live = {};
 
 IP2Live.DBManager = {
-    dbName: 'IP2Live_Database', dbVersion: 3, db: null, _openPromise: null,
+    dbName: 'IP2Live_Database', dbVersion: 4, db: null, _openPromise: null,
     initDB() {
         if (this.db) return Promise.resolve(this.db);
         if (this._openPromise) return this._openPromise;
@@ -22,6 +22,7 @@ IP2Live.DBManager = {
             const request = window.indexedDB.open(this.dbName, this.dbVersion);
             request.onupgradeneeded = (e) => {
                 const db = e.target.result;
+                if (!db.objectStoreNames.contains('storyAutosaves')) db.createObjectStore('storyAutosaves', { keyPath: 'id' });
                 if (!db.objectStoreNames.contains('profiles'))
                     db.createObjectStore('profiles', { keyPath: 'infiltratorName' });
                 if (!db.objectStoreNames.contains('sessions')) {
@@ -330,6 +331,7 @@ IP2Live.Assets = {
     abnesLoaded: false,
     nebulaLoaded: false,
     oxaniumMediumLoaded: false,
+    reliduxLoaded: false,
     ethnocentricLoaded: false,
     neuropolLoaded: false,
     astronomousLoaded: false,
@@ -341,6 +343,15 @@ IP2Live.Assets = {
     },
 
     async loadFonts(root) {
+        if (!this.reliduxLoaded) {
+            try {
+                const face = new FontFace('Relidux', 'url("' + root + 'Fonts/Relidux.otf")');
+                document.fonts.add(await face.load());
+                this.reliduxLoaded = true;
+            } catch (e) {
+                console.warn('[IP2Live] Relidux font load failed, falling back.', e);
+            }
+        }
         try {
             const abnesFace = new FontFace('Abnes', 'url("' + root + 'Fonts/abnes.ttf")');
             const loadedAbnes = await abnesFace.load();
@@ -1369,6 +1380,12 @@ IP2Live.GameManagerReady = (async function () {
             code
         )(Common, Core, Data, Graphic, Manager, Scene, Model, Main, THREE, IP2Live, inject);
         if (IP2Live.GameManager && typeof IP2Live.GameManager.boot === 'function') {
+            for (const module of ['achievements.js', 'practice_mode.js']) {
+                const response = await fetch(root + 'Plugins/IP2Live_Core/modules/' + module + '?v=' + Date.now(), { cache: 'no-store' });
+                if (!response.ok) throw new Error(module + ' HTTP ' + response.status);
+                new Function('Common', 'Core', 'Data', 'Graphic', 'Manager', 'Scene', 'Model', 'Main', 'THREE', 'IP2Live', 'inject',
+                    await response.text())(Common, Core, Data, Graphic, Manager, Scene, Model, Main, THREE, IP2Live, inject);
+            }
             await IP2Live.GameManager.boot();
         }
         console.log('[IP2Live] Game manager loaded from:', resp.url || src);
@@ -1429,6 +1446,7 @@ IP2Live.ScreenModulesReady = (async function () {
 
     // Load order matters: leaf screens first, main-menu last
     const screens = [
+        '../story_autosave.js',
         'menu-transition.js',
         'loading-screen.js',
         'loading-screen-2.js',
@@ -1445,6 +1463,7 @@ IP2Live.ScreenModulesReady = (async function () {
         'settings.js',
         'gameplay-pause.js',
         'pause-menu.js',
+        'practice-grid.js',
         'main-menu.js',
     ];
 

@@ -32,6 +32,7 @@
         _tutorialHighlighted: false,
 
         create() {
+            if (IP2Live.PracticeMode && IP2Live.PracticeMode.active) return;
             if (this.isActive()) return;
             if (typeof document === 'undefined') return;
 

@@ -10,7 +10,7 @@ const ctx = {
     canvas: { width: 1920, height: 1080 }, font: '',
     save() { states.push({ font: this.font, textAlign: this.textAlign }); },
     restore() { Object.assign(this, states.pop()); },
-    scale() {}, beginPath() {}, closePath() {}, fill() {}, rect() {}, clip() {}, moveTo() {}, lineTo() {}, stroke() {},
+    drawImage() {}, scale() {}, beginPath() {}, closePath() {}, fill() {}, rect() {}, clip() {}, moveTo() {}, lineTo() {}, stroke() {},
     fillRect() {}, strokeRect() {},
     createLinearGradient: () => ({ addColorStop() {} }),
     createRadialGradient: () => ({ addColorStop() {} }),
@@ -28,9 +28,9 @@ const Manager = { Stack: {} };
 const Scene = { Base: class { constructor() { this.initialize(); } }, Map: {} };
 const IP2Live = { Assets: { oxaniumMediumLoaded: true }, MapManager: { stageFor: mapId => mapId === 4 ? { stage: 1, level: 2 } : null } };
 const windowObject = {};
-for (const source of ['game_manager.js', 'screens/load-game.js']) {
-    new Function('Common', 'Core', 'Data', 'Manager', 'Scene', 'IP2Live', 'window', 'Main', read(source))(
-        Common, Core, Data, Manager, Scene, IP2Live, windowObject, {});
+for (const source of ['game_manager.js', 'screens/confir-popup.js', 'screens/load-game.js']) {
+    new Function('Common', 'Core', 'Data', 'Manager', 'Scene', 'IP2Live', 'window', 'Main', 'document', read(source))(
+        Common, Core, Data, Manager, Scene, IP2Live, windowObject, {}, {createElement: () => ({getContext: () => ctx})});
 }
 const gm = IP2Live.GameManager;
 const menu = new windowObject.IP2LiveLoadGameMenu();
@@ -125,6 +125,20 @@ async function main() {
     gm.getSlotProgressSnapshot = async (_slot, options) => { requestedGames.push(options.loadedGame); return null; };
     await menu._loadSlotMetadata('UNRELATED CURRENT PROFILE');
     assert.deepEqual(requestedGames, menu.gamesData, 'metadata lookup uses each slot owner');
+    let restoreFactory;
+    IP2Live.MenuTransition = { replace(factory) { restoreFactory = factory; return true; } };
+    IP2Live.LoadingScreen = { show() { assert.fail('TV transition should handle save loading'); } };
+    Data.TitlescreenGameover = {};
+    const restored = { currentMapID: 7, loadPositions: async () => {}, hero: { initializeProperties() {} } };
+    let prepared;
+    Scene.Map = class { constructor(id) { this.id = id; } };
+    gm.restoreProgressFromSlot = async (slot, loaded) => { assert.equal(slot, 2); assert.equal(loaded, restored); };
+    gm.setActiveSaveSlot = slot => assert.equal(slot, 2);
+    gm.prepareLoadedMapScene = scene => { prepared = scene; };
+    assert.equal(await menu._loadSelectedGame(restored, 2, '02'), true);
+    assert.equal(Core.Game.current, game, 'save is restored only after the TV closes');
+    const map = await restoreFactory();
+    assert.equal(map.id, 7); assert.equal(map, prepared); assert.equal(Core.Game.current, restored);
     console.log('load game archive rendering and playtime tests passed');
 }
 main().catch(error => { console.error(error); process.exitCode = 1; });
