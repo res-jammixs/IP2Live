@@ -32,6 +32,8 @@ class IP2LiveTitleScreenImplementation extends Scene.Base {
         this.particles = [];
         this.dust = [];
         this._heroTexture = null;
+        this._heroElapsedMs = 0;
+        this._heroLastUpdateAt = null;
 
         this.shakeX = 0;
         this.shakeY = 0;
@@ -68,6 +70,8 @@ class IP2LiveTitleScreenImplementation extends Scene.Base {
         this._seedDust(430);
 
         this.loading = false;
+        this._heroElapsedMs = 0;
+        this._heroLastUpdateAt = Date.now();
         this._buttonEntranceStartedAt = Date.now() + 500;
 
         Manager.Stack.requestPaintHUD = true;
@@ -925,6 +929,12 @@ class IP2LiveTitleScreenImplementation extends Scene.Base {
 
     update() {
         this.animTick++;
+        const heroNow = Date.now();
+        if (this._heroLastUpdateAt !== null) {
+            // Resume gently after a popup or a suspended window.
+            this._heroElapsedMs += Math.max(0, Math.min(100, heroNow - this._heroLastUpdateAt));
+        }
+        this._heroLastUpdateAt = heroNow;
 
         this.scanlineOffset =
             (
@@ -1349,17 +1359,33 @@ class IP2LiveTitleScreenImplementation extends Scene.Base {
         ctx.restore();
     }
 
+    _heroAnimationState() {
+        const elapsed = this._heroElapsedMs;
+        const reveal = (delay, duration) => {
+            const p = Math.max(0, Math.min(1, (elapsed - delay) / duration));
+            return p * p * (3 - 2 * p);
+        };
+        return {
+            time: elapsed / 1000,
+            gateLight: reveal(800, 2800),
+            coreLight: reveal(2800, 3000),
+            figureLight: reveal(1200, 3600)
+        };
+    }
+
     _drawBackdrop(ctx, cW, cH, scaleX, scaleY) {
         ctx.save();
         ctx.fillStyle = '#030205';
         ctx.fillRect(0, 0, cW, cH);
 
         const bloom = ctx.createRadialGradient(
-            cW * 0.755, cH * 0.46, 0, cW * 0.755, cH * 0.46, cH * 0.65
+            cW * 0.71, cH * 0.46, 0, cW * 0.71, cH * 0.46, cH * 0.65
         );
-        bloom.addColorStop(0, 'rgba(103,13,28,0.24)');
-        bloom.addColorStop(0.5, 'rgba(57,7,18,0.13)');
+        bloom.addColorStop(0, 'rgba(170,18,43,0.30)');
+        bloom.addColorStop(0.5, 'rgba(95,10,28,0.18)');
         bloom.addColorStop(1, 'rgba(18,2,8,0)');
+        const hero = this._heroAnimationState();
+        ctx.globalAlpha *= 0.025 + 0.975 * Math.max(hero.gateLight * 0.6, hero.coreLight);
         ctx.fillStyle = bloom;
         ctx.fillRect(0, 0, cW, cH);
         ctx.restore();
@@ -1433,21 +1459,34 @@ class IP2LiveTitleScreenImplementation extends Scene.Base {
     }
 
     // A lone engineer at the threshold of the infrastructure APEX controls.
-    // One concealed signal crosses the security layers toward the locked core.
+    // An open checkpoint behind him marks the breach on the way to the final floor.
     _drawHeroComposition(ctx, cW, cH) {
         const unit = Math.min(cW * 0.46 / 560, cH / 720);
         const tick = this.animTick;
-        const pulse = 0.5 + 0.5 * Math.sin(tick * 0.018);
+        const hero = this._heroAnimationState();
+        const pulse = 0.5 + 0.5 * Math.sin(hero.time * 1.08);
         ctx.save();
-        ctx.translate(cW * 0.755, cH * 0.48);
+        ctx.translate(cW * 0.71, cH * 0.48);
         ctx.scale(unit, unit);
 
-        // Recessed metal thresholds fade into the surrounding darkness.
-        for (let layer = 3; layer >= 0; layer--) {
+        // Solid inner thresholds give way to two faint outer outlines.
+        for (let layer = 5; layer >= 0; layer--) {
             const w = 97 + layer * 40;
             const top = -192 - layer * 25;
             const bottom = 186 + layer * 24;
-            ctx.strokeStyle = 'rgba(159,37,54,' + (0.35 - layer * 0.065) + ')';
+            const opacity = [0.82, 0.72, 0.62, 0.40, 0.20, 0.09][layer];
+            ctx.save();
+            ctx.globalAlpha *= opacity * (0.015 + 0.985 * hero.gateLight);
+            if (layer >= 3) {
+                const fade = ctx.createLinearGradient(0, top, 0, bottom);
+                fade.addColorStop(0, 'rgba(255,49,78,0.55)');
+                fade.addColorStop(0.25, '#FF314E');
+                fade.addColorStop(0.6, 'rgba(255,49,78,0.70)');
+                fade.addColorStop(1, 'rgba(255,49,78,0)');
+                ctx.strokeStyle = fade;
+            } else {
+                ctx.strokeStyle = '#FF314E';
+            }
             ctx.lineWidth = 1;
             ctx.beginPath();
             ctx.moveTo(-w, bottom);
@@ -1466,13 +1505,13 @@ class IP2LiveTitleScreenImplementation extends Scene.Base {
                 ctx.lineTo(side * w, bottom);
                 ctx.closePath();
                 const metal = ctx.createLinearGradient(side * w, 0, side * (w - 12), 0);
-                metal.addColorStop(0, 'rgba(90,26,38,0.22)');
+                metal.addColorStop(0, 'rgba(155,30,54,0.34)');
                 metal.addColorStop(1, 'rgba(9,4,9,0.05)');
                 ctx.fillStyle = metal;
                 ctx.fill();
                 ctx.clip();
-                this._drawHeroTexture(ctx, -230, -280, 460, 560, 0.4);
-                ctx.strokeStyle = 'rgba(139,47,60,0.18)';
+                this._drawHeroTexture(ctx, -310, -330, 620, 650, 0.4);
+                ctx.strokeStyle = 'rgba(225,60,83,0.30)';
                 for (let joint = top + 84; joint < bottom; joint += 83) {
                     ctx.beginPath();
                     ctx.moveTo(side * w, joint);
@@ -1481,23 +1520,27 @@ class IP2LiveTitleScreenImplementation extends Scene.Base {
                 }
                 ctx.restore();
             }
+            ctx.restore();
         }
 
+        // The final floor lights up only after the open checkpoint is revealed.
+        ctx.save();
+        ctx.globalAlpha *= 0.005 + 0.995 * hero.coreLight;
         // The breach: a narrow opening, lit from somewhere deep inside.
         const glow = ctx.createLinearGradient(-100, 0, 100, 0);
         glow.addColorStop(0, 'rgba(125,13,30,0)');
-        glow.addColorStop(0.42, 'rgba(168,19,41,0.14)');
-        glow.addColorStop(0.5, 'rgba(236,48,69,0.36)');
-        glow.addColorStop(0.58, 'rgba(168,19,41,0.14)');
+        glow.addColorStop(0.42, 'rgba(230,24,55,0.26)');
+        glow.addColorStop(0.5, 'rgba(255,49,78,0.65)');
+        glow.addColorStop(0.58, 'rgba(230,24,55,0.26)');
         glow.addColorStop(1, 'rgba(125,13,30,0)');
         ctx.fillStyle = glow;
         ctx.fillRect(-100, -190, 200, 378);
         const door = ctx.createLinearGradient(-88, 0, 88, 0);
-        door.addColorStop(0, '#080409');
-        door.addColorStop(0.4, '#10060C');
-        door.addColorStop(0.5, '#1B0911');
-        door.addColorStop(0.6, '#10060C');
-        door.addColorStop(1, '#080409');
+        door.addColorStop(0, '#150911');
+        door.addColorStop(0.4, '#250D19');
+        door.addColorStop(0.5, '#421223');
+        door.addColorStop(0.6, '#250D19');
+        door.addColorStop(1, '#150911');
         ctx.fillStyle = door;
         ctx.fillRect(-88, -182, 78, 361);
         ctx.fillRect(10, -182, 78, 361);
@@ -1507,7 +1550,7 @@ class IP2LiveTitleScreenImplementation extends Scene.Base {
         ctx.rect(10, -182, 78, 361);
         ctx.clip();
         this._drawHeroTexture(ctx, -88, -182, 176, 361, 0.65);
-        ctx.strokeStyle = 'rgba(155,53,68,0.13)';
+        ctx.strokeStyle = 'rgba(241,65,94,0.28)';
         for (const side of [-1, 1]) {
             ctx.beginPath();
             ctx.moveTo(side * 74, 170); ctx.lineTo(side * 74, -151);
@@ -1515,7 +1558,7 @@ class IP2LiveTitleScreenImplementation extends Scene.Base {
             ctx.moveTo(side * 22, -20); ctx.lineTo(side * 53, 11);
             ctx.lineTo(side * 53, 140); ctx.stroke();
             for (let bolt = -144; bolt < 170; bolt += 76) {
-                ctx.fillStyle = 'rgba(170,69,83,0.22)';
+                ctx.fillStyle = 'rgba(255,96,114,0.42)';
                 ctx.fillRect(side * 80 - 1, bolt, 1.5, 2);
             }
         }
@@ -1527,8 +1570,8 @@ class IP2LiveTitleScreenImplementation extends Scene.Base {
 
         const seam = ctx.createLinearGradient(0, -190, 0, 186);
         seam.addColorStop(0, 'rgba(243,54,74,0.05)');
-        seam.addColorStop(0.2, 'rgba(243,54,74,0.65)');
-        seam.addColorStop(0.75, 'rgba(243,54,74,0.38)');
+        seam.addColorStop(0.2, 'rgba(255,67,90,0.92)');
+        seam.addColorStop(0.75, 'rgba(255,67,90,0.70)');
         seam.addColorStop(1, 'rgba(243,54,74,0)');
         ctx.strokeStyle = seam;
         ctx.lineWidth = 1.2;
@@ -1541,10 +1584,10 @@ class IP2LiveTitleScreenImplementation extends Scene.Base {
         ctx.save();
         ctx.translate(0, -100);
         ctx.rotate(Math.PI / 4);
-        ctx.strokeStyle = 'rgba(191,47,64,0.5)';
+        ctx.strokeStyle = 'rgba(255,61,88,0.8)';
         ctx.strokeRect(-13, -13, 26, 26);
         ctx.restore();
-        ctx.strokeStyle = 'rgba(240,62,79,0.7)';
+        ctx.strokeStyle = 'rgba(255,91,113,0.9)';
         ctx.beginPath();
         ctx.moveTo(-20, -100); ctx.lineTo(20, -100);
         ctx.stroke();
@@ -1554,17 +1597,24 @@ class IP2LiveTitleScreenImplementation extends Scene.Base {
         ctx.fillRect(-2, -102, 4, 4);
         ctx.shadowBlur = 0;
 
+        ctx.save();
+        ctx.textAlign = 'center';
+        ctx.font = '10px ' + (IP2Live.Assets.oxaniumMediumLoaded ? 'Oxanium-Medium' : 'monospace');
+        ctx.fillStyle = '#FF879A';
+        ctx.fillText('APEX / FINAL FLOOR', 0, -204);
+        ctx.restore();
+
         // Unlabelled circuit branches keep the hacking motif entirely visual.
         for (let index = 0; index < 3; index++) {
             const y = -51 + index * 62;
-            ctx.strokeStyle = 'rgba(164,49,63,0.24)';
+            ctx.strokeStyle = 'rgba(246,54,84,0.42)';
             ctx.beginPath();
             ctx.moveTo(14, y - 15); ctx.lineTo(42, y - 15);
             ctx.lineTo(57, y); ctx.lineTo(140, y);
             ctx.stroke();
-            ctx.strokeStyle = 'rgba(197,64,79,0.48)';
+            ctx.strokeStyle = 'rgba(255,90,111,0.70)';
             ctx.strokeRect(140, y - 2, 4, 4);
-            ctx.strokeStyle = 'rgba(135,43,58,0.17)';
+            ctx.strokeStyle = 'rgba(222,47,78,0.30)';
             ctx.beginPath();
             ctx.moveTo(144, y); ctx.lineTo(165, y);
             ctx.lineTo(177, y - 12); ctx.lineTo(177, y - 32); ctx.stroke();
@@ -1594,13 +1644,16 @@ class IP2LiveTitleScreenImplementation extends Scene.Base {
             }
             distance -= length;
         }
+        ctx.restore();
 
         // Ground haze and a broken reflection anchor the figure in the doorway.
         ctx.save();
+        ctx.globalAlpha *= 0.02 + 0.98 * Math.max(hero.gateLight * 0.6, hero.coreLight);
+        ctx.save();
         ctx.translate(0, 231); ctx.scale(1, 0.2);
         const floor = ctx.createRadialGradient(0, 0, 1, 0, 0, 160);
-        floor.addColorStop(0, 'rgba(164,28,49,0.23)');
-        floor.addColorStop(0.45, 'rgba(87,17,32,0.12)');
+        floor.addColorStop(0, 'rgba(245,38,69,0.38)');
+        floor.addColorStop(0.45, 'rgba(145,23,47,0.22)');
         floor.addColorStop(1, 'rgba(40,7,15,0)');
         ctx.fillStyle = floor; ctx.fillRect(-160, -160, 320, 320);
         ctx.restore();
@@ -1616,56 +1669,216 @@ class IP2LiveTitleScreenImplementation extends Scene.Base {
         shadow.addColorStop(1, 'rgba(0,0,3,0)');
         ctx.fillStyle = shadow; ctx.fillRect(-50, -50, 100, 100);
         ctx.restore();
+        ctx.restore();
 
-        // Small against the architecture: an infiltrator, not an all-powerful avatar.
+        // A small cyan halo is the only strong light during the opening darkness.
+        const hologramGlow = ctx.createRadialGradient(20, 144, 0, 20, 144, 62);
+        hologramGlow.addColorStop(0, 'rgba(49,229,204,0.10)');
+        hologramGlow.addColorStop(1, 'rgba(49,229,204,0)');
+        ctx.fillStyle = hologramGlow;
+        ctx.fillRect(-42, 82, 124, 124);
+
+        // The nearer checkpoint has already opened; the final door lies beyond it.
+        this._drawUnlockedGate(ctx, hero);
+        this._drawInfiltrator(ctx, pulse, hero);
+
+        ctx.restore();
+    }
+
+    _drawUnlockedGate(ctx, hero) {
         ctx.save();
-        ctx.translate(-31, 139);
-        const rim = ctx.createLinearGradient(-30, 0, 30, 0);
-        rim.addColorStop(0, '#11080D');
-        rim.addColorStop(0.7, '#1C0B12');
-        rim.addColorStop(1, '#5B1C29');
-        ctx.fillStyle = rim;
-        ctx.beginPath();
-        ctx.moveTo(0, -33);
-        ctx.bezierCurveTo(-17, -31, -19, -13, -15, -3);
-        ctx.lineTo(-25, 9); ctx.lineTo(-33, 68);
-        ctx.quadraticCurveTo(0, 80, 31, 68);
-        ctx.lineTo(23, 9); ctx.lineTo(14, -3);
-        ctx.bezierCurveTo(19, -16, 14, -31, 0, -33);
-        ctx.fill();
-        ctx.save();
-        ctx.clip();
-        this._drawHeroTexture(ctx, -34, -34, 68, 112, 0.75);
-        // Folds catch just enough of the red backlight to reveal worn fabric.
-        for (const fold of [-19, -9, 5, 17]) {
+        ctx.globalAlpha *= 0.015 + 0.985 * hero.gateLight;
+        // Open leaves recede from the foreground posts toward the far doorway.
+        for (const side of [-1, 1]) {
+            const outer = side * 172;
+            // Only the free edge moves; the hinges stay fixed and the gate stays open.
+            const settle = (1 - hero.gateLight) * 3 + Math.sin(hero.time * 0.55 + side * 0.3) * 1.2;
+            const inner = side * (113 + settle);
+            const innerTop = -120 + settle * 0.35;
+            const innerBottom = 199 + settle * 0.4;
+            const metal = ctx.createLinearGradient(inner, 0, outer, 0);
+            metal.addColorStop(0, '#200D19');
+            metal.addColorStop(1, '#411527');
+            ctx.fillStyle = metal;
+            ctx.strokeStyle = '#C53B5A';
+            ctx.lineWidth = 1.4;
             ctx.beginPath();
-            ctx.moveTo(fold * 0.45, 4);
-            ctx.quadraticCurveTo(fold * 0.7, 34, fold * 1.35, 76);
-            ctx.strokeStyle = fold > 0 ? 'rgba(121,38,55,0.35)' : 'rgba(0,0,3,0.5)';
-            ctx.lineWidth = fold > 0 ? 1 : 3;
-            ctx.stroke();
+            ctx.moveTo(outer, -83); ctx.lineTo(inner, innerTop);
+            ctx.lineTo(inner, innerBottom); ctx.lineTo(outer, 254);
+            ctx.closePath(); ctx.fill(); ctx.stroke();
+            ctx.save(); ctx.clip();
+            this._drawHeroTexture(ctx, -180, -125, 360, 385, 0.5);
+            // Vertical bars and cross rails make the open gate legible in silhouette.
+            for (let bar = 1; bar < 6; bar++) {
+                const p = bar / 6;
+                const x = outer + (inner - outer) * p;
+                ctx.strokeStyle = 'rgba(255,88,120,0.46)';
+                ctx.lineWidth = 2;
+                ctx.beginPath();
+                ctx.moveTo(x, -83 + (innerTop + 83) * p);
+                ctx.lineTo(x, 254 + (innerBottom - 254) * p);
+                ctx.stroke();
+            }
+            ctx.lineWidth = 3;
+            for (const rail of [0.16, 0.7, 0.91]) {
+                ctx.strokeStyle = '#813047';
+                ctx.beginPath();
+                ctx.moveTo(outer, -83 + 337 * rail);
+                ctx.lineTo(inner, innerTop + (innerBottom - innerTop) * rail); ctx.stroke();
+            }
+            ctx.restore();
+
+            ctx.fillStyle = '#35101E';
+            ctx.fillRect(outer - 5, -87, 10, 347);
+            ctx.fillStyle = '#FF4369';
+            ctx.shadowColor = '#FF2855'; ctx.shadowBlur = 7;
+            ctx.fillRect(outer - side * 2, -79, 1.5, 328);
+            ctx.shadowBlur = 0;
+            for (const y of [-59, 196]) {
+                ctx.fillStyle = '#9A354F'; ctx.fillRect(outer - 7, y, 14, 9);
+            }
+        }
+
+        // The terminal connects directly to the open checkpoint's gatepost.
+        ctx.strokeStyle = '#36BBAE'; ctx.lineWidth = 1;
+        ctx.beginPath(); ctx.moveTo(20, 146);
+        ctx.bezierCurveTo(52, 180, 121, 170, 172, 113); ctx.stroke();
+        ctx.fillStyle = '#70F4D7'; ctx.fillRect(170, 110, 4, 6);
+        ctx.restore();
+    }
+
+    _drawCloakOutline(ctx, sway, ripple) {
+        ctx.beginPath();
+        ctx.moveTo(-10, -3); ctx.lineTo(-24, 8);
+        ctx.quadraticCurveTo(-27 + sway * 0.3, 42, -32 + sway, 70 + ripple);
+        ctx.quadraticCurveTo(sway * 0.7, 81 - ripple, 30 + sway, 70 - ripple);
+        ctx.quadraticCurveTo(26 + sway * 0.3, 40, 23, 8);
+        ctx.lineTo(10, -3); ctx.closePath();
+    }
+
+    _drawInfiltrator(ctx, pulse, hero) {
+        ctx.save();
+        ctx.translate(-31, 127);
+        ctx.scale(1.08, 1.08);
+        const sway = Math.sin(hero.time * 1.05) * 1.6 + Math.sin(hero.time * 0.47) * 0.5;
+        const ripple = Math.sin(hero.time * 1.8) * 0.7;
+
+        // Keep an opaque, faint silhouette while the colored details are still dark.
+        ctx.fillStyle = '#0A0B12';
+        this._drawCloakOutline(ctx, sway, ripple); ctx.fill();
+        ctx.fillRect(-15, 69, 11, 34); ctx.fillRect(6, 69, 11, 34);
+        ctx.beginPath(); ctx.ellipse(0, -20, 13, 15, 0, 0, Math.PI * 2); ctx.fill();
+        ctx.save();
+        ctx.globalAlpha *= 0.06 + 0.94 * hero.figureLight;
+
+        // Boots and trousers, seen from the back.
+        ctx.fillStyle = '#11121D';
+        ctx.fillRect(-15, 69, 11, 31); ctx.fillRect(6, 69, 11, 31);
+        ctx.fillStyle = '#20202B';
+        ctx.fillRect(-18, 97, 14, 6); ctx.fillRect(6, 97, 15, 6);
+        ctx.strokeStyle = '#8D3E55'; ctx.lineWidth = 1;
+        ctx.beginPath(); ctx.moveTo(17, 71); ctx.lineTo(17, 97); ctx.stroke();
+
+        const coat = ctx.createLinearGradient(-32, 0, 32, 0);
+        coat.addColorStop(0, '#1A1523');
+        coat.addColorStop(0.55, '#302033');
+        coat.addColorStop(1, '#792D46');
+        ctx.fillStyle = coat;
+        this._drawCloakOutline(ctx, sway, ripple); ctx.fill();
+        ctx.save(); ctx.clip();
+        this._drawHeroTexture(ctx, -34, -5, 68, 85, 0.55);
+        for (const fold of [-19, -9, 5, 17]) {
+            ctx.beginPath(); ctx.moveTo(fold * 0.45, 14);
+            const flutter = Math.sin(hero.time * 1.3 + fold * 0.12) * 0.55;
+            ctx.quadraticCurveTo(fold * 0.7 + sway * 0.4, 40,
+                fold * 1.35 + sway + flutter, 76 + ripple * Math.sign(fold));
+            ctx.strokeStyle = fold > 0 ? 'rgba(246,100,132,0.36)' : 'rgba(6,5,14,0.55)';
+            ctx.lineWidth = fold > 0 ? 1 : 2; ctx.stroke();
         }
         ctx.restore();
-        ctx.strokeStyle = 'rgba(173,56,71,0.6)';
-        ctx.lineWidth = 1;
+        ctx.strokeStyle = '#BF4B69'; ctx.lineWidth = 1;
+        ctx.beginPath(); ctx.moveTo(10, -3); ctx.lineTo(23, 8);
+        ctx.quadraticCurveTo(26 + sway * 0.3, 40, 30 + sway, 70 - ripple); ctx.stroke();
+
+        // Neck, short tousled hair and the lowered hood establish a rear view.
+        ctx.fillStyle = '#AC6C6D'; ctx.fillRect(-6, -12, 12, 14);
+        const hair = ctx.createLinearGradient(-12, -30, 13, -7);
+        hair.addColorStop(0, '#342535'); hair.addColorStop(1, '#875162');
+        ctx.fillStyle = hair;
         ctx.beginPath();
-        ctx.moveTo(0, -33); ctx.quadraticCurveTo(20, -28, 14, -3);
-        ctx.lineTo(23, 9); ctx.lineTo(31, 68); ctx.stroke();
-        ctx.fillStyle = '#030205';
-        ctx.beginPath();
-        ctx.ellipse(0, -13, 10, 14, 0, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.strokeStyle = 'rgba(107,38,52,0.5)';
-        ctx.lineWidth = 0.8;
-        ctx.beginPath();
-        ctx.moveTo(0, -29); ctx.quadraticCurveTo(13, -22, 11, -9);
-        ctx.moveTo(-13, -2); ctx.quadraticCurveTo(0, 6, 14, -2);
-        ctx.stroke();
-        ctx.fillStyle = '#080409';
-        ctx.fillRect(-15, 69, 10, 30);
-        ctx.fillRect(6, 69, 10, 30);
+        ctx.moveTo(-11, -9); ctx.lineTo(-14, -22); ctx.lineTo(-10, -29);
+        ctx.lineTo(-7, -27); ctx.lineTo(-4, -34); ctx.lineTo(0, -31);
+        ctx.lineTo(5, -34); ctx.lineTo(7, -30); ctx.lineTo(12, -28);
+        ctx.lineTo(14, -21); ctx.lineTo(10, -9);
+        ctx.lineTo(5, -7); ctx.lineTo(2, -10); ctx.lineTo(-3, -7);
+        ctx.closePath(); ctx.fill();
+        // Interlocking facets give the hair volume under the red backlight.
+        ctx.save(); ctx.clip();
+        const facets = [
+            ['#302333', [[-14,-22],[-10,-29],[-6,-23],[-9,-14]]],
+            ['#493043', [[-10,-29],[-4,-34],[-2,-25],[-6,-23]]],
+            ['#614151', [[-4,-34],[0,-31],[5,-34],[3,-25],[-2,-25]]],
+            ['#7E5060', [[5,-34],[12,-28],[8,-23],[3,-25]]],
+            ['#A56674', [[12,-28],[14,-21],[10,-17],[8,-23]]],
+            ['#3E2B3D', [[-9,-14],[-6,-23],[-2,-25],[-3,-15],[-7,-9]]],
+            ['#644150', [[-2,-25],[3,-25],[5,-17],[1,-10],[-3,-15]]],
+            ['#875262', [[3,-25],[8,-23],[10,-17],[6,-9],[5,-17]]],
+            ['#B4727C', [[14,-21],[10,-9],[6,-9],[10,-17]]],
+            ['#483042', [[-7,-9],[-3,-15],[1,-10],[-3,-7]]],
+            ['#704654', [[1,-10],[5,-17],[6,-9],[5,-7],[2,-10]]]
+        ];
+        for (const [color, vertices] of facets) {
+            ctx.fillStyle = color; ctx.beginPath();
+            vertices.forEach(([x, y], index) => index ? ctx.lineTo(x, y) : ctx.moveTo(x, y));
+            ctx.closePath(); ctx.fill();
+        }
+        ctx.restore();
+        ctx.strokeStyle = '#E68791'; ctx.lineWidth = 0.8;
+        ctx.beginPath(); ctx.moveTo(7, -30); ctx.lineTo(12, -27);
+        ctx.lineTo(13, -20); ctx.lineTo(10, -11); ctx.stroke();
+        ctx.strokeStyle = '#B07683';
+        for (const x of [-6, 0, 6]) {
+            ctx.beginPath(); ctx.moveTo(x, -26);
+            ctx.quadraticCurveTo(x + 3, -19, x + 1, -12); ctx.stroke();
+        }
+        ctx.fillStyle = '#43293E'; ctx.strokeStyle = '#92546C';
+        ctx.beginPath(); ctx.moveTo(-13, -2);
+        ctx.quadraticCurveTo(0, 6, 13, -2);
+        ctx.quadraticCurveTo(17, 12, 0, 23);
+        ctx.quadraticCurveTo(-17, 12, -13, -2);
+        ctx.closePath(); ctx.fill(); ctx.stroke();
+        ctx.strokeStyle = '#1A1523';
+        ctx.beginPath(); ctx.moveTo(-9, 4); ctx.quadraticCurveTo(0, 13, 9, 4); ctx.stroke();
         ctx.restore();
 
+        // Upright holographic display sits behind the working hand.
+        ctx.save(); ctx.translate(48, 15);
+        ctx.fillStyle = 'rgba(10,32,43,0.80)'; ctx.strokeStyle = '#66E8D9';
+        ctx.lineWidth = 1;
+        ctx.fillRect(-2, -10, 21, 27); ctx.strokeRect(-2, -10, 21, 27);
+        ctx.shadowColor = '#44E7CB'; ctx.shadowBlur = 5 + pulse * 3;
+        ctx.fillStyle = '#58F4D0';
+        for (let row = 0; row < 4; row++) ctx.fillRect(2, -5 + row * 4, 7 + (row % 2) * 6, 1);
+        ctx.shadowBlur = 0;
+        ctx.fillRect(2, 12, 13 * (0.7 + pulse * 0.3), 2);
+        ctx.restore();
+
+        // Draw the sleeve and fingers last so they overlap the display edge.
+        ctx.save();
+        ctx.globalAlpha *= 0.06 + 0.94 * hero.figureLight;
+        ctx.fillStyle = '#462238'; ctx.strokeStyle = '#AC526F'; ctx.lineWidth = 1;
+        ctx.beginPath(); ctx.moveTo(21, 7); ctx.lineTo(31, 14);
+        ctx.lineTo(35, 30); ctx.lineTo(46, 20); ctx.lineTo(50, 25);
+        ctx.lineTo(35, 42); ctx.lineTo(26, 39); ctx.lineTo(19, 19);
+        ctx.closePath(); ctx.fill(); ctx.stroke();
+        ctx.fillStyle = '#C58C88';
+        ctx.beginPath(); ctx.moveTo(44, 21); ctx.lineTo(48, 18);
+        ctx.lineTo(51, 16); ctx.lineTo(53, 17); ctx.lineTo(50, 21);
+        ctx.lineTo(53, 21); ctx.lineTo(53, 24); ctx.lineTo(48, 26);
+        ctx.lineTo(44, 25); ctx.closePath(); ctx.fill();
+        ctx.strokeStyle = '#E6ACA1'; ctx.lineWidth = 0.6;
+        ctx.beginPath(); ctx.moveTo(48, 22); ctx.lineTo(52, 22); ctx.stroke();
+        ctx.restore();
         ctx.restore();
     }
 
