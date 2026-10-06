@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Main menu preview</title>
+<style>
+@font-face{font-family:Oxanium-Medium;src:url('../../Fonts/Oxanium-Medium.ttf')}
+@font-face{font-family:Nebula-Regular;src:url('../../Fonts/Nebula-Regular.otf')}
+@font-face{font-family:Abnes;src:url('../../Fonts/abnes.ttf')}
+html,body{margin:0;background:#030205;overflow:hidden}canvas{display:block;width:100vw;height:100vh}
+</style>
+</head>
+<body><canvas aria-label="IP2Live main menu preview"></canvas>
+<script>
+const canvas = document.querySelector('canvas');
+const ctx = canvas.getContext('2d');
+const previewParams = new URLSearchParams(location.search);
+const Common = { Platform: { ctx }, ScreenResolution: {
+    SCREEN_X: 1280, SCREEN_Y: 720,
+    getScreenX: x => x * canvas.width / 1280,
+    getScreenY: y => y * canvas.height / 720
+} };
+function resize() {
+    canvas.width = Number(previewParams.get('width')) || innerWidth;
+    canvas.height = Number(previewParams.get('height')) || innerHeight;
+    Common.ScreenResolution.CANVAS_WIDTH = canvas.width;
+    Common.ScreenResolution.CANVAS_HEIGHT = canvas.height;
+}
+resize();
+const sound = { playSound() {} };
+const Data = {
+    Systems: { soundCursor: sound, soundConfirmation: sound, soundCancel: sound, soundImpossible: sound },
+    Keyboards: {
+        menuControls: { Up: 'ArrowUp', Down: 'ArrowDown' }, isKeyEqual: (a, b) => a === b,
+        checkActionMenu: key => key === 'Enter', checkCancelMenu: key => key === 'Escape'
+    }
+};
+const Scene = { Base: class {}, TitleScreen: class {} };
+const Manager = { Stack: { requestPaintHUD: true }, GL: { renderer: { clear() {} } } };
+const IP2Live = { Assets: { oxaniumMediumLoaded: true, nebulaLoaded: true, abnesLoaded: true },
+    PracticeMode: { isUnlocked: () => true } };
+(async () => {
+    const response = await fetch('../../Plugins/IP2Live_Core/modules/screens/main-menu.js');
+    if (!response.ok) throw new Error('Main-menu source could not be loaded');
+    new Function('Common', 'Data', 'Scene', 'Manager', 'IP2Live', await response.text())(
+        Common, Data, Scene, Manager, IP2Live);
+    await Promise.all(['16px Oxanium-Medium', '18px Nebula-Regular', '72px Abnes'].map(font => document.fonts.load(font)));
+    const menu = new Scene.TitleScreen(); menu.initialize();
+    // Repeatable particle placement makes layout/color comparisons useful.
+    const originalRandom = Math.random;
+    let seed = 42;
+    try {
+        Math.random = () => { seed = (seed * 1664525 + 1013904223) >>> 0; return seed / 4294967296; };
+        menu._seedDust(430); menu._seedParticles(48);
+    } finally { Math.random = originalRandom; }
+    menu.titleDone = true; menu.animTick = 100;
+    menu.btnProgress.fill(100);
+    menu._buttonEntranceStartedAt = Date.now() - 5000;
+    const capture = new URLSearchParams(location.search).get('capture');
+    const captureTimes = { dark: 0, gate: 2400, reveal: 4200, settled: 7000, idle: 9500 };
+    menu._heroElapsedMs = capture ? (captureTimes[capture] ?? 7000) : 0;
+    menu._heroLastUpdateAt = Date.now();
+    menu.drawHUD();
+    // Paint again after the browser has settled font and canvas resources.
+    await document.fonts.ready;
+    await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    menu.drawHUD();
+    document.body.dataset.previewState = 'ready';
+    document.title = 'Main menu preview ready';
+    if (!capture) addEventListener('resize', () => { resize(); menu.drawHUD(); });
+    if (capture) return;
+    addEventListener('keydown', event => {
+        if (['ArrowUp', 'ArrowDown', 'Escape'].includes(event.key)) {
+            menu.onKeyPressedAndRepeat(event.key); menu.onKeyPressed(event.key);
+        } else if (event.key === 'Enter' && menu.menuItems[menu.selectedIndex] === 'PLAY GAME') {
+            menu._showMenuPage('play');
+        }
+        event.preventDefault();
+    });
+    canvas.onpointermove = event => menu.onMouseMove(event.clientX, event.clientY);
+    function paint() {
+        menu.update();
+        menu.drawHUD(); requestAnimationFrame(paint);
+    }
+    paint();
+})().catch(error => {
+    document.body.dataset.previewState = 'error'; document.body.dataset.previewError = error.message;
+    document.title = 'Main menu preview failed'; console.error(error);
+});
+</script></body>
+</html>
