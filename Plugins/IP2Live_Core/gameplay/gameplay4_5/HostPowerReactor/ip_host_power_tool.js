@@ -46,6 +46,10 @@ class IP2LiveHostPowerToolScreen extends Scene.Base {
 
     update() {
         this.animTick++;
+        if (typeof this.options.onBackgroundUpdate === 'function' && this.options.onBackgroundUpdate()) {
+            this._close();
+            return;
+        }
         if (Manager && Manager.Stack) Manager.Stack.requestPaintHUD = true;
     }
 
@@ -57,12 +61,14 @@ class IP2LiveHostPowerToolScreen extends Scene.Base {
         const designH = (Common.ScreenResolution && Common.ScreenResolution.SCREEN_Y) || 720;
         const sX = cW / designW;
         const sY = cH / designH;
-        const scale = Math.max(0.68, Math.min(1.25, Math.min(sX, sY)));
+        const scale = Math.max(0.68, Math.min(sX, sY));
         const margin = 18 * scale;
         const w = Math.min(cW / 3, 390 * sX);
-        const h = Math.min(cH - margin * 2, 680 * sY);
+        const keepQuestHeader = this.options.sourceGameplayId === 'ip_cidr_quarantine';
+        const topInset = keepQuestHeader ? 126 * sY : margin;
+        const h = Math.min(cH - topInset - margin, 680 * sY);
         const x = this.options.align === 'left' ? margin : cW - w - margin;
-        const y = (cH - h) * 0.5;
+        const y = keepQuestHeader ? topInset : (cH - h) * 0.5;
         const innerX = x + 14 * scale;
         const innerW = w - 28 * scale;
         const headerH = 42 * scale;
@@ -269,6 +275,16 @@ class IP2LiveHostPowerToolScreen extends Scene.Base {
     }
 
     _drawPanel(ctx, m) {
+        const background = this.options.backgroundScene;
+        if (this.options.sourceGameplayId === 'ip_cidr_quarantine' && background && typeof background._holoPanel === 'function') {
+            // Preserve the glass lighting without letting underlying labels show through.
+            ctx.save();
+            this._chamferPath(ctx, m.x, m.y, m.w, m.h, 10 * m.scale);
+            ctx.fillStyle = '#071222'; ctx.fill();
+            background._holoPanel(ctx, m, m.x / m.sX, m.y / m.sY, m.w / m.sX, m.h / m.sY, '#62DCEB');
+            ctx.restore();
+            return;
+        }
         ctx.save();
         ctx.shadowColor = 'rgba(0, 224, 255, 0.28)';
         ctx.shadowBlur = 18 * m.scale;
@@ -291,10 +307,10 @@ class IP2LiveHostPowerToolScreen extends Scene.Base {
         ctx.textAlign = 'left';
         ctx.textBaseline = 'middle';
         ctx.font = 'bold ' + Math.round(13 * m.scale) + 'px ' + titleFont;
-        ctx.fillText('HOST-POWER TOOL', m.innerX, m.y + 17 * m.scale);
+        ctx.fillText(this.options.calculationMode === 'subnets' ? 'SUBNET CALCULATOR' : 'HOST CALCULATOR', m.innerX, m.y + 17 * m.scale);
         ctx.fillStyle = '#668f98';
-        ctx.font = 'bold ' + Math.round(7 * m.scale) + 'px monospace';
-        ctx.fillText('DRAG A BUBBLE INTO THE CALCULATOR', m.innerX, m.y + 33 * m.scale);
+        ctx.font = 'bold ' + Math.round(9 * m.scale) + 'px monospace';
+        ctx.fillText('DRAG A VALUE TO CHANGE THE EXPONENT', m.innerX, m.y + 33 * m.scale);
     }
 
     _drawGenerator(ctx, m) {
@@ -303,7 +319,17 @@ class IP2LiveHostPowerToolScreen extends Scene.Base {
         const neutral = this.options.neutralFeedback === true;
         const ratioBase = neutral ? this.scenario.classConfig.maxHostBits : this.scenario.targetExponent;
         const ratio = Math.max(0, Math.min(1.2, this.exponent / Math.max(1, ratioBase)));
-        this._section(ctx, b, m, 'MINI REACTOR');
+        this._section(ctx, b, m, 'EXPONENT');
+        if (this.options.sourceGameplayId === 'ip_cidr_quarantine') {
+            this._digitalInset(ctx, { x: b.x + 12 * m.scale, y: b.y + 30 * m.scale,
+                w: b.w - 24 * m.scale, h: b.h - 58 * m.scale }, m);
+            ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+            ctx.fillStyle = '#B4E0D5'; ctx.font = Math.round(32 * m.scale) + 'px Oxanium-Medium, monospace';
+            ctx.fillText(String(this.exponent), b.x + b.w / 2, b.y + b.h * 0.54);
+            ctx.fillStyle = '#8DAEBB'; ctx.font = Math.round(9 * m.scale) + 'px Oxanium-Medium, monospace';
+            ctx.fillText(this.options.calculationMode === 'subnets' ? 'BORROWED BITS (s)' : 'HOST BITS', b.x + b.w / 2, b.y + b.h - 14 * m.scale);
+            return;
+        }
         const cx = b.x + b.w * 0.5;
         const cy = b.y + b.h * 0.57;
         const radius = Math.min(b.w * 0.18, b.h * 0.28);
@@ -328,21 +354,23 @@ class IP2LiveHostPowerToolScreen extends Scene.Base {
         ctx.font = 'bold ' + Math.round(24 * m.scale) + 'px monospace';
         ctx.fillText(String(this.exponent), cx, cy - 2 * m.scale);
         ctx.fillStyle = color;
-        ctx.font = 'bold ' + Math.round(8 * m.scale) + 'px monospace';
-        ctx.fillText(neutral ? 'HOST BITS' : (this.evaluation.status === 'under' ? 'LOW' : (this.evaluation.status === 'over' ? 'TOO MUCH' : 'JUST RIGHT')), cx, b.y + b.h - 14 * m.scale);
+        ctx.font = 'bold ' + Math.round(10 * m.scale) + 'px monospace';
+        ctx.fillText(this.options.calculationMode === 'subnets' ? 'BORROWED BITS (s)' : (neutral ? 'HOST BITS' : (this.evaluation.status === 'under' ? 'LOW' : (this.evaluation.status === 'over' ? 'TOO MUCH' : 'JUST RIGHT'))), cx, b.y + b.h - 14 * m.scale);
     }
 
     _drawNeeded(ctx, m) {
         const b = m.needed;
-        this._section(ctx, b, m, 'NEEDED HOSTS');
+        const prefixMode = Number.isInteger(this.options.allocatedPrefix);
+        const subnetMode = this.options.calculationMode === 'subnets';
+        this._section(ctx, b, m, subnetMode ? 'REQUIRED SUBNETS' : (prefixMode ? 'VERIFIED NETWORK PREFIX' : 'NEEDED HOSTS'));
         ctx.fillStyle = '#ffffff';
         ctx.textAlign = 'left';
         ctx.textBaseline = 'middle';
         ctx.font = 'bold ' + Math.round(20 * m.scale) + 'px monospace';
-        ctx.fillText(this._formatNumber(this.scenario.requiredHosts), b.x + 12 * m.scale, b.y + b.h * 0.60);
+        ctx.fillText(subnetMode ? this._formatNumber(this.options.requiredSubnets) : (prefixMode ? '/' + this.options.allocatedPrefix : this._formatNumber(this.scenario.requiredHosts)), b.x + 12 * m.scale, b.y + b.h * 0.60);
         ctx.fillStyle = '#ffce66';
-        ctx.font = 'bold ' + Math.round(7.5 * m.scale) + 'px monospace';
-        ctx.fillText('+2 RESERVED = ' + this._formatNumber(this.scenario.addressDemand) + ' ADDRESSES', b.x + 12 * m.scale, b.y + b.h * 0.83);
+        ctx.font = 'bold ' + Math.round(9 * m.scale) + 'px monospace';
+        ctx.fillText(subnetMode ? 'FIND THE MINIMUM s: 2^s >= REQUIRED SUBNETS' : (prefixMode ? 'HOST BITS = 32 - PREFIX  |  USABLE = 2^h - 2' : '+2 RESERVED = ' + this._formatNumber(this.scenario.addressDemand) + ' ADDRESSES'), b.x + 12 * m.scale, b.y + b.h * 0.83);
         const chipW = 29 * m.scale;
         const chipGap = 5 * m.scale;
         const startX = b.x + b.w - (chipW * 3 + chipGap * 2) - 10 * m.scale;
@@ -363,7 +391,7 @@ class IP2LiveHostPowerToolScreen extends Scene.Base {
 
     _drawBubbles(ctx, m) {
         const b = m.bubbles;
-        this._section(ctx, b, m, 'POWER BUBBLES  //  REUSABLE');
+        this._section(ctx, b, m, 'CHANGE EXPONENT');
         for (let i = 0; i < this.bubbleRects.length; i++) {
             const bubble = this.bubbleRects[i];
             this._drawBubble(ctx, Object.assign({}, bubble, { selected: i === this.selectedBubble }), m);
@@ -372,6 +400,19 @@ class IP2LiveHostPowerToolScreen extends Scene.Base {
 
     _drawBubble(ctx, bubble, m) {
         const positive = bubble.value > 0;
+        if (this.options.sourceGameplayId === 'ip_cidr_quarantine') {
+            ctx.save();
+            const accent = positive ? '#8CCCD8' : '#B9A4CE';
+            ctx.beginPath(); ctx.arc(bubble.x, bubble.y, bubble.radius, 0, Math.PI * 2);
+            ctx.fillStyle = '#0A1B2A'; ctx.fill();
+            ctx.strokeStyle = bubble.selected ? '#D5EFF4' : '#466578'; ctx.lineWidth = 1.2 * m.scale; ctx.stroke();
+            ctx.beginPath(); ctx.arc(bubble.x, bubble.y, bubble.radius - 3 * m.scale, 0, Math.PI * 2);
+            ctx.strokeStyle = accent; ctx.lineWidth = 0.6 * m.scale; ctx.stroke();
+            ctx.fillStyle = accent; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+            ctx.font = 'bold ' + Math.round(11 * m.scale) + 'px Oxanium-Medium, monospace';
+            ctx.fillText((positive ? '+' : '') + bubble.value, bubble.x, bubble.y);
+            ctx.restore(); return;
+        }
         ctx.save();
         ctx.shadowColor = positive ? '#00dfff' : '#ff315f';
         ctx.shadowBlur = bubble.selected ? 12 * m.scale : 6 * m.scale;
@@ -412,11 +453,15 @@ class IP2LiveHostPowerToolScreen extends Scene.Base {
         const b = m.calculator;
         const color = this._statusColor();
         const neutral = this.options.neutralFeedback === true;
-        this._section(ctx, b, m, 'DROP ZONE // CALCULATOR');
+        const subnetMode = this.options.calculationMode === 'subnets';
+        this._section(ctx, b, m, 'CALCULATION');
+        const gameplay5 = this.options.sourceGameplayId === 'ip_cidr_quarantine';
+        if (gameplay5) this._digitalInset(ctx, { x: b.x + 10 * m.scale, y: b.y + 31 * m.scale,
+            w: b.w - 20 * m.scale, h: b.h - 43 * m.scale }, m);
         ctx.save();
-        ctx.setLineDash([6 * m.scale, 5 * m.scale]);
+        ctx.setLineDash(gameplay5 ? [] : [6 * m.scale, 5 * m.scale]);
         this._roundedRect(ctx, b.x + 10 * m.scale, b.y + 31 * m.scale, b.w - 20 * m.scale, b.h - 43 * m.scale, 8 * m.scale);
-        ctx.fillStyle = this.draggedBubble ? 'rgba(0, 122, 145, 0.15)' : 'rgba(0, 10, 16, 0.34)';
+        ctx.fillStyle = this.draggedBubble ? 'rgba(0, 122, 145, 0.15)' : (gameplay5 ? 'rgba(0,0,0,0)' : 'rgba(0, 10, 16, 0.34)');
         ctx.fill();
         ctx.strokeStyle = this.draggedBubble ? '#61efff' : 'rgba(73, 128, 140, 0.54)';
         ctx.lineWidth = 1.2 * m.scale;
@@ -426,17 +471,17 @@ class IP2LiveHostPowerToolScreen extends Scene.Base {
         const centerX = b.x + b.w * 0.5;
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
-        ctx.fillStyle = '#eefcff';
+        ctx.fillStyle = gameplay5 ? '#B4E0D5' : '#eefcff';
         ctx.font = 'bold ' + Math.round(22 * m.scale) + 'px monospace';
         ctx.fillText('2^' + this.exponent + ' = ' + this._formatNumber(this.evaluation.totalAddresses), centerX, b.y + b.h * 0.46);
         ctx.fillStyle = '#759da7';
         ctx.font = 'bold ' + Math.round(8 * m.scale) + 'px monospace';
-        ctx.fillText('TOTAL ADDRESSES - 2 RESERVED', centerX, b.y + b.h * 0.62);
+        ctx.fillText(subnetMode ? 'SUBNET COUNT = 2^s  //  NO SUBTRACTION' : 'TOTAL ADDRESSES - 2 RESERVED', centerX, b.y + b.h * 0.62);
         ctx.fillStyle = color;
         ctx.font = 'bold ' + Math.round(13 * m.scale) + 'px monospace';
-        ctx.fillText(this._formatNumber(this.evaluation.usableHosts) + ' USABLE', centerX, b.y + b.h * 0.75);
+        ctx.fillText(subnetMode ? this._formatNumber(Math.pow(2, this.exponent)) + (this.exponent === 0 ? ' SUBNET' : ' SUBNETS') : this._formatNumber(this.evaluation.usableHosts) + ' USABLE', centerX, b.y + b.h * 0.75);
         ctx.font = 'bold ' + Math.round(8 * m.scale) + 'px monospace';
-        const direction = neutral
+        const direction = subnetMode ? 'EXPONENT s = BITS TO BORROW' : neutral
             ? 'CIDR /' + (32 - this.exponent) + '  //  BORROWED ' + Math.max(0, this.scenario.classConfig.maxHostBits - this.exponent)
             : (this.evaluation.status === 'under'
                 ? 'ADD ' + (this.scenario.targetExponent - this.exponent) + ' BIT(S)'
@@ -449,6 +494,14 @@ class IP2LiveHostPowerToolScreen extends Scene.Base {
     _drawFooter(ctx, m) {
         for (let i = 0; i < this.buttons.length; i++) {
             const button = this.buttons[i];
+            const background = this.options.backgroundScene;
+            if (this.options.sourceGameplayId === 'ip_cidr_quarantine' && background && typeof background._drawHoloKey === 'function') {
+                background._drawHoloKey(ctx, m, button);
+                ctx.fillStyle = '#C5E3EA'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+                ctx.font = Math.round(10 * m.scale) + 'px Oxanium-Medium, monospace';
+                ctx.fillText(button.label, button.x + button.w / 2, button.y + button.h / 2);
+                continue;
+            }
             this._roundedRect(ctx, button.x, button.y, button.w, button.h, 4 * m.scale);
             ctx.fillStyle = button.action === 'close' ? 'rgba(75, 18, 31, 0.92)' : 'rgba(8, 64, 76, 0.92)';
             ctx.fill();
@@ -464,17 +517,35 @@ class IP2LiveHostPowerToolScreen extends Scene.Base {
     }
 
     _section(ctx, box, m, label) {
-        this._roundedRect(ctx, box.x, box.y, box.w, box.h, 7 * m.scale);
+        const gameplay5 = this.options.sourceGameplayId === 'ip_cidr_quarantine';
+        if (gameplay5) this._chamferPath(ctx, box.x, box.y, box.w, box.h, 5 * m.scale);
+        else this._roundedRect(ctx, box.x, box.y, box.w, box.h, 7 * m.scale);
         ctx.fillStyle = 'rgba(2, 12, 18, 0.86)';
         ctx.fill();
         ctx.strokeStyle = 'rgba(53, 118, 130, 0.40)';
         ctx.lineWidth = 1 * m.scale;
         ctx.stroke();
-        ctx.fillStyle = '#719ba4';
-        ctx.font = 'bold ' + Math.round(7.5 * m.scale) + 'px monospace';
+        if (gameplay5) {
+            ctx.fillStyle = 'rgba(135,200,216,0.035)';
+            for (let y = box.y + 5 * m.scale; y < box.y + box.h - 4 * m.scale; y += 5 * m.scale) ctx.fillRect(box.x + 5 * m.scale, y, box.w - 10 * m.scale, 0.5 * m.scale);
+            ctx.fillStyle = '#77B6C5'; ctx.fillRect(box.x + 10 * m.scale, box.y, 24 * m.scale, m.scale);
+        }
+        ctx.fillStyle = '#8CAEBB';
+        ctx.font = 'bold ' + Math.round((gameplay5 ? 9 : 7.5) * m.scale) + 'px ' + (gameplay5 ? 'Oxanium-Medium, monospace' : 'monospace');
         ctx.textAlign = 'left';
         ctx.textBaseline = 'middle';
         ctx.fillText(label, box.x + 10 * m.scale, box.y + 14 * m.scale);
+    }
+
+    _digitalInset(ctx, box, m) {
+        ctx.save();
+        this._chamferPath(ctx, box.x, box.y, box.w, box.h, 4 * m.scale);
+        const glass = ctx.createLinearGradient(box.x, box.y, box.x, box.y + box.h);
+        glass.addColorStop(0, '#020D12'); glass.addColorStop(0.2, '#0B2429'); glass.addColorStop(1, '#16373A');
+        ctx.fillStyle = glass; ctx.fill(); ctx.strokeStyle = '#486772'; ctx.lineWidth = 2 * m.scale; ctx.stroke();
+        ctx.clip(); ctx.fillStyle = 'rgba(149,213,199,0.04)';
+        for (let y = box.y; y < box.y + box.h; y += 3 * m.scale) ctx.fillRect(box.x, y, box.w, 0.5 * m.scale);
+        ctx.restore();
     }
 
     _buildHitRects(m) {

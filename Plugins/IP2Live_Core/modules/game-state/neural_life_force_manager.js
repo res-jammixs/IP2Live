@@ -188,7 +188,7 @@
                 ? 'neural_previous_quest_rollback'
                 : 'neural_retry_first_quest';
             const milestone = Math.floor(count / GAMEPLAY_WARNING_INTERVAL) * GAMEPLAY_WARNING_INTERVAL;
-            if (count % GAMEPLAY_WARNING_INTERVAL === 0 && milestone > (state.acknowledgedFailureMilestones[gameplayId] || 0)) {
+            if (!data.skipDiagnosticScreen && count % GAMEPLAY_WARNING_INTERVAL === 0 && milestone > (state.acknowledgedFailureMilestones[gameplayId] || 0)) {
                 state.acknowledgedFailureMilestones[gameplayId] = milestone;
                 data.recoveryAction = rollback.rolledBack
                     ? 'neural_previous_quest_rollback_with_tutorial_offer'

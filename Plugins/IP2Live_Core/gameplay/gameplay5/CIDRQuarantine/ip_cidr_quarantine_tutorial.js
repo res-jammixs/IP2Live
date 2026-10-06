@@ -1,237 +1,172 @@
-/**
- * IP2Live - Stage 3 Level 2 path connector tutorial dialogue helpers.
- *
- * Tutorial flow:
- *   showIntro -> 3 slides: concept, UI, goal
- *   showStep 1 -> start drawing the connector
- *   showStep 2 -> reach the second node and watch CIDR capacity
- *   showStep 3 -> confirm and watch animated calculation
- *   showFeedback(reason) -> contextual correction
- *   showComplete -> success + what comes next
- *   showRecovery -> route back after hard fail
- */
-
+/** Gameplay 5: lore briefing, phase-specific subnetting lessons, then routing. */
 const IPCIDRQuarantineTutorial = {
-    VERSION: 'ip-cidr-quarantine-path-tutorial-20260821-02',
+    VERSION: 'ip-cidr-quarantine-segmentation-tutorial-20261007-05',
     _dialogueSerial: 0,
 
     showIntro(context, onComplete) {
-        const c = context || {};
         return this._startDynamicDialogue('stage3.cidrquarantine.intro.', {
-            title: 'PATH QUARANTINE BRIEF',
-            speaker: 'SYSTEM',
-            timing: 'before',
-            slides: [
-                [
-                    'STAGE 3 LEVEL 2 - CIDR Quarantine',
-                    'The Host-Power Reactors prepared you for this first quarantine sector.',
-                    'This sector introduces path-based CIDR containment.',
-                    'One infected relay must be isolated with a clean connector route.',
-                    '',
-                    'Blue node A is the start.',
-                    'Blue node B is the destination.',
-                    'Red virus nodes are blocked and may mutate while you work.',
-                    '',
-                    'Retries are unlimited at this calibration node.',
-                ],
-                [
-                    'READ THE RIGHT PANEL',
-                    'It shows only the clues you need:',
-                    '',
-                    '1. Movement values for Right, Left, Up, and Down.',
-                    '2. Given IP, class, original CIDR, and required hosts.',
-                    '3. Live host-power h, derived CIDR, and usable-host capacity.',
-                    '',
-                    'The movement values are randomized per quest, so always read them first.',
-                ],
-                [
-                    'THIS TUTORIAL GIVEN',
-                    'Relay: ' + (c.ipAddress || '?') + '/' + (c.originalCIDR || '?') + '   Class ' + (c.ipClass || '?'),
-                    'Needed hosts: ' + (c.requiredHosts || '?'),
-                    'Host-power target: h = ' + (c.optimizedHostBits || '?') + ' gives ' + (c.optimizedCapacity || '?') + ' usable hosts.',
-                    'Derived prefix: 32 - h = /' + (c.targetCIDR || '?') + '.',
-                    '',
-                    c.moveWeightsLine || 'Read the movement values on the right panel.',
-                    '',
-                    'Goal: connect A to B while the movement total equals h.',
-                ],
-            ],
-            onComplete,
+            title: 'APEX QUARANTINE SECTOR', timing: 'before',
+            slides: [[
+                'APEX viruses are spreading. {{highlight:Divide the network into subnets}}, then connect A to B.',
+                'We will guide you through each answer. The clock pauses while you read.',
+            ]], onComplete,
+        });
+    },
+
+    showPhaseGuide(phase, context, onComplete) {
+        const c = context || {};
+        const timer = Number(c.timeLimitSeconds) > 0
+            ? c.timeLimitSeconds + ' seconds for the whole puzzle.' : 'This run has no time limit.';
+        const lessons = {
+            classify: {
+                title: '1 / 6 - IDENTIFY THE CLASS',
+                focusTargets: [['address'], ['class_input', 'attempts']],
+                slides: [[
+                    'Recall Gameplay 1. Read the first octet in the recessed display: A = 1-126, B = 128-191, C = 192-223.',
+                    'Type the letter, such as {{highlight:A}}, then press Enter.',
+                ], [
+                    'The three small lights are your attempts. A wrong answer changes the IP and viruses; {{highlight:three mistakes end the run}}.',
+                    timer + ' Dialogue and Pause stop the clock; the calculator does not.',
+                ]],
+            },
+            default_prefix: {
+                title: '2 / 6 - DEFAULT PREFIX',
+                focusTargets: [['class_badge'], ['answer', 'verify']],
+                slides: [[
+                    'Recall {{highlight:Gameplay 3}}: each octet has {{highlight:8 light bulbs}}. Each bulb is one bit.',
+                    'In the default mask: Class A lights 1 octet, B lights 2, and C lights 3.',
+                ], [
+                    'Remember: 8 bulbs per octet. A = 1 x 8 = /8; B = 2 x 8 = /16; C = 3 x 8 = /24.',
+                    'Enter the number for your class, then {{highlight:VERIFY / Enter}}. These are classful defaults; assigned masks can differ.',
+                ]],
+            },
+            borrow_bits: {
+                title: '3 / 6 - BORROW BITS',
+                focusTargets: [['bulbs'], ['subnets', 'bulbs', 'verify'], ['calculator']],
+                slides: [[
+                    '{{highlight:Cyan}} = original network bits. {{highlight:Gold}} = borrowed bits (s). Dark = remaining host bits (h).',
+                    'Borrow from left to right. More borrowed bits make more subnets, leaving fewer bits for hosts.',
+                ], [
+                    'Choose the {{highlight:smallest s with 2^s >= required subnets}}. Example: 31 subnets need 5 bits, giving 32 subnets. Do not subtract 2 from the subnet count.',
+                    'Click a dark bulb to borrow through it, or a gold bulb to release it. Left / Right adjusts one bit; VERIFY / Enter checks.',
+                ], [
+                    'The {{highlight:H calculator}} can help. Drag a value circle onto its display to change s; CLOSE returns to your bulbs.',
+                    'Reserve two addresses per subnet when calculating usable hosts later, not two bits or two subnets.',
+                ]],
+            },
+            new_cidr: {
+                title: '4 / 6 - NEW PREFIX',
+                focusTargets: [['network', 'answer', 'verify']],
+                slides: [[
+                    '{{highlight:New prefix = starting prefix + borrowed bits (s)}}.',
+                    'Example: /16 + 3 borrowed bits = /19. Enter your result, then VERIFY / Enter.',
+                ]],
+            },
+            host_bits: {
+                title: '5 / 6 - HOST BITS',
+                focusTargets: [['answer', 'verify']],
+                slides: [[
+                    '{{highlight:h = 32 - new prefix}}. Count all remaining dark bulbs, including those in later octets.',
+                    'Host bits are binary positions, not devices. Example: /19 leaves 13 bits. Enter the bit count, then VERIFY / Enter.',
+                ]],
+            },
+            host_capacity: {
+                title: '6 / 6 - USABLE HOSTS',
+                focusTargets: [['answer', 'calculator'], ['answer', 'verify']],
+                slides: [[
+                    'Recall Gameplay 4.5: {{highlight:2^h = total addresses}}; {{highlight:usable hosts = 2^h - 2}}.',
+                    'Reserve one network address and one broadcast address. Usable hosts are the addresses left for devices.',
+                ], [
+                    '5 host bits give 32 addresses but only {{highlight:30 usable hosts}}. For 31 hosts, add 2: 33 addresses need 6 bits, giving 62 usable hosts.',
+                    'Enter usable hosts, not the bit count or total addresses. VERIFY / Enter checks; H opens the calculator.',
+                ]],
+            },
+        };
+        const lesson = lessons[phase];
+        if (!lesson) return false;
+        return this._startDynamicDialogue('stage3.cidrquarantine.phase.' + phase + '.', {
+            ...lesson, onComplete,
+        });
+    },
+    showRouteGuide(context, onComplete) {
+        const c = context || {};
+        return this._startDynamicDialogue('stage3.cidrquarantine.route.', {
+            title: 'SUBNETS VERIFIED - SECURE THE ROUTE',
+            focusTargets: [['network_facts'], ['moves', 'path_total']],
+            slides: [[
+                'Your /' + c.targetCIDR + ' leaves h = ' + c.optimizedHostBits + ': ' + c.totalAddresses + ' total addresses and ' + c.optimizedCapacity + ' usable hosts per subnet.',
+                'Now {{highlight:connect A to B}} without touching red virus tiles.',
+            ], [
+                'Each move adds its {{highlight:direction value}}. Your path total must equal {{highlight:h = ' + c.optimizedHostBits + '}}.',
+                'This is the route rule, not the number of moves. Your subnet stays fixed.',
+            ]], onComplete,
         });
     },
 
     showStep(step, context, onComplete) {
         const c = context || {};
-        const n = Number(step) || 1;
-        const slidesByStep = {
-            1: [
-                [
-                    'STEP 1 of 4 - Make the first move',
-                    'Start from blue node A at ' + (c.startLabel || '?') + '.',
-                    'Drag to an adjacent tile, click an adjacent tile, or use arrow/WASD keys.',
-                    '',
-                    c.moveWeightsLine || 'Each direction adds a different amount to host power h.',
-                    '',
-                    'Do not jump over tiles. The connector grows one adjacent tile at a time.',
-                ],
-            ],
-            2: [
-                [
-                    'STEP 2 of 4 - Watch the live calculation',
-                    'Each tile movement adds to host power h.',
-                    '',
-                    'Current host power: h = ' + (c.currentHostBits || 0),
-                    'Derived CIDR: 32 - h = /' + (c.currentCIDR || '?'),
-                    'Needed hosts: ' + (c.requiredHosts || '?'),
-                    'Usable capacity: 2^' + (c.currentHostBits || 0) + ' - 2 = ' + (c.currentCapacity || 0),
-                    '',
-                    'Keep routing toward blue node B at ' + (c.endLabel || '?') + '.',
-                ],
-            ],
-            3: [
-                [
-                    'STEP 3 of 4 - Connect, then optimize',
-                    'Reaching B is required, but it is not the whole answer.',
-                    '',
-                    'Target host power: h = ' + (c.optimizedHostBits || '?'),
-                    'Derived target CIDR: /' + (c.targetCIDR || '?'),
-                    'Target capacity: ' + (c.optimizedCapacity || '?') + ' hosts.',
-                    '',
-                    'If usable capacity is too small, add more host-power movement.',
-                    'If it is larger than needed, undo and use a smaller total.',
-                ],
-            ],
-            4: [
-                [
-                    'STEP 4 of 4 - Confirm path',
-                    'Confirm only when:',
-                    '',
-                    '1. Blue node A reaches blue node B.',
-                    '2. No red virus tile is touched.',
-                    '3. The path total equals h = ' + (c.optimizedHostBits || '?') + '.',
-                    '4. 2^h - 2 fits the required hosts without extra waste.',
-                    '',
-                    'Press CONFIRM PATH or ENTER.',
-                ],
-            ],
+        const slides = {
+            1: [[
+                'Start at {{highlight:A}}. Click or drag through adjacent tiles, or use arrow / WASD keys.',
+                'Move up, down, left, or right. Avoid red tiles; no diagonals.',
+            ]],
+            2: [[
+                'Path total: {{highlight:' + c.currentHostBits + '}}. Required total: {{highlight:' + c.optimizedHostBits + '}}.',
+                'Follow the direction values toward B. {{highlight:UNDO / Z}} removes a move; CLEAR / R starts again.',
+            ]],
+            3: [[
+                'You reached B. Check that the {{highlight:path total equals h = ' + c.optimizedHostBits + '}}.',
+                'Too small? Choose a route with a larger sum. Too large? {{highlight:UNDO}} and choose a smaller sum.',
+            ]],
+            4: [[
+                'A must connect to B with {{highlight:path total = ' + c.optimizedHostBits + '}} and no red tiles.',
+                'Press {{highlight:CHECK / Enter}} in the bottom action row.',
+            ]],
         };
-
-        return this._startDynamicDialogue('stage3.cidrquarantine.step.', {
-            title: 'GUIDED PATH QUARANTINE',
-            speaker: 'SYSTEM',
-            timing: 'during',
-            bindings: { mapId: 12, gameplayId: 'ip_cidr_quarantine', trigger: 'tutorial.step' },
-            slides: slidesByStep[n] || slidesByStep[1],
-            onComplete,
+        return this._startDynamicDialogue('stage3.cidrquarantine.step.' + step + '.', {
+            title: 'ROUTE - ' + step + ' / 4', slides: slides[step] || slides[1], onComplete,
+            focusTargets: [step === 1 ? ['grid'] : step === 4 ? ['check'] : ['path_total', 'moves', 'actions']],
         });
     },
 
     showFeedback(reason, context, onComplete) {
         const c = context || {};
+        const correction = [
+            'Path total: {{highlight:' + c.currentHostBits + '}}. Required: {{highlight:' + c.optimizedHostBits + '}}.',
+            'Use {{highlight:UNDO}} or click an earlier path tile, then adjust the sum using the direction values.',
+        ];
         const text = {
-            submitEarly: [
-                'Not ready to confirm.',
-                'Build the connector until it reaches the second blue node.',
-                'Use adjacent tiles only and avoid red virus nodes.',
-            ],
-            submitWrong: [
-                'Simulation rejected.',
-                'The path connected, but one rule is still wrong.',
-                'Needed hosts: ' + (c.requiredHosts || '?'),
-                'Current h=' + (c.currentHostBits || 0) + ' gives ' + (c.currentCapacity || 0) + ' usable hosts.',
-                'Target h=' + (c.optimizedHostBits || '?') + ' gives ' + (c.optimizedCapacity || '?') + ' usable hosts.',
-                'Use UNDO or click an earlier tile to rewind.',
-            ],
-            submitReady: [
-                'Connector is ready to validate.',
-                'The route reaches the second blue node and matches the optimized CIDR.',
-                'Needed hosts: ' + (c.requiredHosts || '?'),
-                'Current host power h=' + (c.currentHostBits || 0) + ' gives ' + (c.currentCapacity || 0) + ' usable hosts.',
-                'Derived target CIDR: /' + (c.targetCIDR || '?') + '.',
-            ],
-            virus: [
-                'Virus tile blocked.',
-                'Route around red nodes. They are rogue AI detection points.',
-            ],
-            adjacent: [
-                'Connector move rejected.',
-                'Move one tile at a time: up, down, left, or right.',
-                'Diagonal movement and jumps are not allowed.',
-            ],
-            too_small: [
-                'Capacity is too small.',
-                'The current h leaves fewer usable hosts than required.',
-                'Add movement values until 2^h - 2 can hold ' + (c.requiredHosts || '?') + ' hosts.',
-            ],
-            too_big: [
-                'Capacity is too large.',
-                'The route creates extra exposed host space.',
-                'Undo or rewind and use a smaller host-power total.',
-            ],
-            not_optimized: [
-                'CIDR is not optimized yet.',
-                'Current CIDR: /' + (c.currentCIDR || '?') + '.',
-                'Target CIDR: /' + (c.targetCIDR || '?') + '.',
-                c.moveWeightsLine || 'Use the movement values to adjust host power h.',
-            ],
-            virus_overrun: [
-                'The virus pressure filled the grid.',
-                'Attempt reset automatically.',
-                'Unlimited retries remain available at this calibration node.',
-                'Try building a cleaner route before the pressure rises.',
-            ],
+            submitEarly: ['Connect {{highlight:A to B}} through adjacent, uninfected tiles before confirming.'],
+            submitWrong: correction,
+            submitReady: ['B is connected and {{highlight:path total = h}}. Press {{highlight:CHECK / Enter}} in the bottom action row.'],
+            virus: ['{{highlight:Red tiles are blocked}}. Route around the infection.'],
+            adjacent: ['Move {{highlight:one adjacent tile}} up, down, left, or right. No diagonals or jumps.'],
+            too_small: correction, too_big: correction, not_optimized: correction,
+            virus_overrun: ['{{highlight:Time expired.}} The breach popup and pixelated takeover end this run. Loading screen 2 returns you to the floor or testing panel.'],
         };
-
         return this._startDynamicDialogue('stage3.cidrquarantine.feedback.', {
-            title: 'ROUTE FEEDBACK',
-            speaker: 'SYSTEM',
-            timing: 'during',
-            bindings: { mapId: 12, gameplayId: 'ip_cidr_quarantine', trigger: 'tutorial.feedback' },
-            slides: [text[reason] || text.submitWrong],
-            onComplete,
+            title: 'ROUTE FEEDBACK', slides: [text[reason] || correction], onComplete,
+            focusTargets: [['grid']],
         });
     },
 
     showComplete(onComplete) {
         return this._startDynamicDialogue('stage3.cidrquarantine.complete.', {
-            title: 'PATH QUARANTINE STABLE',
-            speaker: 'SYSTEM',
-            timing: 'after',
-            bindings: { mapId: 12, gameplayId: 'ip_cidr_quarantine', trigger: 'tutorial.completed' },
-            slides: [
-                [
-                    'Quarantine successful.',
-                    'Blue nodes connected.',
-                    'Virus nodes avoided.',
-                    'Animated CIDR calculation reached the optimized capacity.',
-                    '',
-                    'Future nodes change layout, movement values, IP class, and host demand.',
-                    'Preview first, then confirm only when the route is optimized.',
-                ],
-            ],
-            onComplete,
+            title: 'QUARANTINE ROUTE SECURED', timing: 'after',
+            slides: [[
+                'Route secured. {{highlight:Subnets = 2^s}}; {{highlight:usable hosts = 2^h - 2}}.',
+                'Borrowed bits divide the network. Remaining host bits provide addresses inside each subnet.',
+            ]], onComplete,
         });
     },
 
     showRecovery(context, onComplete) {
         return this._startDynamicDialogue('stage3.cidrquarantine.recovery.', {
-            title: 'ROUTE RECOVERY',
-            speaker: 'SYSTEM',
-            timing: 'after',
-            bindings: { mapId: 12, gameplayId: 'ip_cidr_quarantine', trigger: 'gameplay.failed' },
-            slides: [
-                [
-                    'Connector collapsed. All attempts used.',
-                    'Routing back to the calibration node.',
-                    '',
-                    'Recap:',
-                    '1. Connect blue node A to blue node B.',
-                    '2. Avoid red virus nodes.',
-                    '3. Read the randomized movement values.',
-                    '4. Make the path total equal the smallest h where 2^h - 2 fits.',
-                ],
-            ],
-            onComplete,
+            title: 'TRAINING PROTOCOL RESTORED', timing: 'after',
+            slides: [[
+                'Attempts exhausted. Return to the {{highlight:guided quarantine node}} to recalibrate.',
+                'Verify the class, starting prefix, borrowed bits, new prefix, host bits, and {{highlight:usable hosts}}. Then connect A to B with {{highlight:path total = h}}.',
+            ]], onComplete,
         });
     },
 
@@ -243,20 +178,16 @@ const IPCIDRQuarantineTutorial = {
         }
         const id = prefix + (++this._dialogueSerial);
         dm.registerDialogue(id, {
-            title: definition.title || 'TRANSMISSION',
-            speaker: definition.speaker || 'SYSTEM',
-            slides: definition.slides || [],
-            timing: definition.timing || 'during',
-            bindings: Object.assign({}, definition.bindings || {}),
-            hideQuestPanel: true,
-            lockMovement: true,
+            title: definition.title || 'TRANSMISSION', speaker: 'SYSTEM',
+            slides: definition.slides || [], timing: definition.timing || 'during',
+            bindings: { mapId: 12, gameplayId: 'ip_cidr_quarantine', trigger: 'tutorial.dialogue' },
+            hideQuestPanel: true, lockMovement: true,
             onComplete: definition.onComplete || null,
         });
-        return dm.start(id, { source: 'IPCIDRQuarantineTutorial' });
+        return dm.start(id, { source: 'IPCIDRQuarantineTutorial',
+            gameplayFocus: definition.focusTargets || [], compactPanel: true });
     },
 };
 
 IP2Live.IPCIDRQuarantineTutorial = IPCIDRQuarantineTutorial;
 window.IP2LiveIPCIDRQuarantineTutorial = IPCIDRQuarantineTutorial;
-
-console.log('[IP2Live] ip_cidr_quarantine_tutorial.js loaded.');

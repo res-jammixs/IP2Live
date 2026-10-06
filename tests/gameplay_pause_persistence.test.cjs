@@ -114,6 +114,17 @@ async function testPauseInputAndDurableRestore() {
 
     original.drawHUD();
     assert.ok(original._ip2livePauseButtonRect, 'every gameplay should draw the shared top-center pause button');
+    let overlayOpen = true;
+    let resumed = false;
+    original._closeGameplayOverlay = () => {
+        if (!overlayOpen) return false;
+        overlayOpen = false;
+        return true;
+    };
+    original.onGameplayResume = () => { resumed = true; };
+    original.onKeyPressed('Escape');
+    assert.equal(overlayOpen, false, 'Escape closes a gameplay popup first');
+    assert.equal(h.stack.pushed.length, 0, 'closing a popup must not open Pause');
     original.onKeyPressed('Escape');
     assert.equal(original.oldEscapeHandlerReached, undefined, 'Escape must not reach the old immediate-cancel handler');
     assert.equal(h.stack.pushed.length, 1);
@@ -129,6 +140,11 @@ async function testPauseInputAndDurableRestore() {
     assert.equal(saved.state.buttonRects, undefined, 'draw-only hit rectangles should not inflate durable saves');
 
     h.system.closeMenu();
+    assert.equal(resumed, true, 'live resume notifies gameplay clocks');
+    const restoredClock = { lastUpdateAt: 1000, questElapsedMs: 2000 };
+    h.system._shiftWallClockFields(restoredClock, 5000);
+    assert.equal(restoredClock.lastUpdateAt, 6000);
+    assert.equal(restoredClock.questElapsedMs, 2000, 'saved elapsed quest time stays unchanged on restore');
     const restored = new WireScreen(options);
     await restored.load();
     assert.deepEqual(restored.connections, { sourceA: 'A', sourceB: 'B' });
@@ -143,6 +159,44 @@ async function testPauseInputAndDurableRestore() {
     assert.equal(h.system.hasSession('ip_class_wires', options), true);
     h.system.clearSession('ip_class_wires', options);
     assert.equal(h.system.hasSession('ip_class_wires', options), false);
+}
+
+function testGameplayPausePopupResume() {
+    const h = harness();
+    const screen = new WireScreen({ mapId: 3, questId: 'quest.popup', objectiveId: 'wire.popup' });
+    let resumed = 0;
+    const animation = [];
+    screen.onGameplayResume = () => { resumed++; };
+    h.IP2Live.PopupChrome = { animate(_ctx, _rect, progress) { animation.push(progress); } };
+    h.Common.Platform.ctx.createRadialGradient = () => ({ addColorStop() {} });
+    h.IP2Live.MenuTransition = {
+        open() { throw new Error('Pause must not use the TV transition'); },
+        back() { throw new Error('Resume must not use the TV transition'); },
+    };
+
+    assert.equal(h.system.open(screen), true);
+    const menu = h.stack.pushed.at(-1);
+    menu.initialize();
+    menu._drawPanel = () => {};
+    menu._drawSectionRail = () => {};
+    menu._drawMenuButton = () => {};
+    menu.drawHUD();
+    assert.equal(animation.at(-1), 0, 'the pause panel starts at the beginning of the popup animation');
+    for (let i = 0; i < 12; i++) menu.update();
+    assert.equal(menu.fadeIn, 1, 'pause panel finishes its popup entrance');
+    menu.drawHUD();
+    assert.equal(animation.at(-1), 1);
+
+    assert.equal(menu._resume(), true);
+    assert.equal(h.stack.popCount, 0, 'resume keeps gameplay covered during the popup exit');
+    assert.equal(resumed, 0, 'gameplay clock stays paused during the exit animation');
+    menu.update();
+    menu.drawHUD();
+    assert.ok(animation.at(-1) < 1, 'the popup reverses before gameplay resumes');
+    for (let i = 0; i < 8; i++) menu.update();
+    assert.equal(h.stack.popCount, 1);
+    assert.equal(resumed, 1);
+    assert.equal(h.system.menuOpen, false);
 }
 
 async function testExitQuestCheckpointsBeforeCancel() {
@@ -162,6 +216,36 @@ async function testExitQuestCheckpointsBeforeCancel() {
     assert.equal(h.IP2Live.GameManager.saveCalls.at(-1).checkpointReason, 'gameplay_exit_quest');
     assert.equal(h.system.activeScreen, null);
     assert.equal(h.system.hasSession('ip_class_wires', options), true, 'Exit Quest must retain resumable state');
+}
+
+async function testDeveloperExitDiscardsSession() {
+    const h = harness();
+    const storyOptions = { mapId: 3, questId: 'quest.story', objectiveId: 'wire.story' };
+    const story = new WireScreen(storyOptions);
+    story.connections = { sourceA: 'A' };
+    h.system.captureScreen(story, 'story_checkpoint');
+    // Simulate a session captured by an older build, before developer runs were excluded.
+    const options = { mapId: 3, questId: 'test.legacy', objectiveId: 'wire.test' };
+    const screen = new WireScreen(options);
+    screen.connections = { sourceB: 'B' };
+    assert.ok(h.system.captureScreen(screen, 'legacy_test'));
+    options.spec = { developerTest: true };
+    assert.equal(h.system.findSession('ip_class_wires', options), null);
+    assert.equal(h.system.captureScreen(screen, 'test_checkpoint'), null);
+    const fresh = new WireScreen(options);
+    assert.equal(h.system._restoreIntoScreen(fresh, 'ip_class_wires'), false);
+    await fresh.load();
+    assert.deepEqual(fresh.connections, {}, 'developer tests cannot restore an old session');
+    h.system.open(screen, 'ip_class_wires');
+    const menu = h.stack.pushed.at(-1);
+    menu.initialize();
+    await menu._exitQuest();
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    assert.equal(screen.cancelled, true);
+    assert.equal(h.IP2Live.GameManager.saveCalls.length, 0, 'quitting a test must not checkpoint campaign state');
+    assert.equal(h.system.hasSession('ip_class_wires', { mapId: 3, questId: 'test.legacy', objectiveId: 'wire.test' }), false,
+        'quitting clears legacy testing progress');
+    assert.equal(h.system.hasSession('ip_class_wires', storyOptions), true, 'story progress is still retained');
 }
 
 function testGameManagerResumesWithoutReplayingIntro() {
@@ -200,11 +284,24 @@ function testGameManagerResumesWithoutReplayingIntro() {
     assert.equal(dialogueRuns, 0, 'a resumed gameplay must not replay its before-gameplay briefing');
     assert.equal(launchOptions._ip2liveResumeGameplay, true);
     assert.equal(launchOptions._ip2liveResumeCapturedAt, 123);
+    manager._activeGameplayNode = null;
+    manager._runTimingDialogues = () => false;
+    let staleTestsCleared = 0;
+    IP2Live.GameplayPause.clearSession = () => { staleTestsCleared++; };
+    IP2Live.GameplayPause.findSession = () => { throw new Error('Developer launch must not request a saved session'); };
+    assert.equal(manager.startGameplayNode('ip_class_wires', {
+        developerTest: true,
+        spec: { id: 'developer.gameplay_test.wires', objectiveId: 'wire.test', developerTest: true },
+    }), true);
+    assert.equal(launchOptions._ip2liveResumeGameplay, false, 'developer launches always begin fresh');
+    assert.equal(staleTestsCleared, 1);
 }
 
 async function main() {
     await testPauseInputAndDurableRestore();
+    testGameplayPausePopupResume();
     await testExitQuestCheckpointsBeforeCancel();
+    await testDeveloperExitDiscardsSession();
     testGameManagerResumesWithoutReplayingIntro();
     assert.match(managerSource, /opts\.skipBeforeDialogues \|\| resumeSession/);
     assert.match(managerSource, /captureActiveSession\(\(options && options\.checkpointReason\)/);

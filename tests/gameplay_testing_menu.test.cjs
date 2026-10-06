@@ -363,7 +363,9 @@ function testPauseHeaderButtonPlacementAndFlag() {
         'Common', 'Core', 'Data', 'Graphic', 'Manager', 'Scene', 'Model', 'Main', 'THREE', 'IP2Live', 'inject', 'window',
         read('modules/screens/pause-menu.js') + '\nreturn window.IP2LivePauseMenu;'
     );
-    const PauseMenu = load(Common, { Game: {} }, {}, {}, {}, Scene, {}, {}, {}, IP2Live, function () {}, windowObject);
+    const Data = { Keyboards: { menuControls: { Up: 'up', Down: 'down', Left: 'left', Right: 'right' }, isKeyEqual: (a, b) => a === b },
+        Systems: { soundCursor: { playSound() {} } } };
+    const PauseMenu = load(Common, { Game: {} }, Data, {}, { Stack: {} }, Scene, {}, {}, {}, IP2Live, function () {}, windowObject);
     const menu = new PauseMenu();
     menu.initialize();
     const testButton = menu._gameplayTestButtonLayout(1280, 720);
@@ -382,7 +384,22 @@ function testPauseHeaderButtonPlacementAndFlag() {
     };
     menu.gameplayTestMode = true;
     menu._drawGameplayTestOverlay(ctx, 1280, 720);
-    assert.ok(menu.gameplayTestItemRects.length > 0, 'the selector should render clickable gameplay rows');
+    assert.ok(menu.gameplayTestItemRects.length > 0, 'the selector should render clickable gameplay tiles');
+    const tiles = menu.gameplayTestItemRects;
+    assert.equal(tiles[0].y, tiles[1].y, 'tiles share a grid row');
+    assert.ok(tiles[1].x > tiles[0].x + tiles[0].w, 'columns have a gap');
+    assert.ok(tiles[4].y > tiles[0].y + tiles[0].h, 'the fifth tile starts the next row');
+    menu.onKeyPressedAndRepeat('right'); assert.equal(menu.gameplayTestIndex, 1);
+    menu.onKeyPressedAndRepeat('down'); assert.equal(menu.gameplayTestIndex, 5);
+    menu.onKeyPressedAndRepeat('up'); assert.equal(menu.gameplayTestIndex, 1);
+    menu.onKeyPressedAndRepeat('left'); assert.equal(menu.gameplayTestIndex, 0);
+    menu.popupProgress = 1;
+    const next = menu.gameplayTestNavRects.find(r => r.step === 1);
+    assert.ok(next, 'all targets remain accessible through mouse page controls');
+    menu.onMouseUp(next.x + 1, next.y + 1);
+    menu._drawGameplayTestOverlay(ctx, 1280, 720);
+    assert.equal(menu.gameplayTestItemRects[0].index, 16);
+    assert.equal(menu._getGameplayTestItemAt(menu.gameplayTestItemRects[0].x + 1, menu.gameplayTestItemRects[0].y + 1), 16);
 
     manager.enableGameplayTestingButton = false;
     assert.equal(menu._isGameplayTestButtonAt(testButton.x + 1, testButton.y + 1), false);

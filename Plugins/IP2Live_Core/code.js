@@ -996,7 +996,7 @@ IP2Live.GameplayManagerReady = (async function () {
         },
         {
             baseDir: root + 'Plugins/IP2Live_Core/gameplay/gameplay4_5/HostPowerReactor/',
-            version: '20260821_ip_host_power_reactor_06_',
+            version: '20260929_ip_host_power_reactor_10_',
             files: [
                 'ip_host_power_gameplay.js',
                 'ip_host_power_tutorial.js',
@@ -1020,7 +1020,7 @@ IP2Live.GameplayManagerReady = (async function () {
         },
         {
             baseDir: root + 'Plugins/IP2Live_Core/gameplay/gameplay5/CIDRQuarantine/',
-            version: '20260821_ip_cidr_quarantine_03_',
+            version: '20260930_ip_cidr_quarantine_12_',
             files: [
                 'ip_cidr_quarantine_tutorial.js',
                 'ip_cidr_quarantine_gameplay.js',

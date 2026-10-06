@@ -47,5 +47,51 @@ const originalAnimate=chrome.animate;
 chrome.animate=(...args)=>{entrances++;return originalAnimate(...args)};
 for(const popup of [kb,settings,menu]) popup.drawHUD();
 assert.equal(entrances,3,'Settings, key bindings and export use the same entrance');
+
+// Pause settings should keep their parent frozen and close through the popup
+// animation, even when the TV transition service is available.
+env.inject=()=>{};
+env.Scene.Map=class{};
+env.IP2Live.TextScramble={create:()=>({})};
+let tvCalls=0;
+env.IP2Live.MenuTransition={open(){tvCalls++;},back(){tvCalls++;}};
+const stack=env.Manager.Stack;
+stack.content=[];
+Object.defineProperty(stack,'top',{get(){return this.content.at(-1);}});
+stack.push=scene=>stack.content.push(scene);
+stack.pop=()=>stack.content.pop();
+for(const file of ['pause-menu','gameplay-pause']) vm.runInContext(fs.readFileSync(
+    path.join(__dirname,'../Plugins/IP2Live_Core/modules/screens',file+'.js'),'utf8'),env);
+for(const [Menu,openMethod] of [[env.window.IP2LivePauseMenu,'_openSettings'],
+    [env.window.IP2LiveGameplayPauseMenu,'_settings']]) {
+    const parent=Object.create(Menu.prototype);
+    stack.content=[parent];
+    parent[openMethod]();
+    const popup=stack.top;
+    assert.ok(popup instanceof env.window.IP2LiveSettingsMenu);
+    assert.equal(popup.popupTransition,true);
+    assert.equal(tvCalls,0,'pause settings bypass the TV transition');
+    assert.notEqual(popup.blurredBackdrop,popup.backdrop,'background blur is cached separately from the sharp frame');
+    const cachedBlur=popup.blurredBackdrop;
+    for(let i=0;i<13;i++) popup.update();
+    popup.drawHUD();
+    assert.equal(popup.popupProgress,1);
+    assert.equal(popup.blurredBackdrop,cachedBlur,'drawing does not regenerate the blur');
+    const originalVolume=popup.sfxVolume;
+    popup._resume();
+    popup.onKeyPressedAndRepeat('Down');
+    popup.onMouseUp(popup.volumeHitTargets[0].x,popup.volumeHitTargets[0].y);
+    assert.equal(popup.sfxVolume,originalVolume,'closing popup blocks settings changes');
+    popup.update();
+    assert.ok(popup.popupProgress>0 && popup.popupProgress<1);
+    assert.equal(stack.top,popup,'parent stays paused while settings close');
+    for(let i=0;i<13;i++) popup.update();
+    assert.equal(stack.top,parent,'closing returns to the same pause menu');
+    assert.equal(tvCalls,0);
+}
+const titleSettings=new env.window.IP2LiveSettingsMenu();
+titleSettings._resume();
+assert.equal(tvCalls,1,'other settings entry points preserve their existing return transition');
+
 let exported;env.IP2Live.GameManager={exportProgressReport:async options=>{exported=options;return {ok:true}}};
 (async()=>{await menu._runExport();assert.equal(exported.format,'excel');assert.equal(exported.scopeDays,90);assert.match(exported.filenameBase,/IP2Live_Report_Test_/);console.log('Popup controls and export defaults passed.');})().catch(e=>{console.error(e);process.exitCode=1});

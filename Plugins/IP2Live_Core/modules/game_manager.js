@@ -1327,7 +1327,10 @@ const IP2LiveGameManager = {
             this._activeGameplayNode = null;
             return false;
         }
-        const resumeSession = IP2Live.GameplayPause && typeof IP2Live.GameplayPause.findSession === 'function'
+        if (isDeveloperTest && IP2Live.GameplayPause && typeof IP2Live.GameplayPause.clearSession === 'function') {
+            IP2Live.GameplayPause.clearSession(node.id, payload);
+        }
+        const resumeSession = !isDeveloperTest && IP2Live.GameplayPause && typeof IP2Live.GameplayPause.findSession === 'function'
             ? IP2Live.GameplayPause.findSession(node.id, payload)
             : null;
         const gameplayLaunchOpts = Object.assign({}, launchOpts, {
@@ -1394,7 +1397,13 @@ const IP2LiveGameManager = {
                 return IP2Live.CIDRQuarantineGameplayManager.launchCIDRQuarantineGameplay(Object.assign({}, gameplayLaunchOpts, {
                     _fromGameManager: true,
                     showIntro: resumeSession ? false : opts.showIntro,
-                    mode: gameplayLaunchOpts.mode || 'push',
+                    // A developer test opens from the pause menu through a
+                    // loading scene. Replace that temporary scene so leaving
+                    // the puzzle returns to the pause menu instead of it.
+                    mode: isDeveloperTest ? 'replace' : (gameplayLaunchOpts.mode || 'push'),
+                    // Test quest IDs are intentionally absent from the
+                    // campaign QuestManager; the test result is handled below.
+                    questId: isDeveloperTest ? null : payload.questId,
                 }));
             }
             if (node.id === 'ip_cidr_quarantine_matrix' && IP2Live.CIDRQuarantineMatrixGameplayManager && typeof IP2Live.CIDRQuarantineMatrixGameplayManager.launchCIDRQuarantineMatrixGameplay === 'function') {
@@ -1624,6 +1633,9 @@ const IP2LiveGameManager = {
         if (data.developerTest || (data.spec && data.spec.developerTest)) {
             this._activeGameplayNode = null;
             this._setState(this.STATE.NEXT_NODE, data);
+            if (IP2Live.GameplayPause && typeof IP2Live.GameplayPause.clearSession === 'function') {
+                IP2Live.GameplayPause.clearSession(gameplayId, data);
+            }
             return true;
         }
         this._ensureQuestMinimap();
@@ -2155,6 +2167,11 @@ const IP2LiveGameManager = {
         const tests = this.getGameplayTestCatalog();
         const selected = tests.find((entry) => entry.id === String(testId || ''));
         if (!selected || !this.flowConfig.gameplayNodes[selected.gameplayId]) return false;
+        if (selected.tutorial && IP2Live.TutorialReplay && typeof IP2Live.TutorialReplay.launch === 'function') {
+            return IP2Live.TutorialReplay.launch(selected.gameplayId, {
+                developerTest: true, sourceSpec: selected.spec,
+            });
+        }
 
         const spec = this._clonePlain(selected.spec) || {};
         const testToken = String(selected.id).replace(/[^a-z0-9]+/gi, '_').toLowerCase();

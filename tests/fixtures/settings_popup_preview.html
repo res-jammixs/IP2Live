@@ -1,0 +1,50 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Pause settings preview</title>
+<style>
+@font-face{font-family:Oxanium-Medium;src:url('../../Fonts/Oxanium-Medium.ttf')}
+@font-face{font-family:Nebula-Regular;src:url('../../Fonts/Nebula-Regular.otf')}
+@font-face{font-family:Abnes;src:url('../../Fonts/abnes.ttf')}
+html,body{margin:0;background:#020812;overflow:hidden}canvas{display:block;width:100vw;height:100vh}
+</style></head><body><canvas id="preview"></canvas><script>
+const canvas=document.querySelector('canvas');canvas.width=innerWidth;canvas.height=innerHeight;
+const ctx=canvas.getContext('2d');
+const Common={Platform:{ctx},ScreenResolution:{SCREEN_X:1280,SCREEN_Y:720}};
+const Core={Game:{current:{currentMapID:3}}};
+const sound={playSound(){}};
+const Data={Systems:{soundCursor:sound,soundConfirmation:sound,soundCancel:sound,soundImpossible:sound},
+Keyboards:{menuControls:{Up:'ArrowUp',Down:'ArrowDown',Left:'ArrowLeft',Right:'ArrowRight'},isKeyEqual:(a,b)=>a===b,
+checkActionMenu:k=>k==='Enter',checkCancelMenu:k=>k==='Escape'}};
+const Manager={Stack:{content:[],get top(){return this.content.at(-1)},push(scene){this.content.push(scene)},
+pop(){this.content.pop()},requestPaintHUD:true},GL:{renderer:{clear(){}}}};
+const Scene={Base:class{constructor(){this.initialize?.();this.loading=false}close(){}},Map:class{}};
+const IP2Live={Assets:{oxaniumMediumLoaded:true,nebulaLoaded:true,abnesLoaded:true},sfxVolume:0.7,musicVolume:0.55,
+BgFx:{create:()=>({seed(){},update(){},drawParticles(){},drawBg(ctx,img,w,h){
+const bg=ctx.createLinearGradient(0,0,w,h);bg.addColorStop(0,'#08192b');bg.addColorStop(1,'#110a21');
+ctx.fillStyle=bg;ctx.fillRect(0,0,w,h);ctx.strokeStyle='rgba(98,177,197,.15)';
+for(let x=0;x<w;x+=60){ctx.beginPath();ctx.moveTo(x,0);ctx.lineTo(x+w*.18,h);ctx.stroke()}
+for(let y=0;y<h;y+=60){ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(w,y);ctx.stroke()}
+}})},TextScramble:{create:()=>({update(){},getText(i,label){return label}})}};
+async function load(path){const source=await(await fetch('../../Plugins/IP2Live_Core/'+path)).text();
+new Function('Common','Core','Data','Graphic','Manager','Scene','Model','Main','THREE','IP2Live','inject',source)(
+Common,Core,Data,{},Manager,Scene,{},{},{},IP2Live,()=>{});}
+(async()=>{
+const code=await(await fetch('../../Plugins/IP2Live_Core/code.js')).text();
+new Function('IP2Live',code.match(/IP2Live\.UI = \{[\s\S]*?\n\};/)[0])(IP2Live);
+await load('modules/screens/confir-popup.js');await load('modules/screens/settings.js');
+await load('modules/screens/keyboard-menu.js');await load('modules/screens/pause-menu.js');
+await Promise.all(['16px Oxanium-Medium','18px Nebula-Regular','28px Abnes'].map(font=>document.fonts.load(font)));
+const pause=new window.IP2LivePauseMenu();pause.popupProgress=1;pause.animTick=60;
+Manager.Stack.push(pause);pause.drawHUD();
+const capture=new URLSearchParams(location.search).get('capture');
+if(capture){
+pause._openSettings();const popup=Manager.Stack.top;
+for(let i=0;i<(capture==='opening'?3:13);i++)popup.update();
+popup.selectedIndex=1;if(capture==='closing'){popup._resume();for(let i=0;i<6;i++)popup.update()}
+popup.drawHUD();document.title='Settings '+capture;return;
+}
+addEventListener('keydown',e=>{Manager.Stack.top.onKeyPressedAndRepeat?.(e.key);Manager.Stack.top.onKeyPressed?.(e.key);e.preventDefault()});
+canvas.onpointermove=e=>Manager.Stack.top.onMouseMove?.(e.clientX,e.clientY);
+canvas.onpointerup=e=>Manager.Stack.top.onMouseUp?.(e.clientX,e.clientY);
+function paint(){Manager.Stack.top.update?.();Manager.Stack.top.drawHUD();requestAnimationFrame(paint)}paint();
+})();
+</script></body></html>

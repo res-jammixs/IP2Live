@@ -1,0 +1,30 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Gameplay testing grid preview</title>
+<style>
+@font-face{font-family:Nebula-Regular;src:url('../../Fonts/Nebula-Regular.otf')}
+html,body{margin:0;background:#020812;overflow:hidden}canvas{display:block;width:100vw;height:100vh}
+</style></head><body><canvas id="preview"></canvas><script>
+const canvas = document.querySelector('canvas'); canvas.width = innerWidth; canvas.height = innerHeight;
+const ctx = canvas.getContext('2d');
+const Common = {Platform:{ctx}, ScreenResolution:{SCREEN_X:1280,SCREEN_Y:720}};
+const Core = {Game:{current:{currentMapID:3}}};
+const Data = {Systems:{soundCursor:{playSound(){}},soundConfirmation:{playSound(){}},soundImpossible:{playSound(){}}},
+Keyboards:{menuControls:{Up:'ArrowUp',Down:'ArrowDown',Left:'ArrowLeft',Right:'ArrowRight'},isKeyEqual:(a,b)=>a===b,
+checkActionMenu:k=>k==='Enter',checkCancelMenu:k=>k==='Escape'}};
+const Manager = {Stack:{requestPaintHUD:true}};
+const Scene = {Base:class{},Map:{current:{id:3}}};
+const IP2Live = {Assets:{},BgFx:{create:()=>({})},TextScramble:{create:()=>({})}};
+async function load(path){const source=await(await fetch('../../Plugins/IP2Live_Core/'+path)).text();
+new Function('Common','Core','Data','Graphic','Manager','Scene','Model','Main','THREE','IP2Live','inject',source)(Common,Core,Data,{},Manager,Scene,{},{},{},IP2Live,()=>{});}
+(async()=>{
+await load('modules/game_manager.js'); await load('modules/screens/pause-menu.js');
+const menu = new window.IP2LivePauseMenu(); menu.initialize(); menu.popupProgress=1;menu.gameplayTestMode=true;
+menu.gameplayTestIndex=Number(new URLSearchParams(location.search).get('index'))||0;
+IP2Live.GameManager.launchGameplayTest=id=>{document.title='Selected '+id;return false;};
+const paint=()=>menu._drawGameplayTestOverlay(ctx,canvas.width,canvas.height);
+addEventListener('keydown',e=>{menu.onKeyPressedAndRepeat(e.key);menu.onKeyPressed(e.key);paint();});
+canvas.onpointermove=e=>{menu.onMouseMove(e.clientX,e.clientY);paint();};
+canvas.onpointerup=e=>{menu.onMouseUp(e.clientX,e.clientY);paint();};
+paint(); await document.fonts.load('12px Nebula-Regular'); IP2Live.Assets.nebulaLoaded=true;paint();
+})();
+</script></body></html>

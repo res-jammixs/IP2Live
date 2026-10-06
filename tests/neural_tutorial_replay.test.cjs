@@ -122,6 +122,97 @@ for (const [file, gameplayId] of definitions) {
     }
 }
 
+// Developer tutorials use the same isolated guided instances as practice.
+for (const [file, gameplayId] of definitions) {
+    const { context, load, gm, frames, calls } = harness();
+    frames.push({ name: 'testing grid' });
+    if (gameplayId === 'ip_class_wires_harder') context.IP2Live.WiresGameplayScreen = context.ReplayScreenStub;
+    if (gameplayId === 'ip_cidr_binary_panel_harder') context.IP2Live.CIDRPanelGameplayScreen = context.ReplayScreenStub;
+    load('gameplay/' + file, source => source.replace(/new IP2Live\w+(?:Gameplay|Connector)Screen\(/g, 'new ReplayScreenStub(').replace(/new HarderScreenClass\(/g, 'new ReplayScreenStub('));
+    const owner = context.IP2Live[gm.flowConfig.gameplayNodes[gameplayId].manager];
+    if (owner._freshProblem) owner._freshProblem = () => ({});
+    let lessons = 0;
+    for (const helper of ['IPWiresTutorial', 'IPWiresHarderTutorial', 'IPNetworkRepairTutorial', 'IPVLSMAllocatorTutorial']) {
+        context.IP2Live[helper] = { showIntro() { lessons++; }, activateGuidedSession() { lessons++; } };
+    }
+    context.IP2Live.NeuralLifeForce = { isRunOver: () => true };
+    const entry = gm.getGameplayTestCatalog().find(e => e.gameplayId === gameplayId && e.tutorial);
+    const questBefore = JSON.stringify(context.IP2Live.QuestManager);
+    owner._introShown = true;
+    let previous;
+    for (const outcome of ['cancelled', 'failed', 'completed']) {
+        assert.equal(gm.launchGameplayTest(entry.id), true);
+        const screen = frames.at(-1);
+        assert.notEqual(screen, previous, 'each launch creates a fresh tutorial');
+        assert.equal(screen.options.tutorialReplay, true);
+        assert.equal(screen.options.developerTest, true);
+        assert.equal(screen.options.spec.tutorialSource.questId, entry.spec.id);
+        assert.equal(screen.options.mapId, entry.spec.mapId);
+        if (outcome === 'cancelled') screen.options.onCancel();
+        if (outcome === 'failed') {
+            if (gameplayId === 'ip_cidr_quarantine') {
+                context.IP2Live.LoadingScreen2 = { show(options) {
+                    assert.equal(options.mode, 'replace');
+                    frames.pop(); frames.push({ name: 'loading screen 2', options });
+                } };
+                screen.options.onFailed({ reason: 'attempts_exhausted', diagnosticReason: 'virus_overrun' });
+                assert.equal(frames.at(-1).name, 'loading screen 2');
+                const loading = frames.at(-1);
+                loading.options.onComplete(loading);
+            } else screen.options.onFailed({ reason: 'attempts_exhausted' });
+        }
+        if (outcome === 'completed') screen.options.onComplete({ passed: true });
+        assert.equal(frames.length, 2, 'return to the testing grid');
+        assert.equal(owner._introShown, true, 'story intro state is restored');
+        assert.equal(JSON.stringify(context.IP2Live.QuestManager), questBefore);
+        previous = screen;
+    }
+    if (['ip_class_wires', 'ip_class_wires_harder', 'ip_network_repair', 'ip_vlsm_allocator'].includes(gameplayId)) assert.equal(lessons, 3, 'guided dialogue reopens every time');
+    assert.equal(calls.dialogue.length, 0, 'developer tutorials use instance guidance, not campaign queues');
+    assert.equal(calls.telemetry.length, 0);
+    assert.equal(calls.overlays.length, 0, 'developer failure never opens AR diagnostics');
+}
+
+// Exercise actual Gameplay 5 lessons with the actual dialogue queue. A floor
+// title remains active while its map is suspended beneath the testing panel.
+{
+    const { context, load, gm, frames } = harness();
+    load('gameplay/common/ip_class_ranges.js');
+    load('gameplay/common/ip_cidr_tools.js');
+    load('modules/dialogue_manager.js');
+    load('gameplay/gameplay5/CIDRQuarantine/ip_cidr_quarantine_tutorial.js');
+    load('gameplay/gameplay5/CIDRQuarantine/ip_cidr_quarantine_gameplay.js');
+    frames.push({ name: 'testing grid' });
+    const dm = context.IP2Live.DialogueManager;
+    dm.registerDialogue('floor.pending', { slides: [['A suspended floor dialogue.']] });
+    dm.start('floor.pending');
+    dm._queueStart('floor.pending.again', {});
+    context.IP2Live.WorldTitleOverlay = { isActive: () => true };
+    const testId = gm.getGameplayTestCatalog().find(e => e.gameplayId === 'ip_cidr_quarantine' && e.tutorial).id;
+    for (let run = 0; run < 2; run++) {
+        assert.equal(gm.launchGameplayTest(testId), true);
+        const screen = frames.at(-1);
+        assert.equal(screen.tutorialMode, true);
+        assert.equal(dm.isActive(), false, 'inherited floor dialogue is discarded');
+        assert.equal(dm._queuedStarts.length, 0);
+        screen.update();
+        assert.match(dm._active.id, /cidrquarantine\.intro\./, 'intro starts above the real tutorial screen');
+        dm.stop();
+        assert.match(dm._active.id, /phase\.classify\./, 'classification guidance follows the intro');
+        dm.stop();
+        assert.equal(screen._submitSegmentation(screen.problem.ipClass), true);
+        screen.classUnlockAt = 0;
+        screen.update();
+        assert.match(dm._active.id, /phase\.default_prefix\./, 'phase guidance also appears');
+        screen.options.onCancel();
+        assert.equal(frames.at(-1).name, 'testing grid');
+        assert.equal(dm.isActive(), false);
+    }
+    dm.start('floor.pending');
+    assert.equal(dm.isActive(), false, 'ordinary floor dialogue still waits for its title');
+    assert.equal(dm._queuedStarts.length, 1);
+}
+
 async function testReplayPause() {
     const { context, load, gm } = harness();
     const id = 'ip_class_wires';

@@ -1,0 +1,9 @@
+# Developer gameplay testing
+
+The pause menu's Test button opens a paged tile grid. Tutorial and Gameplay tiles retain the existing catalog order, including harder variants. Arrow keys select tiles, Enter launches, and Escape goes back. Previous/Next page and Back buttons work with the mouse. Returning from a test keeps the grid open at the selected tile.
+
+Tutorial tiles use the isolated `TutorialReplay` instance lifecycle used by practice tutorials, with developer-test flags and the selected tutorial's source bindings. Each launch creates a fresh guided screen, resets temporary manager state, and restores that state afterward. They bypass campaign dialogue queues, reporting, progression, saved puzzle sessions, and Neural Life Force gates. Completion, failure, and cancellation return to the testing grid without AR diagnostics. Gameplay 5 timeout retains its loading-screen-2 return.
+
+Validation: grid pointer targets, paging, and arrow navigation are covered by `gameplay_testing_menu.test.cjs`. `neural_tutorial_replay.test.cjs` covers repeated developer tutorial launches and exits across all 11 gameplay variants, guidance reactivation, source bindings, campaign isolation, and Gameplay 5 timeout loading. Practice, pause persistence, and pause transition checks pass. Open `tests/fixtures/gameplay_testing_grid_preview.html` for a local visual preview; `?index=16` shows page 2.
+
+Developer launches discard pending floor dialogue before opening the isolated instance. A world title suspended on the underlying floor no longer blocks dialogue owned by the tutorial currently on top of the scene stack; normal floor dialogue continues waiting for that title. A regression test loads the real Gameplay 5 screen, tutorial, and dialogue manager, verifies intro and phase lessons on repeated launches with a pending floor dialogue and active floor title, and checks return to the grid.

@@ -397,7 +397,7 @@ class IP2LiveDialogueManager {
 
     start(dialogueId, context) {
         const ctx = context || {};
-        const isTitleActive = typeof IP2Live !== 'undefined' && IP2Live.WorldTitleOverlay && IP2Live.WorldTitleOverlay.isActive();
+        const isTitleActive = this._worldTitleBlocksDialogue();
 
         if (isTitleActive) {
             return this._queueStart(dialogueId, ctx);
@@ -583,15 +583,17 @@ class IP2LiveDialogueManager {
         const pulse = 0.5 + 0.5 * Math.sin(tick * 0.08);
         const blink = Math.floor(tick / 24) % 2 === 0;
 
-        const panelW = cW - 52 * sX;
-        const panelX = 26 * sX;
-        const headerH = 50 * sY;
-        const bodyTopPadding = 38 * sY;
+        const compact = active.context && active.context.compactPanel;
+        const bounds = compact && active.context.panelBounds;
+        const panelW = bounds ? bounds.w * sX : cW - 52 * sX;
+        const panelX = bounds ? bounds.x * sX : 26 * sX;
+        const headerH = (compact ? 18 : 50) * sY;
+        const bodyTopPadding = (compact ? 22 : 38) * sY;
         const promptH = 25 * sY;
         const textW = panelW - 56 * sX;
-        const lineH = 28 * sY;
-        const letterSpacing = 1.25 * sX;
-        const bodyFont = Math.round(22 * sX) + 'px ' + font;
+        const lineH = (compact ? 22 : 28) * sY;
+        const letterSpacing = (compact ? 0.3 : 1.25) * sX;
+        const bodyFont = compact ? Math.round(16 * sX) + 'px ' + font : Math.round(22 * sX) + 'px ' + font;
         const keyFont = Math.round(12 * sX) + 'px ' + font;
         const slide = activeSlide;
         const markup = this._displayMarkupForSlide(slide, active);
@@ -607,17 +609,17 @@ class IP2LiveDialogueManager {
             bodyFont,
             keyFont,
         });
-        const targetPanelH = this._targetPanelHeight(richLayout, cH, sY, promptH, bodyTopPadding);
+        const targetPanelH = this._targetPanelHeight(richLayout, cH, sY, promptH, bodyTopPadding, headerH);
         active.panelLayoutKey = [active.slideIndex, cW, cH, fullText].join('|');
         if (!Number.isFinite(active.panelHeight)) active.panelHeight = targetPanelH;
         else active.panelHeight += (targetPanelH - active.panelHeight) * 0.22;
         if (Math.abs(targetPanelH - active.panelHeight) < 0.5) active.panelHeight = targetPanelH;
         const panelH = active.panelHeight;
-        const panelY = cH - panelH - 26 * sY;
+        const panelY = bounds ? Math.min(bounds.y * sY, cH - panelH - 16 * sY) : cH - panelH - 26 * sY;
         const cut = 32 * sX;
 
         ctx.save();
-        ctx.fillStyle = 'rgba(0, 0, 0, 0.24)';
+        ctx.fillStyle = compact ? 'rgba(0,0,0,0)' : 'rgba(0, 0, 0, 0.24)';
         ctx.fillRect(0, 0, cW, cH);
 
         // Main frame
@@ -678,6 +680,7 @@ class IP2LiveDialogueManager {
             tick,
             pulse,
             blink,
+            compact,
             terminalFont,
             tagText,
         });
@@ -699,6 +702,8 @@ class IP2LiveDialogueManager {
             pulse,
             bodyFont,
             keyFont,
+            compact,
+            letterSpacing,
         });
 
         // Continue prompt
@@ -956,6 +961,24 @@ class IP2LiveDialogueManager {
         const incomingCut = 34 * sX;
         const titleX = panelX + incomingW - 30 * sX;
 
+        if (o.compact) {
+            // Resized lessons use a small decorative rail instead of crowded
+            // transmission labels and title plates.
+            ctx.save();
+            ctx.fillStyle = 'rgba(255,0,60,0.7)';
+            ctx.fillRect(panelX + 16 * sX, panelY + 9 * sY, 30 * sX, 3 * sY);
+            ctx.fillStyle = 'rgba(255,230,0,0.7)';
+            ctx.fillRect(panelX + 50 * sX, panelY + 9 * sY, 24 * sX, 3 * sY);
+            const totalSlides = Math.max(1, active.slides.length);
+            for (let pi = 0; pi < totalSlides; pi++) {
+                ctx.fillStyle = pi === active.slideIndex ? '#FFE600' : 'rgba(218,238,255,0.30)';
+                ctx.fillRect(panelX + panelW - (24 + (totalSlides - 1 - pi) * 10) * sX,
+                    panelY + 9 * sY, 5 * sX, 3 * sY);
+            }
+            ctx.restore();
+            return panelY + headerH;
+        }
+
         ctx.save();
 
         // Dark extrusions give both plates a raised, offset silhouette.
@@ -1151,7 +1174,7 @@ class IP2LiveDialogueManager {
     }
 
     _drawRichLayout(ctx, layout, x, y, options) {
-        const o = options || {};
+        const o = Object.assign({}, options || {}, { letterSpacing: layout.letterSpacing || 0 });
         const active = o.active;
         const reveal = Number(o.revealedChars) || 0;
         const sX = Number(o.sX) || 1;
@@ -1209,9 +1232,13 @@ class IP2LiveDialogueManager {
     _drawDialogueHighlight(ctx, x, baselineY, width, text, padX, options) {
         const sX = options.sX;
         const sY = options.sY;
-        const height = 27 * sY;
-        const top = baselineY - 21 * sY;
-        const cut = Math.min(6 * sX, width * 0.18);
+        ctx.font = options.bodyFont;
+        const metrics = ctx.measureText(text);
+        const ascent = metrics.actualBoundingBoxAscent || 16 * sY;
+        const descent = metrics.actualBoundingBoxDescent || 3 * sY;
+        const height = options.compact ? ascent + descent + 4 * sY : 27 * sY;
+        const top = options.compact ? baselineY - ascent - 2 * sY : baselineY - 21 * sY;
+        const cut = Math.min((options.compact ? 2 : 6) * sX, width * 0.18);
 
         ctx.save();
         this._traceChamferedRect(ctx, x, top, width, height, cut);
@@ -1243,7 +1270,7 @@ class IP2LiveDialogueManager {
         ctx.font = options.bodyFont;
         ctx.fillStyle = '#FFF8BD';
         ctx.textAlign = 'left';
-        this._fillTrackedText(ctx, text, x + padX, baselineY, 1.25 * sX);
+        this._fillTrackedText(ctx, text, x + padX, baselineY, options.letterSpacing);
         ctx.restore();
     }
 
@@ -1369,12 +1396,21 @@ class IP2LiveDialogueManager {
     }
 
     _startQueuedIfPossible() {
-        const isTitleActive = typeof IP2Live !== 'undefined' && IP2Live.WorldTitleOverlay && IP2Live.WorldTitleOverlay.isActive();
+        const isTitleActive = this._worldTitleBlocksDialogue();
         if (isTitleActive || this._active || !this._queuedStarts || this._queuedStarts.length === 0) return false;
 
         const q = this._queuedStarts.shift();
         if (!q) return false;
         return this.start(q.dialogueId, q.context);
+    }
+
+    _worldTitleBlocksDialogue() {
+        if (!(IP2Live.WorldTitleOverlay && IP2Live.WorldTitleOverlay.isActive())) return false;
+        const replay = IP2Live.TutorialReplay && IP2Live.TutorialReplay.session;
+        // The floor title is suspended beneath standalone tutorial scenes. Its
+        // update cannot finish there, so it must not queue their own guidance.
+        const top = Manager && Manager.Stack && Manager.Stack.top;
+        return !(replay && replay.screen === top && replay.options.tutorialMode);
     }
 
     _startQueueKey(dialogueId, context) {
@@ -1763,12 +1799,12 @@ class IP2LiveDialogueManager {
         return { lines, height, bodyFont, keyFont, letterSpacing, highlightPadX };
     }
 
-    _targetPanelHeight(layout, cH, sY, promptH, bodyTopPadding) {
+    _targetPanelHeight(layout, cH, sY, promptH, bodyTopPadding, headerH) {
         const bodyHeight = Math.max(28 * sY, layout && layout.height ? layout.height : 0);
-        const headerHeight = 50 * sY;
+        const headerHeight = Number.isFinite(headerH) ? headerH : 50 * sY;
         const resolvedTopPadding = Number.isFinite(bodyTopPadding) ? bodyTopPadding : 38 * sY;
         const desired = headerHeight + resolvedTopPadding + bodyHeight + 18 * sY + promptH + 13 * sY;
-        const minHeight = 205 * sY;
+        const minHeight = (headerHeight < 50 * sY ? 152 : 205) * sY;
         const maxHeight = Math.max(minHeight, cH - 52 * sY);
         return Math.max(minHeight, Math.min(desired, maxHeight));
     }
@@ -1818,8 +1854,12 @@ class IP2LiveDialogueManager {
     _measureTrackedText(ctx, text, letterSpacing) {
         const value = String(text || '');
         const spacing = Number(letterSpacing) || 0;
-        const characterCount = Array.from(value).length;
-        return ctx.measureText(value).width + Math.max(0, characterCount - 1) * spacing;
+        if (!spacing || value.length < 2) return ctx.measureText(value).width;
+        const characters = Array.from(value);
+        // Match the per-character advances used by _fillTrackedText, including
+        // fonts whose kerning makes whole-word measurements narrower.
+        return characters.reduce((width, character) => width + ctx.measureText(character).width, 0)
+            + Math.max(0, characters.length - 1) * spacing;
     }
 
     _fillTrackedText(ctx, text, x, y, letterSpacing) {

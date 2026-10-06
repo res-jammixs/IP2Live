@@ -4,26 +4,32 @@ class IP2LiveTutorialReplay {
 
     launch(gameplayId, context) {
         const practice = !!(context && context.practiceMode);
+        const developerTest = !!(context && context.developerTest);
         const practiceGameplay = practice && !!context.practiceGameplay;
         const gm = IP2Live.GameManager;
         const node = gm.flowConfig.gameplayNodes[gameplayId];
         const owner = node && IP2Live[node.manager];
         const qm = IP2Live.QuestManager;
         if (!owner || typeof owner[node.method] !== 'function' || !qm || this.session || gm._activeGameplayNode) return false;
-        if (!practice && IP2Live.NeuralLifeForce && IP2Live.NeuralLifeForce.isRunOver()) return false;
+        if (!practice && !developerTest && IP2Live.NeuralLifeForce && IP2Live.NeuralLifeForce.isRunOver()) return false;
         const sources = gm.getGameplayQuestSpecs(gameplayId);
         // Core-gateway commits require a whole campaign's branch allocations;
         // standalone VLSM practice cycles the independently solvable branches.
         const regular = sources.filter(entry => !entry.tutorial && !entry.harderIntro && entry.terminalType !== 'core');
-        const source = practiceGameplay
+        const source = developerTest && context.sourceSpec ? context.sourceSpec : practiceGameplay
             ? (regular[((context.round || 1) - 1) % Math.max(1, regular.length)] || sources[0])
             : sources.find((entry) => entry.tutorial || entry.harderIntro);
         if (!source || !Manager || !Manager.Stack || typeof Manager.Stack.push !== 'function') return false;
 
         const spec = gm._clonePlain(source);
-        const mapId = practice ? source.mapId : gm._currentMapId();
+        const mapId = practice || developerTest ? source.mapId : gm._currentMapId();
         const token = 'neural.tutorial_replay.' + gameplayId + '.' + Date.now() + '.' + (++this._serial);
         spec.tutorialReplay = true;
+        if (developerTest) {
+            spec.developerTest = true;
+            spec.developerTestSourceQuestId = source.id;
+            spec.developerTestSourceObjectiveId = source.objectiveId;
+        }
         spec.tutorial = !practiceGameplay;
         if (practiceGameplay) spec.harderIntro = false;
         spec.practiceMode = practice;
@@ -34,6 +40,7 @@ class IP2LiveTutorialReplay {
         // A synthetic quest identity keeps replay sessions separate from campaign saves.
         const options = Object.assign({}, spec, {
             spec, tutorialReplay: true, mapId, questId: token, objectiveId: source.objectiveId,
+            developerTest,
             tutorialMode: !practiceGameplay, guidedTutorial: !practiceGameplay, tutorialFeedback: !practiceGameplay,
             practiceMode: practice, practiceGameplay,
             maxAttempts: practice ? Infinity : 3, enforceAttemptLimit: false,
@@ -45,7 +52,7 @@ class IP2LiveTutorialReplay {
         }
         const music = IP2Live.MusicManager;
         this.session = {
-            gameplayId, options, owner, savedOwnerState, screen: null, practice,
+            gameplayId, options, owner, savedOwnerState, screen: null, practice, developerTest,
             cidrState: gm._clonePlain(IP2Live.CIDRGameplayState),
             hadCidrState: Object.prototype.hasOwnProperty.call(IP2Live, 'CIDRGameplayState'),
             musicZone: practice && music && music.ZONE ? music.ZONE.MAIN_MENU : music && typeof music._resolveStageZoneFromMap === 'function'
@@ -57,10 +64,17 @@ class IP2LiveTutorialReplay {
         if ('_introShown' in savedOwnerState) owner._introShown = false;
         if ('_introShownMaps' in savedOwnerState) owner._introShownMaps = {};
         if ('_tutorialShownKeys' in savedOwnerState) owner._tutorialShownKeys = {};
-        if (practice) delete IP2Live.CIDRGameplayState;
+        if (practice || developerTest) delete IP2Live.CIDRGameplayState;
         if (owner._musicRestoreTimer) {
             clearTimeout(owner._musicRestoreTimer);
             owner._musicRestoreTimer = null;
+        }
+        // A developer launch can occur while the underlying floor still owns
+        // active or queued dialogue. Discard it before starting instance guidance.
+        if (developerTest && IP2Live.DialogueManager) {
+            const dialogue = IP2Live.DialogueManager;
+            if (typeof dialogue.resetTransitionState === 'function') dialogue.resetTransitionState({ stopActive: true, discardActive: true });
+            else if (typeof dialogue.discardActive === 'function') dialogue.discardActive();
         }
         gm._activeGameplayNode = token;
         const open = () => {
@@ -73,7 +87,7 @@ class IP2LiveTutorialReplay {
                 this.finish(gameplayId, options, 'unavailable');
             }
         };
-        if (!practice) gm._logTelemetryEvent('neural_tutorial_replay', {
+        if (!practice && !developerTest) gm._logTelemetryEvent('neural_tutorial_replay', {
             gameplayId, mapId, questId: qm.activeQuestId, objectiveId: qm.activeObjectiveId,
             payload: { action: 'started', tutorialQuestId: source.id },
         });
@@ -90,6 +104,7 @@ class IP2LiveTutorialReplay {
             tutorialReplay: true, spec: options.spec, gameplayId: replay.gameplayId,
             questId: options.questId, objectiveId: options.objectiveId, mapId: options.mapId,
             practiceMode: replay.practice, practiceGameplay: options.practiceGameplay,
+            developerTest: replay.developerTest,
         });
         replay.screen = screen;
         if (replay.practice && IP2Live.PracticeMode) IP2Live.PracticeMode.configureScreen(screen);
@@ -103,6 +118,19 @@ class IP2LiveTutorialReplay {
         const replay = this.session;
         // Consume duplicate or stale replay callbacks without touching the campaign.
         if (!replay || replay.gameplayId !== gameplayId || replay.options.spec.id !== (opts.questId || (opts.spec && opts.spec.id))) return true;
+        if (replay.returning) return true;
+        if (replay.developerTest && result && result.diagnosticReason === 'virus_overrun'
+            && !result.developerReturnLoaded && IP2Live.LoadingScreen2 && typeof IP2Live.LoadingScreen2.show === 'function') {
+            replay.returning = true;
+            IP2Live.LoadingScreen2.show({ mode: 'replace', status: 'Disconnecting compromised system', detail: 'Returning to testing panel',
+                onComplete: loading => {
+                    if (Manager.Stack.top === loading) Manager.Stack.pop();
+                    replay.returning = false;
+                    this.finish(gameplayId, options, outcome, Object.assign({}, result, { developerReturnLoaded: true }));
+                },
+            });
+            return true;
+        }
         this.session = null;
         gm._activeGameplayNode = null;
         const dialogue = IP2Live.DialogueManager;
@@ -123,7 +151,7 @@ class IP2LiveTutorialReplay {
         const music = IP2Live.MusicManager;
         if (!replay.practice && music && replay.musicZone && typeof music.play === 'function') music.play(replay.musicZone);
         if (!replay.practice) gm._setState(gm.STATE.NEXT_NODE, { gameplayId, tutorialReplay: true, outcome });
-        if (!replay.practice) gm._logTelemetryEvent('neural_tutorial_replay', {
+        if (!replay.practice && !replay.developerTest) gm._logTelemetryEvent('neural_tutorial_replay', {
             gameplayId, mapId: replay.options.mapId, questId: replay.returnQuestId, objectiveId: replay.returnObjectiveId,
             payload: { action: outcome, tutorialQuestId: replay.options.spec.tutorialSource.questId },
         });
@@ -133,7 +161,7 @@ class IP2LiveTutorialReplay {
         }
         gm._ensureQuestMinimap();
         if (Manager && Manager.Stack) Manager.Stack.requestPaintHUD = true;
-        if ((outcome === 'failed' || outcome === 'unavailable') && IP2Live.ARDiagnosticRewind) {
+        if (!replay.developerTest && (outcome === 'failed' || outcome === 'unavailable') && IP2Live.ARDiagnosticRewind) {
             IP2Live.ARDiagnosticRewind.show({
                 title: outcome === 'failed' ? 'PRACTICE AGAIN?' : 'TUTORIAL UNAVAILABLE',
                 lines: [outcome === 'failed' ? 'This was practice. Your HP and quest progress are unchanged. Review the tutorial again, or continue to your quest.' : 'The tutorial could not be opened. Your current quest is ready to retry.'],
