@@ -498,6 +498,10 @@ class IP2LiveCIDRQuarantineMatrixGameplayScreen extends Scene.Base {
     }
 
     _openPauseMenu() {
+        if (IP2Live.GameplayPause && typeof IP2Live.GameplayPause.open === 'function') {
+            IP2Live.GameplayPause.open(this, 'ip_cidr_quarantine_matrix');
+            return;
+        }
         if (window.IP2LivePauseMenu && Manager && Manager.Stack && typeof Manager.Stack.push === 'function') {
             Data.Systems.soundConfirmation.playSound();
             Manager.Stack.push(new IP2LivePauseMenu());
@@ -1397,6 +1401,10 @@ class IP2LiveCIDRQuarantineMatrixConnectorScreen extends Scene.Base {
     }
 
     _openPauseMenu() {
+        if (IP2Live.GameplayPause && typeof IP2Live.GameplayPause.open === 'function') {
+            IP2Live.GameplayPause.open(this, 'ip_cidr_quarantine_matrix');
+            return;
+        }
         if (window.IP2LivePauseMenu && Manager && Manager.Stack && typeof Manager.Stack.push === 'function') {
             Data.Systems.soundConfirmation.playSound();
             Manager.Stack.push(new IP2LivePauseMenu());

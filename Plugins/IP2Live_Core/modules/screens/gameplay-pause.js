@@ -7,7 +7,7 @@
 
 (function () {
     const GameplayPause = {
-        VERSION: 'gameplay-pause-20260920-ui04',
+        VERSION: 'gameplay-pause-20260930-ui05',
         STORAGE_KEY: 'gameplaySessions',
         activeScreen: null,
         menuOpen: false,
@@ -138,6 +138,7 @@
 
             proto.onKeyPressed = function (key) {
                 if (system._isCancelKey(key)) {
+                    if (typeof this._closeGameplayOverlay === 'function' && this._closeGameplayOverlay()) return true;
                     system.open(
                         this,
                         fallbackGameplayId
@@ -330,6 +331,14 @@
             ];
         },
 
+        _canRetainSession(payload) {
+            const data = payload || {};
+            const spec = data.spec || {};
+            return !(data.developerTest || spec.developerTest || data.tutorialReplay || spec.tutorialReplay
+                || data.practiceMode || spec.practiceMode
+                || String(data.questId || spec.id || '').startsWith('developer.'));
+        },
+
         _descriptorFromScreen(
             screen,
             fallbackGameplayId
@@ -449,7 +458,7 @@
             gameplayId,
             payload
         ) {
-            if (payload && (payload.tutorialReplay || (payload.spec && payload.spec.tutorialReplay))) return null;
+            if (!this._canRetainSession(payload)) return null;
             const sessions =
                 this._sessions(false);
 
@@ -573,7 +582,7 @@
             screen,
             reason
         ) {
-            if (screen && screen.options && screen.options.tutorialReplay) return null;
+            if (screen && !this._canRetainSession(screen.options)) return null;
             if (
                 !screen ||
                 screen._ip2liveGameplayExited
@@ -858,6 +867,7 @@
             screen,
             fallbackGameplayId
         ) {
+            if (screen && !this._canRetainSession(screen.options)) return false;
             if (
                 !screen ||
                 screen._ip2liveSessionRestoreChecked
@@ -1018,6 +1028,7 @@
 
             const timestampKeys = {
                 startedAt: true,
+                lastUpdateAt: true,
                 endsAt: true,
                 stabilizeStartedAt: true,
                 completedAt: true,
@@ -1408,17 +1419,22 @@
                 return false;
             }
 
-            const makePause = () => new IP2LiveGameplayPauseMenu(screen, pauseBackdrop);
-            if (IP2Live.MenuTransition) {
-                if (!IP2Live.MenuTransition.open(makePause)) { this.menuOpen = false; return false; }
-            } else Manager.Stack.push(makePause());
+            // A pause is an overlay on the current gameplay frame. The menu
+            // animates itself in, so opening it must not power off the screen.
+            try {
+                Manager.Stack.push(new IP2LiveGameplayPauseMenu(screen, pauseBackdrop));
+            } catch (error) {
+                this.menuOpen = false;
+                console.error('[IP2Live] Unable to open gameplay pause menu:', error);
+                return false;
+            }
 
             const gameManager =
                 IP2Live.GameManager;
 
             if (
                 gameManager &&
-                !(screen.options && screen.options.tutorialReplay) &&
+                this._canRetainSession(screen.options) &&
                 typeof gameManager.saveProgressToActiveSlot === 'function'
             ) {
                 Promise.resolve(
@@ -1439,6 +1455,9 @@
         },
 
         closeMenu() {
+            if (this.menuOpen && this.activeScreen && typeof this.activeScreen.onGameplayResume === 'function') {
+                this.activeScreen.onGameplayResume();
+            }
             this.menuOpen =
                 false;
 
@@ -1476,10 +1495,13 @@
                 };
             }
 
-            this.captureScreen(
-                screen,
-                'exit_quest'
-            );
+            const retainSession = this._canRetainSession(screen.options);
+            if (retainSession) {
+                this.captureScreen(screen, 'exit_quest');
+            } else {
+                const descriptor = this._descriptorFromScreen(screen, this._screenFallbackIds.get(screen));
+                this.clearSession(descriptor.gameplayId, descriptor);
+            }
 
             let saveResult = {
                 saved:
@@ -1493,7 +1515,7 @@
                 IP2Live.GameManager;
 
             if (
-                gameManager &&
+                retainSession && gameManager &&
                 typeof gameManager.saveProgressToActiveSlot === 'function'
             ) {
                 try {
@@ -1888,6 +1910,9 @@
             this.fadeIn =
                 0;
 
+            this.closing =
+                false;
+
             this.buttonRects =
                 [];
 
@@ -1914,12 +1939,17 @@
         update() {
             this.animTick++;
 
-            this.fadeIn =
-                Math.min(
-                    1,
-                    this.fadeIn +
-                    0.07
-                );
+            this.fadeIn = this.closing
+                ? Math.max(0, this.fadeIn - 0.12)
+                : Math.min(1, this.fadeIn + 0.085);
+
+            if (this.closing && this.fadeIn === 0) {
+                GameplayPause.closeMenu();
+                if (Manager && Manager.Stack && typeof Manager.Stack.pop === 'function') {
+                    Manager.Stack.pop();
+                }
+                return;
+            }
 
             for (
                 let i = 0;
@@ -2054,7 +2084,7 @@
             y
         ) {
             if (
-                this.pending
+                this.pending || this.fadeIn < 1
             ) {
                 return true;
             }
@@ -2090,7 +2120,7 @@
             y
         ) {
             if (
-                this.pending
+                this.pending || this.fadeIn < 1
             ) {
                 return true;
             }
@@ -2186,20 +2216,8 @@
                 }
             } catch (error) {}
 
-            if (IP2Live.MenuTransition && IP2Live.MenuTransition.back({freezeTarget:true})) {
-                GameplayPause.closeMenu();
-                return true;
-            }
-            GameplayPause.closeMenu();
-
-            if (
-                Manager &&
-                Manager.Stack &&
-                typeof Manager.Stack.pop === 'function'
-            ) {
-                Manager.Stack.pop();
-            }
-
+            this.pending = true;
+            this.closing = true;
             return true;
         }
 
@@ -2213,10 +2231,8 @@
                 return false;
             }
 
-            if (IP2Live.MenuTransition) {
-                return IP2Live.MenuTransition.open(() => new IP2LiveSettingsMenu());
-            }
-            Manager.Stack.push(new IP2LiveSettingsMenu());
+            Manager.Stack.push(new IP2LiveSettingsMenu({ popupTransition: true }));
+            Manager.Stack.requestPaintHUD = true;
 
             return true;
         }
@@ -3442,6 +3458,7 @@
             s,
             font
         ) {
+            const popupAlpha = ctx.globalAlpha;
             const item =
                 this.menuItems[
                     index
@@ -3723,7 +3740,7 @@
 
                 ctx.globalAlpha =
                     eased *
-                    0.24;
+                    0.24 * popupAlpha;
 
                 ctx.fillStyle =
                     '#FFFFFF';
@@ -3769,7 +3786,7 @@
                 accent;
 
             ctx.globalAlpha =
-                item.danger
+                (item.danger
                     ? (
                         0.28 +
                         eased *
@@ -3779,7 +3796,7 @@
                         0.38 +
                         eased *
                         0.62
-                    );
+                    )) * popupAlpha;
 
             ctx.lineWidth =
                 Math.max(
@@ -3809,7 +3826,7 @@
                 0;
 
             ctx.globalAlpha =
-                1;
+                popupAlpha;
 
             this._drawBevelFacets(
                 ctx,
@@ -3838,9 +3855,9 @@
                         : '#FFE600';
 
                 ctx.globalAlpha =
-                    0.40 +
+                    (0.40 +
                     eased *
-                    0.60;
+                    0.60) * popupAlpha;
 
                 this._drawEdgePlate(
                     ctx,
@@ -3867,7 +3884,7 @@
                 );
 
                 ctx.globalAlpha =
-                    1;
+                    popupAlpha;
             }
 
             const railAccent =
@@ -4046,11 +4063,6 @@
                     ? 'Oxanium-Medium'
                     : 'monospace';
 
-            const easeIn =
-                this._easeOutCubic(
-                    this.fadeIn
-                );
-
             const panelW =
                 500 *
                 s;
@@ -4073,14 +4085,7 @@
                 ) /
                 2;
 
-            const y =
-                baseY +
-                (
-                    1 -
-                    easeIn
-                ) *
-                20 *
-                s;
+            const y = baseY;
 
             ctx.save();
 
@@ -4101,24 +4106,14 @@
                  * Mild blur only.
                  * Gameplay remains recognizable.
                  */
-                const blurAmount =
-                    Math.max(
-                        2,
-                        3.5 *
-                        s
-                    );
+                const blurAmount = 3.5 * s * this.fadeIn;
 
                 /*
                  * Extend the image slightly beyond
                  * the canvas because blur can expose
                  * transparent edge pixels.
                  */
-                const overscan =
-                    Math.max(
-                        6,
-                        8 *
-                        s
-                    );
+                const overscan = Math.max(6, 8 * s) * this.fadeIn;
 
                 if (
                     'filter' in
@@ -4130,8 +4125,7 @@
                         'px)';
                 }
 
-                ctx.globalAlpha =
-                    0.96;
+                ctx.globalAlpha = 1 - 0.04 * this.fadeIn;
 
                 ctx.drawImage(
                     this.pauseBackdrop,
@@ -4184,7 +4178,7 @@
              * gameplay to appear brighter.
              */
             ctx.fillStyle =
-                'rgba(0,5,12,0.44)';
+                'rgba(0,5,12,' + (0.44 * this.fadeIn) + ')';
 
             ctx.fillRect(
                 0,
@@ -4238,6 +4232,7 @@
 
             ctx.fillStyle =
                 pauseVignette;
+            ctx.globalAlpha = this.fadeIn;
 
             ctx.fillRect(
                 0,
@@ -4246,8 +4241,13 @@
                 cH
             );
 
-            ctx.globalAlpha =
-                easeIn;
+            ctx.globalAlpha = 1;
+            ctx.save();
+            if (IP2Live.PopupChrome && typeof IP2Live.PopupChrome.animate === 'function') {
+                IP2Live.PopupChrome.animate(ctx, { x, y, w: panelW, h: panelH }, this.fadeIn);
+            } else {
+                ctx.globalAlpha = Math.min(1, this.fadeIn * 1.8);
+            }
 
             this._drawPanel(
                 ctx,
@@ -4373,6 +4373,7 @@
                 );
             }
 
+            ctx.restore();
             ctx.restore();
         }
     }

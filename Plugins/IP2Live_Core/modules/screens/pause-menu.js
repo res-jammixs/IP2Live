@@ -7,7 +7,10 @@
  */
 
 class IP2LivePauseMenu extends Scene.Base {
-    constructor() { super(true); }
+    constructor(pauseBackdrop = null) {
+        super(true);
+        this.pauseBackdrop = pauseBackdrop;
+    }
 
     initialize() {
         this.selectedIndex = 0;
@@ -19,6 +22,8 @@ class IP2LivePauseMenu extends Scene.Base {
         this.glitchActive = false;
         this.glitchTimer = 0;
         this.pendingAction = null;
+        this.popupProgress = 0;
+        this.closing = false;
         this.scanlineOffset = 0;
         this.bgFx = IP2Live.BgFx.create();
         this.networkBackdrop = (window.IP2LiveBackgroundScreen)
@@ -33,6 +38,7 @@ class IP2LivePauseMenu extends Scene.Base {
         this.gameplayTestIndex = 0;
         this.gameplayTests = this._buildGameplayTests();
         this.gameplayTestItemRects = [];
+        this.gameplayTestNavRects = [];
     }
 
     _getMenuItems() {
@@ -69,6 +75,7 @@ class IP2LivePauseMenu extends Scene.Base {
     }
 
     onKeyPressed(key) {
+        if (this.closing) return;
         if (this.gameplayTestMode) {
             if (Data.Keyboards.checkActionMenu(key)) {
                 this._launchGameplayTest();
@@ -93,12 +100,20 @@ class IP2LivePauseMenu extends Scene.Base {
     }
 
     onKeyPressedAndRepeat(key) {
+        if (this.closing) return true;
         if (this.gameplayTestMode) {
             const prev = this.gameplayTestIndex;
+            const count = Math.max(1, this.gameplayTests.length);
+            const canvas = Common.Platform.ctx.canvas;
+            const columns = this._gameplayTestGridLayout(canvas.width, canvas.height).columns;
             if (Data.Keyboards.isKeyEqual(key, Data.Keyboards.menuControls.Up)) {
-                this.gameplayTestIndex = (this.gameplayTestIndex - 1 + this.gameplayTests.length) % Math.max(1, this.gameplayTests.length);
+                this.gameplayTestIndex = Math.max(0, this.gameplayTestIndex - columns);
             } else if (Data.Keyboards.isKeyEqual(key, Data.Keyboards.menuControls.Down)) {
-                this.gameplayTestIndex = (this.gameplayTestIndex + 1) % Math.max(1, this.gameplayTests.length);
+                this.gameplayTestIndex = Math.min(count - 1, this.gameplayTestIndex + columns);
+            } else if (Data.Keyboards.isKeyEqual(key, Data.Keyboards.menuControls.Left)) {
+                this.gameplayTestIndex = (this.gameplayTestIndex - 1 + count) % count;
+            } else if (Data.Keyboards.isKeyEqual(key, Data.Keyboards.menuControls.Right)) {
+                this.gameplayTestIndex = (this.gameplayTestIndex + 1) % count;
             }
             if (this.gameplayTestIndex !== prev) {
                 Data.Systems.soundCursor.playSound();
@@ -134,6 +149,7 @@ class IP2LivePauseMenu extends Scene.Base {
     }
 
     onMouseMove(x, y) {
+        if (this.closing || this.popupProgress < 1) return;
         if (this.gameplayTestMode) {
             const idx = this._getGameplayTestItemAt(x, y);
             if (idx >= 0 && idx !== this.gameplayTestIndex) {
@@ -181,7 +197,22 @@ class IP2LivePauseMenu extends Scene.Base {
     }
 
     onMouseUp(x, y) {
+        if (this.closing || this.popupProgress < 1) return;
         if (this.gameplayTestMode) {
+            const nav = (this.gameplayTestNavRects || []).find(r => x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h);
+            if (nav) {
+                if (nav.action === 'back') this._exitGameplayTestMode();
+                else {
+                    const canvas = Common.Platform.ctx.canvas;
+                    const layout = this._gameplayTestGridLayout(canvas.width, canvas.height);
+                    const pages = Math.max(1, Math.ceil(this.gameplayTests.length / layout.pageSize));
+                    const page = Math.floor(this.gameplayTestIndex / layout.pageSize);
+                    this.gameplayTestIndex = ((page + nav.step + pages) % pages) * layout.pageSize;
+                }
+                Data.Systems.soundCursor.playSound();
+                Manager.Stack.requestPaintHUD = true;
+                return;
+            }
             const idx = this._getGameplayTestItemAt(x, y);
             if (idx >= 0) {
                 this.gameplayTestIndex = idx;
@@ -285,8 +316,8 @@ class IP2LivePauseMenu extends Scene.Base {
             return;
         }
         Data.Systems.soundConfirmation.playSound();
-        if (IP2Live.MenuTransition) IP2Live.MenuTransition.open(() => new IP2LiveSettingsMenu());
-        else Manager.Stack.push(new IP2LiveSettingsMenu());
+        Manager.Stack.push(new IP2LiveSettingsMenu({ popupTransition: true }));
+        Manager.Stack.requestPaintHUD = true;
     }
 
     _confirmSelection() {
@@ -304,9 +335,10 @@ class IP2LivePauseMenu extends Scene.Base {
     }
 
     _resume() {
+        if (this.closing) return;
         Data.Systems.soundCancel.playSound();
-        if (IP2Live.MenuTransition && IP2Live.MenuTransition.back({freezeTarget:true})) return;
-        Manager.Stack.pop();
+        this.closing = true;
+        Manager.Stack.requestPaintHUD = true;
     }
 
     _openQuitConfirmation() {
@@ -430,6 +462,7 @@ class IP2LivePauseMenu extends Scene.Base {
     _exitGameplayTestMode() {
         this.gameplayTestMode = false;
         this.gameplayTestItemRects = [];
+        this.gameplayTestNavRects = [];
         Manager.Stack.requestPaintHUD = true;
     }
 
@@ -440,7 +473,6 @@ class IP2LivePauseMenu extends Scene.Base {
             Data.Systems.soundImpossible.playSound();
             return false;
         }
-        this._exitGameplayTestMode();
         const launched = gameManager.launchGameplayTest(entry.id);
         if (!launched) Data.Systems.soundImpossible.playSound();
         return launched;
@@ -570,163 +602,79 @@ class IP2LivePauseMenu extends Scene.Base {
         return -1;
     }
 
-    _drawGameplayTestOverlay(ctx, cW, cH) {
-        const layout = this._debugListLayout(cW, cH);
-        const panelX = layout.panelX;
-        const panelY = layout.panelY;
-        const panelW = layout.panelW;
-        const panelH = layout.panelH;
-        const s = layout.scale;
-        const listX = panelX + layout.padX;
-        const listY = layout.listY;
-        const listW = panelW - layout.padX * 2;
-        const rowH = layout.rowH;
-        const maxRows = Math.max(1, Math.floor(layout.listH / rowH));
-        const tests = this.gameplayTests || [];
-        const selected = tests[this.gameplayTestIndex] || null;
-        const titleFont = IP2Live.Assets.abnesLoaded ? 'Abnes' : 'Arial Black';
-        const uiFont = IP2Live.Assets.nebulaLoaded ? 'Nebula-Regular' : 'monospace';
-        const tick = this.animTick || 0;
-
-        this.gameplayTestItemRects = [];
-        ctx.save();
-        ctx.fillStyle = 'rgba(0, 2, 10, 0.76)';
-        ctx.fillRect(0, 0, cW, cH);
-
-        this._traceDebugPanelPath(ctx, panelX, panelY, panelW, panelH, 20 * s);
-        const shell = ctx.createLinearGradient(panelX, panelY, panelX + panelW, panelY + panelH);
-        shell.addColorStop(0, 'rgba(8,20,27,0.99)');
-        shell.addColorStop(0.5, 'rgba(2,7,13,0.99)');
-        shell.addColorStop(1, 'rgba(18,4,13,0.99)');
-        ctx.fillStyle = shell;
-        ctx.fill();
-        ctx.shadowColor = '#00D9E7';
-        ctx.shadowBlur = 12 * s;
-        ctx.strokeStyle = 'rgba(0,224,236,0.88)';
-        ctx.lineWidth = 1.5 * s;
-        ctx.stroke();
-        ctx.shadowBlur = 0;
-
-        ctx.save();
-        this._traceDebugPanelPath(ctx, panelX + 7 * s, panelY + 7 * s, panelW - 14 * s, panelH - 14 * s, 15 * s);
-        ctx.clip();
-        const headerGlow = ctx.createLinearGradient(panelX, panelY, panelX + panelW, panelY);
-        headerGlow.addColorStop(0, 'rgba(0,240,255,0.20)');
-        headerGlow.addColorStop(0.55, 'rgba(255,0,60,0.07)');
-        headerGlow.addColorStop(1, 'rgba(0,0,0,0)');
-        ctx.fillStyle = headerGlow;
-        ctx.fillRect(panelX, panelY, panelW, layout.headerH + 16 * s);
-        for (let sy = panelY + ((tick * 0.42) % (7 * s)); sy < panelY + panelH; sy += 7 * s) {
-            ctx.fillStyle = 'rgba(0,220,230,0.028)';
-            ctx.fillRect(panelX, sy, panelW, Math.max(1, s * 0.75));
-        }
-        ctx.restore();
-
-        const tagW = 134 * s;
-        this._traceDebugRowPath(ctx, panelX + 1 * s, panelY + 1 * s, tagW, 36 * s, 9 * s);
-        ctx.fillStyle = '#00D9E7';
-        ctx.fill();
-        ctx.fillStyle = '#02070A';
-        ctx.font = 'bold ' + (8 * s).toFixed(1) + 'px monospace';
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'middle';
-        ctx.fillText('SYS // TEST HARNESS', panelX + tagW * 0.5, panelY + 18 * s);
-
-        ctx.textAlign = 'left';
-        ctx.fillStyle = '#F5FAFF';
-        ctx.font = 'bold ' + (23 * s).toFixed(1) + 'px ' + titleFont;
-        ctx.fillText('GAMEPLAY TESTING', panelX + 28 * s, panelY + 54 * s);
-        ctx.fillStyle = '#00E6F0';
-        ctx.font = 'bold ' + (7.5 * s).toFixed(1) + 'px ' + uiFont;
-        ctx.fillText('SELECT AN ISOLATED GAMEPLAY INSTANCE', panelX + 29 * s, panelY + 69 * s);
-
-        ctx.textAlign = 'right';
-        ctx.fillStyle = selected && selected.tutorial ? '#FFE600' : '#A8F8FF';
-        ctx.font = 'bold ' + (8 * s).toFixed(1) + 'px monospace';
-        ctx.fillText(selected ? (selected.tutorial ? 'TUTORIAL MODE' : 'STANDARD MODE') : 'NO TARGET', panelX + panelW - 25 * s, panelY + 31 * s);
-        ctx.fillStyle = '#718B96';
-        ctx.font = 'bold ' + (6.8 * s).toFixed(1) + 'px monospace';
-        ctx.fillText(selected ? selected.gameplayId.toUpperCase() : 'UNAVAILABLE', panelX + panelW - 25 * s, panelY + 49 * s);
-
-        const start = Math.max(0, Math.min(
-            Math.max(0, tests.length - maxRows),
-            Math.min(Math.max(0, tests.length - 1), this.gameplayTestIndex) - Math.floor(maxRows / 2)
-        ));
-        const end = Math.min(tests.length, start + maxRows);
-        for (let i = start, row = 0; i < end; i++, row++) {
-            const entry = tests[i];
-            const rowX = listX;
-            const rowY = listY + row * rowH + 2 * s;
-            const rowW = listW - 10 * s;
-            const rowDrawH = rowH - 5 * s;
-            const active = i === this.gameplayTestIndex;
-
-            this._traceDebugRowPath(ctx, rowX, rowY, rowW, rowDrawH, 10 * s);
-            ctx.fillStyle = active ? 'rgba(6,34,40,0.98)' : 'rgba(3,10,16,0.90)';
-            ctx.shadowColor = active ? '#00E5F4' : 'transparent';
-            ctx.shadowBlur = active ? 10 * s : 0;
-            ctx.fill();
-            ctx.shadowBlur = 0;
-            ctx.strokeStyle = active ? '#00E5F4' : 'rgba(0,207,220,0.28)';
-            ctx.lineWidth = (active ? 1.7 : 1) * s;
-            ctx.stroke();
-
-            ctx.fillStyle = active ? '#00E5F4' : '#557D86';
-            ctx.font = 'bold ' + (8 * s).toFixed(1) + 'px monospace';
-            ctx.textAlign = 'center';
-            ctx.fillText(String(i + 1).padStart(2, '0'), rowX + 40 * s, rowY + rowDrawH * 0.5);
-            ctx.textAlign = 'left';
-            ctx.fillStyle = '#F4F8FF';
-            ctx.font = 'bold ' + (11 * s).toFixed(1) + 'px ' + uiFont;
-            ctx.fillText(entry.name.toUpperCase(), rowX + 78 * s, rowY + 14 * s);
-            ctx.fillStyle = entry.tutorial ? '#FFE600' : '#6E9BA7';
-            ctx.font = 'bold ' + (6.5 * s).toFixed(1) + 'px monospace';
-            ctx.fillText((entry.gameplayLabel || entry.gameplayId).toUpperCase(), rowX + 78 * s, rowY + 29 * s);
-            ctx.textAlign = 'right';
-            ctx.fillStyle = entry.tutorial ? '#FFE600' : '#73919A';
-            ctx.font = 'bold ' + (7.2 * s).toFixed(1) + 'px monospace';
-            ctx.fillText(entry.tutorial ? 'TUTORIAL' : 'STANDARD', rowX + rowW - 25 * s, rowY + rowDrawH * 0.5);
-            this.gameplayTestItemRects.push({ index: i, x: rowX, y: rowY, w: rowW, h: rowDrawH });
-        }
-
-        if (!tests.length) {
-            ctx.fillStyle = '#FFE600';
-            ctx.font = 'bold ' + (12 * s).toFixed(1) + 'px monospace';
-            ctx.textAlign = 'left';
-            ctx.fillText('NO GAMEPLAY TARGETS REGISTERED', listX, listY + 28 * s);
-        }
-
-        if (tests.length > maxRows) {
-            const railX = panelX + panelW - 20 * s;
-            const railY = listY + 3 * s;
-            const railH = Math.min(layout.listH, maxRows * rowH) - 8 * s;
-            const thumbH = Math.max(22 * s, railH * (maxRows / tests.length));
-            const thumbTravel = Math.max(0, railH - thumbH);
-            const thumbP = tests.length <= 1 ? 0 : this.gameplayTestIndex / (tests.length - 1);
-            ctx.fillStyle = 'rgba(48,78,87,0.55)';
-            ctx.fillRect(railX, railY, 3 * s, railH);
-            ctx.fillStyle = '#00E0EC';
-            ctx.fillRect(railX - 1 * s, railY + thumbTravel * thumbP, 5 * s, thumbH);
-        }
-
-        const footerY = panelY + panelH - layout.footerH;
-        ctx.fillStyle = 'rgba(1,6,11,0.94)';
-        ctx.fillRect(panelX + 8 * s, footerY, panelW - 16 * s, layout.footerH - 8 * s);
-        ctx.strokeStyle = 'rgba(0,225,235,0.28)';
-        ctx.beginPath();
-        ctx.moveTo(panelX + 20 * s, footerY);
-        ctx.lineTo(panelX + panelW - 20 * s, footerY);
-        ctx.stroke();
-        ctx.textAlign = 'left';
-        ctx.fillStyle = '#00D9E7';
-        ctx.font = 'bold ' + (7.2 * s).toFixed(1) + 'px monospace';
-        ctx.fillText('UP/DOWN  SELECT     ENTER  LAUNCH     ESC  BACK', panelX + 26 * s, footerY + 26 * s);
-        ctx.fillStyle = '#66838D';
-        ctx.font = 'bold ' + (6.4 * s).toFixed(1) + 'px monospace';
-        ctx.fillText('TEST COMPLETION DOES NOT ADVANCE THE ACTIVE QUEST', panelX + 26 * s, footerY + 41 * s);
-        ctx.restore();
+    _gameplayTestGridLayout(cW, cH) {
+        const scale = Math.min(cW / 1280, cH / 720);
+        const panelW = Math.min(cW - 40 * scale, 1080 * scale);
+        const panelH = Math.min(cH - 40 * scale, 620 * scale);
+        const columns = cW / cH < 1.4 ? 3 : 4;
+        const rows = 4;
+        const gap = 12 * scale;
+        const pad = 24 * scale;
+        return { scale, panelW, panelH, panelX: (cW - panelW) / 2, panelY: (cH - panelH) / 2,
+            columns, rows, pageSize: columns * rows, gap, pad,
+            tileW: (panelW - 2 * pad - (columns - 1) * gap) / columns,
+            tileH: (panelH - 170 * scale - (rows - 1) * gap) / rows };
     }
 
+    _drawGameplayTestOverlay(ctx, cW, cH) {
+        const g = this._gameplayTestGridLayout(cW, cH);
+        const s = g.scale, x = g.panelX, y = g.panelY;
+        const tests = this.gameplayTests || [];
+        const pages = Math.max(1, Math.ceil(tests.length / g.pageSize));
+        const page = Math.min(pages - 1, Math.floor(this.gameplayTestIndex / g.pageSize));
+        const start = page * g.pageSize;
+        const uiFont = IP2Live.Assets.nebulaLoaded ? 'Nebula-Regular' : 'monospace';
+        this.gameplayTestItemRects = [];
+        this.gameplayTestNavRects = [];
+        ctx.save();
+        ctx.fillStyle = 'rgba(0,2,10,0.84)'; ctx.fillRect(0, 0, cW, cH);
+        this._traceDebugPanelPath(ctx, x, y, g.panelW, g.panelH, 18 * s);
+        const shell = ctx.createLinearGradient(x, y, x + g.panelW, y + g.panelH);
+        shell.addColorStop(0, '#0C2431'); shell.addColorStop(0.5, '#060F1B'); shell.addColorStop(1, '#21152F');
+        ctx.fillStyle = shell; ctx.fill(); ctx.strokeStyle = '#478B9B'; ctx.lineWidth = s; ctx.stroke();
+        ctx.fillStyle = 'rgba(120,200,222,0.025)';
+        for (let sy = y + 8 * s; sy < y + g.panelH - 8 * s; sy += 5 * s) ctx.fillRect(x + 8 * s, sy, g.panelW - 16 * s, s * 0.5);
+        ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+        ctx.fillStyle = '#86C7D5'; ctx.font = 'bold ' + 9 * s + 'px monospace';
+        ctx.fillText('SYS // TEST HARNESS', x + g.pad, y + 26 * s);
+        ctx.fillStyle = '#E4F8FF'; ctx.font = 'bold ' + 21 * s + 'px ' + uiFont;
+        ctx.fillText('GAMEPLAY TESTING', x + g.pad, y + 54 * s);
+        ctx.fillStyle = '#8EA9BC'; ctx.font = 10 * s + 'px ' + uiFont;
+        ctx.fillText('Choose a fresh gameplay or guided tutorial instance', x + g.pad, y + 78 * s);
+        for (let i = start; i < Math.min(tests.length, start + g.pageSize); i++) {
+            const entry = tests[i], slot = i - start;
+            const tx = x + g.pad + (slot % g.columns) * (g.tileW + g.gap);
+            const ty = y + 104 * s + Math.floor(slot / g.columns) * (g.tileH + g.gap);
+            const active = i === this.gameplayTestIndex;
+            const accent = entry.tutorial ? '#DAC279' : '#73C9DE';
+            this._traceDebugRowPath(ctx, tx, ty, g.tileW, g.tileH, 7 * s);
+            ctx.fillStyle = active ? '#183546' : 'rgba(4,14,25,0.85)'; ctx.fill();
+            ctx.strokeStyle = active ? accent : 'rgba(102,156,182,0.35)'; ctx.lineWidth = (active ? 1.6 : 0.8) * s; ctx.stroke();
+            ctx.fillStyle = accent; ctx.fillRect(tx + 12 * s, ty, 30 * s, 2 * s);
+            ctx.font = 'bold ' + 9 * s + 'px monospace'; ctx.fillText(String(i + 1).padStart(2, '0'), tx + 14 * s, ty + 17 * s);
+            ctx.textAlign = 'right'; ctx.fillText(entry.tutorial ? 'TUTORIAL' : 'GAMEPLAY', tx + g.tileW - 14 * s, ty + 17 * s);
+            ctx.textAlign = 'left'; ctx.fillStyle = '#E2EFF6'; ctx.font = 'bold ' + 12 * s + 'px ' + uiFont;
+            ctx.fillText(entry.name.toUpperCase(), tx + 14 * s, ty + g.tileH * 0.52, g.tileW - 28 * s);
+            ctx.fillStyle = '#7F9BAB'; ctx.font = 9 * s + 'px ' + uiFont;
+            ctx.fillText((entry.gameplayLabel || entry.gameplayId).toUpperCase(), tx + 14 * s, ty + g.tileH - 16 * s, g.tileW - 28 * s);
+            this.gameplayTestItemRects.push({ index: i, x: tx, y: ty, w: g.tileW, h: g.tileH });
+        }
+        const footerY = y + g.panelH - 44 * s;
+        ctx.fillStyle = '#83A8BA'; ctx.font = 9 * s + 'px monospace';
+        ctx.fillText('ARROWS SELECT  /  ENTER OPEN  /  ESC BACK', x + g.pad, footerY + 15 * s);
+        ctx.textAlign = 'center'; ctx.fillText('PAGE ' + (page + 1) + ' / ' + pages, x + g.panelW * 0.63, footerY + 15 * s);
+        const navs = [{ action: 'back', label: 'BACK', offset: 256 }];
+        if (pages > 1) navs.push({ action: 'page', step: -1, label: '< PREV', offset: 172 }, { action: 'page', step: 1, label: 'NEXT >', offset: 88 });
+        for (const nav of navs) {
+            const nx = x + g.panelW - nav.offset * s;
+            this._traceDebugRowPath(ctx, nx, footerY, 72 * s, 30 * s, 4 * s);
+            ctx.fillStyle = '#102737'; ctx.fill(); ctx.strokeStyle = '#518A9C'; ctx.lineWidth = s; ctx.stroke();
+            ctx.fillStyle = '#C6E8F2'; ctx.fillText(nav.label, nx + 36 * s, footerY + 15 * s);
+            this.gameplayTestNavRects.push({ ...nav, x: nx, y: footerY, w: 72 * s, h: 30 * s });
+        }
+        if (!tests.length) { ctx.fillStyle = '#DAC279'; ctx.fillText('NO GAMEPLAYS AVAILABLE', x + g.panelW / 2, y + g.panelH / 2); }
+        ctx.restore();
+    }
     _drawDebugJumpOverlay(ctx, cW, cH) {
         const layout = this._debugListLayout(cW, cH);
         const panelX = layout.panelX;
@@ -971,6 +919,16 @@ class IP2LivePauseMenu extends Scene.Base {
     }
 
     update() {
+        if (this.closing) {
+            this.popupProgress = Math.max(0, this.popupProgress - 0.085);
+            if (this.popupProgress === 0) {
+                if (Manager.Stack.top === this) Manager.Stack.pop();
+                Manager.Stack.requestPaintHUD = true;
+                return;
+            }
+        } else {
+            this.popupProgress = Math.min(1, this.popupProgress + 0.085);
+        }
         this.animTick++;
         this.scanlineOffset = (this.scanlineOffset + 0.5) % 4;
         if (this.glitchTimer > 0) {
@@ -1019,12 +977,24 @@ class IP2LivePauseMenu extends Scene.Base {
         }
         ctx.globalAlpha = 1;
 
+        // Blend the frozen map into the pause backdrop while the panel pops
+        // in, then reveal it again as Resume closes the panel.
+        if (this.pauseBackdrop) {
+            ctx.globalAlpha = 1 - this.popupProgress;
+            ctx.drawImage(this.pauseBackdrop, 0, 0, cW, cH);
+            ctx.globalAlpha = 1;
+        }
+
         const layout = this._getLayout(SW, SH);
         const px = layout.panelX * scaleX;
         const py = layout.panelY * scaleY;
         const pw = layout.panelW * scaleX;
         const ph = layout.panelH * scaleY;
 
+        ctx.save();
+        if (IP2Live.PopupChrome && typeof IP2Live.PopupChrome.animate === 'function') {
+            IP2Live.PopupChrome.animate(ctx, { x: px, y: py, w: pw, h: ph }, this.popupProgress);
+        }
         this._drawPauseContainer(ctx, px, py, pw, ph, scaleX, scaleY);
 
         this._drawPausedTitle(ctx, scaleX, scaleY, SW, SH, layout.panelX, layout.panelY, layout.panelW);
@@ -1051,6 +1021,7 @@ class IP2LivePauseMenu extends Scene.Base {
         ctx.fillText('[ GAME PAUSED - SYS::STANDBY ]', (SW / 2) * scaleX, (layout.panelY + layout.panelH - 14) * scaleY);
         ctx.textAlign = 'left';
 
+        ctx.restore();
         ctx.restore();
 
         if (this.debugMode) {
@@ -1414,9 +1385,16 @@ window.IP2LivePauseMenu = IP2LivePauseMenu;
 // Intercept ESC in Scene.Map to open the pause menu
 inject(Scene.Map, 'onKeyPressed', function (key) {
     if (Data.Keyboards.checkCancelMenu(key)) {
+        if (IP2Live.MenuTransition && IP2Live.MenuTransition.active) return;
         Data.Systems.soundConfirmation.playSound();
-        if (IP2Live.MenuTransition) IP2Live.MenuTransition.open(() => new IP2LivePauseMenu());
-        else Manager.Stack.push(new IP2LivePauseMenu());
+        let pauseBackdrop = null;
+        try {
+            if (IP2Live.PopupChrome && typeof IP2Live.PopupChrome.capture === 'function') {
+                pauseBackdrop = IP2Live.PopupChrome.capture();
+            }
+        } catch (error) {}
+        Manager.Stack.push(new IP2LivePauseMenu(pauseBackdrop));
+        Manager.Stack.requestPaintHUD = true;
     } else {
         this.super(key);
     }

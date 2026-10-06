@@ -7,7 +7,7 @@
         ['ip_cidr_binary_panel', '3', 'CIDR Binary Panel', 'Build a subnet mask by configuring binary bits.', 'binary'],
         ['ip_subnet_simulator', '4', 'Subnet Simulator', 'Balance subnet counts and usable host capacity.', 'subnet'],
         ['ip_host_power_reactor', '4.5', 'Host-Power Reactor', 'Convert host bits into usable address capacity.', 'reactor'],
-        ['ip_cidr_quarantine', '5', 'CIDR Quarantine', 'Contain a network inside the correct CIDR range.', 'quarantine'],
+        ['ip_cidr_quarantine', '5', 'Network Re-Segmentation', 'Divide an allocated network, verify host capacity, and secure a safe route.', 'quarantine'],
         ['ip_cidr_quarantine_matrix', '6', 'Quarantine Matrix', 'Fit multiple network zones into one address space.', 'matrix'],
         ['ip_network_repair', '7', 'Network Repair', 'Repair network, broadcast and usable IP addresses.', 'repair'],
         ['ip_vlsm_allocator', '8', 'VLSM Infiltration Grid', 'Allocate variable-sized subnets without overlap.', 'vlsm'],

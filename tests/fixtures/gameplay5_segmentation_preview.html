@@ -1,0 +1,157 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>IP2Live — Gameplay 5 preview</title>
+  <style>
+    @font-face { font-family: Abnes; src: url('../../Fonts/abnes.ttf'); }
+    @font-face { font-family: Astronomous; src: url('../../Fonts/Astronomus.ttf'); }
+    @font-face { font-family: Nebula-Regular; src: url('../../Fonts/Nebula-Regular.otf'); }
+    @font-face { font-family: Oxanium-Medium; src: url('../../Fonts/Oxanium-Medium.ttf'); }
+    * { box-sizing: border-box; }
+    body { margin: 0; background: #02070d; color: #bddde8; font: 12px monospace; }
+    header { height: 38px; display: flex; align-items: center; gap: 14px; padding: 0 18px; }
+    select, button { background: #14232e; color: #bdeef5; border: 1px solid #456576; padding: 4px 10px; }
+    #result { color: #f2d373; }
+    canvas { display: block; width: 100vw; height: calc(100vh - 38px); }
+  </style>
+</head>
+<body>
+  <header>
+    <span>GAMEPLAY 5 / LOCAL PREVIEW</span>
+    <label>Quest time <select id="duration"><option value="0">No limit</option><option value="300">5 minutes</option><option value="180" selected>3 minutes</option><option value="120">2 minutes</option><option value="60">1 minute</option></select></label>
+    <button id="restart">Restart quest</button><span id="result"></span>
+  </header>
+  <canvas id="game" aria-label="Network Re-Segmentation gameplay. Identify the IP class, subnet the network, then connect the route."></canvas>
+  <script>
+    const canvas = document.querySelector('canvas');
+    const ctx = canvas.getContext('2d');
+    addEventListener('error', (event) => { document.querySelector('#result').textContent = event.message; });
+    addEventListener('unhandledrejection', (event) => { document.querySelector('#result').textContent = String(event.reason); });
+    const scenes = [];
+    window.IP2Live = { Assets: { abnesLoaded: true, astronomousLoaded: true, nebulaLoaded: true, oxaniumMediumLoaded: true } };
+    window.Scene = { Base: class {} };
+    window.Manager = { Stack: {
+      push(scene) { scenes.push(scene); }, pop() { scenes.pop(); },
+      replace(scene) { scenes.splice(0, scenes.length, scene); },
+      get top() { return scenes.at(-1); }, requestPaintHUD: true,
+    }, GL: {} };
+    window.Common = { Platform: { ctx }, ScreenResolution: { SCREEN_X: 1280, SCREEN_Y: 720 } };
+    window.Data = { Systems: {}, Keyboards: { checkCancelMenu(key) { return (key.name || key) === 'Escape'; } } };
+    window.Core = { Game: { current: { currentMapID: 12 } } };
+    window.Graphic = {}; window.Model = {}; window.Main = {}; window.THREE = {}; window.inject = () => {};
+    function resize() {
+      const ratio = Math.min(2, devicePixelRatio || 1);
+      canvas.width = Math.round(innerWidth * ratio);
+      canvas.height = Math.round((innerHeight - 38) * ratio);
+      Manager.Stack.top?.drawHUD();
+    }
+    addEventListener('resize', resize); resize();
+  </script>
+  <script src="../../Plugins/IP2Live_Core/gameplay/common/ip_cidr_tools.js"></script>
+  <script src="../../Plugins/IP2Live_Core/gameplay/common/ip_class_ranges.js"></script>
+  <script src="../../Plugins/IP2Live_Core/modules/dialogue_manager.js"></script>
+  <script src="../../Plugins/IP2Live_Core/gameplay/gameplay5/CIDRQuarantine/ip_cidr_quarantine_tutorial.js"></script>
+  <script src="../../Plugins/IP2Live_Core/gameplay/gameplay4_5/HostPowerReactor/ip_host_power_gameplay.js"></script>
+  <script src="../../Plugins/IP2Live_Core/gameplay/gameplay4_5/HostPowerReactor/ip_host_power_tool.js"></script>
+  <script src="../../Plugins/IP2Live_Core/gameplay/gameplay5/CIDRQuarantine/ip_cidr_quarantine_gameplay.js"></script>
+  <script>
+    function restart() {
+      const capture = new URLSearchParams(location.search).get('capture');
+      if (capture) {
+        // Keep generated routes and virus positions stable across screenshot runs.
+        let captureSeed = 0x6d2b79f5;
+        Math.random = () => {
+          captureSeed = (Math.imul(captureSeed, 1664525) + 1013904223) >>> 0;
+          return captureSeed / 4294967296;
+        };
+      }
+      if (capture === 'unlock' || capture === 'class_unlock' || capture === 'class_virus_out' || capture === 'class_virus_in' || capture?.startsWith('overrun_')) {
+        const captureTime = Date.now();
+        Date.now = () => captureTime;
+      }
+      document.querySelector('#result').textContent = '';
+      IP2Live.HostPowerToolManager._active = false;
+      const seed = new IP2Live.CIDRQuarantineGameplayScreen({ spec: { tutorial: true, profile: { index: 1 } } }).problem;
+      const screen = new IP2Live.CIDRQuarantineGameplayScreen({
+        problem: { ...seed, ipAddress: '172.16.0.0', ipClass: 'B', originalCIDR: 16, requiredSubnets: 6 },
+        tutorialMode: !!capture?.startsWith('tutorial_'),
+        timeLimitSeconds: Number(document.querySelector('#duration').value),
+        reducedMotion: new URLSearchParams(location.search).has('capture'),
+        onComplete() { document.querySelector('#result').textContent = 'QUEST COMPLETE — NETWORK SECURED'; },
+        onFailed() { document.querySelector('#result').textContent = 'NETWORK OVERRUN — RESTART TO RETRY'; },
+        onCancel() { document.querySelector('#result').textContent = 'Preview ended — restart to retry'; },
+      });
+      Manager.Stack.replace(screen);
+      IP2Live.DialogueManager.resetTransitionState({ stopActive: true, discardActive: true });
+      if (capture?.startsWith('tutorial_')) {
+        screen.phase = ({ tutorial_classify: 'classify', tutorial_prefix: 'default_prefix', tutorial_prefix_recall: 'default_prefix', tutorial_borrow: 'borrow_bits', tutorial_check: 'build' })[capture] || 'classify';
+        screen.tutorialStarted = true;
+        if (capture === 'tutorial_borrow') screen._setBorrowedBits(2);
+        if (capture === 'tutorial_check') IP2Live.IPCIDRQuarantineTutorial.showStep(4, screen._tutorialContext(), () => {});
+        else IP2Live.IPCIDRQuarantineTutorial.showPhaseGuide(screen.phase, screen._tutorialContext(), () => {});
+        if (capture === 'tutorial_borrow' || capture === 'tutorial_prefix_recall') IP2Live.DialogueManager._active.slideIndex = 1;
+        IP2Live.DialogueManager._active.lastText = IP2Live.DialogueManager._activeFullText();
+        IP2Live.DialogueManager._active.typeChars = 10000;
+        return;
+      }
+      if (capture === 'class_one_mistake' || capture === 'class_two_mistakes') {
+        screen._submitSegmentation('CLASS A');
+        if (capture === 'class_two_mistakes') screen._submitSegmentation(screen.problem.ipClass === 'A' ? 'B' : 'A');
+      }
+      if (capture === 'class_virus_out' || capture === 'class_virus_in') {
+        screen.options.reducedMotion = false;
+        screen._submitSegmentation('A');
+        screen.classFormation.at = Date.now() - (capture === 'class_virus_out' ? 200 : 600);
+      }
+      if (capture === 'class_typing') screen.answer = 'CLASS B';
+      if (capture && capture.startsWith('overrun_')) {
+        screen._triggerVirusOverrun();
+        screen.virusState.overrunAt = Date.now() - ({ overrun_popup: 500, overrun_pixels: 3200, overrun_full: 4900 }[capture] || 0);
+        return;
+      }
+      if (capture && !['classify', 'tutorial_classify', 'class_typing', 'class_one_mistake', 'class_two_mistakes', 'class_virus_out', 'class_virus_in'].includes(capture)) {
+        screen._submitSegmentation('CLASS B');
+        if (capture === 'class_unlock') {
+          screen.reducedMotion = false;
+          screen.classUnlockAt = Date.now() - 500;
+        }
+        if (capture !== 'default_prefix' && capture !== 'class_unlock') screen._submitSegmentation('16');
+        if (['new_cidr', 'host_bits', 'host_capacity', 'route', 'unlock'].includes(capture)) {
+          screen._setBorrowedBits(3); screen._submitSegmentation();
+          if (capture !== 'new_cidr') screen._submitSegmentation('19');
+          if (['host_capacity', 'route', 'unlock'].includes(capture)) screen._submitSegmentation('13');
+          if (['route', 'unlock'].includes(capture)) screen._submitSegmentation('8190');
+          if (capture === 'unlock') {
+            screen.reducedMotion = false;
+            screen.routeRevealAt = Date.now() - 650;
+          }
+        }
+        if (capture === 'borrow_bits') screen._setBorrowedBits(2);
+        if (capture === 'calculator') screen._openHostPowerTool();
+      }
+    }
+    document.querySelector('#restart').onclick = restart;
+    document.querySelector('#duration').onchange = restart;
+    addEventListener('keydown', (event) => {
+      if (event.target.tagName === 'SELECT' || event.target.tagName === 'BUTTON') return;
+      if (['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', ' ', 'Backspace'].includes(event.key)) event.preventDefault();
+      Manager.Stack.top?.onKeyPressed?.({ name: event.key, code: event.code });
+    });
+    for (const [eventName, method] of [['pointerdown', 'onMouseDown'], ['pointermove', 'onMouseMove'], ['pointerup', 'onMouseUp']]) {
+      canvas.addEventListener(eventName, (event) => {
+        const rect = canvas.getBoundingClientRect();
+        Manager.Stack.top?.[method]?.((event.clientX - rect.left) * canvas.width / rect.width, (event.clientY - rect.top) * canvas.height / rect.height);
+      });
+    }
+    restart();
+    Manager.Stack.top.drawHUD();
+    function frame() { Manager.Stack.top?.update(); Manager.Stack.top?.drawHUD(); requestAnimationFrame(frame); }
+    Promise.all([document.fonts.load('18px Abnes'), document.fonts.load('18px Astronomous'), document.fonts.load('18px Nebula-Regular'), document.fonts.load('18px Oxanium-Medium')]).then(() => {
+      if (new URLSearchParams(location.search).has('capture')) Manager.Stack.top.drawHUD();
+      else requestAnimationFrame(frame);
+    });
+  </script>
+</body>
+</html>

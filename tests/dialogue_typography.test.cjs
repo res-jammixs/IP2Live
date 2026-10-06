@@ -37,7 +37,7 @@ assert.match(source, /ethnocentricLoaded\s*\?\s*'Ethnocentric'/);
 assert.match(source, /Math\.round\(22 \* sX\) \+ 'px ' \+ font/);
 assert.doesNotMatch(source, /SYS:\/\/NEURAL_LINK|Signal:/);
 assert.match(source, /const pipY = panelY \+ headerH \/ 2/);
-assert.match(source, /const bodyTopPadding = 38 \* sY/);
+assert.match(source, /const bodyTopPadding = \(compact \? 22 : 38\) \* sY/);
 
 assert.equal(dialogueManager._sentenceCaseText('MISSION BRIEF'), 'Mission brief');
 assert.equal(
@@ -60,6 +60,9 @@ const measuringContext = {
     measureText(value) { return { width: String(value).length * 10 }; },
 };
 assert.equal(dialogueManager._measureTrackedText(measuringContext, 'Test', 2), 46);
+assert.equal(dialogueManager._measureTrackedText({
+    measureText(value) { return { width: value === 'AV' ? 14 : String(value).length * 10 }; },
+}, 'AV', 0.3), 20.3, 'tracked layout must measure the same glyph advances as tracked drawing');
 
 const richMarkup = 'Route {{highlight:Class A supports 1.0.0.0 through 126.255.255.255 and CIDR /8.}} Press {{key:W|KeyW}}.';
 const richTokens = dialogueManager._parseRichText(richMarkup);
@@ -203,6 +206,77 @@ assert.equal(
     'panel height must be based on the complete slide rather than typing progress'
 );
 dialogueManager.discardActive('test.render');
+
+// Compact highlights must fit their allocated runs at every supported scale,
+// including wrapped spans next to punctuation and ordinary words.
+for (const scale of [0.75, 1, 1.5]) {
+    const draws = [];
+    const boxes = [];
+    const highlightContext = Object.assign({}, renderContext, {
+        measureText(value) {
+            return { width: String(value).length * 9 * scale,
+                actualBoundingBoxAscent: 12 * scale, actualBoundingBoxDescent: 3 * scale };
+        },
+    });
+    const tokens = dialogueManager._parseRichText(
+        'Recall {{highlight:Gameplay 3}}: each octet has {{highlight:8 light bulbs}}. Each bulb is one bit.'
+    );
+    const layout = dialogueManager._layoutRichText(highlightContext, tokens, 280 * scale, {
+        sX: scale, sY: scale, lineH: 22 * scale, letterSpacing: 0.3 * scale,
+        bodyFont: `${16 * scale}px Oxanium-Medium`,
+    });
+    const originalFill = dialogueManager._fillTrackedText;
+    const originalTrace = dialogueManager._traceChamferedRect;
+    dialogueManager._fillTrackedText = (ctx, text, x, y, spacing) => {
+        draws.push({ text, x, y, width: dialogueManager._measureTrackedText(ctx, text, spacing), spacing });
+    };
+    dialogueManager._traceChamferedRect = (ctx, x, y, width, height) => {
+        boxes.push({ x, y, width, height });
+    };
+    try {
+        dialogueManager._drawRichLayout(highlightContext, layout, 0, 40 * scale, {
+            sX: scale, sY: scale, compact: true, letterSpacing: layout.letterSpacing,
+            bodyFont: layout.bodyFont, revealedChars: 10000,
+        });
+    } finally {
+        dialogueManager._fillTrackedText = originalFill;
+        dialogueManager._traceChamferedRect = originalTrace;
+    }
+    let drawIndex = 0;
+    let baseline = 40 * scale;
+    for (const line of layout.lines) {
+        let runX = 0;
+        assert.ok(line.width <= 280 * scale + 0.001, 'wrapped text stays within the compact panel');
+        for (const run of line.runs) {
+            const draw = draws[drawIndex++];
+            const pad = run.type === 'highlight' ? layout.highlightPadX : 0;
+            assert.equal(draw.text, run.text);
+            assert.ok(Math.abs(draw.x - runX - pad) < 0.001);
+            assert.equal(draw.y, baseline);
+            assert.equal(draw.spacing, layout.letterSpacing, 'highlights use the compact body tracking');
+            assert.ok(draw.x + draw.width <= runX + run.width + 0.001,
+                'highlighted glyphs cannot extend into the following words');
+            runX += run.width;
+        }
+        baseline += line.height;
+    }
+    assert.ok(boxes.every(box => box.height < 22 * scale), 'highlight backgrounds fit between adjacent lines');
+}
+
+renderedText.length = 0;
+translatedPoints.length = 0;
+dialogueManager.registerDialogue('test.compact', {
+    title: 'DEFAULT PREFIX', slides: [['Remember eight bulbs per octet.']],
+});
+dialogueManager.start('test.compact', { compactPanel: true, panelBounds: { x: 100, y: 220, w: 430 } });
+dialogueManager._active.lastText = dialogueManager._activeFullText();
+dialogueManager._active.typeChars = 10000;
+dialogueManager.drawOverlay(renderContext);
+assert.ok(renderedText.every(value => !/Incoming transmission|Default prefix/.test(value)),
+    'compact dialogues omit both header labels');
+assert.equal(translatedPoints.length, 0, 'compact dialogues omit the large transmission header');
+assert.ok(dialogueManager._active.panelHeight < 205, 'compact height does not reserve space for the default header');
+dialogueManager.discardActive('test.compact');
 
 const questSuppressionStates = [];
 const minimapHighlightStates = [];

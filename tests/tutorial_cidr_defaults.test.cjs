@@ -22,10 +22,13 @@ function loadGameplay(relativePath) {
 const gameplay5 = loadGameplay('Plugins/IP2Live_Core/gameplay/gameplay5/CIDRQuarantine/ip_cidr_quarantine_gameplay.js');
 const tutorial5a = new gameplay5.CIDRQuarantineGameplayScreen({ spec: { tutorial: true, profile: { index: 1 } }, tutorialMode: true });
 const tutorial5b = new gameplay5.CIDRQuarantineGameplayScreen({ spec: { tutorial: true, profile: { index: 1 } }, tutorialMode: true });
-assert.equal(tutorial5a.problem.id, 'cidr-quarantine-tutorial-default-v1');
-assert.equal(tutorial5a.problem.requiredHosts, 50);
-assert.deepEqual(tutorial5a.problem.solutionPath, tutorial5b.problem.solutionPath);
-assert.deepEqual(tutorial5a.problem.viruses, tutorial5b.problem.viruses);
+for (const screen of [tutorial5a, tutorial5b]) {
+  assert.ok(['A', 'B', 'C'].includes(screen.problem.ipClass));
+  assert.equal(screen.problem.originalCIDR, { A: 8, B: 16, C: 24 }[screen.problem.ipClass]);
+  assert.ok(Math.pow(2, screen.problem.borrowedBits) >= screen.problem.requiredSubnets);
+  assert.equal(screen.problem.targetHostBits, 32 - screen.problem.targetCIDR);
+  assert.ok(screen.problem.solutionPath.length > 2);
+}
 
 const gameplay6 = loadGameplay('Plugins/IP2Live_Core/gameplay/gameplay6/CIDRQuarantineMatrix/ip_cidr_quarantine_matrix_gameplay.js');
 const tutorial6a = new gameplay6.CIDRQuarantineMatrixGameplayScreen({ spec: { tutorial: true, profile: { index: 1 } }, tutorialMode: true });

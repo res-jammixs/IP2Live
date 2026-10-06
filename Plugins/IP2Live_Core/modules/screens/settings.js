@@ -1,8 +1,10 @@
 /** Shared popup styling; volume and keyboard preferences remain persistent. */
 class IP2LiveSettingsMenu extends Scene.Base {
-    constructor() {
+    constructor(options = {}) {
         super(true);
+        this.popupTransition = !!options.popupTransition;
         this.backdrop = IP2Live.PopupChrome.capture();
+        this.blurredBackdrop = this._blurBackdrop(this.backdrop);
     }
 
     initialize() {
@@ -59,6 +61,8 @@ class IP2LiveSettingsMenu extends Scene.Base {
 
         this.fadeIn =
             0;
+        this.popupProgress = 0;
+        this.closing = false;
     }
 
     async load() {
@@ -88,6 +92,7 @@ class IP2LiveSettingsMenu extends Scene.Base {
     }
 
     onKeyPressed(key) {
+        if (this.closing) return true;
         /*
          * While volume adjustment mode is active,
          * Enter or Esc closes adjustment mode.
@@ -144,6 +149,7 @@ class IP2LiveSettingsMenu extends Scene.Base {
     }
 
     onKeyPressedAndRepeat(key) {
+        if (this.closing) return true;
         /*
          * Volume adjustment.
          */
@@ -255,6 +261,7 @@ class IP2LiveSettingsMenu extends Scene.Base {
         x,
         y
     ) {
+        if (this.closing) return true;
         /*
          * Top-left Back icon.
          */
@@ -329,6 +336,7 @@ class IP2LiveSettingsMenu extends Scene.Base {
         x,
         y
     ) {
+        if (this.closing) return true;
         /*
          * Upper-left Back icon.
          */
@@ -570,11 +578,15 @@ class IP2LiveSettingsMenu extends Scene.Base {
     }
 
     _resume() {
+        if (this.closing) return;
         try {
             Data.Systems.soundCancel.playSound();
         } catch (error) {}
 
-        if (IP2Live.MenuTransition) IP2Live.MenuTransition.back();
+        if (this.popupTransition) {
+            this.closing = true;
+            Manager.Stack.requestPaintHUD = true;
+        } else if (IP2Live.MenuTransition) IP2Live.MenuTransition.back();
         else Manager.Stack.pop();
     }
 
@@ -863,6 +875,13 @@ class IP2LiveSettingsMenu extends Scene.Base {
 
     update() {
         this.animTick++;
+        this.popupProgress = Math.max(0, Math.min(1,
+            this.popupProgress + (this.closing ? -0.085 : 0.085)));
+        if (this.closing && this.popupProgress <= 0) {
+            if (Manager.Stack.top === this) Manager.Stack.pop();
+            Manager.Stack.requestPaintHUD = true;
+            return;
+        }
 
         this.scanlineOffset =
             (
@@ -893,7 +912,7 @@ class IP2LiveSettingsMenu extends Scene.Base {
                 2 ===
                 0 ||
             this.fadeIn <
-                1
+                1 || this.closing || this.popupProgress < 1
         ) {
             Manager.Stack.requestPaintHUD =
                 true;
@@ -904,29 +923,136 @@ class IP2LiveSettingsMenu extends Scene.Base {
         Manager.GL.renderer.clear();
     }
 
-    drawHUD() {
-        const ctx=Common.Platform.ctx, c=ctx.canvas, scale=Math.min(c.width/1280,c.height/720), chrome=IP2Live.PopupChrome;
-        const w=580,h=390,x=(c.width/scale-w)/2,y=(c.height/scale-h)/2;
-        ctx.save(); chrome.backdrop(ctx,this.backdrop,this.animTick*0.085); ctx.scale(scale,scale);
-        chrome.animate(ctx,{x,y,w,h},this.animTick*0.085);
-        chrome.panel(ctx,x,y,w,h,1,1,false,this.animTick); chrome.heading(ctx,'SETTINGS',x,y,w);
-        this.buttonRects=[]; this.volumeHitTargets=[];
-        ['KEY BINDINGS','SFX VOLUME','MUSIC VOLUME','LANGUAGE [EN]'].forEach((label,i)=>{
-            const r={x:x+30,y:y+76+i*60,w:w-60,h:50}, active=this.selectedIndex===i;
-            this.buttonRects.push({x:r.x*scale,y:r.y*scale,w:r.w*scale,h:r.h*scale});
-            chrome.row(ctx,r.x,r.y,r.w,r.h,active && i!==3);
-            ctx.textAlign='left';ctx.font='bold 15px Oxanium-Medium, sans-serif';ctx.fillStyle=i===3?'#687d86':'#e0edef';ctx.fillText(label,r.x+16,r.y+30);
-            if(i===0){ctx.textAlign='right';ctx.fillStyle='#83b9c1';ctx.fillText('>',r.x+r.w-20,r.y+30);}
-            if(i===1||i===2){
-                const type=i===1?'sfx':'music', value=i===1?this.sfxVolume:this.musicVolume;
-                const bx=r.x+240,by=r.y+14,bw=150;
-                ctx.fillStyle='#162831';ctx.fillRect(bx,by,bw,22);ctx.fillStyle=active?'#d5c878':'#69aab3';ctx.fillRect(bx+3,by+3,(bw-6)*value/100,16);
-                ctx.font='14px Oxanium-Medium, sans-serif';ctx.fillStyle='#d4e3e6';ctx.textAlign='center';ctx.fillText('-',bx-18,by+16);ctx.fillText('+',bx+bw+18,by+16);ctx.textAlign='right';ctx.fillText(value+'%',r.x+r.w-12,by+16);
-                [{action:'decrease',x:bx-32,w:28},{action:'bar',x:bx,w:bw},{action:'increase',x:bx+bw+4,w:28}].forEach(t=>this.volumeHitTargets.push({index:i,type,action:t.action,x:t.x*scale,y:(by-5)*scale,w:t.w*scale,h:32*scale}));
+    _blurBackdrop(frame) {
+        if (!frame || !frame.width || !frame.height) return frame;
+        const canvas = document.createElement('canvas');
+        canvas.width = Math.max(1, Math.round(frame.width / 2));
+        canvas.height = Math.max(1, Math.round(frame.height / 2));
+        const ctx = canvas.getContext('2d');
+        if (!ctx) return frame;
+        // Cache a half-resolution blur once; animation never filters the live
+        // game or the settings controls. Overscan avoids dark blur edges.
+        const radius = 4 * frame.width / 1280;
+        const pad = radius * 3;
+        ctx.filter = 'blur(' + radius + 'px)';
+        ctx.drawImage(frame, -pad, -pad, canvas.width + pad * 2, canvas.height + pad * 2);
+        ctx.filter = 'none';
+        return canvas;
+    }
+
+    _drawSettingsBackdrop(ctx, progress) {
+        ctx.save();
+        if (this.backdrop) ctx.drawImage(this.backdrop, 0, 0, ctx.canvas.width, ctx.canvas.height);
+        ctx.globalAlpha *= progress;
+        if (this.blurredBackdrop) ctx.drawImage(this.blurredBackdrop, 0, 0, ctx.canvas.width, ctx.canvas.height);
+        ctx.fillStyle = 'rgba(1,5,10,0.58)';
+        ctx.fillRect(0, 0, ctx.canvas.width, ctx.canvas.height);
+        ctx.restore();
+    }
+
+    _drawSettingsPanel(ctx, rect) {
+        const { x, y, w, h } = rect;
+        const chrome = IP2Live.PopupChrome;
+        chrome.panel(ctx, x, y, w, h, 1, 1, false, this.animTick);
+        ctx.save();
+        chrome.path(ctx, x + 9, y + 8, w - 18, h - 16, 6);
+        ctx.clip();
+        const glass = ctx.createLinearGradient(x, y, x + w, y + h);
+        glass.addColorStop(0, 'rgba(139,211,225,0.13)');
+        glass.addColorStop(0.35, 'rgba(139,211,225,0.025)');
+        glass.addColorStop(0.7, 'rgba(24,19,47,0.12)');
+        glass.addColorStop(1, 'rgba(139,123,191,0.08)');
+        ctx.fillStyle = glass; ctx.fillRect(x, y, w, h);
+        ctx.restore();
+        ctx.save();
+        chrome.path(ctx, x + 9, y + 8, w - 18, h - 16, 6);
+        ctx.strokeStyle = 'rgba(164,223,230,0.22)'; ctx.lineWidth = 1; ctx.stroke();
+        ctx.fillStyle = 'rgba(0,0,0,0.3)'; ctx.fillRect(x + 30, y + 55, w - 60, 2);
+        ctx.restore();
+        chrome.heading(ctx, 'SETTINGS', x, y, w);
+    }
+
+    _drawSettingsRow(ctx, rect, active) {
+        const { x, y, w, h } = rect;
+        const chrome = IP2Live.PopupChrome;
+        ctx.save();
+        chrome.path(ctx, x, y, w, h, 5);
+        const surface = ctx.createLinearGradient(x, y, x, y + h);
+        surface.addColorStop(0, active ? '#213846' : '#182833');
+        surface.addColorStop(0.5, active ? '#142a36' : '#101e28');
+        surface.addColorStop(1, '#0a141e');
+        ctx.fillStyle = surface; ctx.shadowColor = 'rgba(0,0,0,0.65)';
+        ctx.shadowBlur = 6; ctx.shadowOffsetY = 3; ctx.fill();
+        ctx.shadowBlur = 0; ctx.shadowOffsetY = 0;
+        ctx.strokeStyle = active ? 'rgba(130,204,213,0.65)' : 'rgba(130,204,213,0.23)';
+        ctx.lineWidth = 1; ctx.stroke();
+        ctx.fillStyle = 'rgba(220,247,255,0.12)'; ctx.fillRect(x + 6, y + 1, w - 12, 1);
+        ctx.fillStyle = 'rgba(0,0,0,0.5)'; ctx.fillRect(x + 6, y + h - 2, w - 12, 1);
+        ctx.fillStyle = active ? '#e5d779' : '#47767d'; ctx.fillRect(x + 1, y + 10, 2, h - 20);
+        ctx.restore();
+    }
+
+    _drawVolumeControl(ctx, rect, type, index, active, scale) {
+        const value = this._volumeForType(type);
+        const bx = rect.x + 240, by = rect.y + 14, bw = 150;
+        ctx.save();
+        ctx.fillStyle = '#050c13'; ctx.fillRect(bx, by, bw, 22);
+        ctx.strokeStyle = 'rgba(0,0,0,0.9)'; ctx.strokeRect(bx + 0.5, by + 0.5, bw - 1, 21);
+        ctx.fillStyle = 'rgba(172,224,230,0.25)'; ctx.fillRect(bx, by + 22, bw, 1);
+        const fill = ctx.createLinearGradient(bx, by, bx, by + 22);
+        fill.addColorStop(0, active ? '#e0d79a' : '#85c2cc');
+        fill.addColorStop(1, active ? '#9b8b45' : '#397886');
+        ctx.fillStyle = fill; ctx.fillRect(bx + 3, by + 3, (bw - 6) * value / 100, 16);
+        ctx.fillStyle = 'rgba(2,9,15,0.35)';
+        for (let step = 1; step < 10; step++) ctx.fillRect(bx + 3 + (bw - 6) * step / 10, by + 3, 1, 16);
+        if (value > 0) {
+            ctx.fillStyle = active ? '#fff0bd' : '#b6edf0';
+            ctx.fillRect(bx + 2 + (bw - 6) * value / 100, by + 2, 2, 18);
+        }
+        const targets = [{ action: 'decrease', x: bx - 32, w: 28, label: '-' },
+            { action: 'bar', x: bx, w: bw }, { action: 'increase', x: bx + bw + 4, w: 28, label: '+' }];
+        for (const target of targets) {
+            if (target.label) {
+                this._drawSettingsRow(ctx, { x: target.x, y: by - 3, w: 28, h: 28 },
+                    active && this.adjustingVolumeType === type);
+                ctx.font = '16px Oxanium-Medium, sans-serif'; ctx.textAlign = 'center';
+                ctx.fillStyle = '#c3e2e6'; ctx.fillText(target.label, target.x + 14, by + 17);
             }
+            this.volumeHitTargets.push({ index, type, action: target.action,
+                x: target.x * scale, y: (by - 5) * scale, w: target.w * scale, h: 32 * scale });
+        }
+        ctx.font = '14px Oxanium-Medium, sans-serif'; ctx.fillStyle = '#d4e3e6';
+        ctx.textAlign = 'right'; ctx.fillText(value + '%', rect.x + rect.w - 12, by + 16);
+        ctx.restore();
+    }
+
+    drawHUD() {
+        const ctx = Common.Platform.ctx, c = ctx.canvas, chrome = IP2Live.PopupChrome;
+        const scale = Math.min(c.width / 1280, c.height / 720);
+        const w = 580, h = 390, x = (c.width / scale - w) / 2, y = (c.height / scale - h) / 2;
+        const progress = this.popupProgress;
+        ctx.save(); this._drawSettingsBackdrop(ctx, progress); ctx.scale(scale, scale);
+        chrome.animate(ctx, { x, y, w, h }, progress);
+        this._drawSettingsPanel(ctx, { x, y, w, h });
+        this.buttonRects = []; this.volumeHitTargets = [];
+        this.menuItems.forEach((label, i) => {
+            const r = { x: x + 30, y: y + 76 + i * 60, w: w - 60, h: 50 };
+            const active = this.selectedIndex === i && i !== 3;
+            this.buttonRects.push({ x: r.x * scale, y: r.y * scale, w: r.w * scale, h: r.h * scale });
+            this._drawSettingsRow(ctx, r, active);
+            ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
+            ctx.font = 'bold 15px Oxanium-Medium, sans-serif'; ctx.fillStyle = i === 3 ? '#687d86' : '#e0edef';
+            ctx.fillText(label, r.x + 16, r.y + 30);
+            if (i === 0) {
+                ctx.textAlign = 'right'; ctx.fillStyle = '#83b9c1'; ctx.fillText('>', r.x + r.w - 20, r.y + 30);
+            }
+            if (i === 1 || i === 2) this._drawVolumeControl(ctx, r, i === 1 ? 'sfx' : 'music', i, active, scale);
         });
-        const back={x:x+w/2-90,y:y+h-57,w:180,h:36};this.backButtonRect={x:back.x*scale,y:back.y*scale,w:back.w*scale,h:back.h*scale};
-        chrome.button(ctx,back,1,1,'BACK','Oxanium-Medium',this.hoverBack?1:0,this.animTick,true);ctx.restore();
+        const back = { x: x + w / 2 - 90, y: y + h - 57, w: 180, h: 36 };
+        this.backButtonRect = { x: back.x * scale, y: back.y * scale, w: back.w * scale, h: back.h * scale };
+        this._drawSettingsRow(ctx, back, this.hoverBack);
+        chrome.button(ctx, back, 1, 1, 'BACK', 'Oxanium-Medium', this.hoverBack ? 1 : 0, this.animTick, false);
+        ctx.restore();
     }
 
 }

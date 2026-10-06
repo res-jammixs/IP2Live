@@ -84,14 +84,33 @@ const problem = {
   allocatedCIDR: '173.0.16.64/26',
 };
 
-const screen = new Screen({ problem });
+const screen = new Screen({ problem, reducedMotion: true });
+assert.equal(screen.phase, 'classify');
+assert.equal(screen._openHostPowerTool(), false, 'the calculator must stay locked before the default prefix is verified');
+screen._submitSegmentation('CLASS B');
+screen._submitSegmentation('16');
+screen._setBorrowedBits(10);
+screen._submitSegmentation();
+screen._submitSegmentation('26');
+screen._submitSegmentation('6');
+screen._submitSegmentation('62');
+assert.equal(screen.phase, 'build', 'all prerequisites must unlock routing');
 const metrics = screen._metrics();
 screen._buildInteractionRects(metrics);
 assert.ok(screen.hostPowerToolRect, 'the calculator icon needs a click target');
 assert.ok(screen.hostPowerToolRect.x >= metrics.panelX);
 assert.ok(screen.hostPowerToolRect.x + screen.hostPowerToolRect.w <= metrics.panelX + metrics.panelW);
 assert.ok(screen.hostPowerToolRect.y >= metrics.panelY);
-assert.ok(screen.hostPowerToolRect.y + screen.hostPowerToolRect.h < metrics.gridY);
+assert.equal(screen.hostPowerToolRect.x, 1112 * metrics.sX);
+assert.equal(screen.hostPowerToolRect.y, 144 * metrics.sY);
+assert.equal(screen.hostPowerToolRect.w, 44 * metrics.sX);
+assert.equal(screen.hostPowerToolRect.h, 44 * metrics.sY);
+assert.ok(screen.buttonRects.every((button) =>
+  screen.hostPowerToolRect.x + screen.hostPowerToolRect.w <= button.x ||
+  button.x + button.w <= screen.hostPowerToolRect.x ||
+  screen.hostPowerToolRect.y + screen.hostPowerToolRect.h <= button.y ||
+  button.y + button.h <= screen.hostPowerToolRect.y),
+  'the header calculator cannot overlap route action buttons');
 
 const pathBeforeOpening = JSON.stringify(screen.path);
 const virusesBeforeOpening = JSON.stringify(screen.problem.viruses);
@@ -101,7 +120,7 @@ screen.onMouseDown(toolButton.x + toolButton.w / 2, toolButton.y + toolButton.h 
 assert.equal(launchCount, 1, 'clicking the icon should open exactly one calculator overlay');
 assert.equal(screen.hostPowerToolOpen, true);
 assert.equal(launchOptions.targetClass, 'B', 'the overlay must use the active Gameplay 5 IP class');
-assert.equal(launchOptions.requiredHosts, 51, 'the overlay must use the active puzzle host requirement');
+assert.equal(launchOptions.requiredHosts, 62, 'the overlay uses the verified subnet capacity');
 assert.equal(launchOptions.startExponent, 0, 'the tool should not reveal the answer on open');
 assert.equal(launchOptions.align, 'right');
 assert.equal(launchOptions.showIntro, false, 'the helper overlay should open without replaying the bridge tutorial');
@@ -110,6 +129,11 @@ assert.equal(launchOptions.backgroundScene, screen, 'the live Gameplay 5 rendere
 assert.equal(launchOptions.preserveBackground, true);
 assert.equal(launchOptions.neutralFeedback, true, 'the helper must not reveal whether h is right or wrong');
 assert.equal(launchOptions.lockScenario, true, 'the helper must remain tied to the current puzzle');
+assert.equal(launchOptions.allocatedPrefix, 26, 'the tool shows the verified prefix instead of leaking capacity');
+const elapsedBeforeTool = screen.questElapsedMs;
+screen.lastUpdateAt -= 1000;
+assert.equal(launchOptions.onBackgroundUpdate(), false);
+assert.ok(screen.questElapsedMs >= elapsedBeforeTool + 1000, 'the quest clock runs while the tool is open');
 assert.equal(JSON.stringify(screen.path), pathBeforeOpening, 'opening the helper must preserve the route under it');
 assert.equal(JSON.stringify(screen.problem.viruses), virusesBeforeOpening, 'opening the helper must preserve virus placement');
 
@@ -150,7 +174,7 @@ for (let index = 0; index < 20; index++) {
 }
 
 const loader = fs.readFileSync(path.join(projectRoot, 'Plugins', 'IP2Live_Core', 'code.js'), 'utf8');
-assert.match(loader, /20260821_ip_cidr_quarantine_03_/,
+assert.match(loader, /20260930_ip_cidr_quarantine_12_/,
   'the Gameplay 5 loader cache key must change so packaged Electron does not reuse stale code');
 
 const hostGameplayPath = path.join(
@@ -253,3 +277,56 @@ for (const exponent of [5, 6, 7]) {
   neutralTool.evaluation = neutralTool.rules.evaluate(51, exponent);
   assert.equal(neutralTool._statusColor(), '#62e7f4', 'under, exact, and over values must share the same neutral color');
 }
+
+renderedText.length = 0;
+let backgroundUpdates = 0;
+let toolCloses = 0;
+const prefixTool = new ToolScreen({
+  targetClass: 'B', requiredHosts: 8190, allocatedPrefix: 19,
+  neutralFeedback: true, lockScenario: true,
+  onBackgroundUpdate() { backgroundUpdates++; return backgroundUpdates === 2; },
+  onClose() { toolCloses++; },
+});
+prefixTool.drawHUD();
+assert.ok(renderedText.includes('/19'));
+assert.ok(!renderedText.some((text) => /8,?190|8,?192/.test(text)), 'initial tool display cannot disclose host capacity or total addresses');
+prefixTool.update();
+assert.equal(toolCloses, 0);
+prefixTool.update();
+assert.equal(toolCloses, 1, 'expiry closes the helper so the parent failure can proceed');
+
+const earlyScreen = new Screen({ problem: JSON.parse(JSON.stringify(problem)), reducedMotion: true });
+earlyScreen._submitSegmentation('CLASS B');
+assert.equal(earlyScreen._openHostPowerTool(), false, 'calculator stays locked until the default prefix is verified');
+earlyScreen._submitSegmentation('16');
+assert.equal(earlyScreen.phase, 'borrow_bits');
+earlyScreen._segmentationLayout(earlyScreen._metrics());
+const subnetButton = earlyScreen.segmentationRects.find((r) => r.action === 'calculator');
+assert.ok(subnetButton, 'subnet calculation must have a visible calculator button');
+assert.ok(!earlyScreen.segmentationRects.some((r) => r.action === 'analyzer'),
+  'the prerequisite panel should have one clear calculation tool');
+assert.equal(subnetButton.w, 44 * earlyScreen._metrics().sX,
+  'the calculator has a compact square click target');
+assert.equal(subnetButton.h, 44 * earlyScreen._metrics().sY);
+assert.equal(subnetButton.x, 1112 * earlyScreen._metrics().sX);
+assert.equal(subnetButton.y, 144 * earlyScreen._metrics().sY);
+earlyScreen.onMouseDown(subnetButton.x + 3, subnetButton.y + 3);
+assert.equal(earlyScreen.hostPowerToolOpen, true);
+assert.equal(launchOptions.calculationMode, 'subnets');
+assert.equal(launchOptions.requiredSubnets, earlyScreen.problem.requiredSubnets);
+assert.equal(launchOptions.allocatedPrefix, undefined, 'the subnet tool cannot reveal the unanswered new prefix');
+launchOptions.onClose({ exponent: 3 });
+assert.equal(earlyScreen.borrowedBits, 0, 'calculator use must not silently answer the bulb task');
+assert.equal(earlyScreen.phase, 'borrow_bits');
+
+renderedText.length = 0;
+const subnetTool = new ToolScreen({ targetClass: 'B', requiredHosts: 8190, startExponent: 3,
+  calculationMode: 'subnets', requiredSubnets: 6, neutralFeedback: true, lockScenario: true,
+  sourceGameplayId: 'ip_cidr_quarantine' });
+subnetTool.drawHUD();
+assert.ok(subnetTool.lastMetrics.y >= 126 * subnetTool.lastMetrics.sY,
+  'the live quest timer must remain visible above the calculator');
+assert.ok(renderedText.includes('8 SUBNETS'), 'subnets use 2^s with no subtraction');
+assert.ok(renderedText.includes('REQUIRED SUBNETS'));
+assert.ok(!renderedText.some((value) => /USABLE|8,?190|8,?192|CIDR|ZONES|REACTOR/.test(value)),
+  'subnet mode must not mix host math, answer leaks, or themed networking terms into its explanation');

@@ -94,6 +94,15 @@ function createHarness() {
     return { manager, game, questManager, starts, overlays, gameOver, IP2Live };
 }
 
+{
+    const { manager, overlays } = createHarness();
+    for (let i = 0; i < 5; i++) {
+        manager.handleTerminalFailure({ ...terminalFailure(), skipDiagnosticScreen: true });
+    }
+    assert.equal(overlays.length, 0, 'direct floor exits suppress the repeated-failure AR offer');
+    assert.ok(manager.getState().lifeForce < 100, 'the floor exit still records the campaign penalty');
+}
+
 function terminalFailure() {
     return {
         gameplayId: 'ip_class_wires',
