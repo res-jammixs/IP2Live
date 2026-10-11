@@ -6,7 +6,7 @@
  */
 
 const IP2LiveReportManager = {
-    VERSION: 'report-manager-20260824-06',
+    VERSION: 'report-manager-20261011-07',
     // This is the required recipient password for every report package.  Keeping
     // it in one place makes a future credential rotation deliberate and auditable.
     EXPORT_PASSWORD: '2627-IT228-G0102',
@@ -83,14 +83,14 @@ const IP2LiveReportManager = {
         const profileName = String(opts.infiltratorName || 'UNKNOWN').trim() || 'UNKNOWN';
         if (profileName.toUpperCase() === 'UNKNOWN') return { ok: false, reason: 'profile-required' };
         const profileId = String(opts.profileId || '').trim() || null;
-        const scopeDays = Math.max(1, Number(opts.scopeDays || 90) || 90);
+        const scopeDays = opts.scopeDays === 0 ? 0 : Math.max(1, Number(opts.scopeDays || 90) || 90);
         const format = String(opts.format || 'both').toLowerCase();
         const baseName = this._safeFileBase(String(opts.filenameBase || '').trim() || this._defaultFileBase(profileName));
         const catalog = Array.isArray(opts.gameplayCatalog) ? opts.gameplayCatalog : [];
 
         await this.flush();
         const now = Date.now();
-        const since = now - scopeDays * 24 * 60 * 60 * 1000;
+        const since = scopeDays === 0 ? 0 : now - scopeDays * 24 * 60 * 60 * 1000;
         const telemetry = await this._queryTelemetry(profileName, since, profileId);
         const dto = this._buildReportDTO({
             infiltratorName: profileName,
@@ -405,7 +405,7 @@ const IP2LiveReportManager = {
         const catalog = Array.isArray(input.gameplayCatalog) ? input.gameplayCatalog : [];
         const catalogByGameplay = this._catalogByGameplayId(catalog);
         const attempts = this._enrichAttemptRows(this._attemptRows(telemetry), catalogByGameplay);
-        const assessedAttempts = attempts.filter(function (a) { return !a.cancelled; });
+        const assessedAttempts = attempts.filter(function (a) { return a.assessed; });
         const attemptMistakes = this._mistakeAttemptRows(telemetry, catalogByGameplay);
         const stepAnalysis = this._stepAnalysisRows(attemptMistakes, assessedAttempts);
         const sessionsCount = this._uniqueCount(telemetry.map(function (row) { return row && row.sessionId || null; }).filter(Boolean));
@@ -413,12 +413,13 @@ const IP2LiveReportManager = {
             .map(function (row) { return Number(row && row.timestamp) || 0; })
             .filter(function (value) { return value > 0; })
             .sort(function (a, b) { return a - b; });
-        const totalActiveMs = attempts.reduce(function (sum, a) { return sum + Math.max(0, Number(a.durationMs || 0) || 0); }, 0);
+        const totalActiveMs = attempts.reduce(function (sum, a) { return sum + (a.activeDurationKnown ? a.activeDurationMs : 0); }, 0);
+        const totalElapsedMs = attempts.reduce(function (sum, a) { return sum + Math.max(0, Number(a.durationMs || 0) || 0); }, 0);
         const passedCount = assessedAttempts.filter(function (a) { return !!a.passed; }).length;
         const failedCount = assessedAttempts.filter(function (a) { return a.passed === false; }).length;
-        const cancelledCount = attempts.filter(function (a) { return !!a.cancelled; }).length;
+        const cancelledCount = attempts.filter(function (a) { return a.cancelled; }).length;
         const repetitionCount = attempts.filter(function (a) { return Number(a.questRepetitionNumber || 1) > 1; }).length;
-        const totalRounds = attempts.reduce(function (sum, a) { return sum + Math.max(1, Number(a.roundsUsed || a.attemptsUsed || 1) || 1); }, 0);
+        const totalRounds = attempts.reduce(function (sum, a) { return sum + Math.max(0, Number(a.roundsUsed || 0) || 0); }, 0);
         const attemptsCount = attempts.length;
         const assessedCount = assessedAttempts.length;
         const completionRate = assessedCount > 0 ? passedCount / assessedCount : 0;
@@ -427,20 +428,21 @@ const IP2LiveReportManager = {
         let accuracyWeightedSum = 0;
         for (let i = 0; i < assessedAttempts.length; i++) {
             const a = assessedAttempts[i];
-            const w = Math.max(1, Number(a.attemptsUsed || 0) || 1);
-            const acc = this._clamp01(Number(a.accuracy || 0) || 0);
+            if (!a.accuracyKnown) continue;
+            const w = Math.max(1, Number(a.totalDecisions || 0) || 1);
+            const acc = a.accuracy;
             accuracyWeightedSum += acc * w;
             accuracyWeight += w;
         }
-        const overallAccuracy = accuracyWeight > 0 ? accuracyWeightedSum / accuracyWeight : 0;
+        const overallAccuracy = accuracyWeight > 0 ? accuracyWeightedSum / accuracyWeight : null;
         const clearTimes = assessedAttempts
             .filter(function (a) { return !!a.passed; })
             .map(function (a) { return Number(a.durationMs || 0) || 0; })
             .filter(function (n) { return n > 0; });
-        const avgClearMs = this._avg(clearTimes);
-        const medianClearMs = this._median(clearTimes);
-        const bestClearMs = clearTimes.length ? Math.min.apply(null, clearTimes) : 0;
-        const consistencyStdMs = this._stddev(clearTimes);
+        const avgClearMs = clearTimes.length ? this._avg(clearTimes) : null;
+        const medianClearMs = clearTimes.length ? this._median(clearTimes) : null;
+        const bestClearMs = clearTimes.length ? Math.min.apply(null, clearTimes) : null;
+        const consistencyStdMs = clearTimes.length >= 2 ? this._stddev(clearTimes) : null;
 
         const perGameplay = this._perGameplayMetrics(attempts, catalogByGameplay);
         const daily = this._dailyRollups(attempts, catalogByGameplay);
@@ -465,16 +467,28 @@ const IP2LiveReportManager = {
             mastery: mastery,
             stepAnalysis: stepAnalysis,
         });
-        const performanceSummary = this._generatePerformanceSummary(stats);
+        const learning = IP2Live.ReportLearningAnalytics && IP2Live.ReportLearningAnalytics.analyze
+            ? IP2Live.ReportLearningAnalytics.analyze({ attempts: attempts, events: telemetry, gameplayCatalog: catalog })
+            : this._unavailableLearningAnalytics();
+        const performanceSummary = learning.feedback.summary;
+        stats.progressionTrend = {
+            direction: learning.improvement.status === 'insufficient_data' ? 'insufficient data' :
+                learning.improvement.accuracyChangePp < -5 || learning.improvement.passRateChangePp < -5 ? 'declining' :
+                learning.improvement.accuracyChangePp > 5 || learning.improvement.passRateChangePp > 5 || learning.improvement.validatedSpeedImprovementPercent > 5 ? 'improving' : 'steady',
+            deltaAccuracyRate: learning.improvement.accuracyChangePp === null ? null : learning.improvement.accuracyChangePp / 100,
+            series: [],
+        };
 
         return {
-            version: 'report-dto-20260821-03',
+            version: 'report-dto-20261011-04',
             summary: {
                 infiltratorName: input.infiltratorName,
                 generatedAt: Number(input.generatedAt) || Date.now(),
-                scopeDays: Number(input.scopeDays) || 90,
+                scopeDays: input.scopeDays === 0 ? 0 : Number(input.scopeDays) || 90,
                 sessionsCount: sessionsCount,
                 totalActivePlayMs: totalActiveMs,
+                totalElapsedPlayMs: totalElapsedMs,
+                activeTimeEvidenceCount: attempts.filter(function (a) { return a.activeDurationKnown; }).length,
                 activeDays: daily.length,
                 firstActivityAt: activityTimestamps.length ? activityTimestamps[0] : 0,
                 lastActivityAt: activityTimestamps.length ? activityTimestamps[activityTimestamps.length - 1] : 0,
@@ -486,10 +500,14 @@ const IP2LiveReportManager = {
                 completedAttempts: passedCount,
                 failedAttempts: failedCount,
                 cancelledAttempts: cancelledCount,
+                unassessedAttempts: attemptsCount - assessedCount,
                 repetitions: repetitionCount,
                 totalRounds: totalRounds,
+                roundsEvidenceAttempts: attempts.filter(function (a) { return a.roundsUsed !== null; }).length,
                 completionRate: completionRate,
                 accuracy: overallAccuracy,
+                accuracyEvidenceAttempts: assessedAttempts.filter(function (a) { return a.accuracyKnown; }).length,
+                accuracyDecisionWeight: accuracyWeight,
                 avgClearMs: avgClearMs,
                 medianClearMs: medianClearMs,
                 bestClearMs: bestClearMs,
@@ -507,6 +525,8 @@ const IP2LiveReportManager = {
             stepAnalysis: stepAnalysis,
             stats: stats,
             performanceSummary: performanceSummary,
+            learning: learning,
+            gameplayCatalog: this._clonePlain(catalog),
             attemptsRaw: attempts,
             attemptMistakes: attemptMistakes,
             eventAudit: {
@@ -563,7 +583,7 @@ const IP2LiveReportManager = {
             if (a.passed) session.passed++;
             else session.failed++;
             session.totalDurationMs += Math.max(0, Number(a.durationMs || 0) || 0);
-            session.accuracyValues.push(Number(a.accuracy || 0) || 0);
+            session.accuracyValues.push(a.accuracy);
             session.stageIds[stageId] = true;
             session.gameplayIds[gameplayId] = true;
 
@@ -587,7 +607,7 @@ const IP2LiveReportManager = {
             if (a.passed) gameplay.passed++;
             else gameplay.failed++;
             gameplay.totalDurationMs += Math.max(0, Number(a.durationMs || 0) || 0);
-            gameplay.accuracyValues.push(Number(a.accuracy || 0) || 0);
+            gameplay.accuracyValues.push(a.accuracy);
             gameplay.sessionIds[sessionId] = true;
             gameplay.stageIds[stageId] = true;
 
@@ -607,7 +627,7 @@ const IP2LiveReportManager = {
             if (a.passed) stage.passed++;
             else stage.failed++;
             stage.totalDurationMs += Math.max(0, Number(a.durationMs || 0) || 0);
-            stage.accuracyValues.push(Number(a.accuracy || 0) || 0);
+            stage.accuracyValues.push(a.accuracy);
             stage.gameplayIds[gameplayId] = true;
 
             if (!moduleByKey[moduleKey]) {
@@ -636,13 +656,13 @@ const IP2LiveReportManager = {
                 if (a.passed) moduleRow.tutorialPassed++;
                 else moduleRow.tutorialFailed++;
                 moduleRow.tutorialDurationMs += Math.max(0, Number(a.durationMs || 0) || 0);
-                moduleRow.tutorialAccuracyValues.push(Number(a.accuracy || 0) || 0);
+                moduleRow.tutorialAccuracyValues.push(a.accuracy);
             } else {
                 moduleRow.gameplayAttempts++;
                 if (a.passed) moduleRow.gameplayPassed++;
                 else moduleRow.gameplayFailed++;
                 moduleRow.gameplayDurationMs += Math.max(0, Number(a.durationMs || 0) || 0);
-                moduleRow.gameplayAccuracyValues.push(Number(a.accuracy || 0) || 0);
+                moduleRow.gameplayAccuracyValues.push(a.accuracy);
             }
 
             if (!pairByKey[pairKey]) {
@@ -661,7 +681,7 @@ const IP2LiveReportManager = {
             }
             const pair = pairByKey[pairKey];
             pair.attempts++;
-            pair.accuracyValues.push(Number(a.accuracy || 0) || 0);
+            pair.accuracyValues.push(a.accuracy);
             if (a.passed) {
                 pair.passed++;
                 pair.currentFailureStreak = 0;
@@ -675,7 +695,7 @@ const IP2LiveReportManager = {
 
         const sessionRows = Object.keys(sessionsById).map(function (sessionId) {
             const row = sessionsById[sessionId];
-            const accuracy = IP2LiveReportManager._avg(row.accuracyValues);
+            const accuracy = IP2LiveReportManager._knownAverage(row.accuracyValues);
             const completion = row.attempts > 0 ? row.passed / row.attempts : 0;
             return {
                 sessionId: row.sessionId,
@@ -695,7 +715,7 @@ const IP2LiveReportManager = {
 
         const gameplayRows = Object.keys(gameplayById).map(function (gameplayId) {
             const row = gameplayById[gameplayId];
-            const accuracy = IP2LiveReportManager._avg(row.accuracyValues);
+            const accuracy = IP2LiveReportManager._knownAverage(row.accuracyValues);
             const completion = row.attempts > 0 ? row.passed / row.attempts : 0;
             return {
                 gameplayId: row.gameplayId,
@@ -719,7 +739,7 @@ const IP2LiveReportManager = {
 
         const stageRows = Object.keys(stageById).map(function (stageId) {
             const row = stageById[stageId];
-            const accuracy = IP2LiveReportManager._avg(row.accuracyValues);
+            const accuracy = IP2LiveReportManager._knownAverage(row.accuracyValues);
             const completion = row.attempts > 0 ? row.passed / row.attempts : 0;
             return {
                 stageId: row.stageId,
@@ -735,8 +755,8 @@ const IP2LiveReportManager = {
 
         const moduleRows = Object.keys(moduleByKey).map(function (moduleKey) {
             const row = moduleByKey[moduleKey];
-            const tutorialAccuracy = IP2LiveReportManager._avg(row.tutorialAccuracyValues);
-            const gameplayAccuracy = IP2LiveReportManager._avg(row.gameplayAccuracyValues);
+            const tutorialAccuracy = IP2LiveReportManager._knownAverage(row.tutorialAccuracyValues);
+            const gameplayAccuracy = IP2LiveReportManager._knownAverage(row.gameplayAccuracyValues);
             const tutorialTime = row.tutorialAttempts > 0 ? row.tutorialDurationMs / row.tutorialAttempts : 0;
             const gameplayTime = row.gameplayAttempts > 0 ? row.gameplayDurationMs / row.gameplayAttempts : 0;
             return {
@@ -756,7 +776,7 @@ const IP2LiveReportManager = {
                     accuracyRate: gameplayAccuracy,
                     avgTimeOnTaskMs: gameplayTime,
                 },
-                deltaAccuracyRate: gameplayAccuracy - tutorialAccuracy,
+                deltaAccuracyRate: gameplayAccuracy === null || tutorialAccuracy === null ? null : gameplayAccuracy - tutorialAccuracy,
                 deltaTimeOnTaskMs: gameplayTime - tutorialTime,
                 stageCount: Object.keys(row.stageIds).length,
                 sessionCount: Object.keys(row.sessionIds).length,
@@ -767,7 +787,7 @@ const IP2LiveReportManager = {
 
         const pairRows = Object.keys(pairByKey).map(function (key) {
             const row = pairByKey[key];
-            const accuracy = IP2LiveReportManager._avg(row.accuracyValues);
+            const accuracy = IP2LiveReportManager._knownAverage(row.accuracyValues);
             const completion = row.attempts > 0 ? row.passed / row.attempts : 0;
             return {
                 stageId: row.stageId,
@@ -836,7 +856,7 @@ const IP2LiveReportManager = {
                 attempts: attempts.length,
                 sessions: sessionRows.length,
                 weightedMastery: Number(mastery.weightedMastery || 0) || 0,
-                accuracyRate: this._avg(attempts.map(function (a) { return Number(a.accuracy || 0) || 0; })),
+                accuracyRate: this._knownAverage(attempts.map(function (a) { return a.accuracy; })),
                 completionRate: attempts.length > 0 ? attempts.filter(function (a) { return !!a.passed; }).length / attempts.length : 0,
             },
             byGameplay: gameplayRows,
@@ -862,7 +882,7 @@ const IP2LiveReportManager = {
                 if (b.mistakeRate !== a.mistakeRate) return b.mistakeRate - a.mistakeRate;
                 return b.totalMistakes - a.totalMistakes;
             }).slice(0, 5),
-            strongestGameplay: gameplaySorted.length ? gameplaySorted[0] : null,
+            strongestGameplay: gameplaySorted.find(function (row) { return row.attempts >= 5 && row.accuracyRate !== null && row.accuracyRate >= .85 && row.completionRate >= .8; }) || null,
             weakestGameplay: gameplayWorst.length ? gameplayWorst[0] : null,
         };
     },
@@ -942,21 +962,28 @@ const IP2LiveReportManager = {
     _attemptRows(telemetry) {
         const out = [];
         const terminalKeys = new Set();
+        const emitted = new Set();
         const attemptKey = function (row) {
             if (row && row.attemptId) return String(row.attemptId);
+            if (!(Number(row && row.startedAt) > 0)) return row && row.eventId || [row && row.sessionId || '', row && row.gameplayId || '', row && row.eventType || '', Number(row && row.timestamp) || 0].join('|');
             return [row && row.sessionId || '', row && row.gameplayId || '', Number(row && row.startedAt) || 0].join('|');
         };
         for (let i = 0; i < telemetry.length; i++) {
             const row = telemetry[i] || {};
             if (row.eventType === 'attempt_end') terminalKeys.add(attemptKey(row));
         }
-        for (let i = 0; i < telemetry.length; i++) {
+        for (let i = telemetry.length - 1; i >= 0; i--) {
             const row = telemetry[i] || {};
             if (row.eventType !== 'attempt_end') continue;
+            if (emitted.has(attemptKey(row))) continue;
+            emitted.add(attemptKey(row));
             const resultPayload = row.payload && row.payload.result ? row.payload.result : {};
+            const evidence = this._attemptEvidence(row);
             const cancelled = !!(row.cancelled || resultPayload.cancelled || row.outcome === 'cancelled');
-            const outcome = cancelled ? 'cancelled' : (row.outcome || (row.passed ? 'passed' : 'failed'));
+            const outcome = cancelled ? 'cancelled' : (row.outcome || (row.passed === true ? 'passed' : row.passed === false ? 'failed' : 'unassessed'));
             out.push({
+                ...evidence,
+                profileId: row.profileId || null,
                 timestamp: Number(row.timestamp || 0) || 0,
                 startedAt: Number(row.startedAt || 0) || 0,
                 endedAt: Number(row.endedAt || row.timestamp || 0) || 0,
@@ -985,7 +1012,7 @@ const IP2LiveReportManager = {
                 retries: Number(row.retries || 0) || 0,
                 mistakeCount: Number(row.mistakeCount || 0) || 0,
                 mistakeRate: Number(row.mistakeRate || 0) || 0,
-                accuracy: this._clamp01(Number(row.accuracy || 0) || 0),
+                accuracy: evidence.accuracy,
                 securityStrikeCount: Number(row.securityStrikeCount || 0) || 0,
                 securityTriggered: !!row.securityTriggered,
                 rollbackQuestId: row.rollbackQuestId || null,
@@ -998,7 +1025,11 @@ const IP2LiveReportManager = {
         for (let i = 0; i < telemetry.length; i++) {
             const row = telemetry[i] || {};
             if (row.eventType !== 'attempt_start' || terminalKeys.has(attemptKey(row))) continue;
+            if (emitted.has(attemptKey(row))) continue;
+            emitted.add(attemptKey(row));
             out.push({
+                ...this._attemptEvidence(row),
+                profileId: row.profileId || null,
                 timestamp: Number(row.timestamp || row.startedAt || 0) || 0,
                 startedAt: Number(row.startedAt || row.timestamp || 0) || 0,
                 endedAt: 0,
@@ -1027,7 +1058,8 @@ const IP2LiveReportManager = {
                 retries: Number(row.retries || 0) || 0,
                 mistakeCount: Number(row.mistakeCount || 0) || 0,
                 mistakeRate: Number(row.mistakeRate || 0) || 0,
-                accuracy: 0,
+                accuracy: null,
+                accuracyKnown: false,
                 securityStrikeCount: Number(row.securityStrikeCount || 0) || 0,
                 securityTriggered: !!row.securityTriggered,
                 rollbackQuestId: row.rollbackQuestId || null,
@@ -1038,6 +1070,71 @@ const IP2LiveReportManager = {
             });
         }
         return out;
+    },
+
+    _attemptEvidence(row) {
+        const payload = row.payload || {};
+        const result = payload.result || {};
+        const firstNumber = function (values) {
+            for (const value of values) {
+                if (value !== null && value !== undefined && value !== '' && Number.isFinite(Number(value))) return Number(value);
+            }
+            return null;
+        };
+        let total = firstNumber([row.totalDecisions, payload.totalDecisions, result.totalDecisions]);
+        let correct = firstNumber([row.correctDecisions, payload.correctDecisions, result.correctDecisions]);
+        const decisions = Array.isArray(result.decisionHistory) ? result.decisionHistory : (Array.isArray(payload.decisionHistory) ? payload.decisionHistory : []);
+        const assessedDecisions = decisions.filter(function (d) { return d && typeof d.correct === 'boolean'; });
+        if (assessedDecisions.length) {
+            total = assessedDecisions.length;
+            correct = assessedDecisions.filter(function (d) { return d.correct; }).length;
+        }
+        if (!(total > 0)) {
+            const version = payload.gameplayVersion || result.gameplayVersion || '';
+            if (/^subnet-blaster-v[1-4]$/.test(version)) {
+                total = firstNumber([result.totalShots, payload.totalShots]);
+                correct = firstNumber([result.correctShots, payload.correctShots]);
+            } else if (row.gameplayId === 'ip_subnet_simulator') {
+                const slots = result.slotStats || payload.slotStats || {};
+                total = firstNumber([slots.totalChecks]);
+                const wrong = firstNumber([slots.wrongChecks]);
+                correct = total !== null && wrong !== null ? total - wrong : null;
+            } else if (row.gameplayId === 'ip_patch_panel_classes') {
+                total = firstNumber([result.delivered, payload.delivered]);
+                const wrong = firstNumber([result.mistakes, payload.mistakes]);
+                correct = total !== null && wrong !== null ? total - wrong : null;
+            } else if (row.gameplayId === 'ip_host_power_reactor') {
+                const checks = (result.calculationAttempts || payload.calculationAttempts || []).filter(function (entry) { return entry && (typeof entry.success === 'boolean' || typeof entry.correct === 'boolean' || typeof entry.passed === 'boolean' || ['just-right', 'under', 'over'].includes(entry.status)); });
+                if (checks.length) { total = checks.length; correct = checks.filter(function (entry) { return entry.success === true || entry.correct === true || entry.passed === true || entry.status === 'just-right'; }).length; }
+            }
+        }
+        const validCounts = total > 0 && correct !== null && correct >= 0 && correct <= total;
+        const reported = firstNumber([row.accuracy, payload.accuracy, result.accuracy]);
+        const known = validCounts || ((row.accuracyKnown === true || payload.accuracyKnown === true) && reported !== null);
+        const active = firstNumber([row.activeDurationMs, payload.activeDurationMs, result.activeDurationMs, result.activeElapsedMs]);
+        const context = payload.context || payload.launchContext || {}, spec = row.spec || payload.spec || context.spec || {};
+        return {
+            accuracy: known ? this._clamp01(validCounts ? correct / total : reported) : null,
+            accuracyKnown: known,
+            totalDecisions: validCounts ? total : null,
+            correctDecisions: validCounts ? correct : null,
+            incorrectDecisions: validCounts ? total - correct : null,
+            activeDurationMs: active !== null && active >= 0 ? active : null,
+            activeDurationKnown: active !== null && active >= 0,
+            durationMethod: row.durationMethod || payload.durationMethod || result.durationMethod || 'wall_clock_only',
+            gameplayVersion: row.gameplayVersion || payload.gameplayVersion || result.gameplayVersion || ((result.telemetrySchemaVersion || payload.telemetrySchemaVersion) ? 'decision_schema_' + (result.telemetrySchemaVersion || payload.telemetrySchemaVersion) : 'legacy_unversioned'),
+            practiceMode: !!(row.practiceMode || payload.practiceMode || result.practiceMode),
+            developerTesting: !!(row.developerTesting || row.developerTest || payload.developerTesting || payload.developerTest || result.developerTesting || result.developerTest || result.developerSkip || result.developerFail || context.developerTest || spec.developerTest || row.simulated || payload.simulated),
+        };
+    },
+
+    _unavailableLearningAnalytics() {
+        return {
+            version: 'unavailable', methodology: {}, coverage: {}, perGameplay: [], weaknesses: [],
+            improvement: { status: 'insufficient_data', speedImprovementPercent: null, accuracyChangePp: null, passRateChangePp: null },
+            recovery: { gameOvers: 0, tutorialOffers: 0, tutorialShown: 0, tutorialStarted: 0, tutorialCompleted: 0, repeatedMistakeTutorialOffers: 0, repeatedMistakeTutorialShown: 0, perGameplay: [] },
+            feedback: { summary: 'Learning analytics is unavailable. No improvement estimate can be established.', priorities: [], strengths: [], cautions: ['Reload the application to load the learning analytics module.'] },
+        };
     },
 
     _enrichAttemptRows(attempts, catalogByGameplay) {
@@ -1054,6 +1151,7 @@ const IP2LiveReportManager = {
         const sessionCounts = {};
         for (let i = 0; i < rows.length; i++) {
             const row = rows[i];
+            row.tutorial = row.tutorial || this._isTutorialGameplay(row.gameplayId);
             const stage = this._resolveStageMeta(row.mapId, row.stageId, row.levelId, row.stageName);
             const gameplay = catalog[row.gameplayId] || {};
             const timestamp = Number(row.timestamp || row.endedAt || 0) || 0;
@@ -1075,7 +1173,7 @@ const IP2LiveReportManager = {
             row.questRepetitionNumber = questCounts[questKey];
             row.isRepetition = row.questRepetitionNumber > 1;
             row.startedAt = startedAt;
-            row.endedAt = Number(row.endedAt || timestamp) || timestamp;
+            row.endedAt = row.outcome === 'interrupted' ? 0 : (Number(row.endedAt || timestamp) || timestamp);
             row.timestamp = timestamp;
             row.date = day;
             row.time = this._formatLocalTime(timestamp);
@@ -1089,10 +1187,14 @@ const IP2LiveReportManager = {
                 : stage.name;
             row.gameplayLabel = gameplay.label || row.gameplayLabel || row.gameplayId;
             row.questLabel = row.questLabel || row.questId || 'Unassigned quest';
-            row.mode = row.tutorial ? 'Guided tutorial' : 'Regular gameplay';
-            row.roundsUsed = Math.max(1, Number(row.attemptsUsed || 0) || 1);
+            row.mode = row.developerTesting ? 'Developer testing' : (row.practiceMode ? 'Practice' : (row.tutorial ? 'Guided tutorial' : 'Regular gameplay'));
+            row.assessed = !row.cancelled && !row.developerTesting && !row.practiceMode && !row.tutorial && ['passed', 'failed'].indexOf(row.outcome) !== -1;
+            row.assessmentExcludedReason = row.assessed ? '' : row.mode === 'Regular gameplay' ? row.outcome : row.mode;
+            const result = row.payload && row.payload.result || {};
+            const recordedRounds = Array.isArray(result.roundHistory) ? result.roundHistory.length : Number(result.roundsUsed || row.attemptsUsed || 0);
+            row.roundsUsed = Array.isArray(result.roundHistory) || recordedRounds > 0 ? Math.max(0, recordedRounds) : null;
             row.retryCount = Math.max(0, Number(row.retries || 0) || 0);
-            row.outcome = row.cancelled ? 'cancelled' : (row.passed ? 'passed' : 'failed');
+            row.outcome = row.outcome || (row.cancelled ? 'cancelled' : (row.passed ? 'passed' : 'failed'));
             row.recoveryAction = row.recoveryAction || this._inferRecoveryAction(row);
         }
         return rows;
@@ -1353,6 +1455,7 @@ const IP2LiveReportManager = {
                     passed: 0,
                     failed: 0,
                     cancelled: 0,
+                    unassessed: 0,
                     repetitions: 0,
                     roundsUsed: 0,
                     avgAccuracy: 0,
@@ -1373,9 +1476,9 @@ const IP2LiveReportManager = {
             }
             const r = out[key];
             r.attempts++;
-            r.roundsUsed += Math.max(1, Number(a.roundsUsed || a.attemptsUsed || 1) || 1);
+            r.roundsUsed += Math.max(0, Number(a.roundsUsed || 0) || 0);
             if (a.isRepetition) r.repetitions++;
-            if (a.cancelled) r.cancelled++;
+            if (!a.assessed) { r.unassessed++; if (a.cancelled) r.cancelled++; }
             else {
                 r.assessedAttempts++;
                 if (a.passed) r.passed++;
@@ -1409,8 +1512,8 @@ const IP2LiveReportManager = {
         for (let i = 0; i < ids.length; i++) {
             const id = ids[i];
             const row = out[id];
-            const related = attempts.filter(function (a) { return a.gameplayId === id && !a.cancelled; });
-            row.avgAccuracy = this._avg(related.map(function (a) { return Number(a.accuracy || 0) || 0; }));
+            const related = attempts.filter(function (a) { return a.gameplayId === id && a.assessed; });
+            row.avgAccuracy = this._knownAverage(related.map(function (a) { return a.accuracy; }));
             row.avgClearMs = this._avg(related.map(function (a) { return Number(a.durationMs || 0) || 0; }).filter(function (n) { return n > 0; }));
             row.medianClearMs = this._median(related.map(function (a) { return Number(a.durationMs || 0) || 0; }).filter(function (n) { return n > 0; }));
         }
@@ -1432,6 +1535,7 @@ const IP2LiveReportManager = {
                     passed: 0,
                     failed: 0,
                     cancelled: 0,
+                    unassessed: 0,
                     repetitions: 0,
                     roundsUsed: 0,
                     retries: 0,
@@ -1450,18 +1554,19 @@ const IP2LiveReportManager = {
             const d = byDay[day];
             d.attempts++;
             d.gamingInstances++;
-            d.roundsUsed += Math.max(1, Number(a.roundsUsed || a.attemptsUsed || 1) || 1);
+            d.roundsUsed += Math.max(0, Number(a.roundsUsed || 0) || 0);
             d.retries += Math.max(0, Number(a.retries || 0) || 0);
             d.mistakes += Math.max(0, Number(a.mistakeCount || 0) || 0);
             d.totalPlayMs += Math.max(0, Number(a.durationMs || 0) || 0);
             if (a.isRepetition) d.repetitions++;
-            if (a.cancelled) {
-                d.cancelled++;
+            if (!a.assessed) {
+                d.unassessed++;
+                if (a.cancelled) d.cancelled++;
             } else {
                 d.assessedAttempts++;
                 if (a.passed) d.passed++;
                 else d.failed++;
-                d.accuracyValues.push(Number(a.accuracy || 0) || 0);
+                d.accuracyValues.push(a.accuracy);
                 if (a.durationMs > 0) d.clearValues.push(Number(a.durationMs));
             }
             const gk = a.gameplayId || 'unknown_gameplay';
@@ -1490,18 +1595,16 @@ const IP2LiveReportManager = {
                 : 'No gameplay';
             r.mostPlayedCount = topGameplayId ? r.gameplayCounts[topGameplayId] : 0;
             r.completionRate = r.assessedAttempts > 0 ? r.passed / r.assessedAttempts : 0;
-            r.accuracy = this._avg(r.accuracyValues);
+            r.accuracy = this._knownAverage(r.accuracyValues);
             r.avgClearMs = this._avg(r.clearValues);
-            r.learningScore = (r.accuracy * 0.60) + (r.completionRate * 0.40);
+            r.learningScore = r.accuracy === null ? null : (r.accuracy * 0.60) + (r.completionRate * 0.40);
             r.firstActivityTime = this._formatLocalTime(r.firstActivityAt);
             r.lastActivityTime = this._formatLocalTime(r.lastActivityAt);
             const previous = i > 0 ? rows[i - 1] : null;
-            r.accuracyDelta = previous ? r.accuracy - previous.accuracy : 0;
+            r.accuracyDelta = previous && previous.accuracy !== null && r.accuracy !== null ? r.accuracy - previous.accuracy : null;
             r.completionRateDelta = previous ? r.completionRate - previous.completionRate : 0;
-            r.learningScoreDelta = previous ? r.learningScore - previous.learningScore : 0;
-            r.avgClearImprovementMs = previous && previous.avgClearMs > 0 && r.avgClearMs > 0
-                ? previous.avgClearMs - r.avgClearMs
-                : 0;
+            r.learningScoreDelta = previous && previous.learningScore !== null && r.learningScore !== null ? r.learningScore - previous.learningScore : null;
+            r.avgClearImprovementMs = null; // Different daily task mixes are not comparable speed evidence.
             r.improvementDirection = 'baseline';
             if (previous) {
                 if (r.learningScoreDelta > 0.03) r.improvementDirection = 'improved';
@@ -1529,6 +1632,7 @@ const IP2LiveReportManager = {
                     passed: 0,
                     failed: 0,
                     cancelled: 0,
+                    unassessed: 0,
                     repetitions: 0,
                     roundsUsed: 0,
                     retries: 0,
@@ -1546,17 +1650,17 @@ const IP2LiveReportManager = {
             }
             const g = groups[key];
             g.gameplayInstances++;
-            g.roundsUsed += Math.max(1, Number(a.roundsUsed || a.attemptsUsed || 1) || 1);
+            g.roundsUsed += Math.max(0, Number(a.roundsUsed || 0) || 0);
             g.retries += Math.max(0, Number(a.retries || 0) || 0);
             g.mistakes += Math.max(0, Number(a.mistakeCount || 0) || 0);
             g.totalDurationMs += Math.max(0, Number(a.durationMs || 0) || 0);
             if (a.isRepetition) g.repetitions++;
-            if (a.cancelled) g.cancelled++;
+            if (!a.assessed) { g.unassessed++; if (a.cancelled) g.cancelled++; }
             else {
                 g.assessedAttempts++;
                 if (a.passed) g.passed++;
                 else g.failed++;
-                g.accuracyValues.push(Number(a.accuracy || 0) || 0);
+                g.accuracyValues.push(a.accuracy);
             }
             g.gameplayIds[a.gameplayId || 'unknown_gameplay'] = true;
             if (a.questId) g.questIds[a.questId] = true;
@@ -1581,12 +1685,13 @@ const IP2LiveReportManager = {
                 passed: g.passed,
                 failed: g.failed,
                 cancelled: g.cancelled,
+                unassessed: g.unassessed,
                 repetitions: g.repetitions,
                 roundsUsed: g.roundsUsed,
                 retries: g.retries,
                 mistakes: g.mistakes,
                 completionRate: g.assessedAttempts > 0 ? g.passed / g.assessedAttempts : 0,
-                accuracy: IP2LiveReportManager._avg(g.accuracyValues),
+                accuracy: IP2LiveReportManager._knownAverage(g.accuracyValues),
                 avgTimeOnTaskMs: g.gameplayInstances > 0 ? g.totalDurationMs / g.gameplayInstances : 0,
                 totalTimeOnTaskMs: g.totalDurationMs,
                 gameplayCount: gameplayIds.length,
@@ -1634,7 +1739,7 @@ const IP2LiveReportManager = {
 
         const rows = Object.keys(groups).map(function (key) {
             const g = groups[key];
-            const assessed = g.instances.filter(function (a) { return !a.cancelled; });
+            const assessed = g.instances.filter(function (a) { return a.assessed; });
             const passed = assessed.filter(function (a) { return a.passed; }).length;
             const failed = assessed.length - passed;
             const first = assessed.length ? assessed[0] : g.instances[0];
@@ -1648,14 +1753,12 @@ const IP2LiveReportManager = {
                     longestFailureStreak = Math.max(longestFailureStreak, streak);
                 }
             }
-            const accuracyValues = assessed.map(function (a) { return Number(a.accuracy || 0) || 0; });
+            const accuracyValues = assessed.map(function (a) { return a.accuracy; });
             const durations = assessed.map(function (a) { return Number(a.durationMs || 0) || 0; }).filter(function (n) { return n > 0; });
-            const accuracyImprovement = first && latest ? (Number(latest.accuracy || 0) || 0) - (Number(first.accuracy || 0) || 0) : 0;
-            const timeImprovementMs = first && latest && first.durationMs > 0 && latest.durationMs > 0
-                ? Number(first.durationMs) - Number(latest.durationMs)
-                : 0;
+            const accuracyImprovement = first && latest && first !== latest && first.accuracy !== null && latest.accuracy !== null ? latest.accuracy - first.accuracy : null;
+            const timeImprovementMs = null; // Use matched active-time cohorts in the Improvement section.
             let status = 'Needs evidence';
-            const avgAccuracy = IP2LiveReportManager._avg(accuracyValues);
+            const avgAccuracy = IP2LiveReportManager._knownAverage(accuracyValues);
             const completionRate = assessed.length ? passed / assessed.length : 0;
             if (assessed.length) {
                 if (completionRate >= 0.80 && avgAccuracy >= 0.80) status = 'Demonstrated';
@@ -1679,15 +1782,16 @@ const IP2LiveReportManager = {
                 assessedAttempts: assessed.length,
                 passed: passed,
                 failed: failed,
-                cancelled: g.instances.length - assessed.length,
-                roundsUsed: g.instances.reduce(function (sum, a) { return sum + Math.max(1, Number(a.roundsUsed || 1) || 1); }, 0),
+                cancelled: g.instances.filter(function (a) { return a.cancelled; }).length,
+                unassessed: g.instances.length - assessed.length,
+                roundsUsed: g.instances.reduce(function (sum, a) { return sum + Math.max(0, Number(a.roundsUsed || 0) || 0); }, 0),
                 retries: g.instances.reduce(function (sum, a) { return sum + Math.max(0, Number(a.retries || 0) || 0); }, 0),
                 mistakes: g.instances.reduce(function (sum, a) { return sum + Math.max(0, Number(a.mistakeCount || 0) || 0); }, 0),
                 completionRate: completionRate,
                 averageAccuracy: avgAccuracy,
                 averageDurationMs: IP2LiveReportManager._avg(durations),
-                firstAccuracy: first ? Number(first.accuracy || 0) || 0 : 0,
-                latestAccuracy: latest ? Number(latest.accuracy || 0) || 0 : 0,
+                firstAccuracy: first ? first.accuracy : null,
+                latestAccuracy: latest ? latest.accuracy : null,
                 accuracyImprovement: accuracyImprovement,
                 timeImprovementMs: timeImprovementMs,
                 longestFailureStreak: longestFailureStreak,
@@ -1708,44 +1812,16 @@ const IP2LiveReportManager = {
     },
 
     _computeMastery(input) {
-        const overallAccuracy = this._clamp01(Number(input.overallAccuracy || 0) || 0);
-        const completionRate = this._clamp01(Number(input.completionRate || 0) || 0);
         const attempts = Array.isArray(input.attempts) ? input.attempts : [];
-        const catalogByGameplay = input.catalogByGameplay || {};
-        const daily = Array.isArray(input.daily) ? input.daily : [];
-
-        let speedSamples = 0;
-        let speedScoreSum = 0;
-        for (let i = 0; i < attempts.length; i++) {
-            const a = attempts[i];
-            const c = catalogByGameplay[a.gameplayId] || {};
-            const target = Number(c.targetClearMs || 0) || 0;
-            const duration = Number(a.durationMs || 0) || 0;
-            if (target <= 0 || duration <= 0) continue;
-            const score = duration <= target ? 100 : Math.max(0, Math.min(100, (target / duration) * 100));
-            speedScoreSum += score;
-            speedSamples++;
-        }
-        const speedScore = speedSamples > 0 ? speedScoreSum / speedSamples : 50;
-
-        const half = Math.max(1, Math.floor(daily.length / 2));
-        const first = daily.slice(0, half);
-        const second = daily.slice(half);
-        const firstAcc = this._avg(first.map(function (d) { return Number(d.accuracy || 0) || 0; }));
-        const secondAcc = this._avg(second.map(function (d) { return Number(d.accuracy || 0) || 0; }));
-        const delta = secondAcc - firstAcc;
-        const improvementScore = Math.max(0, Math.min(100, 50 + delta * 166.67));
-
-        const weightedMastery = (
-            0.45 * (overallAccuracy * 100) +
-            0.20 * (completionRate * 100) +
-            0.15 * speedScore +
-            0.20 * improvementScore
-        );
+        // A descriptive indicator, not a validated proficiency test. Speed and growth
+        // have their own evidence-based section and must not inflate this score.
+        const weightedMastery = attempts.length && input.overallAccuracy !== null
+            ? 100 * (0.70 * this._clamp01(input.overallAccuracy) + 0.30 * this._clamp01(input.completionRate))
+            : null;
         return {
-            weightedMastery: Math.max(0, Math.min(100, weightedMastery)),
-            speedScore: speedScore,
-            improvementScore: improvementScore,
+            weightedMastery: weightedMastery,
+            speedScore: null,
+            improvementScore: null,
         };
     },
 
@@ -1772,7 +1848,7 @@ const IP2LiveReportManager = {
             row.attempts++;
             if (a.passed) row.passed++;
             row.retries += Number(a.retries || 0) || 0;
-            row.accuracyValues.push(Number(a.accuracy || 0) || 0);
+            row.accuracyValues.push(a.accuracy);
             row.mistakeRateValues.push(Number(a.mistakeRate || 0) || 0);
             if (a.durationMs > 0) row.clearValues.push(Number(a.durationMs || 0) || 0);
             row.issues[a.gameplayId || 'unknown_gameplay'] = (row.issues[a.gameplayId || 'unknown_gameplay'] || 0) + (Number(a.mistakeCount || 0) || 0);
@@ -1783,14 +1859,16 @@ const IP2LiveReportManager = {
         for (let i = 0; i < keys.length; i++) {
             const k = keys[i];
             const r = byCompetency[k];
-            const accuracy = this._avg(r.accuracyValues);
+            const accuracy = this._knownAverage(r.accuracyValues);
             const mistakeRate = this._avg(r.mistakeRateValues);
             const medianClear = this._median(r.clearValues);
             const completionRate = r.attempts > 0 ? r.passed / r.attempts : 0;
-            const confidence = Math.max(0, Math.min(1, r.attempts / 12));
+            const confidence = Math.max(0, Math.min(1, r.accuracyValues.filter(function (value) { return value !== null; }).length / 12));
             const status = this._competencyStatus({
                 attempts: r.attempts,
+                evidenceAttempts: r.accuracyValues.filter(function (value) { return value !== null; }).length,
                 accuracy: accuracy,
+                completionRate: completionRate,
                 mistakeRate: mistakeRate,
                 medianClear: medianClear,
                 retries: r.retries,
@@ -1835,6 +1913,7 @@ const IP2LiveReportManager = {
                     wins: 0,
                     wrongs: 0,
                     cancelled: 0,
+                    unassessed: 0,
                     repetitions: 0,
                     roundsUsed: 0,
                     mistakes: 0,
@@ -1847,14 +1926,14 @@ const IP2LiveReportManager = {
             }
             const row = byKey[key];
             row.attempts++;
-            row.roundsUsed += Math.max(1, Number(a.roundsUsed || a.attemptsUsed || 1) || 1);
+            row.roundsUsed += Math.max(0, Number(a.roundsUsed || 0) || 0);
             if (a.isRepetition) row.repetitions++;
-            if (a.cancelled) row.cancelled++;
+            if (!a.assessed) { row.unassessed++; if (a.cancelled) row.cancelled++; }
             else {
                 row.assessedAttempts++;
                 if (a.passed) row.wins++;
                 else row.wrongs++;
-                row.accuracyValues.push(Number(a.accuracy || 0) || 0);
+                row.accuracyValues.push(a.accuracy);
                 if (a.durationMs > 0) row.clearValues.push(Number(a.durationMs || 0) || 0);
             }
             row.mistakes += Number(a.mistakeCount || 0) || 0;
@@ -1874,11 +1953,12 @@ const IP2LiveReportManager = {
                 wins: r.wins,
                 wrongs: r.wrongs,
                 cancelled: r.cancelled,
+                unassessed: r.unassessed,
                 repetitions: r.repetitions,
                 roundsUsed: r.roundsUsed,
                 mistakes: r.mistakes,
                 retries: r.retries,
-                accuracy: IP2LiveReportManager._avg(r.accuracyValues),
+                accuracy: IP2LiveReportManager._knownAverage(r.accuracyValues),
                 avgClearMs: IP2LiveReportManager._avg(r.clearValues),
                 firstAttemptTs: r.firstAttemptTs,
                 lastAttemptTs: r.lastAttemptTs,
@@ -1897,14 +1977,14 @@ const IP2LiveReportManager = {
         const accuracy = this._clamp01(Number(input.accuracy || 0) || 0);
         const mistakeRate = Math.max(0, Number(input.mistakeRate || 0) || 0);
         const retries = Math.max(0, Number(input.retries || 0) || 0);
-        if (attempts < 5) {
-            return { status: 'Insufficient Data', score: Math.round(accuracy * 100) };
+        if (attempts < 5 || input.evidenceAttempts < 5 || input.accuracy === null) {
+            return { status: 'Insufficient Data', score: input.accuracy === null ? null : Math.round(accuracy * 100) };
         }
         const repeatedRetries = retries >= Math.ceil(attempts * 0.5);
-        if (accuracy >= 0.85 && mistakeRate <= 0.20) {
+        if (accuracy >= 0.85 && input.completionRate >= 0.8 && mistakeRate <= 0.20 && !repeatedRetries) {
             return { status: 'Strong', score: Math.round(accuracy * 100) };
         }
-        if (accuracy < 0.65 || mistakeRate > 0.40 || repeatedRetries) {
+        if (accuracy < 0.65 || input.completionRate < 0.6 || mistakeRate > 0.40 || repeatedRetries) {
             return { status: 'Weak', score: Math.round(accuracy * 100) };
         }
         return { status: 'Moderate', score: Math.round(accuracy * 100) };
@@ -1949,6 +2029,18 @@ const IP2LiveReportManager = {
         this._pdfStartPage(ctx, { title: 'Executive Summary' });
         this._pdfRenderExecutiveSummaryPage(ctx);
 
+        this._pdfStartPage(ctx, { title: 'Improvement During System Use' });
+        this._pdfRenderLearningSection(ctx);
+
+        this._pdfStartPage(ctx, { title: 'Learning Curves' });
+        this._pdfRenderLearningCurves(ctx);
+
+        this._pdfStartPage(ctx, { title: 'Recovery and Tutorial Activity' });
+        this._pdfRenderRecoverySection(ctx);
+
+        this._pdfStartPage(ctx, { title: 'Teaching Feedback' });
+        this._pdfRenderTeachingFeedback(ctx);
+
         this._pdfStartPage(ctx, { title: 'Insights' });
         this._pdfRenderInsightsSection(ctx);
 
@@ -1990,6 +2082,110 @@ const IP2LiveReportManager = {
         return blob;
     },
 
+    _signedMeasure(value, unit) {
+        if (value === null || value === undefined) return 'N/A';
+        return (value > 0 ? '+' : '') + this._num(value, 1) + (unit || '');
+    },
+
+    _pdfRenderLearningSection(ctx) {
+        const learning = ctx.report.learning || this._unavailableLearningAnalytics();
+        const change = learning.improvement;
+        this._pdfRenderSectionHeader(ctx.writer, ctx.margin, ctx.contentTop, 520, 'Improvement During System Use', 'Changes within comparable, independent gameplay runs');
+        const intro = 'Validated speed improvement: ' + this._signedMeasure(change.validatedSpeedImprovementPercent, '%') +
+            ' (timing change: ' + this._signedMeasure(change.speedImprovementPercent, '%') + ')' +
+            ' | Accuracy change: ' + this._signedMeasure(change.accuracyChangePp, ' pp') +
+            ' | Pass-rate change: ' + this._signedMeasure(change.passRateChangePp, ' pp') + '. ' +
+            (change.comparableGameplayCount || 0) + ' comparable gameplay(s); ' + (change.baselineCount || 0) + ' baseline and ' + (change.recentCount || 0) + ' recent attempts. ' +
+            (learning.methodology.baseline || '') + ' ' + (learning.methodology.timing || '') + ' ' + (learning.methodology.aggregate || '') + ' ' + (change.limitation || '');
+        this._pdfRenderParagraph(ctx.writer, ctx.margin, ctx.contentTop - 44, 520, 9, intro, { font: 'F1', color: [0.16, 0.18, 0.21] });
+        const rows = [];
+        for (const game of learning.perGameplay || []) (game.cohorts || []).forEach((cohort, index) => rows.push({
+            label: game.gameplayLabel + ' / ' + (index + 1), count: cohort.baselineCount + ' / ' + cohort.recentCount,
+            baseline: this._ms(cohort.speedComparison.baselineMedianActiveMs), recent: this._ms(cohort.speedComparison.recentMedianActiveMs),
+            speed: this._signedMeasure(cohort.speedImprovementPercent, '%'), accuracy: this._signedMeasure(cohort.accuracyChangePp, ' pp'),
+            pass: this._signedMeasure(cohort.passRateChangePp, ' pp'), status: cohort.evidenceLevel,
+        }));
+        this._pdfRenderTable(ctx.writer, { ctx, x: ctx.margin, y: ctx.contentTop - 174, width: 520, title: 'Matched baseline and recent comparisons',
+            columns: [{ key: 'label', label: 'Gameplay / cohort', width: .25 }, { key: 'count', label: 'N early/late', width: .10 }, { key: 'baseline', label: 'Early time', width: .10 }, { key: 'recent', label: 'Recent time', width: .10 }, { key: 'speed', label: 'Speed %', width: .10 }, { key: 'accuracy', label: 'Acc. pp', width: .09 }, { key: 'pass', label: 'Pass pp', width: .09 }, { key: 'status', label: 'Evidence', width: .17 }],
+            rows: rows.length ? rows : [{ label: 'Insufficient comparable evidence', status: 'Collect matched attempts' }], rowHeight: 30, maxCellLines: 3 });
+        this._pdfStartPage(ctx, { title: 'Subnet Blaster Encounter Improvement' });
+        const encounters = learning.encounterImprovement || {};
+        const note = 'Encounter timing change: ' + this._signedMeasure(encounters.speedImprovementPercent, '%') +
+            '; validated improvement: ' + this._signedMeasure(encounters.validatedSpeedImprovementPercent, '%') +
+            '; accuracy: ' + this._signedMeasure(encounters.accuracyChangePp, ' pp') + '. ' +
+            (learning.methodology.encounters || '') + ' ' + (learning.methodology.blasterTiming || '');
+        this._pdfRenderParagraph(ctx.writer, ctx.margin, ctx.contentTop, 520, 9, note, { font: 'F1' });
+        const encounterRows = [];
+        for (const game of learning.perGameplay || []) (game.encounterCohorts || []).forEach((cohort, index) => encounterRows.push({
+            task: this._stringifyCell(cohort.descriptor.workload), runs: cohort.distinctSourceAttempts,
+            samples: cohort.baselineCount + ' / ' + cohort.recentCount,
+            baseline: this._ms(cohort.speedComparison.baselineMedianActiveMs), recent: this._ms(cohort.speedComparison.recentMedianActiveMs),
+            speed: this._signedMeasure(cohort.validatedSpeedImprovementPercent, '%'), accuracy: this._signedMeasure(cohort.accuracyChangePp, ' pp'),
+            status: cohort.evidenceLevel,
+        }));
+        this._pdfRenderTable(ctx.writer, { ctx, x: ctx.margin, y: ctx.contentTop - 118, width: 520, title: 'Matched encounter tasks across different gameplay runs',
+            columns: [{ key: 'task', label: 'Class / task / bits', width: .34, maxLines: 6 }, { key: 'runs', label: 'Runs', width: .06 }, { key: 'samples', label: 'Samples', width: .10 }, { key: 'baseline', label: 'Early time', width: .10 }, { key: 'recent', label: 'Recent', width: .09 }, { key: 'speed', label: 'Validated %', width: .10 }, { key: 'accuracy', label: 'Acc. pp', width: .09 }, { key: 'status', label: 'Evidence', width: .12 }],
+            rows: encounterRows, rowHeight: 32, maxCellLines: 4 });
+    },
+
+    _pdfRenderLearningCurves(ctx) {
+        const learning = ctx.report.learning || this._unavailableLearningAnalytics();
+        const cohorts = [];
+        for (const game of learning.perGameplay || []) {
+            (game.cohorts || []).forEach((cohort, index) => cohorts.push({ game, cohort, index, unit: 'whole run' }));
+            (game.encounterCohorts || []).forEach((cohort, index) => cohorts.push({ game, cohort, index, unit: 'encounter' }));
+        }
+        if (!cohorts.length) {
+            this._pdfRenderParagraph(ctx.writer, ctx.margin, ctx.contentTop, 520, 10, 'No independent comparable attempts are available. A learning curve appears after matching gameplay versions, tasks, difficulty and active-time measurements.', { font: 'F1' });
+            return;
+        }
+        cohorts.forEach((entry, index) => {
+            if (index > 0 && index % 2 === 0) this._pdfStartPage(ctx, { title: 'Learning Curves (continued)' });
+            const top = ctx.contentTop - (index % 2) * 310;
+            const rows = entry.cohort.curve.filter(point => point.passed && point.activeDurationMs !== null).map(point => ({
+                number: point.comparableAttemptNumber, seconds: point.activeDurationMs / 1000,
+            }));
+            const rect = { x: ctx.margin, y: top - 210, w: 520, h: 186 };
+            this._pdfRenderLineChart(ctx.writer, rect, rows, { title: entry.game.gameplayLabel + ' / ' + entry.unit + ' ' + (entry.index + 1) + ' - active seconds',
+                valueKey: 'seconds', min: 0, max: rows.reduce((max, point) => Math.max(max, point.seconds), 1) * 1.1,
+                valueFormatter: value => this._num(value, 1) + 's',
+                labels: point => '#' + point.number, lineColor: [0.12, 0.53, 0.82], fillColor: [0.80, 0.90, 0.98] });
+            const caption = 'Personal typical time: ' + this._ms(entry.cohort.typicalActiveMs) + ' from ' + entry.cohort.typicalActiveCount + ' successful timed run(s). ' +
+                'Timing change: ' + this._signedMeasure(entry.cohort.speedImprovementPercent, '%') + '; accuracy: ' + this._signedMeasure(entry.cohort.accuracyChangePp, ' pp') + '. ' +
+                (entry.cohort.qualityWarning || entry.cohort.speedComparison.reason || '') + ' Matching: ' + this._stringifyCell(entry.cohort.descriptor);
+                this._pdfRenderParagraph(ctx.writer, ctx.margin, top - 228, 520, 8, caption.slice(0, 520), { font: 'F1', color: [0.28, 0.30, 0.33] });
+        });
+    },
+
+    _pdfRenderRecoverySection(ctx) {
+        const recovery = ctx.report.learning && ctx.report.learning.recovery || this._unavailableLearningAnalytics().recovery;
+        this._pdfRenderSectionHeader(ctx.writer, ctx.margin, ctx.contentTop, 520, 'Recovery and Tutorials', 'Recorded game-over transitions and visible guided recovery screens');
+        const text = (recovery.gameplayGameOvers || 0) + ' gameplay game overs; ' + recovery.gameOvers + ' campaign game overs; ' + recovery.tutorialOffers + ' tutorial offers (' + recovery.repeatedMistakeTutorialOffers + ' after repeated mistakes); ' +
+            recovery.tutorialStarted + ' started, ' + recovery.tutorialShown + ' shown (' + (recovery.repeatedMistakeTutorialShown || 0) + ' after repeated mistakes), ' + recovery.tutorialCompleted + ' completed. ' +
+            (recovery.evidenceCoverage ? recovery.evidenceCoverage.note : 'Historical events may be unavailable.');
+        this._pdfRenderParagraph(ctx.writer, ctx.margin, ctx.contentTop - 44, 520, 9.5, text, { font: 'F1' });
+        this._pdfRenderTable(ctx.writer, { ctx, x: ctx.margin, y: ctx.contentTop - 124, width: 520, title: 'Recovery by gameplay',
+            columns: [{ key: 'gameplayId', label: 'Gameplay', width: .25 }, { key: 'gameplayGameOvers', label: 'Game over', width: .11 }, { key: 'gameOvers', label: 'Campaign', width: .10 }, { key: 'tutorialOffers', label: 'Offered', width: .11 }, { key: 'repeatedMistakeTutorialOffers', label: 'Repeated', width: .11 }, { key: 'tutorialStarted', label: 'Started', width: .10 }, { key: 'tutorialShown', label: 'Shown', width: .10 }, { key: 'tutorialCompleted', label: 'Completed', width: .12 }], rows: recovery.perGameplay || [], rowHeight: 26, maxCellLines: 3 });
+        this._pdfStartPage(ctx, { title: 'Recovery Event Evidence' });
+        this._pdfRenderTable(ctx.writer, { ctx, x: ctx.margin, y: ctx.contentTop, width: 520, title: 'Counted recovery events',
+            columns: [{ key: 'timestamp', label: 'Date / time', width: .20, formatter: value => this._formatLocalDateTime(value) }, { key: 'gameplayId', label: 'Gameplay', width: .25 }, { key: 'counter', label: 'Event', width: .22 }, { key: 'triggerReason', label: 'Trigger', width: .23 }, { key: 'failureCount', label: 'Failures', width: .10 }], rows: recovery.evidence || [], rowHeight: 26, maxCellLines: 3 });
+    },
+
+    _pdfRenderTeachingFeedback(ctx) {
+        const learning = ctx.report.learning || this._unavailableLearningAnalytics();
+        this._pdfRenderSectionHeader(ctx.writer, ctx.margin, ctx.contentTop, 520, 'Teaching Feedback', 'Observed concepts, evidence strength and focused next practice');
+        this._pdfRenderParagraph(ctx.writer, ctx.margin, ctx.contentTop - 44, 520, 9.5, learning.feedback.summary, { font: 'F1' });
+        const feedbackRows = (learning.weaknesses || []).map(row => Object.assign({}, row, { evidenceCount: row.evidenceType === 'outcome_pattern' ? row.failedAttempts + ' failures' : row.independentMistakeCount + ' independent / ' + row.tutorialMistakeCount + ' guided' }));
+        this._pdfRenderTable(ctx.writer, { ctx, x: ctx.margin, y: ctx.contentTop - 122, width: 520, title: 'Concepts requiring review',
+            columns: [{ key: 'gameplayLabel', label: 'Gameplay', width: .15 }, { key: 'conceptLabel', label: 'Concept', width: .18 }, { key: 'evidenceCount', label: 'Observed', width: .12 }, { key: 'affectedAttemptRate', label: 'Affected', width: .08, formatter: value => this._pct(value) }, { key: 'confidence', label: 'Evidence', width: .12 }, { key: 'recommendation', label: 'Focused practice', width: .35, maxLines: 7 }], rows: feedbackRows, rowHeight: 44, maxCellLines: 5, fontSize: 7.4 });
+        this._pdfStartPage(ctx, { title: 'Measurement Guide and Coverage' });
+        const rows = Object.keys(learning.methodology || {}).map(key => ({ key, value: this._stringifyCell(learning.methodology[key]) }));
+        for (const key of Object.keys(learning.coverage || {})) rows.push({ key: 'Coverage: ' + key, value: String(learning.coverage[key]) });
+        rows.push({ key: 'Learning indicator', value: '70% recorded decision accuracy + 30% regular assessed pass rate; descriptive only. Speed and growth are separate. Unknown accuracy is not a perfect score.' });
+        for (const caution of learning.feedback.cautions || []) rows.push({ key: 'Interpretation', value: this._feedbackText(caution) });
+        this._pdfRenderTable(ctx.writer, { ctx, x: ctx.margin, y: ctx.contentTop, width: 520, title: 'Definitions and evidence coverage', columns: [{ key: 'key', label: 'Metric / rule', width: .25 }, { key: 'value', label: 'Definition / evidence', width: .75, maxLines: 7 }], rows, rowHeight: 28, maxCellLines: 6, fontSize: 8 });
+    },
+
     /** @private Build the cover page with brand styling, metadata, and a compact KPI snapshot. */
     _pdfRenderCoverPage(ctx) {
         const report = ctx.report;
@@ -2013,14 +2209,14 @@ const IP2LiveReportManager = {
         writer.text(left, top - 84, 24, 'Progress Report', { font: 'F2', color: [0.08, 0.16, 0.28] });
         writer.text(left, top - 108, 12.5, 'Player: ' + this._sanitizePdfText(report.summary.infiltratorName), { font: 'F1', color: [0.2, 0.2, 0.2] });
         writer.text(left, top - 124, 11.5, 'Generated: ' + this._formatPdfDate(report.summary.generatedAt), { font: 'F1', color: [0.2, 0.2, 0.2] });
-        writer.text(left, top - 140, 11.5, 'Scope: Last ' + this._sanitizePdfText(report.summary.scopeDays) + ' days', { font: 'F1', color: [0.2, 0.2, 0.2] });
+        writer.text(left, top - 140, 11.5, 'Scope: ' + this._scopeLabel(report.summary.scopeDays), { font: 'F1', color: [0.2, 0.2, 0.2] });
 
         const badgeY = top - 202;
         const badgeW = 156;
         const badges = [
             { label: 'Attempts', value: report.kpi.attempts, color: [0.12, 0.53, 0.82] },
             { label: 'Accuracy', value: this._pct(report.kpi.accuracy), color: [0.16, 0.63, 0.37] },
-            { label: 'Mastery', value: this._num(report.kpi.weightedMastery, 1), color: [0.82, 0.58, 0.12] },
+            { label: 'Learning indicator', value: this._num(report.kpi.weightedMastery, 1), color: [0.82, 0.58, 0.12] },
         ];
         for (let i = 0; i < badges.length; i++) {
             const bx = left + i * (badgeW + 12);
@@ -2065,9 +2261,9 @@ const IP2LiveReportManager = {
         const notesY = top - 260;
         const noteWidth = 160;
         const notes = [
-            { title: 'Strongest', value: strongest ? strongest.gameplayLabel : 'No gameplay data', detail: strongest ? this._pct(strongest.accuracyRate) : 'n/a', color: [0.16, 0.63, 0.37] },
+            { title: 'Strongest', value: strongest ? strongest.gameplayLabel : 'Insufficient evidence', detail: strongest ? this._pct(strongest.accuracyRate) : 'n/a', color: [0.16, 0.63, 0.37] },
             { title: 'Weakest', value: weakest ? weakest.gameplayLabel : 'No gameplay data', detail: weakest ? this._pct(weakest.accuracyRate) : 'n/a', color: [0.82, 0.28, 0.20] },
-            { title: 'Trend', value: trend ? trend.direction : 'plateau', detail: trend ? this._pct(trend.deltaAccuracyRate) : 'n/a', color: [0.12, 0.53, 0.82] },
+            { title: 'Matched trend', value: trend ? trend.direction : 'insufficient data', detail: trend && trend.deltaAccuracyRate !== null ? this._signedMeasure(trend.deltaAccuracyRate * 100, ' pp') : 'n/a', color: [0.12, 0.53, 0.82] },
         ];
         for (let i = 0; i < notes.length; i++) {
             const boxX = left + i * (noteWidth + 14);
@@ -2105,7 +2301,7 @@ const IP2LiveReportManager = {
         this._pdfRenderSectionHeader(writer, left, top, 520, 'Insights', 'Workbook insight sheet mirrored into the PDF report');
 
         const cards = [
-            { title: 'Strength', label: strongest ? strongest.gameplayLabel : 'No gameplay data', detail: strongest ? this._pct(strongest.accuracyRate) : 'n/a', color: [0.16, 0.63, 0.37] },
+            { title: 'Strength', label: strongest ? strongest.gameplayLabel : 'Insufficient evidence', detail: strongest ? this._pct(strongest.accuracyRate) : 'n/a', color: [0.16, 0.63, 0.37] },
             { title: 'Weakness', label: weakest ? weakest.gameplayLabel : 'No gameplay data', detail: weakest ? this._pct(weakest.accuracyRate) : 'n/a', color: [0.82, 0.28, 0.20] },
             { title: 'Trend', label: trend ? trend.direction : 'plateau', detail: trend ? this._signedPct(trend.deltaAccuracyRate) : 'n/a', color: [0.12, 0.53, 0.82] },
         ];
@@ -2744,7 +2940,7 @@ const IP2LiveReportManager = {
             { label: 'Attempts', value: kpi.attempts, color: [0.12, 0.53, 0.82] },
             { label: 'Completion', value: this._pct(kpi.completionRate), color: [0.16, 0.63, 0.37] },
             { label: 'Accuracy', value: this._pct(kpi.accuracy), color: [0.82, 0.58, 0.12] },
-            { label: 'Weighted Mastery', value: this._num(kpi.weightedMastery, 1), color: [0.43, 0.31, 0.68] },
+            { label: 'Learning indicator', value: this._num(kpi.weightedMastery, 1), color: [0.43, 0.31, 0.68] },
             { label: 'Avg Clear', value: this._ms(kpi.avgClearMs), color: [0.42, 0.44, 0.48] },
             { label: 'Consistency', value: this._ms(kpi.consistencyStdMs), color: [0.82, 0.28, 0.20] },
         ];
@@ -2778,9 +2974,9 @@ const IP2LiveReportManager = {
 
     /** @private Render a simple bar chart using rectangle geometry and labeled bars. */
     _pdfRenderBarChart(writer, rect, rows, options) {
-        const items = Array.isArray(rows) ? rows.slice(0, 8) : [];
         const title = options && options.title ? options.title : 'Bar Chart';
         const valueKey = options && options.valueKey ? options.valueKey : 'value';
+        const items = (Array.isArray(rows) ? rows : []).filter(function (row) { return row && typeof row[valueKey] === 'number' && Number.isFinite(row[valueKey]); }).slice(0, 8);
         const labelKey = options && options.labelKey ? options.labelKey : 'label';
         const color = options && options.color ? options.color : [0.12, 0.53, 0.82];
         const max = Number(options && options.max !== undefined ? options.max : 1) || 1;
@@ -2812,22 +3008,24 @@ const IP2LiveReportManager = {
 
     /** @private Render a line chart for session or daily trend data. */
     _pdfRenderLineChart(writer, rect, rows, options) {
-        const items = Array.isArray(rows) ? rows : [];
         const valueKey = options && options.valueKey ? options.valueKey : 'value';
+        const items = (Array.isArray(rows) ? rows : []).filter(function (row) { return row && typeof row[valueKey] === 'number' && Number.isFinite(row[valueKey]); });
         const labels = options && options.labels ? options.labels : null;
         const color = options && options.lineColor ? options.lineColor : [0.12, 0.53, 0.82];
         const fillColor = options && options.fillColor ? options.fillColor : [0.82, 0.90, 0.97];
+        const valueFormatter = options && options.valueFormatter ? options.valueFormatter : value => this._pct(value);
         const min = Number(options && options.min !== undefined ? options.min : 0) || 0;
         const max = Number(options && options.max !== undefined ? options.max : 1) || 1;
         const title = options && options.title ? options.title : 'Line Chart';
-        const plotX = rect.x + 16;
+        const plotX = rect.x + 42;
         const plotY = rect.y + 18;
-        const plotW = rect.w - 30;
+        const plotW = rect.w - 56;
         const plotH = rect.h - 38;
         writer.text(rect.x + 10, rect.y + rect.h - 14, 10, this._sanitizePdfText(title), { font: 'F2', color: [0.08, 0.16, 0.28] });
         for (let i = 0; i <= 4; i++) {
             const gy = plotY + (plotH * i / 4);
             writer.line(plotX, gy, plotX + plotW, gy, { color: [0.88, 0.90, 0.93], lineWidth: 0.5 });
+            writer.text(rect.x + 2, gy - 2, 6.5, valueFormatter(min + (max - min) * i / 4), { font: 'F1', color: [0.35, 0.38, 0.42] });
         }
         if (items.length < 2) return;
         const den = Math.max(0.0001, max - min);
@@ -2846,15 +3044,15 @@ const IP2LiveReportManager = {
         for (let i = 0; i < points.length; i++) {
             writer.circle(points[i].x, points[i].y, 2.1, { fill: color, stroke: color, lineWidth: 0.3 });
             const label = labels ? labels(points[i].row, i) : String(i + 1);
-            writer.text(points[i].x - 8, rect.y + 4, 6.9, this._truncatePdfText(label, 9), { font: 'F1', color: [0.25, 0.27, 0.30] });
+            if (items.length <= 12 || i === points.length - 1 || i % Math.ceil(items.length / 8) === 0) writer.text(points[i].x - 8, rect.y + 4, 6.9, this._truncatePdfText(label, 9), { font: 'F1', color: [0.25, 0.27, 0.30] });
         }
     },
 
     /** @private Render the competency radar chart with concentric guides and a filled polygon. */
     _pdfRenderRadarChart(writer, rect, rows, options) {
-        const items = Array.isArray(rows) ? rows.slice(0, 8) : [];
         const title = options && options.title ? options.title : 'Radar Chart';
         const valueKey = options && options.valueKey ? options.valueKey : 'value';
+        const items = (Array.isArray(rows) ? rows : []).filter(function (row) { return row && typeof row[valueKey] === 'number' && Number.isFinite(row[valueKey]); }).slice(0, 8);
         const labelKey = options && options.labelKey ? options.labelKey : 'label';
         const color = options && options.color ? options.color : [0.82, 0.58, 0.12];
         const cx = rect.x + rect.w / 2;
@@ -3102,6 +3300,7 @@ const IP2LiveReportManager = {
 
     /** @private Format a numeric value as a signed percentage string. */
     _signedPct(n) {
+        if (n === null || n === undefined) return 'N/A';
         const v = Math.max(-1, Math.min(1, Number(n || 0) || 0));
         const sign = v > 0 ? '+' : '';
         return sign + (v * 100).toFixed(1) + '%';
@@ -3552,6 +3751,12 @@ const IP2LiveReportManager = {
 
     _buildExcelXmlBlob(report) {
         const sheets = [];
+        const learning = report.learning || this._unavailableLearningAnalytics();
+        const improvement = learning.improvement;
+        const encounterImprovement = learning.encounterImprovement || {};
+        const recovery = learning.recovery;
+        const valueOrNA = function (value) { return value === null || value === undefined ? 'N/A' : value; };
+        const percentFraction = function (value) { return value === null || value === undefined ? 'N/A' : value / 100; };
         const stats = report.stats || {};
         const strongest = stats.strongestGameplay || null;
         const weakest = stats.weakestGameplay || null;
@@ -3569,51 +3774,58 @@ const IP2LiveReportManager = {
         };
         const scopeStart = report.summary.firstActivityAt ? this._formatLocalDateTime(report.summary.firstActivityAt) : 'No activity in scope';
         const scopeEnd = report.summary.lastActivityAt ? this._formatLocalDateTime(report.summary.lastActivityAt) : 'No activity in scope';
-        const dailyDelta = latestDay ? latestDay.learningScoreDelta : 0;
-        const recommendation = Number(report.kpi.weightedMastery || 0) >= 75
-            ? 'Ready for extension work.'
-            : (Number(report.kpi.weightedMastery || 0) >= 50
-                ? 'Continue guided practice and review the priority gameplay below.'
-                : 'Re-teach the weakest concepts before the learner advances.');
+        const dailyDelta = latestDay ? latestDay.learningScoreDelta : null;
         const dashboardRows = [
             makeRow(['IP2LIVE // TEACHER LEARNING DASHBOARD'], { __style: 'DashboardTitle', __mergeAcross: 7, __height: 38 }),
-            makeRow(['Evidence-based review of mastery, repetitions, accuracy, and daily growth'], { __style: 'DashboardSubtitle', __mergeAcross: 7, __height: 24 }),
-            makeRow(['Student', report.summary.infiltratorName, 'Generated', this._formatLocalDateTime(report.summary.generatedAt), 'Window', 'Last ' + report.summary.scopeDays + ' days', 'Active days', report.summary.activeDays], { __cellStyles: ['MetaLabel', 'MetaValue', 'MetaLabel', 'MetaValue', 'MetaLabel', 'MetaValue', 'MetaLabel', 'MetaValue'], __height: 23 }),
-            makeRow(['First activity', scopeStart, 'Last activity', scopeEnd, 'Sessions', report.summary.sessionsCount, 'Tracked play time', this._ms(report.summary.totalActivePlayMs)], { __cellStyles: ['MetaLabel', 'MetaValue', 'MetaLabel', 'MetaValue', 'MetaLabel', 'MetaValue', 'MetaLabel', 'MetaValue'], __height: 23 }),
+            makeRow(['Recorded decisions, learning progress, recovery, and actionable teaching feedback'], { __style: 'DashboardSubtitle', __mergeAcross: 7, __height: 24 }),
+            makeRow(['Student', report.summary.infiltratorName, 'Generated', this._formatLocalDateTime(report.summary.generatedAt), 'Window', this._scopeLabel(report.summary.scopeDays), 'Active days', report.summary.activeDays], { __cellStyles: ['MetaLabel', 'MetaValue', 'MetaLabel', 'MetaValue', 'MetaLabel', 'MetaValue', 'MetaLabel', 'MetaValue'], __height: 23 }),
+            makeRow(['First activity', scopeStart, 'Last activity', scopeEnd, 'Sessions', report.summary.sessionsCount, 'Recorded active time', report.summary.activeTimeEvidenceCount ? this._ms(report.summary.totalActivePlayMs) : 'N/A'], { __cellStyles: ['MetaLabel', 'MetaValue', 'MetaLabel', 'MetaValue', 'MetaLabel', 'MetaValue', 'MetaLabel', 'MetaValue'], __height: 23 }),
             [],
             makeRow(['LEARNING OVERVIEW'], { __style: 'DashboardSection', __mergeAcross: 7, __height: 25 }),
             makeRow(['Gameplay instances', report.kpi.gameplayInstances, 'Assessed attempts', report.kpi.assessedAttempts, 'Quest repetitions', report.kpi.repetitions, 'Internal rounds', report.kpi.totalRounds], { __cellStyles: ['KpiLabel', 'KpiValueBlue', 'KpiLabel', 'KpiValueGreen', 'KpiLabel', 'KpiValuePurple', 'KpiLabel', 'KpiValueAmber'], __height: 34 }),
-            makeRow(['Pass rate', report.kpi.completionRate, 'Average accuracy', report.kpi.accuracy, 'Mastery score', report.kpi.weightedMastery / 100, 'Latest daily change', dailyDelta], { __cellStyles: ['KpiLabel', 'KpiPctBlue', 'KpiLabel', 'KpiPctGreen', 'KpiLabel', 'KpiPctPurple', 'KpiLabel', dailyDelta >= 0 ? 'KpiPctGreen' : 'KpiPctRed'], __height: 34 }),
-            makeRow(['Passed', report.kpi.completedAttempts, 'Failed', report.kpi.failedAttempts, 'Cancelled / unassessed', report.kpi.cancelledAttempts, 'Active days', report.summary.activeDays], { __cellStyles: ['KpiLabel', 'KpiValueGreen', 'KpiLabel', 'KpiValueRed', 'KpiLabel', 'KpiValueAmber', 'KpiLabel', 'KpiValueBlue'], __height: 34 }),
+            makeRow(['Pass rate', report.kpi.assessedAttempts ? report.kpi.completionRate : 'N/A', 'Decision accuracy', valueOrNA(report.kpi.accuracy), 'Learning indicator', percentFraction(report.kpi.weightedMastery), 'Accuracy evidence', report.kpi.accuracyEvidenceAttempts + ' / ' + report.kpi.assessedAttempts], { __cellStyles: ['KpiLabel', 'KpiPctBlue', 'KpiLabel', 'KpiPctGreen', 'KpiLabel', 'KpiPctPurple', 'KpiLabel', 'KpiValueBlue'], __height: 34 }),
+            makeRow(['Passed', report.kpi.completedAttempts, 'Failed', report.kpi.failedAttempts, 'Unassessed / excluded', report.kpi.unassessedAttempts, 'Active days', report.summary.activeDays], { __cellStyles: ['KpiLabel', 'KpiValueGreen', 'KpiLabel', 'KpiValueRed', 'KpiLabel', 'KpiValueAmber', 'KpiLabel', 'KpiValueBlue'], __height: 34 }),
             [],
-            makeRow(['STAGE 1 AND STAGE 2 EVIDENCE'], { __style: 'DashboardSection', __mergeAcross: 7, __height: 25 }),
+            makeRow(['IMPROVEMENT DURING SYSTEM USE // MATCHED GAMEPLAY RUNS'], { __style: 'DashboardSection', __mergeAcross: 7, __height: 25 }),
+            makeRow(['Validated speed improvement', percentFraction(improvement.validatedSpeedImprovementPercent), 'Accuracy change (pp)', valueOrNA(improvement.accuracyChangePp), 'Pass-rate change (pp)', valueOrNA(improvement.passRateChangePp), 'Comparable gameplays', improvement.comparableGameplayCount || 0], { __cellStyles: ['KpiLabel', 'KpiPctBlue', 'KpiLabel', 'KpiValueGreen', 'KpiLabel', 'KpiValuePurple', 'KpiLabel', 'KpiValueBlue'], __height: 34 }),
+            makeRow([improvement.limitation || 'Compare matched versions, difficulty and workload. See Improvement and Learning Curve for sample counts and baselines.'], { __style: 'Definition', __mergeAcross: 7, __height: 36 }),
+            makeRow(['Blaster encounter improvement', percentFraction(encounterImprovement.validatedSpeedImprovementPercent), 'Encounter accuracy (pp)', valueOrNA(encounterImprovement.accuracyChangePp), 'Encounter pass rate (pp)', valueOrNA(encounterImprovement.passRateChangePp), 'Matched task groups', encounterImprovement.comparableCohortCount || 0], { __cellStyles: ['MetaLabel', 'Pct', 'MetaLabel', 'Body', 'MetaLabel', 'Body', 'MetaLabel', 'Integer'], __height: 30 }),
+            makeRow(['Blaster encounter comparisons stay separate from whole-game progress and require matching tasks across at least four gameplay runs. Selection time follows preparation; review preparation time, skips and calculator use alongside it.'], { __style: 'Definition', __mergeAcross: 7, __height: 36 }),
+            makeRow(['GAME OVERS AND GUIDED RECOVERY // RECORDED EVENTS'], { __style: 'DashboardSection', __mergeAcross: 7, __height: 25 }),
+            makeRow(['Gameplay game overs', recovery.gameplayGameOvers || 0, 'Campaign game overs', recovery.gameOvers, 'Tutorials shown', recovery.tutorialShown, 'Tutorials completed', recovery.tutorialCompleted], { __cellStyles: ['KpiLabel', 'KpiValueRed', 'KpiLabel', 'KpiValueRed', 'KpiLabel', 'KpiValuePurple', 'KpiLabel', 'KpiValueGreen'], __height: 34 }),
+            makeRow(['Tutorial offers', recovery.tutorialOffers, 'Matched timing change', percentFraction(improvement.speedImprovementPercent), 'Speed evidence', (improvement.speedBaselineCount || 0) + ' / ' + (improvement.speedRecentCount || 0), 'Comparison status', improvement.status], { __cellStyles: ['MetaLabel', 'Integer', 'MetaLabel', 'Pct', 'MetaLabel', 'MetaValue', 'MetaLabel', 'MetaValue'], __height: 28 }),
+            makeRow(['Repeated-mistake offers', recovery.repeatedMistakeTutorialOffers, 'Shown after mistakes', recovery.repeatedMistakeTutorialShown || 0, 'Tutorials started', recovery.tutorialStarted, 'Active-time samples', report.summary.activeTimeEvidenceCount], { __cellStyles: ['MetaLabel', 'Integer', 'MetaLabel', 'Integer', 'MetaLabel', 'Integer', 'MetaLabel', 'Integer'], __height: 28 }),
+            makeRow(['Historical recovery events and active timing may be unavailable. Counts reflect recorded events; an offered tutorial is not counted as shown.'], { __style: 'Definition', __mergeAcross: 7, __height: 34 }),
+            [],
+            makeRow(['ALL STAGES AND LEVELS // PERFORMANCE EVIDENCE'], { __style: 'DashboardSection', __mergeAcross: 7, __height: 25 }),
             makeRow(['Stage / level', 'Instances', 'Repetitions', 'Rounds', 'Pass rate', 'Accuracy', 'Rollbacks', 'Strikes / alerts'], { __style: 'Header', __height: 28 }),
         ];
-        const earlyStageRows = stageLevels.filter(function (s) { return s.stageId === 1 || s.stageId === 2; });
-        if (!earlyStageRows.length) dashboardRows.push(makeRow(['No Stage 1 or Stage 2 evidence in this report window'], { __style: 'Definition', __mergeAcross: 7, __height: 25 }));
+        const earlyStageRows = stageLevels;
+        if (!earlyStageRows.length) dashboardRows.push(makeRow(['No stage evidence in this report window'], { __style: 'Definition', __mergeAcross: 7, __height: 25 }));
         for (let i = 0; i < earlyStageRows.length; i++) {
             const s = earlyStageRows[i];
             dashboardRows.push(makeRow([s.stageName, s.gameplayInstances, s.repetitions, s.roundsUsed, s.completionRate, s.accuracy, s.rollbackEvents, s.securityStrikes + ' / ' + s.securityAlerts], {
                 __cellStyles: ['Label', 'Integer', 'Integer', 'Integer', 'Pct', 'Pct', s.rollbackEvents > 0 ? 'Warn' : 'Body', s.securityAlerts > 0 ? 'Bad' : (s.securityStrikes > 0 ? 'Warn' : 'Body')],
             }));
         }
-        dashboardRows.push([], makeRow(['DAILY IMPROVEMENT // MOST RECENT ACTIVE DAYS'], { __style: 'DashboardSection', __mergeAcross: 7, __height: 25 }));
-        dashboardRows.push(makeRow(['Date', 'Instances', 'Repetitions', 'Pass rate', 'Accuracy', 'Accuracy change', 'Time improvement', 'Most played gameplay'], { __style: 'Header', __height: 28 }));
+        dashboardRows.push([], makeRow(['DAILY ACTIVITY // TASK MIX MAY VARY'], { __style: 'DashboardSection', __mergeAcross: 7, __height: 25 }));
+        dashboardRows.push(makeRow(['Date', 'Instances', 'Repetitions', 'Pass rate', 'Accuracy', 'Accuracy change (pp)', 'Average elapsed time', 'Most played gameplay'], { __style: 'Header', __height: 28 }));
         const recentDays = daily.slice(-7);
         if (!recentDays.length) dashboardRows.push(makeRow(['No daily activity in this report window'], { __style: 'Definition', __mergeAcross: 7, __height: 25 }));
         for (let i = 0; i < recentDays.length; i++) {
             const d = recentDays[i];
-            dashboardRows.push(makeRow([d.day, d.gamingInstances, d.repetitions, d.completionRate, d.accuracy, d.accuracyDelta, this._signedDuration(d.avgClearImprovementMs), d.mostPlayedGameplay + (d.mostPlayedCount ? ' (' + d.mostPlayedCount + ')' : '')], {
-                __cellStyles: ['Date', 'Integer', 'Integer', 'Pct', 'Pct', d.accuracyDelta >= 0 ? 'DeltaGood' : 'DeltaBad', d.avgClearImprovementMs >= 0 ? 'DeltaGood' : 'DeltaBad', 'Body'],
+            dashboardRows.push(makeRow([d.day, d.gamingInstances, d.repetitions, d.assessedAttempts ? d.completionRate : 'N/A', valueOrNA(d.accuracy), d.accuracyDelta === null ? 'N/A' : this._num(d.accuracyDelta * 100, 1), this._ms(d.avgClearMs), d.mostPlayedGameplay + (d.mostPlayedCount ? ' (' + d.mostPlayedCount + ')' : '')], {
+                __cellStyles: ['Date', 'Integer', 'Integer', 'Pct', 'Pct', 'Body', 'Body', 'Body'],
             }));
         }
         dashboardRows.push([], makeRow(['TEACHER INTERPRETATION'], { __style: 'DashboardSection', __mergeAcross: 7, __height: 25 }));
-        dashboardRows.push(makeRow(['Strongest gameplay', strongest ? strongest.gameplayLabel : 'Insufficient evidence', 'Accuracy', strongest ? strongest.accuracyRate : 0, 'Priority gameplay', weakest ? weakest.gameplayLabel : 'Insufficient evidence', 'Accuracy', weakest ? weakest.accuracyRate : 0], { __cellStyles: ['MetaLabel', 'Good', 'MetaLabel', 'Pct', 'MetaLabel', weakest ? 'Warn' : 'Body', 'MetaLabel', 'Pct'], __height: 26 }));
-        dashboardRows.push(makeRow(['Overall trend', trend ? trend.direction : 'baseline', 'Session change', trend ? trend.deltaAccuracyRate : 0, 'Most repeated issue', weakSteps.length ? weakSteps[0].stepLabel : 'No repeated issue', 'Mistakes', weakSteps.length ? weakSteps[0].totalMistakes : 0], { __cellStyles: ['MetaLabel', trend && trend.direction === 'improving' ? 'Good' : (trend && trend.direction === 'declining' ? 'Bad' : 'Warn'), 'MetaLabel', trend && trend.deltaAccuracyRate >= 0 ? 'DeltaGood' : 'DeltaBad', 'MetaLabel', weakSteps.length ? 'Warn' : 'Body', 'MetaLabel', 'Integer'], __height: 26 }));
-        dashboardRows.push(makeRow(['Teacher recommendation: ' + recommendation], { __style: 'TeacherNote', __mergeAcross: 7, __height: 32 }));
         dashboardRows.push(makeRow([report.performanceSummary || 'No assessed gameplay is available in this report window.'], { __style: 'TeacherNote', __mergeAcross: 7, __height: 58 }));
-        dashboardRows.push(makeRow(['Definitions: an instance is one gameplay launch-to-exit event; assessed attempts exclude cancellations; rounds are chances used inside an instance; repetitions are launches after the first launch of the same quest/objective.'], { __style: 'Definition', __mergeAcross: 7, __height: 48 }));
+        for (const priority of learning.feedback.priorities || []) dashboardRows.push(makeRow([this._feedbackText(priority)], { __style: 'TeacherNote', __mergeAcross: 7, __height: 42 }));
+        for (const strength of learning.feedback.strengths || []) dashboardRows.push(makeRow([this._feedbackText(strength)], { __style: 'TeacherNote', __mergeAcross: 7, __height: 34 }));
+        for (const caution of learning.feedback.cautions || []) dashboardRows.push(makeRow([this._feedbackText(caution)], { __style: 'Definition', __mergeAcross: 7, __height: 36 }));
+        dashboardRows.push(makeRow(['Assessed performance excludes cancelled/interrupted, guided tutorial, practice and developer runs. Learning indicator = 70% recorded accuracy + 30% pass rate; it is descriptive, not a validated mastery test. Improvement percentages use comparable independent runs only.'], { __style: 'Definition', __mergeAcross: 7, __height: 48 }));
         sheets.push({ name: 'Teacher Dashboard', rows: dashboardRows, widths: [126, 86, 126, 86, 126, 86, 145, 115], frozenRows: 4 });
+        sheets.push(...this._learningWorkbookSheets(report));
 
         sheets.push({
             name: 'Daily Progress',
@@ -3725,20 +3937,148 @@ const IP2LiveReportManager = {
                 ['Field', 'Value', 'Meaning'],
                 ['Student', report.summary.infiltratorName, 'Profile included in this workbook'],
                 ['Generated', this._formatLocalDateTime(report.summary.generatedAt), 'Local date and time of export'],
-                ['Scope', 'Last ' + report.summary.scopeDays + ' days', 'Telemetry window selected during export'],
+                ['Scope', this._scopeLabel(report.summary.scopeDays), 'Telemetry window selected during export; all-history improvement begins at the first available record'],
                 ['Gameplay Instances', report.kpi.gameplayInstances, 'Launch-to-exit gameplay events, including cancellations'],
-                ['Assessed Attempts', report.kpi.assessedAttempts, 'Passed or failed instances; cancellations are excluded'],
+                ['Assessed Attempts', report.kpi.assessedAttempts, 'Regular passed/failed instances; cancellations, interruptions, tutorials, practice and developer runs excluded'],
                 ['Quest Repetitions', report.kpi.repetitions, 'Instances beyond the first launch of the same stage, level, quest, objective, and gameplay'],
-                ['Internal Rounds', report.kpi.totalRounds, 'Total chances or rounds used inside gameplay instances'],
+                ['Internal Rounds', report.kpi.totalRounds, 'Observed internal rounds or used chances. Missing round counts do not count as one.'],
                 ['Completion Rate', report.kpi.completionRate, 'Passed assessed attempts divided by all assessed attempts'],
-                ['Accuracy', report.kpi.accuracy, 'Gameplay-specific accuracy weighted by rounds used'],
-                ['Latest Daily Improvement', dailyDelta, 'Combined accuracy/pass-rate change from the previous active day'],
+                ['Accuracy', report.kpi.accuracy, 'Recorded correct decisions divided by assessed decisions; reported-only observed ratios receive weight 1. Missing values excluded.'],
+                ['Accuracy evidence attempts', report.kpi.accuracyEvidenceAttempts, 'Regular assessed attempts with observed grading evidence'],
+                ['Matched speed change (%)', learning.improvement.speedImprovementPercent, 'Percent change of median successful active time within matched cohorts; see Measurement Guide'],
+                ['Validated speed improvement (%)', learning.improvement.validatedSpeedImprovementPercent, 'Timing change with adequate accuracy evidence and no accuracy/pass-rate decline'],
+                ['Accuracy change (pp)', learning.improvement.accuracyChangePp, 'Matched recent accuracy minus baseline accuracy in percentage points'],
+                ['Campaign game overs', recovery.gameOvers, 'Recorded neural life-force depletion transitions, deduplicated by run'],
+                ['Gameplay game overs', recovery.gameplayGameOvers, 'Recorded gameplay attempts ending with explicit exhausted hearts or attempts; guided subset is listed separately'],
+                ['Tutorials shown', recovery.tutorialShown, 'Actual visible recovery screens; offers and launch requests are separate'],
+                ['Elapsed duration', report.summary.totalElapsedPlayMs, 'Wall-clock launch-to-exit milliseconds; may include pauses and overlays'],
+                ['Active duration', report.summary.totalActivePlayMs, 'Only explicitly recorded active gameplay intervals; never substituted from wall time'],
+                ['Excel evidence limits', 'Long text has an explicit truncation marker', 'Full, untruncated events and payloads are preserved in the packaged evidence JSON. Large worksheets continue in numbered sheets.'],
                 ['Workbook Version', report.version, 'Report data contract version'],
             ],
         });
 
         const xml = this._spreadsheetXml(sheets);
         return new Blob([xml], { type: 'application/vnd.ms-excel' });
+    },
+
+    _feedbackText(item) {
+        if (typeof item === 'string') return item;
+        if (!item) return '';
+        return [item.gameplayLabel, item.concept, item.evidence, item.recommendation, item.confidence].filter(Boolean).join(' | ');
+    },
+
+    _cohortWorkbookRows(gameplays, unit) {
+        const na = value => value === null || value === undefined ? 'N/A' : value;
+        const fraction = value => value === null || value === undefined ? 'N/A' : value / 100;
+        const improvementRows = [[
+            'Gameplay', 'Gameplay ID', 'Cohort #', 'Comparison Status', 'Evidence Level', 'Eligible Samples',
+            'Baseline Samples', 'Recent Samples', 'Typical Active Time', 'Typical Time Samples',
+            'Baseline Median Active Time', 'Recent Median Active Time', 'Baseline Timed Samples', 'Recent Timed Samples',
+            'Timing Change (%)', 'Validated Speed Improvement (%)', 'Quality Gate',
+            'Baseline Accuracy', 'Recent Accuracy', 'Accuracy Change (pp)',
+            'Baseline Correct Decisions', 'Baseline Total Decisions', 'Recent Correct Decisions', 'Recent Total Decisions',
+            'Baseline Passed', 'Baseline Assessed', 'Recent Passed', 'Recent Assessed', 'Pass Rate Change (pp)',
+            'Baseline Start', 'Baseline End', 'Recent Start', 'Recent End',
+            'Comparison Unit', 'Distinct Gameplay Runs', 'Baseline Gameplay Runs', 'Recent Gameplay Runs',
+            'Cohort Definition', 'Evidence / Caution',
+        ]];
+        const curveRows = [[
+            'Gameplay', 'Gameplay ID', 'Cohort #', 'Sample ID', 'Source Attempt ID', 'Encounter #', 'Date / Time',
+            'Comparable Sample #', 'Passed?', 'Decision Accuracy', 'Correct Decisions', 'Total Decisions',
+            'Active Time (seconds)', 'Rolling Median Active Time (seconds)', 'Rolling Timed Samples',
+            'Timing Change From Baseline (%)', 'Time Curve', 'Comparison Unit', 'Preparation Time', 'Skipped Preparation?', 'Cohort Definition', 'Timing Change From Previous (%)', 'Previous Timed Sample ID',
+        ]];
+        for (const gameplay of gameplays) {
+            const cohorts = unit === 'encounter' ? gameplay.encounterCohorts || [] : gameplay.cohorts || [];
+            cohorts.forEach((cohort, index) => {
+                const speed = cohort.speedComparison, accuracy = cohort.accuracyComparison, pass = cohort.passComparison;
+                improvementRows.push([
+                    gameplay.gameplayLabel, gameplay.gameplayId, index + 1, cohort.status, cohort.evidenceLevel, cohort.eligibleCount,
+                    cohort.baselineCount, cohort.recentCount, this._ms(cohort.typicalActiveMs), cohort.typicalActiveCount,
+                    this._ms(speed.baselineMedianActiveMs), this._ms(speed.recentMedianActiveMs), speed.baselineCount, speed.recentCount,
+                    fraction(cohort.speedImprovementPercent), fraction(cohort.validatedSpeedImprovementPercent), cohort.qualityGate,
+                    na(accuracy.baseline.rate), na(accuracy.recent.rate), na(cohort.accuracyChangePp),
+                    na(accuracy.baseline.correctDecisions), na(accuracy.baseline.totalDecisions), na(accuracy.recent.correctDecisions), na(accuracy.recent.totalDecisions),
+                    pass.baselinePassed, pass.baselineAssessed, pass.recentPassed, pass.recentAssessed, na(cohort.passRateChangePp),
+                    this._formatLocalDateTime(cohort.baselineStartedAt), this._formatLocalDateTime(cohort.baselineEndedAt),
+                    this._formatLocalDateTime(cohort.recentStartedAt), this._formatLocalDateTime(cohort.recentEndedAt),
+                    unit, cohort.distinctSourceAttempts, cohort.baselineSourceAttempts, cohort.recentSourceAttempts,
+                    this._stringifyCell(cohort.descriptor), cohort.qualityWarning || speed.reason || (cohort.qualityGate === 'unobserved' ? 'Accuracy evidence is insufficient to validate timing change.' : 'Observed comparable change'),
+                ]);
+                const maxTime = (cohort.curve || []).reduce((max, point) => Math.max(max, point.activeDurationMs || 0), 1);
+                for (const point of cohort.curve || []) curveRows.push([
+                    gameplay.gameplayLabel, gameplay.gameplayId, index + 1, point.attemptId, point.sourceAttemptId, point.encounterIndex || '',
+                    this._formatLocalDateTime(point.timestamp), point.comparableAttemptNumber, point.passed ? 'YES' : 'NO',
+                    na(point.accuracy), na(point.correctDecisions), na(point.totalDecisions),
+                    point.activeDurationMs === null ? 'N/A' : point.activeDurationMs / 1000,
+                    point.rollingMedianActiveMs === null ? 'N/A' : point.rollingMedianActiveMs / 1000, point.rollingTimedCount,
+                    fraction(point.changeFromBaselinePercent), point.activeDurationMs === null ? 'N/A' : this._excelBar(point.activeDurationMs, maxTime, 20),
+                    unit, this._ms(point.preparationMs), point.preparationSkipped === null ? 'N/A' : point.preparationSkipped ? 'YES' : 'NO',
+                    this._stringifyCell(cohort.descriptor), fraction(point.changeFromPreviousPercent), point.previousTimedAttemptId || '',
+                ]);
+            });
+            if (!cohorts.length && unit === 'whole_launch') improvementRows.push([gameplay.gameplayLabel, gameplay.gameplayId, '', 'insufficient_data', 'No independent comparable attempts', gameplay.eligibleCount]);
+        }
+        return { improvementRows, curveRows };
+    },
+
+    _learningWorkbookSheets(report) {
+        const learning = report.learning || this._unavailableLearningAnalytics();
+        const na = function (value) { return value === null || value === undefined ? 'N/A' : value; };
+        const { improvementRows, curveRows } = this._cohortWorkbookRows(learning.perGameplay || [], 'whole_launch');
+        const encounterAnalysis = this._cohortWorkbookRows(learning.perGameplay || [], 'encounter');
+        const recoveryRows = [['Gameplay', 'Gameplay ID', 'Campaign Game Overs', 'Gameplay Game Overs', 'Guided Gameplay Game Overs', 'Tutorial Offers', 'Repeated Mistake Offers', 'Tutorials Selected', 'Continued Without Tutorial', 'Tutorials Started', 'Tutorials Shown', 'Tutorials Completed', 'Tutorials Failed', 'Tutorials Cancelled', 'Guided Attempts', 'Tutorials Shown After Repeated Mistakes']];
+        for (const gameplay of learning.perGameplay || []) {
+            const recovery = gameplay.recovery || {};
+            recoveryRows.push([gameplay.gameplayLabel, gameplay.gameplayId, recovery.gameOvers || 0, recovery.gameplayGameOvers || 0, recovery.guidedGameplayGameOvers || 0, recovery.tutorialOffers || 0, recovery.repeatedMistakeTutorialOffers || 0, recovery.tutorialSelected || 0, recovery.tutorialContinued || 0, recovery.tutorialStarted || 0, recovery.tutorialShown || 0, recovery.tutorialCompleted || 0, recovery.tutorialFailed || 0, recovery.tutorialCancelled || 0, recovery.guidedAttemptCount || 0, recovery.repeatedMistakeTutorialShown || 0]);
+        }
+        const feedbackRows = [['Gameplay', 'Gameplay ID', 'Concept / Skill', 'Concept Key', 'Recorded Mistakes', 'Affected Attempts', 'Affected Independent Attempts', 'Independent Attempts', 'Affected Attempt Rate', 'Evidence Level', 'Recommendation', 'Submitted / Expected Examples', 'Evidence Sources', 'Last Observed', 'Counting Method', 'Evidence Type', 'Independent Mistakes', 'Guided Mistakes', 'Failed Attempts (outcome evidence)']];
+        for (const weakness of learning.weaknesses || []) feedbackRows.push([weakness.gameplayLabel, weakness.gameplayId, weakness.conceptLabel, weakness.conceptKey, weakness.mistakeCount, weakness.affectedAttempts, weakness.affectedAssessedAttempts, weakness.assessedAttempts, na(weakness.affectedAttemptRate), weakness.confidence, weakness.recommendation, this._stringifyCell(weakness.examples), (weakness.evidenceSources || []).join(', '), this._formatLocalDateTime(weakness.lastObservedAt), weakness.countMethod, weakness.evidenceType || 'recorded_decisions', na(weakness.independentMistakeCount), na(weakness.tutorialMistakeCount), na(weakness.failedAttempts)]);
+        const recoveryEvents = [['Date / Time', 'Gameplay ID', 'Counted Event', 'Event ID', 'Attempt ID', 'Trigger Reason', 'Failure Count', 'Tutorial Offer ID']];
+        for (const event of learning.recovery.evidence || []) recoveryEvents.push([this._formatLocalDateTime(event.timestamp), event.gameplayId, event.counter, event.eventId, event.attemptId, event.triggerReason, na(event.failureCount), event.tutorialOfferId || '']);
+        const methodology = [['Metric / Rule', 'Value / Definition']];
+        for (const key of Object.keys(learning.methodology || {})) methodology.push([key, this._stringifyCell(learning.methodology[key])]);
+        for (const key of Object.keys(learning.coverage || {})) methodology.push(['Coverage: ' + key, na(learning.coverage[key])]);
+        if (learning.recovery.evidenceCoverage) methodology.push(['Recovery coverage', learning.recovery.evidenceCoverage.note]);
+        methodology.push(['Learning indicator', '70% recorded accuracy + 30% regular assessed pass rate. Descriptive only; speed and improvement are reported separately.'], ['Time curve', 'Rolling median uses up to five chronological matched samples, including only successful samples with active-time evidence. Whole-run and encounter units remain separate.'], ['Percent versus percentage points', '120s baseline and 90s recent = 25% timing improvement. 60% accuracy to 80% = +20 percentage points. Negative values indicate slower time or lower accuracy.'], ['Historical data', 'New telemetry starts when this version is used. Missing historical game overs, tutorial visibility and active-time intervals are not reconstructed.']);
+        const decisionRows = [['Attempt ID', 'Gameplay', 'Gameplay ID', 'Gameplay Version', 'Stage', 'Level', 'Mode', 'Decision #', 'Step / Concept', 'Correct?', 'Submitted', 'Expected', 'Full Decision Evidence']];
+        const encounterRows = [['Attempt ID', 'Gameplay Version', 'Encounter #', 'Stage', 'Level', 'Outcome', 'Asked Address', 'Class', 'Given Bits Mode', 'Host Bits', 'Borrowed Bits', 'Given Address', 'Correct Answer', 'Network', 'Broadcast', 'Expected Operator', 'Chosen Operator', 'Expected Block Size', 'Chosen Block Size', 'Preparation Time', 'Skipped Preparation?', 'Calculator Uses', 'Calculator Time', 'Active Decision Time', 'Barrier Impacts', 'Boss Impacts', 'Full Encounter Evidence']];
+        const timingRows = [['Attempt ID', 'Gameplay', 'Version', 'Mode', 'Outcome', 'Regular Assessed?', 'Exclusion Reason', 'Decision Accuracy', 'Correct Decisions', 'Total Decisions', 'Incorrect Decisions', 'Internal Rounds', 'Elapsed Time', 'Active Time', 'Timing Method', 'Preparation Time', 'Preparation Skips', 'Calculator Uses', 'Calculator Time', 'Help Time', 'Assistance Time', 'Physical Bullets', 'Barrier Impacts', 'Boss Impacts', 'Phase Time Evidence', 'Timing Coverage']];
+        const coverageRows = [['Gameplay', 'Gameplay ID', 'Competency', 'Instances', 'Regular Assessed', 'Accuracy Evidence Samples', 'Active Time Samples', 'Decision History Samples', 'Versions Observed', 'Coverage Status']];
+        const available = new Map((report.gameplayCatalog || []).map(game => [game.gameplayId, game]));
+        for (const attempt of report.attemptsRaw || []) if (!available.has(attempt.gameplayId)) available.set(attempt.gameplayId, { gameplayId: attempt.gameplayId, label: attempt.gameplayLabel });
+        for (const game of available.values()) {
+            const rows = (report.attemptsRaw || []).filter(attempt => attempt.gameplayId === game.gameplayId);
+            const decisionsKnown = rows.filter(attempt => Array.isArray((attempt.payload.result || {}).decisionHistory) && attempt.payload.result.decisionHistory.length > 0).length;
+            coverageRows.push([game.label || game.gameplayId, game.gameplayId, game.competencyLabel || '', rows.length, rows.filter(attempt => attempt.assessed).length, rows.filter(attempt => attempt.accuracyKnown).length, rows.filter(attempt => attempt.activeDurationKnown).length, decisionsKnown, Array.from(new Set(rows.map(attempt => attempt.gameplayVersion))).join(', '), rows.length ? 'Recorded activity; review coverage counts' : 'No activity in selected window']);
+        }
+        for (const attempt of report.attemptsRaw || []) {
+            const payload = attempt.payload || {}, result = payload.result || {};
+            const observation = key => result[key] === undefined ? na(payload[key]) : na(result[key]);
+            timingRows.push([attempt.attemptId, attempt.gameplayLabel, attempt.gameplayVersion, attempt.mode, attempt.outcome, attempt.assessed ? 'YES' : 'NO', attempt.assessmentExcludedReason, na(attempt.accuracy), na(attempt.correctDecisions), na(attempt.totalDecisions), na(attempt.incorrectDecisions), attempt.roundsUsed, this._ms(attempt.durationMs), this._ms(attempt.activeDurationMs), attempt.durationMethod, this._ms(result.preparationMs === undefined ? payload.preparationMs : result.preparationMs), observation('preparationSkips'), observation('calculatorUses'), this._ms(result.calculatorElapsedMs === undefined ? payload.calculatorElapsedMs : result.calculatorElapsedMs), this._ms(result.helpElapsedMs === undefined ? payload.helpElapsedMs : result.helpElapsedMs), this._ms(result.assistanceElapsedMs === undefined ? payload.assistanceElapsedMs : result.assistanceElapsedMs), observation('bulletsFired'), observation('barrierImpacts'), observation('bossBulletImpacts'), this._stringifyCell(result.phaseDurationsMs || payload.phaseDurationsMs), observation('timingCoverage')]);
+            const decisions = Array.isArray(result.decisionHistory) ? result.decisionHistory : (payload.decisionHistory || []);
+            decisions.forEach((decision, index) => decisionRows.push([attempt.attemptId, attempt.gameplayLabel, attempt.gameplayId, attempt.gameplayVersion, attempt.stageId, attempt.levelId, attempt.mode, index + 1, decision.stepKey || decision.concept || '', typeof decision.correct === 'boolean' ? (decision.correct ? 'YES' : 'NO') : 'N/A', this._stringifyCell(decision.submitted), this._stringifyCell(decision.expected), this._stringifyCell(decision)]));
+            if (/^subnet-blaster-/.test(attempt.gameplayVersion)) (result.roundHistory || payload.roundHistory || []).forEach((encounter, index) => {
+                const problem = encounter.problem || encounter.givens || encounter;
+                const asked = problem.asked || encounter.asked, given = problem.givenAddress || encounter.givenAddress, answer = problem.answer || encounter.answer;
+                encounterRows.push([attempt.attemptId, attempt.gameplayVersion, index + 1, attempt.stageId, attempt.levelId, encounter.passed === true || encounter.correct === true ? 'SUCCESS' : 'COUNTERATTACK', asked || '', problem.className || problem.ipClass || encounter.className || '', problem.givenBits || problem.bitsMode || '', na(problem.hostBits), na(problem.borrowedBits), given || '', answer || '', problem.networkAddress || (asked === 'broadcast' ? given : answer) || '', problem.broadcastAddress || (asked === 'network' ? given : answer) || '', encounter.expected && encounter.expected.operator, encounter.weapon && encounter.weapon.operator, encounter.expected && encounter.expected.blockSize, encounter.weapon && encounter.weapon.blockSize, this._ms(encounter.preparationMs), encounter.preparationSkipped === undefined ? 'N/A' : encounter.preparationSkipped ? 'YES' : 'NO', na(encounter.calculatorUses), this._ms(encounter.calculatorElapsedMs), this._ms(encounter.activeElapsedMs), na(encounter.barrierImpacts), na(encounter.bossBulletImpacts), this._stringifyCell(encounter)]);
+            });
+        }
+        return [
+            { name: 'Improvement', frozenRows: 1, rows: improvementRows },
+            { name: 'Learning Curve', frozenRows: 1, rows: curveRows },
+            { name: 'Blaster Improvement', frozenRows: 1, rows: encounterAnalysis.improvementRows },
+            { name: 'Blaster Learning Curve', frozenRows: 1, rows: encounterAnalysis.curveRows },
+            { name: 'Teaching Feedback', frozenRows: 1, rows: feedbackRows },
+            { name: 'Recovery and Tutorials', frozenRows: 1, rows: recoveryRows },
+            { name: 'Recovery Events', frozenRows: 1, rows: recoveryEvents },
+            { name: 'Decision Evidence', frozenRows: 1, rows: decisionRows },
+            { name: 'Gameplay Timing and Tools', frozenRows: 1, rows: timingRows },
+            { name: 'Gameplay Coverage', frozenRows: 1, rows: coverageRows },
+            { name: 'Blaster Encounters', frozenRows: 1, rows: encounterRows },
+            { name: 'Measurement Guide', frozenRows: 1, rows: methodology },
+        ];
     },
 
     _buildLegacyExcelXmlBlob(report) {
@@ -3930,6 +4270,20 @@ const IP2LiveReportManager = {
     },
 
     _spreadsheetXml(sheets) {
+        const pagedSheets = [];
+        for (const sheet of sheets) {
+            const rows = Array.isArray(sheet.rows) ? sheet.rows : [];
+            if (rows.length <= 60000) { pagedSheets.push(sheet); continue; }
+            pagedSheets.push(Object.assign({}, sheet, { rows: rows.slice(0, 60000) }));
+            for (let offset = 60000, part = 2; offset < rows.length; offset += 59999, part++) {
+                const suffix = ' ' + part;
+                pagedSheets.push(Object.assign({}, sheet, {
+                    name: String(sheet.name || 'Evidence').slice(0, 31 - suffix.length) + suffix,
+                    rows: [rows[0]].concat(rows.slice(offset, offset + 59999)),
+                }));
+            }
+        }
+        sheets = pagedSheets;
         const esc = this._xmlEscape;
         const header = '<?xml version="1.0"?>'
             + '<?mso-application progid="Excel.Sheet"?>'
@@ -3954,13 +4308,13 @@ const IP2LiveReportManager = {
                 const cellStyles = Array.isArray(row.__cellStyles) ? row.__cellStyles : [];
                 body += '<Row' + (rowHeight ? ' ss:Height="' + rowHeight + '"' : '') + '>';
                 if (mergeAcross > 0) {
-                    const mergedValue = row[0];
+                    const mergedValue = this._excelCellValue(row[0]);
                     const mergedStyle = rowStyle || this._excelStyleForCell(s.name || '', r, 0, mergedValue, rows);
                     const mergedNum = typeof mergedValue === 'number' && Number.isFinite(mergedValue);
                     body += '<Cell ss:StyleID="' + mergedStyle + '" ss:MergeAcross="' + mergeAcross + '"><Data ss:Type="' + (mergedNum ? 'Number' : 'String') + '">' + esc(mergedValue === null || mergedValue === undefined ? '' : mergedValue) + '</Data></Cell>';
                 } else {
                     for (let c = 0; c < row.length; c++) {
-                        const v = row[c];
+                        const v = this._excelCellValue(row[c]);
                         const isNum = typeof v === 'number' && Number.isFinite(v);
                         const style = cellStyles[c] || this._excelStyleForCell(s.name || '', r, c, v, rows);
                         body += '<Cell ss:StyleID="' + style + '"><Data ss:Type="' + (isNum ? 'Number' : 'String') + '">' + esc(v === null || v === undefined ? '' : v) + '</Data></Cell>';
@@ -3978,6 +4332,11 @@ const IP2LiveReportManager = {
                 + '</WorksheetOptions></Worksheet>';
         }
         return header + body + '</Workbook>';
+    },
+
+    _excelCellValue(value) {
+        if (typeof value !== 'string' || value.length <= 32000) return value;
+        return value.slice(0, 31900) + ' [Truncated in Excel; full evidence is in the packaged evidence JSON.]';
     },
 
     _excelWorkbookStyles() {
@@ -4035,6 +4394,7 @@ const IP2LiveReportManager = {
         if (/^(Moderate|Trend|plateau|cancelled|Developing|steady|baseline)$/i.test(text)) return 'Warn';
         if (/^(Weak|Weakness|High|ErrorPattern|declining|failed|Needs support)$/i.test(text)) return 'Bad';
         const header = String((rows && rows[0] && rows[0][colIndex]) || '');
+        if (/\(pp\)|Decisions|Attempts|Samples|Count|Time|Duration|Seconds/i.test(header) && typeof value === 'number') return 'Body';
         if (/Rate|Accuracy|Completion|Confidence|Delta|Improvement|Change/.test(header) && typeof value === 'number') return 'Pct';
         return rowIndex % 2 === 0 ? 'Zebra' : 'Body';
     },
@@ -4123,6 +4483,10 @@ const IP2LiveReportManager = {
         return 'IP2Live_Report_' + safe + '_' + stamp;
     },
 
+    _scopeLabel(days) {
+        return days === 0 ? 'All recorded history' : 'Last ' + (Number(days) || 90) + ' days';
+    },
+
     _dayKey(ts) {
         const d = new Date(Number(ts || 0) || Date.now());
         const y = d.getFullYear();
@@ -4147,6 +4511,7 @@ const IP2LiveReportManager = {
     },
 
     _signedDuration(ms) {
+        if (ms === null || ms === undefined) return 'N/A - see matched comparisons';
         const value = Number(ms || 0) || 0;
         if (!value) return 'No change';
         if (value > 0) return '+' + this._ms(value) + ' faster';
@@ -4197,15 +4562,23 @@ const IP2LiveReportManager = {
         return Math.max(0, Math.min(1, Number(n || 0) || 0));
     },
 
+    _knownAverage(list) {
+        const values = (list || []).filter(function (value) { return typeof value === 'number' && Number.isFinite(value); });
+        return values.length ? this._avg(values) : null;
+    },
+
     _pct(n) {
+        if (n === null || n === undefined || !Number.isFinite(Number(n))) return 'N/A';
         return (this._clamp01(n) * 100).toFixed(1) + '%';
     },
 
     _num(n, digits) {
+        if (n === null || n === undefined) return 'N/A';
         return Number(n || 0).toFixed(Number(digits || 0) || 0);
     },
 
     _ms(n) {
+        if (n === null || n === undefined) return 'N/A';
         const ms = Math.max(0, Number(n || 0) || 0);
         const sec = Math.floor(ms / 1000);
         const m = Math.floor(sec / 60);
@@ -4215,6 +4588,7 @@ const IP2LiveReportManager = {
 
     _xmlEscape(v) {
         return String(v)
+            .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g, '')
             .replace(/&/g, '&amp;')
             .replace(/</g, '&lt;')
             .replace(/>/g, '&gt;')

@@ -30,6 +30,7 @@ class IP2LiveVLSMAllocatorGameplayScreen extends Scene.Base {
         this.buttonRects = [];
         this.tutorialMode = !!this.options.tutorialMode;
         this.validationFailures = 0;
+        this.decisionHistory = [];
         this.maxAttempts = this.tutorialMode
             ? Number.MAX_SAFE_INTEGER
             : Math.max(1, Number(this.options.maxAttempts) || 3);
@@ -601,6 +602,9 @@ class IP2LiveVLSMAllocatorGameplayScreen extends Scene.Base {
         if (!branch) return false;
         const candidate = this._candidateAllocation(branch);
         const validation = this._validateAllocation(branch, candidate);
+        this._recordAssessment(validation.stepKey || 'vlsm_allocation', this._formatCIDR(candidate.start, candidate.prefix),
+            { optimalPrefix: this._optimalPrefix(branch.hosts), parentCIDR: this.scenario.parentCIDR, nonOverlapping: true }, validation,
+            { branchId: branch.id, requiredHosts: branch.hosts });
         if (!validation.ok) {
             this._showError(validation.reason + ': ' + validation.hint);
             this._reportMistake(branch, candidate, validation);
@@ -625,13 +629,15 @@ class IP2LiveVLSMAllocatorGameplayScreen extends Scene.Base {
             branchId: branch.id,
             allocation: this.state.allocations[branch.id],
             passed: true,
-            mistakeCount: this.state.mistakeCount || 0,
+            mistakeCount: this.validationFailures, lifetimeMistakeCount: this.state.mistakeCount || 0,
         });
         return true;
     }
 
     _commitCore() {
         const validation = this._validateAll();
+        this._recordAssessment(validation.stepKey || 'vlsm_final_validation', this._clone(this.state.allocations),
+            'All branches configured with valid non-overlapping VLSM subnets', validation);
         if (!validation.ok) {
             this._showError(validation.reason);
             this._reportCoreMistake(validation);
@@ -648,7 +654,7 @@ class IP2LiveVLSMAllocatorGameplayScreen extends Scene.Base {
             awards: ['Clear', 'Efficient', 'Clean Route'],
             allocatedAddresses: summary.allocated,
             waste: summary.waste,
-            mistakeCount: this.state.mistakeCount || 0,
+            mistakeCount: this.validationFailures, lifetimeMistakeCount: this.state.mistakeCount || 0,
         });
         return true;
     }
@@ -657,6 +663,7 @@ class IP2LiveVLSMAllocatorGameplayScreen extends Scene.Base {
         if (this.finished) return;
         this.finished = true;
         const payload = Object.assign({
+            ...this._assessmentResult(),
             gameplayId: 'ip_vlsm_allocator',
             passed: true,
         }, result || {});
@@ -754,19 +761,33 @@ class IP2LiveVLSMAllocatorGameplayScreen extends Scene.Base {
         } else afterFeedback();
     }
 
+    _recordAssessment(stepKey, submitted, expected, validation, extra = {}) {
+        this.decisionHistory = this.decisionHistory || [];
+        this.decisionHistory.push({ stepKey, concept: stepKey, submitted, expected, correct: !!validation.ok,
+            issueType: validation.issueType || (validation.ok ? null : 'invalid_allocation'), terminalType: this.terminalType, ...extra });
+    }
+
+    _assessmentResult() {
+        const history = this.decisionHistory || [], correct = history.filter(row => row.correct).length;
+        return { telemetrySchemaVersion: 2, totalDecisions: history.length, correctDecisions: correct,
+            incorrectDecisions: history.length - correct, decisionHistory: this._clone(history),
+            attemptsUsed: history.length, maxAttempts: this.tutorialMode ? 0 : this.maxAttempts };
+    }
+
     _finishFailure(mistake) {
         if (this.finished) return;
         this.finished = true;
         this.errorText = 'VALIDATION BUDGET EXHAUSTED. APEX HAS RECLAIMED THIS TERMINAL.';
         this.errorTimer = 90;
         const result = {
+            ...this._assessmentResult(),
             gameplayId: 'ip_vlsm_allocator',
             passed: false,
             reason: 'attempts_exhausted',
             attemptsUsed: this.validationFailures,
             maxAttempts: this.maxAttempts,
             retries: this.validationFailures,
-            mistakeCount: this.state.mistakeCount || 0,
+            mistakeCount: this.validationFailures, lifetimeMistakeCount: this.state.mistakeCount || 0,
             lastMistake: this._clone(mistake),
         };
         if (this.options && typeof this.options.onFailed === 'function') this.options.onFailed(result);
@@ -841,10 +862,10 @@ class IP2LiveVLSMAllocatorGameplayScreen extends Scene.Base {
             const branch = branches[i];
             const allocation = this.state.allocations[branch.id];
             if (!allocation) {
-                return { ok: false, reason: 'Missing allocation for ' + branch.label + '.' };
+                return { ok: false, reason: 'Missing allocation for ' + branch.label + '.', stepKey: 'vlsm_branch_coverage', issueType: 'missing_branch_allocation' };
             }
             const check = this._validateAllocation(branch, allocation);
-            if (!check.ok) return { ok: false, reason: branch.label + ': ' + check.reason + '. ' + check.hint };
+            if (!check.ok) return { ...check, ok: false, reason: branch.label + ': ' + check.reason + '. ' + check.hint };
         }
         return { ok: true, reason: 'OK' };
     }

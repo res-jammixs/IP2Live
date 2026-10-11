@@ -45,6 +45,7 @@ class IP2LiveHostPowerToolScreen extends Scene.Base {
     }
 
     update() {
+        this._tickReportAssistance();
         this.animTick++;
         if (typeof this.options.onBackgroundUpdate === 'function' && this.options.onBackgroundUpdate()) {
             this._close();
@@ -103,6 +104,10 @@ class IP2LiveHostPowerToolScreen extends Scene.Base {
         }
         const value = key && (key.name || key.code || key);
         const upper = String(value || '').toUpperCase();
+        if (upper === 'ESCAPE' || (this.options.closeKey && upper.replace(/^KEY/, '') === this.options.closeKey)) {
+            this._close();
+            return true;
+        }
         if (upper === 'ARROWLEFT' || upper === 'A' || upper === 'KEYA') {
             this.selectedBubble = (this.selectedBubble + 6) % 7;
             return true;
@@ -226,12 +231,53 @@ class IP2LiveHostPowerToolScreen extends Scene.Base {
     }
 
     _close() {
+        if (this._reportToolClosed) return;
+        this._reportToolClosed = true;
+        this._endReportAssistance();
         if (typeof this.options.onClose === 'function') this.options.onClose({
             className: this.scenario.className,
             requiredHosts: this.scenario.requiredHosts,
             exponent: this.exponent,
             evaluation: Object.assign({}, this.evaluation),
         });
+    }
+
+    _beginReportAssistance() {
+        if (this._reportAssistanceStarted || this._reportToolClosed || this.options.sourceGameplayId === 'ip_cidr_quarantine_matrix') return;
+        const background = this.options.backgroundScene;
+        const pause = IP2Live.GameplayPause;
+        if (!background || !pause || typeof pause._tickReportClock !== 'function') return;
+        pause._tickReportClock(background, this.options.sourceGameplayId || background.gameplayId);
+        const clock = background.learningTelemetryClock;
+        if (!clock) return;
+        this._reportAssistanceStarted = true;
+        this._reportAssistanceLastAt = Date.now();
+        if (!clock.calculatorWasOpen) clock.calculatorUses++;
+        clock.calculatorWasOpen = true;
+        clock.calculatorOverlayActive = true;
+    }
+
+    _tickReportAssistance() {
+        this._beginReportAssistance();
+        if (!this._reportAssistanceStarted) return;
+        const clock = this.options.backgroundScene.learningTelemetryClock;
+        if (!clock) return;
+        const now = Date.now();
+        const elapsed = Math.max(0, now - Number(this._reportAssistanceLastAt || now));
+        this._reportAssistanceLastAt = now;
+        clock.lastFrameAt = now;
+        if (elapsed <= 1000 && !(typeof document !== 'undefined' && document.hidden)) {
+            clock.calculatorElapsedMs += elapsed;
+            clock.assistanceElapsedMs += elapsed;
+        }
+    }
+
+    _endReportAssistance() {
+        this._tickReportAssistance();
+        if (!this._reportAssistanceStarted) return;
+        const clock = this.options.backgroundScene.learningTelemetryClock;
+        if (clock) { clock.calculatorOverlayActive = false; clock.calculatorWasOpen = false; clock.lastFrameAt = Date.now(); }
+        this._reportAssistanceStarted = false;
     }
 
     draw3D() {
@@ -360,6 +406,16 @@ class IP2LiveHostPowerToolScreen extends Scene.Base {
 
     _drawNeeded(ctx, m) {
         const b = m.needed;
+        const subnetContext = this.options.subnetContext;
+        if (this.options.calculationMode === 'blockSize' && subnetContext) {
+            this._section(ctx, b, m, 'SUBNET GIVEN');
+            ctx.textAlign = 'left'; ctx.textBaseline = 'middle'; ctx.fillStyle = '#e2fbff';
+            ctx.font = 'bold ' + Math.round(14 * m.scale) + 'px monospace';
+            ctx.fillText('Class ' + subnetContext.ipClass + '  /' + subnetContext.defaultPrefix, b.x + 12 * m.scale, b.y + b.h * 0.5);
+            ctx.fillStyle = '#96c6ce'; ctx.font = Math.round(11 * m.scale) + 'px monospace';
+            ctx.fillText((subnetContext.givenBits === 'borrowed' ? 'Borrowed bits: ' : 'Host bits: ') + subnetContext.bitCount, b.x + 12 * m.scale, b.y + b.h * 0.78);
+            return;
+        }
         const prefixMode = Number.isInteger(this.options.allocatedPrefix);
         const subnetMode = this.options.calculationMode === 'subnets';
         this._section(ctx, b, m, subnetMode ? 'REQUIRED SUBNETS' : (prefixMode ? 'VERIFIED NETWORK PREFIX' : 'NEEDED HOSTS'));
@@ -474,6 +530,13 @@ class IP2LiveHostPowerToolScreen extends Scene.Base {
         ctx.fillStyle = gameplay5 ? '#B4E0D5' : '#eefcff';
         ctx.font = 'bold ' + Math.round(22 * m.scale) + 'px monospace';
         ctx.fillText('2^' + this.exponent + ' = ' + this._formatNumber(this.evaluation.totalAddresses), centerX, b.y + b.h * 0.46);
+        if (this.options.calculationMode === 'blockSize') {
+            ctx.fillStyle = '#91d8df'; ctx.font = 'bold ' + Math.round(11 * m.scale) + 'px monospace';
+            ctx.fillText('TOTAL ADDRESSES / BLOCK SIZE', centerX, b.y + b.h * 0.66);
+            ctx.fillStyle = '#759da7'; ctx.font = Math.round(9 * m.scale) + 'px monospace';
+            ctx.fillText('DRAG BUBBLES TO ADJUST HOST BITS', centerX, b.y + b.h * 0.85);
+            return;
+        }
         ctx.fillStyle = '#759da7';
         ctx.font = 'bold ' + Math.round(8 * m.scale) + 'px monospace';
         ctx.fillText(subnetMode ? 'SUBNET COUNT = 2^s  //  NO SUBTRACTION' : 'TOTAL ADDRESSES - 2 RESERVED', centerX, b.y + b.h * 0.62);
@@ -675,6 +738,7 @@ const HostPowerToolManager = {
                 scenario,
                 onClose: (result) => {
                     this._active = false;
+                    this._activeScreen = null;
                     if (Manager && Manager.Stack && typeof Manager.Stack.pop === 'function') Manager.Stack.pop();
                     if (typeof opts.onClose === 'function') opts.onClose(result);
                     if (Manager && Manager.Stack) Manager.Stack.requestPaintHUD = true;
@@ -682,6 +746,8 @@ const HostPowerToolManager = {
             }));
             if (Manager && Manager.Stack && typeof Manager.Stack.push === 'function') {
                 Manager.Stack.push(screen);
+                this._activeScreen = screen;
+                screen._beginReportAssistance();
                 return true;
             }
             this._active = false;
@@ -702,6 +768,11 @@ const HostPowerToolManager = {
 
     hide() {
         if (!this._active) return false;
+        if (this._activeScreen) {
+            this._activeScreen._endReportAssistance();
+            this._activeScreen._reportToolClosed = true;
+            this._activeScreen = null;
+        }
         this._active = false;
         if (Manager && Manager.Stack && typeof Manager.Stack.pop === 'function') Manager.Stack.pop();
         return true;

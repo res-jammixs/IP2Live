@@ -137,7 +137,7 @@ function testLoaderAndTutorialPlacement() {
     const gameplay6Tutorial = read('gameplay/gameplay6/CIDRQuarantineMatrix/ip_cidr_quarantine_matrix_tutorial.js');
     assert.match(gameplay5Tutorial, /STAGE 3 LEVEL 2 - CIDR Quarantine/);
     assert.doesNotMatch(gameplay5Tutorial, /mapId:\s*11/);
-    assert.match(gameplay6Tutorial, /STAGE 3 LEVEL 3 - CIDR Quarantine Matrix/);
+    assert.match(gameplay6Tutorial, /STAGE 3 LEVEL 3 - Subnet Blaster/);
     assert.doesNotMatch(gameplay6Tutorial, /mapId:\s*12/);
 }
 

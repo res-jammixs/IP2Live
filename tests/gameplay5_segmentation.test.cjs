@@ -227,6 +227,7 @@ assert.equal(pressure._evaluatePath().ok, true, 'protected weighted route remain
 
 const timed = make({ timeLimitSeconds: 1, maxAttempts: 2 });
 const failuresBeforeTimeout = failed;
+const mistakesBeforeTimeout = mistakes;
 now += 1001; timed.update();
 assert.equal(timed.phase, 'overrun');
 labels.length = 0; timed.drawHUD();
@@ -237,7 +238,7 @@ now += 2200; timed.update();
 assert.equal(timed.finished, true, 'timeout ends the run without restarting');
 assert.equal(timed.attemptsUsed, 1);
 assert.equal(timed.questElapsedMs, 1000, 'the failed run keeps its final clock value');
-assert.equal(mistakes, 0, 'timeout goes through the terminal callback rather than a retry diagnostic');
+assert.equal(mistakes, mistakesBeforeTimeout, 'timeout goes through the terminal callback rather than a retry diagnostic');
 now += 1001; timed.update();
 for (let i = 0; i < 45; i++) timed.update();
 assert.equal(failed, failuresBeforeTimeout + 1, 'a finished run reports failure only once');

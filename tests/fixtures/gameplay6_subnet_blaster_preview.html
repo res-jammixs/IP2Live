@@ -1,0 +1,111 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>IP2Live — Gameplay 6 / Subnet Blaster</title>
+  <style>
+    @font-face { font-family: Oxanium-Medium; src: url('../../Fonts/Oxanium-Medium.ttf'); }
+    @font-face { font-family: Abnes; src: url('../../Fonts/abnes.ttf'); }
+    * { box-sizing: border-box; }
+    body { margin: 0; background: #030711; color: #c1e1e9; font: 12px monospace; }
+    header { min-height: 40px; display: flex; flex-wrap: wrap; align-items: center; gap: 14px; padding: 6px 18px; }
+    select, button { background: #12303a; color: #c5fff0; border: 1px solid #477c86; padding: 4px 10px; }
+    canvas { display: block; width: 100vw; height: calc(100vh - 40px); outline: none; }
+    #result { color: #f4ce85; }
+  </style>
+</head>
+<body>
+  <header>
+    <span>GAMEPLAY 6 / SUBNET BLASTER</span>
+    <label>Mode <select id="mode"><option value="play">Gameplay</option><option value="tutorial">Tutorial</option></select></label>
+    <label><input type="checkbox" id="motion"> Reduce motion</label>
+    <button id="restart">New run</button>
+    <span id="result" role="status" aria-live="polite"></span>
+  </header>
+  <canvas id="game" tabindex="0" aria-label="Subnet Blaster. Prepare for one minute or select the circular skip icon. Hover the icon for its description. Read the given address on the left and the requested address in the formula display. Aim with A/D, arrows, 1/2/3 or the mouse. Your ship fires automatically; ten hits crack and break a barrier. Choose an operator and a block size, then land five hits on the boss. C opens the Gameplay 4.5 host-power tool, H opens instructions."></canvas>
+  <script>
+    const canvas = document.querySelector('canvas');
+    const ctx = canvas.getContext('2d');
+    const result = document.querySelector('#result');
+    const scenes = [];
+    window.IP2Live = {};
+    window.Scene = { Base: class {} };
+    window.Manager = { Stack: { push: scene => scenes.push(scene), pop: () => scenes.pop(),
+      replace: scene => scenes.splice(0, scenes.length, scene), get top() { return scenes.at(-1); }, requestPaintHUD: true }, GL: {} };
+    window.Common = { Platform: { ctx }, ScreenResolution: { SCREEN_X: 1280, SCREEN_Y: 720 } };
+    window.Data = { Keyboards: { checkCancelMenu: key => (key.code || key) === 'Escape' }, Systems: {} };
+    window.Core = { Game: { current: { currentMapID: 13 } } };
+    addEventListener('error', event => { result.textContent = event.message; });
+    addEventListener('unhandledrejection', event => { result.textContent = String(event.reason); });
+    function resize() {
+      const ratio = Math.min(2, devicePixelRatio || 1);
+      canvas.width = Math.round(canvas.clientWidth * ratio);
+      canvas.height = Math.round(canvas.clientHeight * ratio);
+      Manager.Stack.top?.drawHUD();
+    }
+    addEventListener('resize', resize);
+  </script>
+  <script src="../../Plugins/IP2Live_Core/gameplay/common/gameplay_completion_popup.js"></script>
+  <script src="../../Plugins/IP2Live_Core/gameplay/gameplay4_5/HostPowerReactor/ip_host_power_gameplay.js"></script>
+  <script src="../../Plugins/IP2Live_Core/gameplay/gameplay4_5/HostPowerReactor/ip_host_power_tool.js"></script>
+  <script src="../../Plugins/IP2Live_Core/modules/dialogue_manager.js"></script>
+  <script src="../../Plugins/IP2Live_Core/gameplay/gameplay6/CIDRQuarantineMatrix/ip_cidr_quarantine_matrix_tutorial.js"></script>
+  <script src="../../Plugins/IP2Live_Core/gameplay/gameplay6/CIDRQuarantineMatrix/ip_cidr_quarantine_matrix_gameplay.js"></script>
+  <script>
+    // The preview routes inputs through the canvas, so each click advances only once.
+    document.removeEventListener('keydown', IP2Live.DialogueManager._keyRef, true);
+    document.removeEventListener('mousedown', IP2Live.DialogueManager._clickRef, true);
+    let paused = false;
+    function restart() {
+      paused = false; result.textContent = '';
+      IP2Live.DialogueManager.resetTransitionState({ stopActive: true, discardActive: true });
+      IP2Live.HostPowerToolManager._active = false;
+      const screen = new IP2Live.SubnetBlasterGameplayScreen({
+        tutorialMode: document.querySelector('#mode').value === 'tutorial',
+        reducedMotion: document.querySelector('#motion').checked,
+        onComplete: () => { result.textContent = 'SECTOR SECURED — three cores recovered.'; },
+        onFailed: () => { result.textContent = 'HULL DEPLETED — start a new run to retry.'; },
+        onCancel: () => { result.textContent = 'Preview ended — start a new run.'; },
+      });
+      Manager.Stack.replace(screen);
+      if (screen.tutorialMode) screen.startTutorialWalkthrough();
+      resize(); canvas.focus();
+    }
+    IP2Live.GameplayPause = { open() {
+      paused = !paused;
+      result.textContent = paused ? 'PAUSED — Escape to resume.' : '';
+      Manager.Stack.top.onGameplayResume();
+    } };
+    canvas.addEventListener('keydown', event => {
+      event.preventDefault(); if (event.repeat) return;
+      if (paused) { if (event.code === 'Escape') IP2Live.GameplayPause.open(); return; }
+      Manager.Stack.top.onKeyPressed({ code: event.code, key: event.key });
+    });
+    function pointer(event) {
+      const bounds = canvas.getBoundingClientRect();
+      return { x: (event.clientX - bounds.left) * canvas.width / bounds.width, y: (event.clientY - bounds.top) * canvas.height / bounds.height };
+    }
+    canvas.addEventListener('pointerdown', event => {
+      canvas.focus(); if (paused) return;
+      const p = pointer(event); Manager.Stack.top.onMouseDown(p.x, p.y);
+    });
+    canvas.addEventListener('pointermove', event => {
+      if (paused) return; const p = pointer(event); Manager.Stack.top.onMouseMove(p.x, p.y);
+    });
+    canvas.addEventListener('pointerup', event => {
+      if (paused) return; const p = pointer(event); Manager.Stack.top.onMouseUp(p.x, p.y);
+    });
+    canvas.addEventListener('pointerleave', () => { Manager.Stack.top?.onMouseLeave?.(); });
+    document.querySelector('#restart').onclick = restart;
+    document.querySelector('#mode').onchange = restart;
+    document.querySelector('#motion').onchange = () => { scenes[0].options.reducedMotion = document.querySelector('#motion').checked; };
+    document.addEventListener('visibilitychange', () => { scenes[0]?.onGameplayResume(); });
+    function frame() {
+      if (!paused && !document.hidden) Manager.Stack.top?.update();
+      Manager.Stack.top?.drawHUD(); requestAnimationFrame(frame);
+    }
+    Promise.all([document.fonts.load('22px Abnes'), document.fonts.load('16px Oxanium-Medium')]).then(() => { restart(); requestAnimationFrame(frame); });
+  </script>
+</body>
+</html>

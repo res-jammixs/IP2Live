@@ -1,263 +1,110 @@
-/**
- * IP2Live - Stage 3 Level 3 multi-pair connector tutorial dialogue helpers.
- */
-
+/** Campaign dialogue hooks for Gameplay 6: Subnet Blaster. */
 const IPCIDRQuarantineMatrixTutorial = {
-    VERSION: 'ip-cidr-quarantine-matrix-tutorial-20260601-01',
+    VERSION: 'subnet-blaster-tutorial-20261011-06',
     _dialogueSerial: 0,
-
     showIntro(context, onComplete) {
-        const c = context || {};
-        return this._startDynamicDialogue('stage3.cidrmatrix.intro.', {
-            title: 'MATRIX QUARANTINE',
-            speaker: 'SYSTEM',
-            timing: 'before',
-            slides: [
-                [
-                    'STAGE 3 LEVEL 3 - CIDR Quarantine Matrix',
-                    'You have reached the third Stage 3 quarantine sector.',
-                    'This sector expands quarantine routing into a multi-connector matrix.',
-                    '',
-                    'You must connect every A node to its matching B node.',
-                    'Each pair has its own IP, host requirement, and live CIDR calculation.',
-                    'Red virus nodes are blocked and may mutate while you work.',
-                    '',
-                    'Retries are unlimited at this calibration node.',
-                ],
-                [
-                    'READ THE RIGHT PANEL',
-                    'Each pair card shows whether that connector is open or linked.',
-                    'The active-pair detail shows:',
-                    '',
-                    '1. Movement values for Right, Left, Up, and Down.',
-                    '2. Active IP, class, original CIDR, and required hosts.',
-                    '3. Live path bits, current CIDR, and current capacity.',
-                    '',
-                    'The movement values are randomized per quest. Read them every time.',
-                ],
-                [
-                    'HOW TO CONTROL THE MATRIX',
-                    'Click a pair card or press TAB to switch the active pair.',
-                    'Drag, click adjacent tiles, or use arrow/WASD keys to build the active route.',
-                    'Use Z to undo and R to clear the active pair.',
-                    '',
-                    'Routes cannot touch viruses, endpoints from other pairs, or each other.',
-                ],
-                [
-                    'FIRST PAIR GIVEN',
-                    (c.pairLabel || 'Pair 1') + ': ' + (c.ipAddress || '?') + '/' + (c.originalCIDR || '?'),
-                    'Class ' + (c.ipClass || '?') + '   Required hosts: ' + (c.requiredHosts || '?'),
-                    '',
-                    c.moveWeightsLine || 'Read movement values on the right panel.',
-                    'Target: /' + (c.originalCIDR || '?') + ' +' + (c.targetAddedBits || '?') + ' = /' + (c.targetCIDR || '?') + '.',
-                    '',
-                    'Begin with Pair 1. I will guide the next pair after it links.',
-                ],
-            ],
-            onComplete,
-        });
+        return this._show('intro', 'SUBNET BLASTER', [[
+            'Welcome to {{highlight:Subnet Blaster}}! Build a formula to uncover a subnet\'s missing address.',
+            'Let\'s solve this first question together. The game pauses while you read.',
+        ]], onComplete, [['console']]);
     },
-
-    showStep(step, context, onComplete) {
-        const c = context || {};
-        const pair = Number(c.pairIndex || 0) + 1;
-        const total = Number(c.totalPairs || 2);
-        const slides = step === 'submit' ? [[
-            'ALL PAIRS LINKED - Submit now',
-            'Final check:',
-            '1. Every A node reaches its matching B node.',
-            '2. No route touches a red virus.',
-            '3. Routes do not overlap each other.',
-            '4. Every pair matches its optimized CIDR.',
-            '',
-            'Press SUBMIT or ENTER to run the matrix simulation.',
-        ]] : [[
-            'PAIR ' + pair + ' of ' + total + ' - Build this connector',
-            'Select Pair ' + pair + ' on the right or press TAB.',
-            '',
-            'Start at ' + (c.startLabel || 'A') + ' and reach ' + (c.endLabel || 'B') + '.',
-            'Target: /' + (c.originalCIDR || '?') + ' +' + (c.targetAddedBits || '?') + ' = /' + (c.targetCIDR || '?') + '.',
-            'Required hosts: ' + (c.requiredHosts || '?') + '.',
-            'Current CIDR: /' + (c.currentCIDR || c.originalCIDR || '?') + ' with ' + (c.currentCapacity || '?') + ' hosts.',
-            c.moveWeightsLine || 'Use the movement values shown on the right panel.',
-            '',
-            'I will advance after Pair ' + pair + ' is linked.',
-        ]];
-
-        return this._startDynamicDialogue('stage3.cidrmatrix.step.', {
-            title: 'GUIDED MATRIX',
-            speaker: 'SYSTEM',
-            timing: 'during',
-            bindings: { mapId: 13, gameplayId: 'ip_cidr_quarantine_matrix', trigger: 'tutorial.step' },
-            slides,
-            onComplete,
-        });
+    showPreparationGuide(context, onComplete) {
+        const p = context;
+        const given = p.asked === 'broadcast' ? 'network' : 'broadcast';
+        const count = p.blockSize.toLocaleString('en-US');
+        const bits = p.givenBits === 'borrowed'
+            ? 'Here: Class ' + p.ipClass + ' leaves ' + p.availableBits + ' default host bits. {{highlight:' + p.availableBits + ' - ' + p.borrowedBits + ' = ' + p.hostBits + ' host bits}}.'
+            : 'Here, {{highlight:host bits are already given: h = ' + p.hostBits + '}}. Use them directly; no subtraction is needed.';
+        return this._show('preparation', 'READ THE GIVEN', [[
+            'Given: {{highlight:Class ' + p.ipClass + '}}, ' + given + ' {{highlight:' + p.givenAddress + '}}. The answer screen asks for {{highlight:' + p.asked + '}}.',
+            'Values vary: Classes A/B/C, either address, and {{highlight:borrowed bits or host bits}}. Read the labels each round.',
+        ], [
+            'A subnet is an address range. {{highlight:Network = first address}}; {{highlight:broadcast = last address}}.',
+            'Device addresses lie between them. A broadcast reaches all devices in that subnet.',
+        ], [
+            'Recall Gameplay 5: {{highlight:h = default host bits - borrowed bits}}. Defaults: A = 24, B = 16, C = 8.',
+            bits,
+        ], [
+            'Recall Gameplay 4.5: {{highlight:block size = 2^h total addresses}}, including network and broadcast.',
+            'Here: {{highlight:2^' + p.hostBits + ' = ' + count + '}}. Do not subtract 2; that would give usable hosts.',
+        ], [
+            '{{highlight:Broadcast = network + block - 1}}. {{highlight:Network = broadcast - block + 1}}.',
+            'We need ' + p.asked + ': {{highlight:' + p.givenAddress + ' ' + p.operator + ' ' + count + ' ' + p.correction + ' = ?}}. The bar already includes ' + p.correction + ' to stay inside the range.',
+        ], [
+            'Use {{highlight:one minute}} to plan. {{highlight:C}} opens your familiar calculator and pauses the timer.',
+            'Ready? Use the {{highlight:Skip icon}} or Enter. Only two choices follow: {{highlight:operator, then block size}}.',
+        ]], onComplete, [
+            ['given', 'answer'], ['range'], ['class', 'bits'], ['bits', 'blockSize'],
+            ['formula'], ['preparation', 'skip', 'calculator'],
+        ]);
     },
-
-    showFeedback(reason, context, onComplete) {
-        const c = context || {};
-        const pair = Number(c.pairIndex || 0) + 1;
-        const text = {
-            selectZone: [
-                'Wrong pair selected.',
-                'Click Pair ' + pair + ' on the right panel,',
-                'or press TAB until Pair ' + pair + ' is highlighted.',
-            ],
-            prefix: [
-                'Pair ' + pair + ' has the wrong movement-bit total.',
-                'Adjust the connector route until it reaches /' + (c.targetCIDR || '?') + '.',
-                c.moveWeightsLine || 'Use the movement values shown on the right panel.',
-            ],
-            offset: [
-                'Pair ' + pair + ' has not reached the correct endpoint.',
-                'Continue the route from ' + (c.startLabel || 'A') + ' to ' + (c.endLabel || 'B') + '.',
-                'Avoid red virus nodes.',
-            ],
-            submitEarly: [
-                'Not ready to submit yet.',
-                'All node pairs must be linked first.',
-                'Finish Pair ' + pair + ', then the matrix can validate.',
-            ],
-            submitWrong: [
-                'Simulation rejected the connector layout.',
-                'Check for a virus hit, wrong endpoint, path overlap, or wrong CIDR bits.',
-                'Pair ' + pair + ' target: /' + (c.targetCIDR || '?'),
-            ],
-            submitReady: [
-                'Connector matrix is ready to validate.',
-                'All pairs are linked and each route matches its optimized CIDR.',
-                'Press SUBMIT or ENTER to validate.',
-            ],
-            adjacent: [
-                'Connector move rejected.',
-                'Move one tile at a time: up, down, left, or right.',
-                'Diagonal movement and jumps are not allowed.',
-            ],
-            virus: [
-                'Virus tile blocked.',
-                'Route around red nodes. They corrupt the active connector.',
-            ],
-            overlap: [
-                'Tile reserved.',
-                'A connector cannot pass through another pair endpoint or route.',
-                'Use a separate lane for Pair ' + pair + '.',
-            ],
-            disconnected: [
-                'A pair is not connected yet.',
-                'Finish the active pair before submitting the whole matrix.',
-            ],
-            not_optimized: [
-                'A pair has the wrong CIDR total.',
-                'Current CIDR: /' + (c.currentCIDR || '?') + '.',
-                'Target CIDR: /' + (c.targetCIDR || '?') + '.',
-                c.moveWeightsLine || 'Use the movement values to change the path-bit total.',
-            ],
-            too_small: [
-                'Host capacity is too small.',
-                'This pair needs ' + (c.requiredHosts || '?') + ' hosts.',
-                'Add movement bits until the active CIDR can hold the requirement.',
-            ],
-            too_big: [
-                'Host capacity is too large.',
-                'Undo or clear the active pair and use fewer movement bits.',
-            ],
-            virus_overrun: [
-                'The virus pressure filled the matrix.',
-                'Attempt reset automatically.',
-                'Unlimited retries remain available at this calibration node.',
-                'Work one pair at a time and submit once all pair cards say LINKED.',
-            ],
+    showPhaseGuide(phase, context, onComplete) {
+        const p = context;
+        const lessons = {
+            operator: {
+                title: 'CHOOSE THE OPERATOR',
+                slides: [[
+                    p.asked === 'broadcast'
+                        ? 'We start at the network and need the last address. Choose {{highlight:+}} to move forward by the block.'
+                        : 'We start at the broadcast and need the first address. Choose {{highlight:-}} to move back by the block.',
+                    'Aim with {{highlight:A/D or the mouse}}. Auto-fire breaks a barrier in {{highlight:10 hits}}; its symbol floats into the first slot.',
+                ]], focus: [['barriers', 'operator']],
+            },
+            blockSize: {
+                title: 'LOAD THE BLOCK SIZE',
+                slides: [[
+                    'You found h = ' + p.hostBits + '. Choose {{highlight:2^' + p.hostBits + ' = ' + p.blockSize.toLocaleString('en-US') + ' total addresses}} for the second slot.',
+                    'Aim at that number. The bar already supplies {{highlight:' + p.correction + '}}; no third choice is needed.',
+                ]], focus: [['barriers', 'blockSize', 'correction']],
+            },
+            boss: {
+                title: 'TEST YOUR FORMULA',
+                slides: [[
+                    '{{highlight:Five auto-fire hits}} let APEX test both choices in your assembled formula.',
+                    'Correct: APEX loses {{highlight:one HP segment}} and drops the address. Watch it float into the {{highlight:answer field}}.',
+                ], [
+                    'You have {{highlight:three hearts}}. A wrong formula makes APEX attack: lose one heart, then face a new question.',
+                    'Clear {{highlight:all three boss HP segments}} before losing your hearts. Later questions use different values.',
+                ]], focus: [['boss', 'bossHP', 'formula'], ['hearts', 'bossHP']],
+            },
         };
-
-        return this._startDynamicDialogue('stage3.cidrmatrix.feedback.', {
-            title: 'MATRIX FEEDBACK',
-            speaker: 'SYSTEM',
-            timing: 'during',
-            bindings: { mapId: 13, gameplayId: 'ip_cidr_quarantine_matrix', trigger: 'tutorial.feedback' },
-            slides: [text[reason] || text.offset],
-            onComplete,
-        });
+        const lesson = lessons[phase];
+        if (!lesson) return false;
+        return this._show('phase.' + phase, lesson.title, lesson.slides, onComplete, lesson.focus);
     },
-
     showComplete(onComplete) {
-        return this._startDynamicDialogue('stage3.cidrmatrix.complete.', {
-            title: 'MATRIX STABLE',
-            speaker: 'SYSTEM',
-            timing: 'after',
-            bindings: { mapId: 13, gameplayId: 'ip_cidr_quarantine_matrix', trigger: 'tutorial.completed' },
-            slides: [[
-                'Matrix quarantine successful.',
-                'All node pairs linked.',
-                'Virus nodes avoided.',
-                '',
-                'Future nodes randomize pair count, movement values, formations, and virus blockers.',
-                'TAB=pair  Z=undo  R=clear  ENTER=submit.',
-                'Proceeding to next objective.',
-            ]],
-            onComplete,
-        });
+        return this._show('complete', 'SECTOR SECURED', [[
+            'APEX defeated. Remember: host bits -> 2^h total addresses -> endpoint.',
+            'The same familiar steps will help you place subnets in VLSM.',
+        ]], onComplete);
     },
-
     showRecovery(context, onComplete) {
-        return this._startDynamicDialogue('stage3.cidrmatrix.recovery.', {
-            title: 'MATRIX RECOVERY',
-            speaker: 'SYSTEM',
-            timing: 'after',
-            bindings: { mapId: 13, gameplayId: 'ip_cidr_quarantine_matrix', trigger: 'gameplay.failed' },
-            slides: [[
-                'Matrix collapsed. All attempts used.',
-                'Routing back to the calibration node.',
-                '',
-                'Common mistakes:',
-                '  One pair unfinished, wrong movement bits,',
-                '  paths overlapping, or a virus node touched.',
-                'Work one pair at a time. Link every pair before submitting.',
-            ]],
-            onComplete,
-        });
+        return this._show('recovery', 'RECALIBRATE', [[
+            'Try again: h = default host bits - borrowed bits, or use the given h.',
+            'Block size = 2^h total addresses. Keep the network and broadcast addresses.',
+            'Broadcast = network + block - 1. Network = broadcast - block + 1.',
+        ]], onComplete);
     },
-
     showRollback(onComplete) {
-        return this._startDynamicDialogue('stage3.cidrmatrix.rollback.', {
-            title: 'TRACE COMPROMISED',
-            speaker: 'SYSTEM',
-            timing: 'after',
-            bindings: { mapId: 13, gameplayId: 'ip_cidr_quarantine_matrix', trigger: 'gameplay.failed' },
-            slides: [[
-                'Trace compromised. APEX has our signal.',
-                'Pulling back one sector to protect the relay.',
-                '',
-                'Rules to remember:',
-                '  Connect each A node to its matching B node.',
-                '  Routes cannot touch viruses or overlap each other.',
-                'Rebuild from the previous level. Cold signal this time.',
-            ]],
-            onComplete,
-        });
+        return this._show('rollback', 'TRACE COMPROMISED', [[
+            'Pulling back one sector to protect the relay.',
+            'Review host bits and total address counts before returning to APEX.',
+        ]], onComplete);
     },
-
-    _startDynamicDialogue(prefix, definition) {
+    _show(kind, title, slides, onComplete, focusTargets) {
         const dm = IP2Live.DialogueManager;
-        if (!dm || typeof dm.registerDialogue !== 'function' || typeof dm.start !== 'function') {
-            if (definition && typeof definition.onComplete === 'function') definition.onComplete();
+        if (!dm || !dm.registerDialogue || !dm.start) {
+            if (typeof onComplete === 'function') onComplete();
             return false;
         }
-        const id = prefix + (++this._dialogueSerial);
-        dm.registerDialogue(id, {
-            title: definition.title || 'TRANSMISSION',
-            speaker: definition.speaker || 'SYSTEM',
-            slides: definition.slides || [],
-            timing: definition.timing || 'during',
-            bindings: Object.assign({}, definition.bindings || {}),
-            hideQuestPanel: true,
-            lockMovement: true,
-            onComplete: definition.onComplete || null,
-        });
-        return dm.start(id, { source: 'IPCIDRQuarantineMatrixTutorial' });
+        const id = 'stage3.subnetblaster.' + kind + '.' + (++this._dialogueSerial);
+        const during = kind === 'preparation' || kind.startsWith('phase.');
+        dm.registerDialogue(id, { title, speaker: 'SYSTEM', slides, timing: kind === 'intro' ? 'before' : during ? 'during' : 'after',
+            bindings: { mapId: 13, gameplayId: 'ip_cidr_quarantine_matrix', trigger: 'tutorial.' + kind },
+            hideQuestPanel: true, lockMovement: true, onComplete: onComplete || null });
+        return dm.start(id, { source: 'IPCIDRQuarantineMatrixTutorial',
+            gameplayFocus: focusTargets || [], compactPanel: true });
     },
 };
-
 IP2Live.IPCIDRQuarantineMatrixTutorial = IPCIDRQuarantineMatrixTutorial;
 window.IP2LiveIPCIDRQuarantineMatrixTutorial = IPCIDRQuarantineMatrixTutorial;
-
-console.log('[IP2Live] ip_cidr_quarantine_matrix_tutorial.js loaded.');

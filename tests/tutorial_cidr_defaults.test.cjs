@@ -33,10 +33,15 @@ for (const screen of [tutorial5a, tutorial5b]) {
 const gameplay6 = loadGameplay('Plugins/IP2Live_Core/gameplay/gameplay6/CIDRQuarantineMatrix/ip_cidr_quarantine_matrix_gameplay.js');
 const tutorial6a = new gameplay6.CIDRQuarantineMatrixGameplayScreen({ spec: { tutorial: true, profile: { index: 1 } }, tutorialMode: true });
 const tutorial6b = new gameplay6.CIDRQuarantineMatrixGameplayScreen({ spec: { tutorial: true, profile: { index: 1 } }, tutorialMode: true });
-assert.equal(tutorial6a.problem.id, 'cidr-matrix-tutorial-default-v1');
-assert.equal(tutorial6a.problem.pairCount, 2);
-assert.deepEqual(tutorial6a.problem.pairs, tutorial6b.problem.pairs);
-assert.deepEqual(tutorial6a.problem.viruses, tutorial6b.problem.viruses);
+for (const screen of [tutorial6a, tutorial6b]) {
+  assert.ok(['A', 'B', 'C'].includes(screen.problem.ipClass));
+  assert.equal(screen.problem.defaultPrefix, { A: 8, B: 16, C: 24 }[screen.problem.ipClass]);
+  assert.equal(screen.problem.hostBits + screen.problem.borrowedBits, 32 - screen.problem.defaultPrefix);
+  assert.equal(screen.problem.broadcast - screen.problem.network + 1, 2 ** screen.problem.hostBits);
+  assert.equal(screen.phase, 'think');
+  assert.equal(screen.helpOpen, false, 'the tutorial keeps the preparation console minimal; H opens the briefing');
+  assert.equal(screen.hearts, 3);
+}
 
 const gameplay7 = loadGameplay('Plugins/IP2Live_Core/gameplay/gameplay7/NetworkRepair/gameplay.js');
 const tutorial7a = gameplay7.NetworkRepairGameplayManager._scenarioForSpec({ id: 'stage.15.ip_network_repair.01', tutorial: true });

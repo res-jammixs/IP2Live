@@ -14,7 +14,7 @@ class IP2LiveExportReportMenu extends Scene.Base {
     initialize() {
         this.selectedIndex = 0;
         this.items = ['SCOPE', 'FORMAT', 'FILENAME', 'BACK', 'EXPORT'];
-        this.scopeDaysOptions = [7, 30, 90];
+        this.scopeDaysOptions = [7, 30, 90, 0];
         this.scopeIndex = 2;
         this.formatOptions = ['PDF', 'EXCEL', 'BOTH'];
         this.formatIndex = 1;
@@ -164,7 +164,7 @@ class IP2LiveExportReportMenu extends Scene.Base {
                 return;
             }
             const result = await gm.exportProgressReport({
-                scopeDays: this.scopeDaysOptions[this.scopeIndex] || 90,
+                scopeDays: this.scopeDaysOptions[this.scopeIndex] === undefined ? 90 : this.scopeDaysOptions[this.scopeIndex],
                 format: format,
                 // Always make the archived set unique, even if the operator
                 // keeps the same editable label for several exports.
@@ -232,7 +232,7 @@ class IP2LiveExportReportMenu extends Scene.Base {
         chrome.animate(ctx,l,this.animTick*0.085);
         chrome.panel(ctx,l.x,l.y,l.w,l.h,1,1,false,this.animTick);chrome.heading(ctx,'EXPORT REPORT',l.x,l.y,l.w);
         const labels=['Days to cover','File type','File name'];
-        const values=[this.scopeDaysOptions[this.scopeIndex]+' days',this.formatOptions[this.formatIndex]==='EXCEL'?'Excel (.xls)':this.formatOptions[this.formatIndex],this.filename+(this.editFilename && this.animTick%50<25?'|':'')];
+        const values=[this.scopeDaysOptions[this.scopeIndex] === 0 ? 'All recorded history' : this.scopeDaysOptions[this.scopeIndex]+' days',this.formatOptions[this.formatIndex]==='EXCEL'?'Excel (.xls)':this.formatOptions[this.formatIndex],this.filename+(this.editFilename && this.animTick%50<25?'|':'')];
         labels.forEach((label,i)=>{
             const y=l.rowStartY+i*(l.rowH+l.rowGap);chrome.row(ctx,l.rowX,y,l.rowW,l.rowH,this.selectedIndex===i);
             ctx.font='11px Oxanium-Medium, sans-serif';ctx.fillStyle='#82a6ae';ctx.textAlign='left';ctx.fillText(label,l.rowX+14,y+16);

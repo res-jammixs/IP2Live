@@ -868,7 +868,13 @@ class IP2LiveHostPowerReactorGameplayScreen extends Scene.Base {
 
     _result(extra) {
         const now = Date.now();
+        const history = this.calculationAttempts.map(attempt => ({ stepKey: 'minimum_host_bits', concept: 'minimum_host_bits',
+            submitted: attempt.exponent, expected: this.scenario.targetExponent, correct: attempt.status === 'just-right',
+            issueType: attempt.status === 'just-right' ? null : attempt.status === 'under' ? 'insufficient_host_capacity' : 'host_allocation_not_minimal',
+            requiredHosts: this.scenario.requiredHosts, atMs: attempt.atMs }));
         return Object.assign({
+            telemetrySchemaVersion: 2, totalDecisions: history.length, correctDecisions: history.filter(row => row.correct).length,
+            incorrectDecisions: history.filter(row => !row.correct).length, decisionHistory: history,
             gameplayId: 'ip_host_power_reactor',
             className: this.scenario.className,
             requiredHosts: this.scenario.requiredHosts,

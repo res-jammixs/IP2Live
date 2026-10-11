@@ -79,6 +79,7 @@ class IP2LiveCIDRPanelGameplayScreen extends Scene.Base {
         this.miniWidgetVisible = false;
         this.statusText = 'MATCH THE SUBNET MASK WITH BULBS, THEN CONFIRM.';
         this.lastResult = null;
+        this.decisionHistory = [];
         this.maskConfirmAttempts = 0;
         this.maskFailures = 0;
         this.cidrVerifyAttempts = 0;
@@ -391,6 +392,7 @@ class IP2LiveCIDRPanelGameplayScreen extends Scene.Base {
         this.finished = true;
 
         const result = {
+            ...this._assessmentResult(),
             gameplayId: this.options.gameplayId || 'ip_cidr_binary_panel',
             handoffKey: this.options.handoffKey || null,
             passed: false,
@@ -792,6 +794,10 @@ class IP2LiveCIDRPanelGameplayScreen extends Scene.Base {
                 if (!!this.bulbs[r][c] !== !!this.targetBits[r][c]) bulbsCorrect = false;
             }
         }
+        this.decisionHistory = this.decisionHistory || [];
+        this.decisionHistory.push({ stepKey: 'subnet_mask_binary', concept: 'decimal_mask_to_binary',
+            submitted: this._currentBulbBinary(), expected: this.targetBits.map(row => row.map(on => on ? '1' : '0').join('')).join('.'),
+            correct: bulbsCorrect, targetMask: this.targetMask, targetClass: this.targetClass, tryNumber: this.maskConfirmAttempts });
         if (bulbsCorrect) {
             this.phase = 'cidr_entry';
             this.phaseTimer = 0;
@@ -843,6 +849,10 @@ class IP2LiveCIDRPanelGameplayScreen extends Scene.Base {
         if (this.phase !== 'cidr_entry') return;
         this.cidrVerifyAttempts++;
         const enteredCIDR = this._parseCIDRInput(this.cidrInput);
+        this.decisionHistory = this.decisionHistory || [];
+        this.decisionHistory.push({ stepKey: 'cidr_prefix', concept: 'binary_mask_to_cidr', submitted: enteredCIDR,
+            expected: this.targetCIDR, correct: enteredCIDR === this.targetCIDR, targetMask: this.targetMask,
+            targetClass: this.targetClass, tryNumber: this.cidrVerifyAttempts });
         if (enteredCIDR === this.targetCIDR) {
             this.iconUnlocked = true;
             this._saveCIDRState(this.cidrInput);
@@ -1006,6 +1016,7 @@ class IP2LiveCIDRPanelGameplayScreen extends Scene.Base {
             IP2Live.CIDRGameplayState.handoffs[handoffKey] = Object.assign({}, state);
         }
         this.lastResult = {
+            ...this._assessmentResult(),
             gameplayId: 'ip_cidr_binary_panel',
             handoffKey: handoffKey,
             passed: true,
@@ -1029,6 +1040,7 @@ class IP2LiveCIDRPanelGameplayScreen extends Scene.Base {
         this.finished = true;
         const result = {
             gameplayId: this.options.gameplayId || 'ip_cidr_binary_panel',
+            ...this._assessmentResult(),
             handoffKey: this.options.handoffKey || null,
             passed: false,
             reason: 'attempts_exhausted',
@@ -1053,6 +1065,12 @@ class IP2LiveCIDRPanelGameplayScreen extends Scene.Base {
         const n = Number(digits);
         if (!Number.isInteger(n) || n < 0 || n > 32) return null;
         return n;
+    }
+
+    _assessmentResult() {
+        const history = this.decisionHistory || [], correct = history.filter(row => row.correct).length;
+        return { telemetrySchemaVersion: 2, totalDecisions: history.length, correctDecisions: correct,
+            incorrectDecisions: history.length - correct, decisionHistory: history.map(row => ({ ...row })) };
     }
 
     _digitFromKeyToken(value) {

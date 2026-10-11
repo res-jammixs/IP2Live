@@ -75,6 +75,7 @@
             this.randomizeDuration = 0;
             this._deferredFailureExit = null;
             this.attemptsUsed = 0;
+            this.decisionHistory = [];
             this.maxAttempts = Math.max(1, Number(this.options.maxAttempts) || 3);
             this.completed = false;
             this.completedAt = 0;
@@ -1575,6 +1576,13 @@
             for (let i = 0; i < this.leftItems.length; i++) {
                 const source = this.leftItems[i];
                 const targetClass = this.connections[source.id];
+                // Locked wires are carried forward, not assessed again on retry.
+                if (!this.lockedCorrect[source.id]) {
+                    if (!Array.isArray(this.decisionHistory)) this.decisionHistory = [];
+                    this.decisionHistory.push({ stepKey: 'ip_classification', concept: 'ipv4_classification', sourceId: source.id,
+                        sourceText: source.ip || source.text || source.value || source.label, submitted: targetClass || null,
+                        expected: source.className, correct: targetClass === source.className, tryNumber: this.attemptsUsed + 1 });
+                }
                 if (targetClass === source.className) {
                     this.lockedCorrect[source.id] = true;
                 } else {
@@ -1829,6 +1837,8 @@
         _mistakeFor(sourceId, targetClass) {
             const source = this._itemById(this.leftItems, sourceId) || {};
             return {
+                stepKey: 'ip_classification', concept: 'ipv4_classification', issueType: 'wrong_ip_class',
+                expected: source.className || '?', submitted: targetClass || null,
                 sourceId: sourceId,
                 sourceClass: source.className || '?',
                 sourceColor: source.color || '#AEB7C2',
@@ -1883,6 +1893,7 @@
             this._finished = true;
             if (typeof this.options.onComplete === 'function') {
                 this.options.onComplete({
+                    ...this._assessmentResult(),
                     gameplayId: this.gameplayId,
                     connections: Object.assign({}, this.connections),
                     attemptsUsed: this.attemptsUsed,
@@ -1896,6 +1907,7 @@
             this._finished = true;
             if (typeof this.options.onFailed === 'function') {
                 this.options.onFailed({
+                    ...this._assessmentResult(),
                     gameplayId: this.gameplayId,
                     reason: 'attempts_exhausted',
                     attemptsUsed: this.attemptsUsed,
@@ -1908,6 +1920,13 @@
 
         _cancel() {
             if (typeof this.options.onCancel === 'function') this.options.onCancel();
+        }
+
+        _assessmentResult() {
+            const history = Array.isArray(this.decisionHistory) ? this.decisionHistory : [];
+            const correct = history.filter(row => row.correct).length;
+            return { telemetrySchemaVersion: 2, totalDecisions: history.length, correctDecisions: correct,
+                incorrectDecisions: history.length - correct, decisionHistory: history.map(row => ({ ...row })) };
         }
 
         _playCursor() {

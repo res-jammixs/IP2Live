@@ -65,6 +65,8 @@ class IP2LivePatchPanelGameplayScreen extends Scene.Base {
         this.tutorialFreePlayAnnounced = false;
         this.roundNumber = 0;
         this.autoRestartCount = 0;
+        this.decisionHistory = [];
+        this.roundHistory = [];
         this.finished = false;
         this.keyFlash = {};
         this._lastMetrics = null;
@@ -744,7 +746,11 @@ class IP2LivePatchPanelGameplayScreen extends Scene.Base {
 
     _onRoundEnd() {
         const metTarget = this.score >= this.targetScore;
+        this.roundHistory = this.roundHistory || [];
+        this.roundHistory.push({ round: this.roundNumber, score: this.score, mistakes: this.mistakes,
+            delivered: this.delivered, totalPackets: this.totalPackets, passed: metTarget });
         this.endResult = {
+            ...this._assessmentResult(),
             gameplayId: 'ip_patch_panel_classes',
             questId: this.options.questId || null,
             objectiveId: this.options.objectiveId || null,
@@ -829,6 +835,14 @@ class IP2LivePatchPanelGameplayScreen extends Scene.Base {
             return;
         }
         if (Manager && Manager.Stack) Manager.Stack.pop();
+    }
+
+    _assessmentResult() {
+        const history = this.decisionHistory || [];
+        const correct = history.filter(row => row.correct).length;
+        return { telemetrySchemaVersion: 2, totalDecisions: history.length, correctDecisions: correct,
+            incorrectDecisions: history.length - correct, decisionHistory: history.map(row => ({ ...row })),
+            roundHistory: (this.roundHistory || []).map(row => ({ ...row })) };
     }
 
     draw3D() {
@@ -953,6 +967,11 @@ class IP2LivePatchPanelGameplayScreen extends Scene.Base {
         const selectedClass = this.classOrder[this.selectedClassIndex];
         const correctClass = target.className;
         const correct = selectedClass === correctClass;
+        this.decisionHistory = this.decisionHistory || [];
+        this.decisionHistory.push({ stepKey: target.kind === 'MASK' ? 'mask_classification' : 'ip_classification',
+            concept: target.kind === 'MASK' ? 'subnet_mask_classification' : 'ipv4_classification',
+            sourceText: target.text, submitted: selectedClass, expected: correctClass, correct,
+            round: this.roundNumber, guided: !!(this.guidedTutorial && this.tutorialActive) });
         const protectedTutorialPacket = !!(
             this.guidedTutorial &&
             this.tutorialActive &&

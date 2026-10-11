@@ -7,11 +7,12 @@
 
 (function () {
     const GameplayPause = {
-        VERSION: 'gameplay-pause-20260930-ui05',
+        VERSION: 'gameplay-pause-20261011-state06',
         STORAGE_KEY: 'gameplaySessions',
         activeScreen: null,
         menuOpen: false,
         _screenFallbackIds: new WeakMap(),
+        _screenOwners: new WeakMap(),
 
         _screenDefinitions() {
             return [
@@ -110,6 +111,7 @@
                     this,
                     fallbackGameplayId
                 );
+                system._tickReportClock(this, fallbackGameplayId);
 
                 return typeof originalUpdate === 'function'
                     ? originalUpdate.apply(this, arguments)
@@ -237,19 +239,32 @@
             }
         },
 
+        _ownsCurrentGame(screen, claim) {
+            if (!screen) return false;
+            const game = this._game();
+            const owner = this._screenOwners.get(screen);
+            if (owner) return owner === game;
+            if (claim && game) this._screenOwners.set(screen, game);
+            return !!game;
+        },
+
         _registerScreen(
             screen,
             fallbackGameplayId
         ) {
             if (
                 !screen ||
-                screen._ip2liveGameplayExited
+                screen._ip2liveGameplayExited ||
+                !this._ownsCurrentGame(screen, true)
             ) {
                 return false;
             }
 
             this.activeScreen = screen;
             if (IP2Live.PracticeMode) IP2Live.PracticeMode.configureScreen(screen);
+            if (IP2Live.GameManager && typeof IP2Live.GameManager._recordTutorialReplayShown === 'function') {
+                IP2Live.GameManager._recordTutorialReplayShown(screen);
+            }
 
             if (fallbackGameplayId) {
                 this._screenFallbackIds.set(
@@ -259,6 +274,59 @@
             }
 
             return true;
+        },
+
+        // Count only rendered, interactive intervals. This clock survives a
+        // durable session save; gaps over one second are treated as suspension.
+        _tickReportClock(screen, fallbackGameplayId) {
+            if (!screen || !this._ownsCurrentGame(screen, true)) return;
+            const now = Date.now();
+            const clock = screen.learningTelemetryClock || (screen.learningTelemetryClock = {
+                version: 1, activeElapsedMs: 0, preparationMs: 0, assistanceElapsedMs: 0,
+                calculatorElapsedMs: 0, helpElapsedMs: 0, calculatorUses: 0, lastFrameAt: now,
+            });
+            const elapsed = Math.max(0, now - Number(clock.lastFrameAt || now));
+            clock.lastFrameAt = now;
+            const calculator = !!(screen.calculatorOpen || screen._calculatorOpen || screen.hostPowerToolOpen || (screen.calculatorTool && screen.calculatorTool.open));
+            if (calculator && !clock.calculatorWasOpen) clock.calculatorUses++;
+            clock.calculatorWasOpen = calculator;
+            if (clock.calculatorOverlayActive) return;
+            if (!elapsed || elapsed > 1000 || screen._ip2liveGameplayExited || this.menuOpen ||
+                (typeof document !== 'undefined' && document.hidden) ||
+                (Manager && Manager.Stack && Manager.Stack.top && Manager.Stack.top !== screen)) return;
+            const help = !!(screen.helpOpen || screen._helpOpen || screen.helpVisible);
+            const dialogue = IP2Live.DialogueManager && typeof IP2Live.DialogueManager.isActive === 'function' && IP2Live.DialogueManager.isActive();
+            if (calculator || help || dialogue || screen.tutorialPaused || screen.tutorialDialogueOpen || screen.pendingMistakeDialogue) {
+                clock.assistanceElapsedMs += elapsed;
+                if (calculator) clock.calculatorElapsedMs += elapsed;
+                if (help) clock.helpElapsedMs += elapsed;
+                return;
+            }
+            const phase = String(screen.phase || screen.roundState || '').toLowerCase();
+            if (phase === 'think' || phase === 'preparation') { clock.preparationMs += elapsed; return; }
+            if (screen.finished || screen.completed || screen._finished || screen.timerExpired ||
+                /success|complete|failed|failure|timeout|stabiliz|counterattack|player_hit|boss|drop|pickup|ready|intro|tutorial|ending/.test(phase)) return;
+            if ((fallbackGameplayId === 'ip_subnet_simulator') && phase && phase !== 'build') return;
+            clock.activeElapsedMs += elapsed;
+        },
+
+        getReportTiming(gameplayId, payload) {
+            const screen = this.activeScreen;
+            if (!screen || !this._ownsCurrentGame(screen, false) || !screen.learningTelemetryClock) return null;
+            const actual = this._descriptorFromScreen(screen, this._screenFallbackIds.get(screen) || '');
+            const expected = this._descriptorFromPayload(gameplayId, payload);
+            if (actual.gameplayId !== gameplayId || (expected.questId && actual.questId !== expected.questId) ||
+                (expected.objectiveId && actual.objectiveId !== expected.objectiveId)) return null;
+            const clock = screen.learningTelemetryClock;
+            return {
+                activeElapsedMs: Math.max(0, Number(clock.activeElapsedMs) || 0),
+                durationMethod: 'active_frames_v1', timingCoverage: 'rendered_interactive_intervals',
+                preparationMs: Math.max(0, Number(clock.preparationMs) || 0),
+                assistanceElapsedMs: Math.max(0, Number(clock.assistanceElapsedMs) || 0),
+                calculatorElapsedMs: Math.max(0, Number(clock.calculatorElapsedMs) || 0),
+                calculatorUses: Math.max(0, Number(clock.calculatorUses) || 0),
+                helpElapsedMs: Math.max(0, Number(clock.helpElapsedMs) || 0),
+            };
         },
 
         _canPauseScreen(screen) {
@@ -566,7 +634,8 @@
 
             if (
                 !screen ||
-                screen._ip2liveGameplayExited
+                screen._ip2liveGameplayExited ||
+                !this._ownsCurrentGame(screen, true)
             ) {
                 return null;
             }
@@ -582,7 +651,7 @@
             screen,
             reason
         ) {
-            if (screen && !this._canRetainSession(screen.options)) return null;
+            if (screen && (!this._canRetainSession(screen.options) || !this._ownsCurrentGame(screen, true))) return null;
             if (
                 !screen ||
                 screen._ip2liveGameplayExited
@@ -867,7 +936,7 @@
             screen,
             fallbackGameplayId
         ) {
-            if (screen && !this._canRetainSession(screen.options)) return false;
+            if (screen && (!this._canRetainSession(screen.options) || !this._ownsCurrentGame(screen, true))) return false;
             if (
                 !screen ||
                 screen._ip2liveSessionRestoreChecked
@@ -944,6 +1013,7 @@
             this._normalizeTutorialState(
                 restored
             );
+            this._normalizeRestoredOverlays(restored);
 
             const liveOptions =
                 screen.options;
@@ -969,6 +1039,12 @@
             screen.options =
                 liveOptions;
 
+            // VLSM terminals share their branch allocations with the campaign
+            // manager. Reconnect that reference after the JSON session clone.
+            if (descriptor.gameplayId === 'ip_vlsm_allocator' && screen.state && IP2Live.VLSMAllocatorGameplayManager) {
+                IP2Live.VLSMAllocatorGameplayManager._state = screen.state;
+            }
+
             screen.dragging =
                 null;
 
@@ -979,6 +1055,11 @@
 
             screen._ip2liveRestoredSession =
                 true;
+            if (screen.learningTelemetryClock) {
+                screen.learningTelemetryClock.lastFrameAt = Date.now();
+                screen.learningTelemetryClock.calculatorOverlayActive = false;
+                screen.learningTelemetryClock.calculatorWasOpen = false;
+            }
 
             screen._ip2liveSessionKey =
                 this._sessionKey(
@@ -989,6 +1070,7 @@
                 screen,
                 fallbackGameplayId
             );
+            if (typeof screen.onGameplayResume === 'function') screen.onGameplayResume();
 
             if (
                 screen._ipGuide &&
@@ -1012,6 +1094,20 @@
             }
 
             return true;
+        },
+
+        _normalizeRestoredOverlays(state) {
+            // Helpers are separate scenes whose callbacks cannot be serialized.
+            // Resume the puzzle with its inputs intact and reopen helpers on demand.
+            for (const key of ['calculatorOpen', '_calculatorOpen', 'hostPowerToolOpen', 'helpOpen', '_helpOpen', 'helpVisible']) {
+                if (Object.prototype.hasOwnProperty.call(state, key)) state[key] = false;
+            }
+            for (const key of ['calculatorOpenedAt', 'helpOpenedAt', 'skipHoverStartedAt']) {
+                if (Object.prototype.hasOwnProperty.call(state, key)) state[key] = null;
+            }
+            if (state.calculatorTool && typeof state.calculatorTool === 'object') state.calculatorTool.open = false;
+            if (Object.prototype.hasOwnProperty.call(state, 'lastUpdateAt')) state.lastUpdateAt = Date.now();
+            if (Object.prototype.hasOwnProperty.call(state, 'pointerPosition')) state.pointerPosition = null;
         },
 
         _shiftWallClockFields(
@@ -1062,6 +1158,7 @@
                         ) +
                         delta;
                 } else if (
+                    !/History$|Events$/.test(key) &&
                     value[key] &&
                     typeof value[key] === 'object'
                 ) {
@@ -1372,6 +1469,7 @@
         ) {
             if (
                 this.menuOpen ||
+                !this._ownsCurrentGame(screen, true) ||
                 !this._canPauseScreen(
                     screen
                 )
@@ -1383,6 +1481,7 @@
                 screen,
                 fallbackGameplayId
             );
+            this._tickReportClock(screen, fallbackGameplayId);
 
             this.captureScreen(
                 screen,
@@ -1451,7 +1550,18 @@
                 );
             }
 
+            this._checkpointStory('gameplay_paused', screen);
             return true;
+        },
+
+        _checkpointStory(reason, screen) {
+            const autosave = IP2Live.StoryAutosave;
+            if (!autosave || typeof autosave.checkpoint !== 'function' ||
+                !this._ownsCurrentGame(screen, false) || !this._canRetainSession(screen && screen.options)) return;
+            // The recovery save also protects stories that have no numbered slot.
+            Promise.resolve(autosave.checkpoint(reason, screen.options)).catch(function (error) {
+                console.warn('[IP2Live] Gameplay recovery checkpoint failed:', error);
+            });
         },
 
         closeMenu() {
@@ -1460,6 +1570,7 @@
             }
             this.menuOpen =
                 false;
+            if (this.activeScreen && this.activeScreen.learningTelemetryClock) this.activeScreen.learningTelemetryClock.lastFrameAt = Date.now();
 
             if (
                 Manager &&
@@ -1484,7 +1595,8 @@
             }
             if (
                 !screen ||
-                screen._ip2liveGameplayExited
+                screen._ip2liveGameplayExited ||
+                !this._ownsCurrentGame(screen, true)
             ) {
                 return {
                     saved:
@@ -1498,6 +1610,7 @@
             const retainSession = this._canRetainSession(screen.options);
             if (retainSession) {
                 this.captureScreen(screen, 'exit_quest');
+                this._checkpointStory('gameplay_exit_quest', screen);
             } else {
                 const descriptor = this._descriptorFromScreen(screen, this._screenFallbackIds.get(screen));
                 this.clearSession(descriptor.gameplayId, descriptor);
