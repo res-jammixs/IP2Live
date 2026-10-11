@@ -73,7 +73,12 @@ class IP2LiveLoadGameMenu extends Scene.Base {
                 this.gamesData.push(null);
                 const newGame = new Core.Game(i);
                 Core.Game.current = newGame;
-                await newGame.load();
+                try { await newGame.load(); }
+                catch (error) {
+                    newGame.isEmpty = true;
+                    newGame._ip2liveLoadError = String(error && error.message || 'This save could not be read.');
+                    console.warn('[IP2Live] Save slot ' + i + ' is unavailable:', error);
+                }
                 newGame._ip2liveSaveSlot = i;
                 if (!currentName && newGame && newGame.infiltratorName) currentName = newGame.infiltratorName;
                 this.gamesData[i - 1] = newGame;
@@ -207,7 +212,7 @@ class IP2LiveLoadGameMenu extends Scene.Base {
     _openSaveNameDialog(slotNumber) {
         const defaultName = this._defaultSaveName(slotNumber);
         const existingGame = this.gamesData && this.gamesData[slotNumber - 1] ? this.gamesData[slotNumber - 1] : null;
-        const hasExistingSave = !!(existingGame && !existingGame.isEmpty);
+        const hasExistingSave = !!(existingGame && (!existingGame.isEmpty || existingGame._ip2liveLoadError));
         const existingDisplayName = hasExistingSave ? this._slotDetails(slotNumber - 1).name : '';
         this.saveNameDialog = {
             slotNumber: slotNumber,
@@ -437,6 +442,13 @@ class IP2LiveLoadGameMenu extends Scene.Base {
                 return;
             }
             const game = this.gamesData[this.selectedIndex];
+            if (game && game._ip2liveLoadError) {
+                Data.Systems.soundImpossible.playSound();
+                if (IP2Live.confirPopup) IP2Live.confirPopup.show({title:'SAVE UNAVAILABLE',
+                    message:'This save could not be loaded. Your stored data has been kept.',
+                    detail:'Try reopening the archive or use another checkpoint.', cancelLabel:'BACK', confirmLabel:'OK'});
+                return;
+            }
             const meta = this._slotMeta(this.selectedIndex);
             if (game && meta && meta.profileName) {
                 game._ip2liveProfileName = String(meta.profileName);
@@ -600,18 +612,94 @@ class IP2LiveLoadGameMenu extends Scene.Base {
 
     _drawArchiveFrame(ctx, l) {
         IP2Live.PopupChrome.panel(ctx,l.panelX,l.panelY,l.panelW,l.panelH,1,1,false,this.animTick);
+        const {panelX:x, panelY:y, panelW:w, panelH:h} = l;
+        ctx.save();
+        // A narrow metal chassis keeps the existing rectangular silhouette.
+        const metal = ctx.createLinearGradient(x, y, x + w, y + h);
+        metal.addColorStop(0, '#42616c'); metal.addColorStop(0.28, '#172b38');
+        metal.addColorStop(0.7, '#101e29'); metal.addColorStop(1, '#35505c');
+        this._bevelPath(ctx,x+3,y+3,w-6,h-6,10);
+        ctx.strokeStyle=metal;ctx.lineWidth=5;ctx.stroke();
+        this._bevelPath(ctx,x+7,y+7,w-14,h-14,8);
+        ctx.strokeStyle='rgba(155,211,219,0.22)';ctx.lineWidth=1;ctx.stroke();
+        this._bevelPath(ctx,x+10,y+10,w-20,h-20,6);
+        ctx.strokeStyle='rgba(0,0,0,0.6)';ctx.stroke();
+
+        // Machined edge marks stay outside the content area.
+        ctx.strokeStyle='rgba(135,190,201,0.25)';
+        for (const edgeX of [x+3,x+w-3]) {
+            for (let yy=y+48;yy<y+h-44;yy+=28) {
+                ctx.beginPath();ctx.moveTo(edgeX-2,yy+4);ctx.lineTo(edgeX+2,yy);ctx.stroke();
+                ctx.fillStyle='rgba(5,13,20,0.8)';ctx.fillRect(edgeX-2,yy+9,4,8);
+            }
+        }
+        for (const edgeY of [y+3,y+h-3]) {
+            for (let xx=x+68;xx<x+w-58;xx+=44) {
+                ctx.fillStyle='rgba(138,190,201,0.21)';ctx.fillRect(xx,edgeY-1,12,1);
+                ctx.fillStyle='rgba(0,0,0,0.65)';ctx.fillRect(xx+15,edgeY-1,2,2);
+            }
+        }
+        for (const [cx,cy,dx,dy] of [[x,y,1,1],[x+w,y,-1,1],[x,y+h,1,-1],[x+w,y+h,-1,-1]]) {
+            ctx.fillStyle='#1b3440';
+            ctx.beginPath();ctx.moveTo(cx+dx*7,cy+dy*5);ctx.lineTo(cx+dx*39,cy+dy*5);
+            ctx.lineTo(cx+dx*31,cy+dy*11);ctx.lineTo(cx+dx*11,cy+dy*11);
+            ctx.lineTo(cx+dx*11,cy+dy*24);ctx.lineTo(cx+dx*5,cy+dy*31);ctx.closePath();ctx.fill();
+            ctx.strokeStyle='#8bced3';ctx.lineWidth=1.5;
+            ctx.beginPath();ctx.moveTo(cx+dx*3,cy+dy*26);ctx.lineTo(cx+dx*3,cy+dy*9);
+            ctx.lineTo(cx+dx*9,cy+dy*3);ctx.lineTo(cx+dx*31,cy+dy*3);ctx.stroke();
+            ctx.fillStyle='#071019';ctx.fillRect(cx+dx*16-2,cy+dy*7-2,4,4);
+            ctx.fillStyle='#718d95';ctx.fillRect(cx+dx*16-1,cy+dy*7,2,1);
+            ctx.fillStyle='rgba(229,215,121,0.7)';ctx.fillRect(cx+dx*42-3,cy+dy*6,6,1);
+        }
+        ctx.restore();
     }
 
-    _holoPanel(ctx,x,y,w,h,selected) { IP2Live.PopupChrome.row(ctx,x,y,w,h,selected); }
+    _holoPanel(ctx,x,y,w,h,selected) {
+        ctx.save();
+        IP2Live.PopupChrome.row(ctx,x,y,w,h,selected);
+        ctx.save();ctx.beginPath();ctx.rect(x+3,y+3,w-6,h-6);ctx.clip();
+        const surface=ctx.createLinearGradient(x,y,x,y+h);
+        surface.addColorStop(0,'rgba(172,217,226,0.055)');
+        surface.addColorStop(0.4,'rgba(172,217,226,0.008)');
+        surface.addColorStop(1,'rgba(0,0,0,0.18)');
+        ctx.fillStyle=surface;ctx.fillRect(x+3,y+3,w-6,h-6);
+        // Fine, stable stippling and angled grooves collect at the right edge.
+        const textureX=x+w-Math.min(108,w*0.28);
+        ctx.fillStyle=selected?'rgba(157,221,225,0.065)':'rgba(157,221,225,0.035)';
+        for (let yy=y+12;yy<y+h-8;yy+=16) {
+            for (let xx=textureX;xx<x+w-8;xx+=16) ctx.fillRect(xx,yy,1,1);
+        }
+        ctx.strokeStyle='rgba(130,185,199,0.045)';ctx.lineWidth=1;
+        for (let xx=x+w-45;xx<x+w+60;xx+=13) {
+            ctx.beginPath();ctx.moveTo(xx,y+3);ctx.lineTo(xx-38,y+Math.min(h-3,67));ctx.stroke();
+        }
+        ctx.restore();
+        ctx.strokeStyle=selected?'rgba(169,225,229,0.24)':'rgba(128,180,190,0.10)';
+        ctx.strokeRect(x+3.5,y+3.5,w-7,h-7);
+        ctx.fillStyle=selected?'rgba(229,215,121,0.8)':'rgba(116,171,184,0.3)';
+        ctx.fillRect(x+12,y+1,selected?28:14,1);
+        for (let i=0;i<3;i++) {
+            ctx.fillStyle='rgba(128,180,190,'+(selected?0.35-i*0.07:0.16-i*0.03)+')';
+            ctx.fillRect(x+w-14-i*6,y+h-6,3,2);
+        }
+        ctx.fillStyle='rgba(0,0,0,0.4)';ctx.fillRect(x+5,y+h-3,w-10,1);
+        ctx.restore();
+    }
 
     _archiveIcon(ctx, x, y, size, empty) {
         ctx.save();
         ctx.strokeStyle = empty ? '#655661' : '#EF8297'; ctx.lineWidth = 1.4;
         ctx.beginPath(); ctx.moveTo(x, y + size * 0.16); ctx.lineTo(x + size * 0.72, y + size * 0.16);
         ctx.lineTo(x + size, y + size * 0.42); ctx.lineTo(x + size, y + size);
-        ctx.lineTo(x, y + size); ctx.closePath(); ctx.stroke();
+        ctx.lineTo(x, y + size); ctx.closePath();
+        const shell=ctx.createLinearGradient(x,y,x+size,y+size);
+        shell.addColorStop(0,empty?'rgba(112,139,152,0.13)':'rgba(239,130,151,0.2)');
+        shell.addColorStop(1,'rgba(8,17,25,0.35)');ctx.fillStyle=shell;ctx.fill();ctx.stroke();
         ctx.strokeRect(x + size * 0.2, y + size * 0.16, size * 0.44, size * 0.28);
         ctx.strokeRect(x + size * 0.2, y + size * 0.65, size * 0.6, size * 0.35);
+        ctx.fillStyle=empty?'rgba(152,176,188,0.18)':'rgba(245,169,184,0.4)';
+        ctx.fillRect(x+size*0.5,y+size*0.2,size*0.09,size*0.19);
+        for (let i=0;i<3;i++) ctx.fillRect(x+size*0.29,y+size*(0.73+i*0.07),size*0.38,Math.max(0.6,size*0.018));
         ctx.restore();
     }
 
@@ -654,6 +742,7 @@ class IP2LiveLoadGameMenu extends Scene.Base {
             if (!this.spaceBackdrop && IP2Live.GameOverBackdrop) this.spaceBackdrop = IP2Live.GameOverBackdrop.create();
             if (this.spaceBackdrop) this.spaceBackdrop.draw(ctx,SW,SH);
             else this._drawSpaceBackground(ctx,SW,SH);
+            this._drawArchiveFrame(ctx, layout);
         }
         const x = layout.panelX + 28;
         IP2Live.PopupChrome.heading(ctx,this.titleText,layout.panelX,layout.panelY+12,layout.panelW);
@@ -666,6 +755,8 @@ class IP2LiveLoadGameMenu extends Scene.Base {
         }
         this._drawRightInfoDeck(ctx, 1, 1, layout);
         const footerY = layout.panelY + layout.panelH - 60;
+        ctx.fillStyle='rgba(117,200,208,0.11)';ctx.fillRect(x,footerY-13,layout.panelW-56,1);
+        ctx.fillStyle='rgba(229,215,121,0.45)';ctx.fillRect(x,footerY-13,22,1);
         this._text(ctx, 'SLOTS ' + (this.scrollY + 1) + ' - ' + Math.min(this.scrollY + this.maxVisible, this.gamesData.length) + ' / ' + this.gamesData.length, x, footerY + 12, 10, '#C099A8');
         this._text(ctx, 'Select a session to view its saved details.', x, footerY + 33, 10, '#8F7C89', layout.listW);
         this._drawButton(ctx, 1, 1, layout.panelX + layout.panelW - 190, footerY, 160, 40, 'BACK', this.selectedIndex === this.gamesData.length, this.gamesData.length);
@@ -734,6 +825,7 @@ class IP2LiveLoadGameMenu extends Scene.Base {
 
     _slotDetails(index) {
         const game = this.gamesData[index];
+        if (game && game._ip2liveLoadError) return {empty:true, unavailable:true, name:'Unavailable save'};
         const meta = this._slotMeta(index) || {};
         if (!game || game.isEmpty) return { empty: true };
         const timer = game.playTime && typeof game.playTime === 'object' ? game.playTime.time : game.playTime;
@@ -776,8 +868,8 @@ class IP2LiveLoadGameMenu extends Scene.Base {
         if (data.empty) {
             this._archiveIcon(ctx, x + w / 2 - 23, y + 120 * unit, 46, true);
             ctx.textAlign = 'center';
-            this._text(ctx, index < 0 ? 'Select a save slot' : 'Empty archive', x + w / 2, y + 222 * unit, 15, '#C4A6B3', w - 40);
-            this._text(ctx, this.saveMode ? 'Ready for your next checkpoint.' : 'No session is stored in this slot.', x + w / 2, y + 249 * unit, 10, '#917B8A', w - 40);
+            this._text(ctx, data.unavailable ? 'Save unavailable' : index < 0 ? 'Select a save slot' : 'Empty archive', x + w / 2, y + 222 * unit, 15, '#C4A6B3', w - 40);
+            this._text(ctx, data.unavailable ? 'Stored data has been kept.' : this.saveMode ? 'Ready for your next checkpoint.' : 'No session is stored in this slot.', x + w / 2, y + 249 * unit, 10, '#917B8A', w - 40);
         } else {
             const clockY = y + 72 * unit;
             this._holoPanel(ctx, x + 16, clockY, w - 32, 64 * unit, true);
@@ -823,18 +915,21 @@ class IP2LiveLoadGameMenu extends Scene.Base {
         ctx.fillRect(x + 14, badgeY, 40, 46);
         ctx.strokeStyle = selected ? 'rgba(243,202,126,0.40)' : 'rgba(164,112,136,0.18)';
         ctx.strokeRect(x + 14, badgeY, 40, 46);
+        ctx.fillStyle='rgba(1,7,13,0.55)';ctx.fillRect(x+17,badgeY+3,34,40);
+        ctx.fillStyle=selected?'rgba(243,202,126,0.25)':'rgba(142,181,194,0.18)';
+        ctx.fillRect(x+18,badgeY+3,32,1);ctx.fillRect(x+18,badgeY+42,10,1);
         ctx.textAlign = 'center';
         this._text(ctx, String(slotNumber).padStart(2, '0'), x + 34, badgeY + 30, 21, selected ? '#F7D898' : '#9295AC');
         ctx.textAlign = 'left';
         const textX = x + 70, textW = w - 92;
         const statusW = w > 440 ? 68 : 0;
-        this._text(ctx, data.empty ? 'Empty slot' : data.name, textX, y + 26, 17, data.empty ? '#9C8997' : '#F8E9F0', textW - statusW);
+        this._text(ctx, data.unavailable ? 'Unavailable save' : data.empty ? 'Empty slot' : data.name, textX, y + 26, 17, data.empty ? '#9C8997' : '#F8E9F0', textW - statusW);
         if (statusW) {
             ctx.textAlign = 'right';
-            this._text(ctx, data.empty ? 'EMPTY' : 'SAVED', x + w - 20, y + 24, 8, data.empty ? '#786270' : '#E78DA5');
+            this._text(ctx, data.unavailable ? 'UNAVAILABLE' : data.empty ? 'EMPTY' : 'SAVED', x + w - 20, y + 24, 8, data.empty ? '#786270' : '#E78DA5');
             ctx.textAlign = 'left';
         }
-        this._text(ctx, data.empty ? (this.saveMode ? 'Create a new checkpoint' : 'No saved progress') : data.location + '    /    ' + this._getPlayTimeStr(data.playTimeMs), textX, y + 47, 11, data.empty ? '#84717F' : '#C799AA', textW);
+        this._text(ctx, data.unavailable ? 'Stored data kept / retry or choose another save' : data.empty ? (this.saveMode ? 'Create a new checkpoint' : 'No saved progress') : data.location + '    /    ' + this._getPlayTimeStr(data.playTimeMs), textX, y + 47, 11, data.empty ? '#84717F' : '#C799AA', textW);
         if (!data.empty) this._text(ctx, data.saved === 'Not recorded' ? 'Save date not recorded' : 'Saved ' + data.saved, textX, y + 65, 10, '#9A8190', textW);
         else {
             ctx.strokeStyle = 'rgba(138,83,108,0.20)'; ctx.lineWidth = 1;

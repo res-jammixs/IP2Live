@@ -161,6 +161,107 @@ async function testPauseInputAndDurableRestore() {
     assert.equal(h.system.hasSession('ip_class_wires', options), false);
 }
 
+function testSubnetBlasterDurableRestoreAndStoryOwnership() {
+    const h = harness();
+    h.Core.Game.current.currentMapID = 13;
+    const source = fs.readFileSync(path.join(root, 'Plugins/IP2Live_Core/gameplay/gameplay6/CIDRQuarantineMatrix/ip_cidr_quarantine_matrix_gameplay.js'), 'utf8');
+    const load = new Function('Common', 'Core', 'Data', 'Graphic', 'Manager', 'Scene', 'Model', 'Main', 'THREE', 'IP2Live', 'window',
+        source + '\nreturn IP2Live.CIDRQuarantineMatrixGameplayScreen;');
+    const Screen = load(h.Common, h.Core, h.Data, {}, { Stack: h.stack }, { Base: BaseScene }, {}, {}, {}, h.IP2Live, {});
+    const options = { mapId: 13, questId: 'stage.13.blaster', objectiveId: 'blaster.one' };
+    const original = new Screen(options);
+    original.phase = 'boss';
+    original.hearts = 2;
+    original.bossHP = 2;
+    original.bossImpactCount = 4;
+    original.weapon = { operator: '-', blockSize: original.problem.blockSize };
+    original.barrierHits = [4, 7, 2];
+    original.projectiles = [{ x: 640, y: 250, previousY: 260, speed: 850 }];
+    original.thinkRemainingMs = 32100;
+    original.activeElapsedMs = 6400;
+    original.decisionHistory = [{ stepKey: 'operator', correct: true, timestamp: 1234, startedAt: 1000 }];
+    original.roundHistory = [{ passed: true, activeElapsedMs: 3500, completedAt: 2000 }];
+    original.calculatorOpen = true;
+    original.calculatorOpenedAt = Date.now() - 1000;
+    original.helpOpen = true;
+    original.skipHoverStartedAt = Date.now() - 500;
+    original.learningTelemetryClock = { version: 1, activeElapsedMs: 6400, preparationMs: 1200,
+        assistanceElapsedMs: 2500, calculatorElapsedMs: 2000, calculatorUses: 2, helpElapsedMs: 500,
+        lastFrameAt: Date.now() - 50000, calculatorOverlayActive: true, calculatorWasOpen: true };
+    h.system._registerScreen(original, original.gameplayId);
+    const session = h.system.captureScreen(original, 'durable_restore_test');
+    session.capturedAt -= 86400000;
+    h.Core.Game.current.ip2liveGameStates = JSON.parse(JSON.stringify(h.Core.Game.current.ip2liveGameStates));
+    const restored = new Screen(options);
+    assert.equal(h.system._restoreIntoScreen(restored, restored.gameplayId), true);
+    assert.equal(restored.phase, 'boss');
+    assert.equal(restored.hearts, 2);
+    assert.equal(restored.bossHP, 2);
+    assert.equal(restored.bossImpactCount, 4);
+    assert.equal(restored.problem.id, original.problem.id);
+    assert.deepEqual(restored.weapon, original.weapon);
+    assert.deepEqual(restored.barrierHits, original.barrierHits);
+    assert.deepEqual(restored.projectiles, original.projectiles);
+    assert.equal(restored.thinkRemainingMs, 32100);
+    assert.equal(restored.activeElapsedMs, 6400);
+    assert.deepEqual(restored.decisionHistory, original.decisionHistory, 'historical observations retain their recorded dates');
+    assert.deepEqual(restored.roundHistory, original.roundHistory);
+    assert.equal(restored.calculatorOpen, false, 'a separate calculator scene cannot survive a durable restore');
+    assert.equal(restored.helpOpen, false);
+    assert.equal(restored.calculatorOpenedAt, null, 'offline time cannot become calculator dwell');
+    assert.equal(restored.skipHoverStartedAt, null);
+    assert.equal(restored.lastUpdateAt, null, 'the gameplay resume hook resets its frame clock');
+    assert.equal(restored.learningTelemetryClock.activeElapsedMs, 6400);
+    assert.equal(restored.learningTelemetryClock.calculatorElapsedMs, 2000);
+    assert.equal(restored.learningTelemetryClock.calculatorUses, 2);
+    assert.equal(restored.learningTelemetryClock.calculatorOverlayActive, false);
+    assert.equal(restored.learningTelemetryClock.calculatorWasOpen, false);
+    assert.ok(Date.now() - restored.learningTelemetryClock.lastFrameAt < 1000);
+    restored.update();
+    assert.equal(restored.activeElapsedMs, 6400, 'the first frame after loading excludes the offline gap');
+    assert.equal(restored.bossImpactCount, 4);
+
+    const newStory = { currentMapID: 13, ip2liveGameStates: {} };
+    h.Core.Game.current = newStory;
+    assert.equal(h.system.captureActiveSession('new_story'), null);
+    assert.equal(h.system.captureScreen(restored, 'stale_screen'), null);
+    assert.equal(h.system._registerScreen(restored, restored.gameplayId), false);
+    assert.deepEqual(newStory.ip2liveGameStates, {}, 'an old scene cannot write its puzzle into a different story');
+    const fresh = new Screen(options);
+    assert.equal(h.system._registerScreen(fresh, fresh.gameplayId), true);
+    assert.ok(h.system.captureScreen(fresh, 'new_story'));
+}
+
+function testVLSMRestoresSharedCampaignAllocations() {
+    const h = harness();
+    h.IP2Live.VLSMAllocatorGameplayManager = {_state:{allocations:{}}};
+    const options={mapId:3,questId:'vlsm.branch',objectiveId:'branch.hq'};
+    const source=new WireScreen(options);source.gameplayId='ip_vlsm_allocator';
+    source.state={allocations:{hq:{cidr:'172.30.32.0/23'}},visitOrder:['hq']};
+    h.system._registerScreen(source,source.gameplayId);
+    h.system.captureScreen(source,'checkpoint');
+    h.Core.Game.current.ip2liveGameStates=JSON.parse(JSON.stringify(h.Core.Game.current.ip2liveGameStates));
+    const restored=new WireScreen(options);restored.gameplayId='ip_vlsm_allocator';restored.state={allocations:{}};
+    assert.equal(h.system._restoreIntoScreen(restored,restored.gameplayId),true);
+    assert.equal(h.IP2Live.VLSMAllocatorGameplayManager._state,restored.state,'restored screen and campaign manager share allocation state');
+    restored.state.allocations.eugene={cidr:'172.30.34.0/24'};
+    assert.equal(h.IP2Live.VLSMAllocatorGameplayManager._state.allocations.eugene.cidr,'172.30.34.0/24');
+}
+
+function testPauseCheckpointsStoryWithoutNumberedSlot() {
+    const h = harness();
+    const reasons = [];
+    h.IP2Live.StoryAutosave = { checkpoint(reason) { reasons.push(reason); return Promise.resolve({ saved: true }); } };
+    const screen = new WireScreen({ mapId: 3, questId: 'story.unslotted', objectiveId: 'wire.one' });
+    assert.equal(h.system.open(screen, screen.gameplayId), true);
+    assert.deepEqual(reasons, ['gameplay_paused']);
+    assert.ok(h.system.findSession(screen.gameplayId, screen.options));
+    h.system.closeMenu();
+    const developer = new WireScreen({ mapId: 3, developerTest: true, questId: 'developer.test', objectiveId: 'wire.test' });
+    h.system.open(developer, developer.gameplayId);
+    assert.deepEqual(reasons, ['gameplay_paused'], 'developer pauses never checkpoint the story');
+}
+
 function testGameplayPausePopupResume() {
     const h = harness();
     const screen = new WireScreen({ mapId: 3, questId: 'quest.popup', objectiveId: 'wire.popup' });
@@ -299,12 +400,14 @@ function testGameManagerResumesWithoutReplayingIntro() {
 
 async function main() {
     await testPauseInputAndDurableRestore();
+    testSubnetBlasterDurableRestoreAndStoryOwnership();
+    testVLSMRestoresSharedCampaignAllocations();
+    testPauseCheckpointsStoryWithoutNumberedSlot();
     testGameplayPausePopupResume();
     await testExitQuestCheckpointsBeforeCancel();
     await testDeveloperExitDiscardsSession();
     testGameManagerResumesWithoutReplayingIntro();
     assert.match(managerSource, /opts\.skipBeforeDialogues \|\| resumeSession/);
-    assert.match(managerSource, /captureActiveSession\(\(options && options\.checkpointReason\)/);
     assert.match(managerSource, /clearSession\(gameplayId, data\)/);
     assert.match(loaderSource, /'gameplay-pause\.js'/);
     console.log('gameplay_pause_persistence.test.cjs: PASS');

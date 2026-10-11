@@ -23,6 +23,7 @@ class IP2LiveNetworkRepairGameplayScreen extends Scene.Base {
     _configure() {
         this.animTick = 0;
         this.finished = false;
+        this.decisionHistory = [];
         this.phase = 'catching';
         this.phaseTimer = 0;
         this.statusText = 'CATCH THE VARIABLES NEEDED BY THE SUBNET FORMULA.';
@@ -186,6 +187,10 @@ class IP2LiveNetworkRepairGameplayScreen extends Scene.Base {
             }
         }
 
+        this.decisionHistory = this.decisionHistory || [];
+        this.decisionHistory.push({ stepKey: 'formula_variables', concept: 'subnet_formula_variable_selection',
+            submitted: caught.slice(), expected: target.slice(), correct, taskType: this.scenario.taskType,
+            issueType: correct ? null : 'wrong_variables' });
         if (correct) {
             this.phase = 'arranging';
             this.formulaSlots = this.caughtTokens.map((token) => this._cloneToken(token));
@@ -253,6 +258,12 @@ class IP2LiveNetworkRepairGameplayScreen extends Scene.Base {
     _submitArrangement() {
         var target = this.scenario.targetTokens;
         var correct = true;
+        this.decisionHistory = this.decisionHistory || [];
+        for (let i = 0; i < target.length; i++) this.decisionHistory.push({
+            stepKey: 'formula_order', concept: 'subnet_formula_order', slot: i,
+            submitted: this.formulaSlots[i] ? this.formulaSlots[i].id : null, expected: target[i].id,
+            correct: !!this.formulaSlots[i] && this.formulaSlots[i].id === target[i].id, taskType: this.scenario.taskType,
+        });
         for (let i = 0; i < target.length; i++) {
             if (!this.formulaSlots[i] || this.formulaSlots[i].id !== target[i].id) { correct = false; break; }
         }
@@ -423,6 +434,7 @@ class IP2LiveNetworkRepairGameplayScreen extends Scene.Base {
         if (typeof this.options.onFailed === 'function') {
             this.finished = true;
             this.options.onFailed({
+                ...this._assessmentResult(),
                 gameplayId: 'ip_network_repair',
                 passed: false,
                 taskType: this.scenario.taskType,
@@ -447,6 +459,15 @@ class IP2LiveNetworkRepairGameplayScreen extends Scene.Base {
         };
     }
 
+    _assessmentResult() {
+        const history = this.decisionHistory || [], correct = history.filter(row => row.correct).length;
+        return { telemetrySchemaVersion: 2, totalDecisions: history.length, correctDecisions: correct,
+            incorrectDecisions: history.length - correct, decisionHistory: history.map(row => ({ ...row,
+                submitted: Array.isArray(row.submitted) ? row.submitted.slice() : row.submitted,
+                expected: Array.isArray(row.expected) ? row.expected.slice() : row.expected })),
+            mistakesUsed: this.maxChances - this.chances, chancesRemaining: this.chances };
+    }
+
     _scenarioTelemetry() {
         return {
             ip: this.scenario.ip,
@@ -468,6 +489,7 @@ class IP2LiveNetworkRepairGameplayScreen extends Scene.Base {
         this.finished = true;
         if (typeof this.options.onComplete === 'function') {
             this.options.onComplete({
+                ...this._assessmentResult(),
                 gameplayId: 'ip_network_repair',
                 passed: true,
                 taskType: this.scenario.taskType,

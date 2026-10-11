@@ -14,15 +14,27 @@ const inject = Manager.Plugins.inject;
 const IP2Live = {};
 
 IP2Live.DBManager = {
-    dbName: 'IP2Live_Database', dbVersion: 4, db: null, _openPromise: null,
+    dbName: 'IP2Live_Database', dbVersion: 5, db: null, _openPromise: null,
     initDB() {
         if (this.db) return Promise.resolve(this.db);
         if (this._openPromise) return this._openPromise;
-        this._openPromise = new Promise((resolve, reject) => {
-            const request = window.indexedDB.open(this.dbName, this.dbVersion);
+        let request;
+        try {
+            if (!window.indexedDB) throw new Error('IndexedDB is unavailable in this game window.');
+            request = window.indexedDB.open(this.dbName, this.dbVersion);
+        } catch (error) {
+            // A temporary browser/storage restriction must not poison every later retry.
+            return Promise.reject(error);
+        }
+        const opening = new Promise((resolve, reject) => {
             request.onupgradeneeded = (e) => {
                 const db = e.target.result;
-                if (!db.objectStoreNames.contains('storyAutosaves')) db.createObjectStore('storyAutosaves', { keyPath: 'id' });
+                const story = db.objectStoreNames.contains('storyAutosaves')
+                    ? e.target.transaction.objectStore('storyAutosaves')
+                    : db.createObjectStore('storyAutosaves', { keyPath: 'id' });
+                for (const pair of [['profileId', 'snapshot.profileId'], ['storyRunId', 'storyRunId'], ['savedAt', 'snapshot.savedAt']]) {
+                    if (!story.indexNames.contains(pair[0])) story.createIndex(pair[0], pair[1], { unique: false });
+                }
                 if (!db.objectStoreNames.contains('profiles'))
                     db.createObjectStore('profiles', { keyPath: 'infiltratorName' });
                 if (!db.objectStoreNames.contains('sessions')) {
@@ -30,6 +42,7 @@ IP2Live.DBManager = {
                     sessions.createIndex('infiltratorName', 'infiltratorName', { unique: false });
                     sessions.createIndex('startedAt', 'startedAt', { unique: false });
                     sessions.createIndex('sessionId', 'sessionId', { unique: false });
+                    sessions.createIndex('profileId', 'profileId', { unique: false });
                 } else {
                     const tx = e.target.transaction;
                     if (tx) {
@@ -37,6 +50,7 @@ IP2Live.DBManager = {
                         if (!sessions.indexNames.contains('infiltratorName')) sessions.createIndex('infiltratorName', 'infiltratorName', { unique: false });
                         if (!sessions.indexNames.contains('startedAt')) sessions.createIndex('startedAt', 'startedAt', { unique: false });
                         if (!sessions.indexNames.contains('sessionId')) sessions.createIndex('sessionId', 'sessionId', { unique: false });
+                        if (!sessions.indexNames.contains('profileId')) sessions.createIndex('profileId', 'profileId', { unique: false });
                     }
                 }
                 if (!db.objectStoreNames.contains('telemetry')) {
@@ -49,6 +63,7 @@ IP2Live.DBManager = {
                     s.createIndex('eventId', 'eventId', { unique: false });
                     s.createIndex('sessionId', 'sessionId', { unique: false });
                     s.createIndex('attemptId', 'attemptId', { unique: false });
+                    s.createIndex('profileId', 'profileId', { unique: false });
                 } else {
                     // Upgrade existing telemetry store indexes for report queries.
                     const tx = e.target.transaction;
@@ -62,90 +77,108 @@ IP2Live.DBManager = {
                         if (!s.indexNames.contains('eventId')) s.createIndex('eventId', 'eventId', { unique: false });
                         if (!s.indexNames.contains('sessionId')) s.createIndex('sessionId', 'sessionId', { unique: false });
                         if (!s.indexNames.contains('attemptId')) s.createIndex('attemptId', 'attemptId', { unique: false });
+                        if (!s.indexNames.contains('profileId')) s.createIndex('profileId', 'profileId', { unique: false });
                     }
                 }
             };
             request.onsuccess = (e) => {
-                this.db = e.target.result;
-                this.db.onversionchange = () => {
-                    try { this.db.close(); } catch (error) {}
-                    this.db = null;
-                    this._openPromise = null;
+                const connection = e.target.result;
+                this.db = connection;
+                const invalidate = () => {
+                    if (this.db === connection) {
+                        this.db = null;
+                        this._openPromise = null;
+                    }
                 };
-                resolve(this.db);
+                connection.onversionchange = () => {
+                    invalidate();
+                    try { connection.close(); } catch (error) {}
+                };
+                connection.onclose = invalidate;
+                resolve(connection);
             };
             request.onerror = (e) => {
-                this._openPromise = null;
-                reject(e.target.error);
+                reject(e.target.error || new Error('IndexedDB could not be opened.'));
             };
             request.onblocked = () => console.warn('[IP2Live] IndexedDB upgrade is waiting for another game window to close.');
         });
-        return this._openPromise;
+        this._openPromise = opening;
+        const clear = () => { if (this._openPromise === opening) this._openPromise = null; };
+        opening.then(clear, clear);
+        return opening;
     },
-    async saveRecord(storeName, data) {
-        if (!this.db) await this.initDB();
+    async _runTransaction(storeName, mode, operation, retry = true) {
+        const db = await this.initDB();
+        let tx;
+        try {
+            if (mode === 'readwrite') {
+                try { tx = db.transaction([storeName], mode, { durability: 'strict' }); }
+                catch (error) {
+                    if (error.name !== 'TypeError' && error.name !== 'NotSupportedError') throw error;
+                    tx = db.transaction([storeName], mode);
+                }
+            } else tx = db.transaction([storeName], mode);
+        } catch (error) {
+            if (retry && error.name === 'InvalidStateError') {
+                if (this.db === db) { this.db = null; this._openPromise = null; }
+                try { db.close(); } catch (_) {}
+                return this._runTransaction(storeName, mode, operation, false);
+            }
+            throw error;
+        }
         return new Promise((resolve, reject) => {
-            const tx = this.db.transaction([storeName], 'readwrite');
-            const req = tx.objectStore(storeName).put(data);
             let result = null;
-            req.onsuccess = () => { result = req.result; };
             tx.oncomplete = () => resolve(result);
             tx.onerror = (e) => reject(e.target.error || tx.error);
             tx.onabort = () => reject(tx.error || new Error('IndexedDB transaction aborted'));
-        });
-    },
-    async getRecord(storeName, key) {
-        if (!this.db) await this.initDB();
-        return new Promise((resolve, reject) => {
-            const req = this.db.transaction([storeName], 'readonly').objectStore(storeName).get(key);
-            req.onsuccess = () => resolve(req.result);
-            req.onerror = (e) => reject(e.target.error);
-        });
-    },
-    async getAllRecords(storeName) {
-        if (!this.db) await this.initDB();
-        return new Promise((resolve, reject) => {
-            const req = this.db.transaction([storeName], 'readonly').objectStore(storeName).getAll();
-            req.onsuccess = () => resolve(req.result || []);
-            req.onerror = (e) => reject(e.target.error);
-        });
-    },
-    async getRecordsByIndex(storeName, indexName, value) {
-        if (!this.db) await this.initDB();
-        return new Promise((resolve, reject) => {
-            const store = this.db.transaction([storeName], 'readonly').objectStore(storeName);
-            if (!store.indexNames.contains(indexName)) {
-                resolve([]);
-                return;
+            try { operation(tx.objectStore(storeName), value => { result = value; }); }
+            catch (error) {
+                try { tx.abort(); } catch (_) {}
+                reject(error);
             }
+        });
+    },
+    saveRecord(storeName, data) {
+        return this._runTransaction(storeName, 'readwrite', (store, done) => {
+            const req = store.put(data);
+            req.onsuccess = () => done(req.result);
+        });
+    },
+    getRecord(storeName, key) {
+        return this._runTransaction(storeName, 'readonly', (store, done) => {
+            const req = store.get(key);
+            req.onsuccess = () => done(req.result);
+        });
+    },
+    getAllRecords(storeName) {
+        return this._runTransaction(storeName, 'readonly', (store, done) => {
+            const req = store.getAll();
+            req.onsuccess = () => done(req.result || []);
+        });
+    },
+    getRecordsByIndex(storeName, indexName, value) {
+        return this._runTransaction(storeName, 'readonly', (store, done) => {
+            if (!store.indexNames.contains(indexName)) { done([]); return; }
             const req = store.index(indexName).getAll(value);
-            req.onsuccess = () => resolve(req.result || []);
-            req.onerror = (e) => reject(e.target.error);
+            req.onsuccess = () => done(req.result || []);
         });
     },
-    async getRecordsByIndexRange(storeName, indexName, lowerValue, upperValue) {
-        if (!this.db) await this.initDB();
-        return new Promise((resolve, reject) => {
-            const store = this.db.transaction([storeName], 'readonly').objectStore(storeName);
-            if (!store.indexNames.contains(indexName)) {
-                resolve([]);
-                return;
-            }
+    getRecordsByIndexRange(storeName, indexName, lowerValue, upperValue) {
+        return this._runTransaction(storeName, 'readonly', (store, done) => {
+            if (!store.indexNames.contains(indexName)) { done([]); return; }
             const range = IDBKeyRange.bound(lowerValue, upperValue);
             const req = store.index(indexName).getAll(range);
-            req.onsuccess = () => resolve(req.result || []);
-            req.onerror = (e) => reject(e.target.error);
+            req.onsuccess = () => done(req.result || []);
         });
     },
-    async getRecordsByFilter(storeName, predicateFn) {
-        if (!this.db) await this.initDB();
-        return new Promise((resolve, reject) => {
+    getRecordsByFilter(storeName, predicateFn) {
+        return this._runTransaction(storeName, 'readonly', (store, done) => {
             const out = [];
-            const req = this.db.transaction([storeName], 'readonly').objectStore(storeName).openCursor();
+            const req = store.openCursor();
             req.onsuccess = (e) => {
                 const cursor = e.target.result;
                 if (!cursor) {
-                    resolve(out);
+                    done(out);
                     return;
                 }
                 try {
@@ -153,7 +186,6 @@ IP2Live.DBManager = {
                 } catch (err) {}
                 cursor.continue();
             };
-            req.onerror = (e) => reject(e.target.error);
         });
     }
 };
@@ -1404,6 +1436,9 @@ IP2Live.ReportManagerReady = (async function () {
     const root = Common.Platform.ROOT_DIRECTORY;
     const src  = root + 'Plugins/IP2Live_Core/modules/report_manager.js';
     try {
+        const analyticsResponse = await fetch(root + 'Plugins/IP2Live_Core/modules/report_learning_analytics.js?v=' + Date.now(), { cache: 'no-store' });
+        if (!analyticsResponse.ok) throw new Error('Learning analytics HTTP ' + analyticsResponse.status);
+        new Function('IP2Live', await analyticsResponse.text())(IP2Live);
         const versionedSrc = src + '?v=20260529_report_manager_01_' + Date.now();
         let resp = await fetch(versionedSrc, { cache: 'no-store' });
         if (!resp.ok) {
@@ -1446,6 +1481,7 @@ IP2Live.ScreenModulesReady = (async function () {
 
     // Load order matters: leaf screens first, main-menu last
     const screens = [
+        '../story_persistence.js',
         '../story_autosave.js',
         'menu-transition.js',
         'loading-screen.js',

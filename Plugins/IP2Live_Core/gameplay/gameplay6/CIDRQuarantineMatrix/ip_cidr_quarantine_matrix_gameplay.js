@@ -1,2655 +1,1267 @@
 /**
- * IP2Live - Gameplay Six: CIDR Quarantine Matrix
- * Stage 3 Level 3 multi-zone visual CIDR containment puzzle.
+ * Gameplay 6: Subnet Blaster. Canvas-native subnet analysis arcade.
+ * Keep the legacy gameplay ID and manager API so campaign saves remain valid.
  */
-
-class IP2LiveCIDRQuarantineMatrixGameplayScreen extends Scene.Base {
-    constructor(options) {
-        super(true);
-        this.options = options || {};
-        this._configure();
-    }
-
-    initialize() {
-        this.options = this.options || {};
-        this._configure();
-    }
-
-    _configure() {
-        this.tools = IP2Live.CIDRTools;
-        this.animTick = 0;
-        this.finished = false;
-        this.phase = 'build';
-        this.tutorialMode = !!this.options.tutorialMode;
-        this.maxAttempts = this.tutorialMode ? 999999 : Math.max(1, Number(this.options.maxAttempts) || 3);
-        this.attemptsUsed = 0;
-        this.problem = this.options.problem || this._generateProblem(this.options.spec || {});
-        this.activeZoneIndex = 0;
-        this.zones = [];
-        for (let i = 0; i < this.problem.zoneCount; i++) {
-            const hint = this.problem.solutions[i] || this.problem.solutions[0];
-            this.zones.push({
-                prefix: Math.min(30, Number(hint.prefix || 27) + 1),
-                offset: Math.max(0, Number(hint.offset || 0) + (i % 2 === 0 ? this.tools.blockSize(Math.min(30, Number(hint.prefix || 27) + 1)) : 0)),
-            });
+const IP2LiveSubnetBlasterRules = {
+    defaults: { A: 8, B: 16, C: 24 },
+    shuffle(items, random = Math.random) {
+        const result = items.slice();
+        for (let i = result.length - 1; i > 0; i--) {
+            const j = Math.floor(random() * (i + 1));
+            [result[i], result[j]] = [result[j], result[i]];
         }
-        this.buttonRects = [];
-        this.zoneRects = [];
-        this.submitRect = null;
-        this.tutorialMode = !!this.options.tutorialMode;
-        this.tutorialZoneIndex = 0;
-        this.tutorialReadyToSubmit = false;
-        this.tutorialPromptActive = false;
-        this.tutorialStarted = false;
-    }
-
-    _generateProblem(spec) {
-        const tools = this.tools || IP2Live.CIDRTools;
-        const profile = spec && spec.profile ? spec.profile : {};
-        const questIndex = Number(profile.index || 1) || 1;
-        const parentPrefix = Number(profile.parentPrefix || (questIndex >= 4 ? 22 : 23)) || 23;
-        const parentSize = tools.blockSize(parentPrefix);
-        const zoneCount = Number(profile.zoneCount || (questIndex >= 3 ? 3 : 2)) || 2;
-        const baseSecond = tools.randomInt(24, 180);
-        const thirdStep = parentPrefix === 22 ? 4 : 2;
-        const baseThird = tools.randomInt(0, Math.floor(248 / thirdStep)) * thirdStep;
-        const baseIp = tools.ipToInt('10.' + baseSecond + '.' + baseThird + '.0');
-        const solutions = [];
-        const protectedNodes = [];
-        const shards = [];
-        const used = {};
-        const candidatePrefixes = questIndex >= 4 ? [26, 27, 28] : [27, 28, 29];
-
-        for (let i = 0; i < zoneCount; i++) {
-            let prefix = tools.choose(candidatePrefixes);
-            let size = tools.blockSize(prefix);
-            let offset = 0;
-            for (let tries = 0; tries < 60; tries++) {
-                const maxBlock = Math.max(0, Math.floor(parentSize / size) - 1);
-                offset = tools.randomInt(0, maxBlock) * size;
-                let overlap = false;
-                for (let s = 0; s < solutions.length; s++) {
-                    const a = { start: offset, end: offset + size - 1 };
-                    const b = { start: solutions[s].offset, end: solutions[s].offset + tools.blockSize(solutions[s].prefix) - 1 };
-                    if (a.start <= b.end && b.start <= a.end) overlap = true;
-                }
-                if (!overlap && !used[offset + '/' + prefix]) break;
-            }
-            used[offset + '/' + prefix] = true;
-            const start = (baseIp + offset) >>> 0;
-            const range = tools.rangeFor(start, prefix);
-            const shardA = (range.start + tools.randomInt(1, Math.max(1, Math.floor(size * 0.35)))) >>> 0;
-            const shardB = (range.start + Math.min(size - 2, tools.randomInt(Math.max(2, Math.floor(size * 0.45)), Math.max(2, size - 2)))) >>> 0;
-            shards.push({ id: 'AI-' + String(i + 1).padStart(2, '0'), start: Math.min(shardA, shardB), end: Math.max(shardA, shardB) });
-            solutions.push({ start, offset, prefix });
-        }
-
-        for (let i = 0; i < zoneCount + 2; i++) {
-            let node = (baseIp + tools.randomInt(1, parentSize - 2)) >>> 0;
-            for (let tries = 0; tries < 40; tries++) {
-                let insideSolution = false;
-                for (let s = 0; s < solutions.length; s++) {
-                    const r = tools.rangeFor(solutions[s].start, solutions[s].prefix);
-                    if (tools.contains(r, node)) insideSolution = true;
-                }
-                if (!insideSolution) break;
-                node = (baseIp + tools.randomInt(1, parentSize - 2)) >>> 0;
-            }
-            protectedNodes.push(node);
-        }
-
+        return result;
+    },
+    toIP(value) {
+        // Use arithmetic, not signed bitwise addition: Class C exceeds 2^31.
+        return [24, 16, 8, 0].map(shift => Math.floor(value / Math.pow(2, shift)) % 256).join('.');
+    },
+    generate(settings = {}, random = Math.random) {
+        const integer = (low, high) => low + Math.floor(random() * (high - low + 1));
+        const ipClass = settings.ipClass || ['A', 'B', 'C'][integer(0, 2)];
+        const defaultPrefix = this.defaults[ipClass];
+        if (!defaultPrefix) throw new Error('Subnet Blaster supports Classes A, B and C.');
+        const availableBits = 32 - defaultPrefix;
+        // /31 and /32 have special semantics and no conventional broadcast exercise.
+        const hostBits = settings.hostBits === undefined ? integer(2, availableBits - 1) : settings.hostBits;
+        if (!Number.isInteger(hostBits) || hostBits < 2 || hostBits > availableBits) throw new Error('Invalid host-bit count.');
+        const blockSize = Math.pow(2, hostBits);
+        const prefix = 32 - hostBits;
+        const borrowedBits = availableBits - hostBits;
+        const first = ipClass === 'A' ? 10 : ipClass === 'B' ? 172 : 192;
+        const second = ipClass === 'A' ? 0 : ipClass === 'B' ? integer(16, 31) : 168;
+        const third = ipClass === 'C' ? integer(0, 255) : 0;
+        const parent = first * Math.pow(2, 24) + second * 65536 + third * 256;
+        const subnetIndex = integer(0, Math.pow(2, borrowedBits) - 1);
+        const network = parent + subnetIndex * blockSize;
+        const broadcast = network + blockSize - 1;
+        const asked = settings.asked || (random() < 0.5 ? 'broadcast' : 'network');
+        const givenBits = settings.givenBits || (random() < 0.5 ? 'borrowed' : 'host');
+        if (!['network', 'broadcast'].includes(asked) || !['borrowed', 'host'].includes(givenBits)) throw new Error('Invalid challenge mode.');
         return {
-            id: [tools.intToIp(baseIp), parentPrefix, zoneCount, Date.now(), Math.floor(Math.random() * 9999)].join(':'),
-            baseIp,
-            baseCIDR: tools.formatCIDR(baseIp, parentPrefix),
-            parentPrefix,
-            parentSize,
-            zoneCount,
-            shards,
-            protectedNodes,
-            solutions,
+            id: [ipClass, prefix, network, asked, givenBits].join(':'),
+            ipClass, defaultPrefix, availableBits, hostBits, borrowedBits, prefix, blockSize,
+            network, broadcast, asked, givenBits,
+            givenAddress: this.toIP(asked === 'broadcast' ? network : broadcast),
+            answerAddress: this.toIP(asked === 'broadcast' ? broadcast : network),
+            operator: asked === 'broadcast' ? '+' : '-',
+            correction: asked === 'broadcast' ? '- 1' : '+ 1',
+            baseCIDR: this.toIP(network) + '/' + prefix,
         };
-    }
-
-    async load() {
-        this.loading = false;
-        if (Manager && Manager.Stack) Manager.Stack.requestPaintHUD = true;
-    }
-
-    update() {
-        this.animTick++;
-        if (IP2Live.GameplayCompletionPopup && typeof IP2Live.GameplayCompletionPopup.update === 'function') {
-            IP2Live.GameplayCompletionPopup.update(this);
-        }
-        if (this.tutorialMode && !this.tutorialStarted) {
-            this.tutorialStarted = true;
-            this._showTutorialIntro();
-        }
-        if (Manager && Manager.Stack) Manager.Stack.requestPaintHUD = true;
-    }
-
-    _showTutorialIntro() {
-        const helper = IP2Live.IPCIDRQuarantineMatrixTutorial;
-        if (!helper || typeof helper.showIntro !== 'function') {
-            this._showTutorialZoneStep(0);
-            return;
-        }
-        this.tutorialPromptActive = true;
-        const started = helper.showIntro(this._tutorialContext(0), () => {
-            this.tutorialPromptActive = false;
-            this._showTutorialZoneStep(0);
-        });
-        if (!started) {
-            this.tutorialPromptActive = false;
-            this._showTutorialZoneStep(0);
-        }
-    }
-
-
-    onKeyPressed(key) {
-        if (IP2Live.DialogueManager && IP2Live.DialogueManager.isActive && IP2Live.DialogueManager.isActive()) {
-            const valueWhenDialogue = key && (key.name || key.code || key);
-            const upperWhenDialogue = String(valueWhenDialogue || '').toUpperCase();
-            if (upperWhenDialogue === 'ENTER' || upperWhenDialogue === 'SPACE' || upperWhenDialogue === 'SPACEBAR') {
-                IP2Live.DialogueManager.advance();
-            }
-            return true;
-        }
-        if (this.finished) return true;
-        const value = key && (key.name || key.code || key);
-        const upper = String(value || '').toUpperCase();
-        if (Data.Keyboards.checkCancelMenu && Data.Keyboards.checkCancelMenu(key)) {
-            this._openPauseMenu();
-            return true;
-        }
-        if (upper === 'TAB') this.activeZoneIndex = (this.activeZoneIndex + 1) % this.zones.length;
-        if (upper === 'TAB') this._afterTutorialAction('select');
-        if (upper === 'ARROWRIGHT' || upper === 'D') this._adjustOffset(this._activeStep());
-        if (upper === 'ARROWLEFT' || upper === 'A') this._adjustOffset(-this._activeStep());
-        if (upper === 'ARROWUP' || upper === 'W') this._adjustPrefix(-1);
-        if (upper === 'ARROWDOWN' || upper === 'S') this._adjustPrefix(1);
-        if (upper === 'ENTER' || upper === 'SPACE' || upper === 'SPACEBAR') this._submit();
-        return true;
-    }
-
-    onMouseDown(x, y) {
-        if (IP2Live.DialogueManager && IP2Live.DialogueManager.isActive && IP2Live.DialogueManager.isActive()) {
-            IP2Live.DialogueManager.advance();
-            return true;
-        }
-        if (this.phase !== 'build') return true;
-        this._buildInteractionRects(this._metrics());
-        for (let i = 0; i < this.zoneRects.length; i++) {
-            if (this._pointInRect(x, y, this.zoneRects[i])) {
-                this.activeZoneIndex = i;
-                this._playCursor();
-                this._afterTutorialAction('select');
-                return true;
-            }
-        }
-        for (let i = 0; i < this.buttonRects.length; i++) {
-            const b = this.buttonRects[i];
-            if (this._pointInRect(x, y, b)) {
-                if (b.action === 'prefixDown') this._adjustPrefix(-1);
-                if (b.action === 'prefixUp') this._adjustPrefix(1);
-                if (b.action === 'offsetLeft') this._adjustOffset(-this._activeStep());
-                if (b.action === 'offsetRight') this._adjustOffset(this._activeStep());
-                this._playCursor();
-                return true;
-            }
-        }
-        if (this.submitRect && this._pointInRect(x, y, this.submitRect)) {
-            this._submit();
-            return true;
-        }
-        const grid = this._gridRect;
-        if (grid && this._pointInRect(x, y, grid)) {
-            const cols = this._gridCols();
-            const rows = Math.ceil(this.problem.parentSize / cols);
-            const cellW = grid.w / cols;
-            const cellH = grid.h / rows;
-            const col = Math.max(0, Math.min(cols - 1, Math.floor((x - grid.x) / cellW)));
-            const row = Math.max(0, Math.min(rows - 1, Math.floor((y - grid.y) / cellH)));
-            const clickedOffset = Math.min(this.problem.parentSize - 1, row * cols + col);
-            const size = this._activeStep();
-            this.zones[this.activeZoneIndex].offset = Math.floor(clickedOffset / size) * size;
-            this._clampActiveZone();
-            this._playCursor();
-            this._afterTutorialAction('zone');
-        }
-        return true;
-    }
-
-    _activeZone() {
-        return this.zones[this.activeZoneIndex] || this.zones[0];
-    }
-
-    _activeStep() {
-        return Math.max(1, this.tools.blockSize(this._activeZone().prefix));
-    }
-
-    _adjustPrefix(delta) {
-        const z = this._activeZone();
-        z.prefix = Math.max(this.problem.parentPrefix, Math.min(30, z.prefix + delta));
-        const size = this.tools.blockSize(z.prefix);
-        z.offset = Math.floor(z.offset / size) * size;
-        this._clampActiveZone();
-        this._afterTutorialAction('zone');
-    }
-
-    _adjustOffset(delta) {
-        const z = this._activeZone();
-        const size = this.tools.blockSize(z.prefix);
-        z.offset = Math.floor((z.offset + delta) / size) * size;
-        this._clampActiveZone();
-        this._afterTutorialAction('zone');
-    }
-
-    _clampActiveZone() {
-        const z = this._activeZone();
-        const size = this.tools.blockSize(z.prefix);
-        const maxOffset = Math.max(0, this.problem.parentSize - size);
-        z.offset = Math.max(0, Math.min(maxOffset, z.offset));
-        z.offset = Math.floor(z.offset / size) * size;
-    }
-
-    _tutorialContext(zoneIndex) {
-        const idx = Number(zoneIndex === undefined ? this.tutorialZoneIndex : zoneIndex) || 0;
-        const solution = this.problem.solutions[idx] || this.problem.solutions[0];
-        return {
-            baseCIDR: this.problem.baseCIDR,
-            zoneIndex: idx,
-            totalZones: this.problem.zoneCount || this.zones.length,
-            solutionPrefix: solution && solution.prefix,
-            solutionOffset: solution && solution.offset,
-            solutionCIDR: solution ? this.tools.formatCIDR(solution.start, solution.prefix) : '',
-        };
-    }
-
-    _showTutorialZoneStep(zoneIndex) {
-        if (!this.tutorialMode || this.tutorialPromptActive) return false;
-        const idx = Math.max(0, Math.min(this.zones.length - 1, Number(zoneIndex) || 0));
-        const helper = IP2Live.IPCIDRQuarantineMatrixTutorial;
-        if (!helper || typeof helper.showStep !== 'function') return false;
-        this.tutorialZoneIndex = idx;
-        this.tutorialPromptActive = true;
-        const started = helper.showStep('zone', this._tutorialContext(idx), () => {
-            this.tutorialPromptActive = false;
-        });
-        if (!started) this.tutorialPromptActive = false;
-        return started;
-    }
-
-    _showTutorialSubmitStep() {
-        if (!this.tutorialMode || this.tutorialPromptActive) return false;
-        const helper = IP2Live.IPCIDRQuarantineMatrixTutorial;
-        if (!helper || typeof helper.showStep !== 'function') return false;
-        this.tutorialReadyToSubmit = true;
-        this.tutorialPromptActive = true;
-        const started = helper.showStep('submit', this._tutorialContext(this.zones.length - 1), () => {
-            this.tutorialPromptActive = false;
-        });
-        if (!started) this.tutorialPromptActive = false;
-        return started;
-    }
-
-    _showTutorialFeedback(reason) {
-        if (!this.tutorialMode || this.tutorialPromptActive) return false;
-        const helper = IP2Live.IPCIDRQuarantineMatrixTutorial;
-        if (!helper || typeof helper.showFeedback !== 'function') return false;
-        this.tutorialPromptActive = true;
-        const started = helper.showFeedback(reason, this._tutorialContext(this.tutorialZoneIndex), () => {
-            this.tutorialPromptActive = false;
-        });
-        if (!started) this.tutorialPromptActive = false;
-        return started;
-    }
-
-    _activeZoneMatchesTutorial() {
-        const solution = this.problem.solutions[this.tutorialZoneIndex];
-        const zone = this.zones[this.tutorialZoneIndex];
-        return !!(solution && zone && zone.prefix === solution.prefix && zone.offset === solution.offset);
-    }
-
-    _afterTutorialAction(action) {
-        if (!this.tutorialMode || this.tutorialPromptActive || this.finished) return;
-        if (this.tutorialReadyToSubmit) {
-            this._showTutorialFeedback('submitReady');
-            return;
-        }
-        if (this.activeZoneIndex !== this.tutorialZoneIndex) {
-            this._showTutorialFeedback('selectZone');
-            return;
-        }
-        if (action === 'select') return;
-
-        const solution = this.problem.solutions[this.tutorialZoneIndex];
-        const zone = this._activeZone();
-        if (!solution || !zone) return;
-        if (zone.prefix !== solution.prefix) {
-            this._showTutorialFeedback('prefix');
-            return;
-        }
-        if (zone.offset !== solution.offset) {
-            this._showTutorialFeedback('offset');
-            return;
-        }
-
-        if (this.tutorialZoneIndex + 1 < this.zones.length) {
-            this.tutorialZoneIndex++;
-            this.activeZoneIndex = this.tutorialZoneIndex;
-            this._showTutorialZoneStep(this.tutorialZoneIndex);
-            return;
-        }
-        this._showTutorialSubmitStep();
-    }
-
-    _submit() {
-        if (this.phase !== 'build') return;
-        if (this.tutorialMode && !this.tutorialReadyToSubmit) {
-            this._showTutorialFeedback('submitEarly');
-            return;
-        }
-        const result = this._evaluateZones();
-        if (result.ok) {
-            if (this.tutorialMode && IP2Live.IPCIDRQuarantineMatrixTutorial && typeof IP2Live.IPCIDRQuarantineMatrixTutorial.showComplete === 'function') {
-                this.phase = 'tutorial_complete';
-                IP2Live.IPCIDRQuarantineMatrixTutorial.showComplete(() => this._finishSuccess(result));
-                return;
-            }
-            this._finishSuccess(result);
-            return;
-        }
-        if (this.tutorialMode) {
-            this._playCancel();
-            this._showTutorialFeedback(result.reason || 'submitWrong');
-            return;
-        }
-        this.attemptsUsed++;
-        this._playCancel();
-        this._showDiagnostic(result);
-    }
-
-    _zoneRange(zone) {
-        return this.tools.rangeFor((this.problem.baseIp + zone.offset) >>> 0, zone.prefix);
-    }
-
-    _evaluateZones() {
-        const tools = this.tools;
-        const ranges = this.zones.map((z) => this._zoneRange(z));
-        for (let i = 0; i < ranges.length; i++) {
-            if (!tools.isAligned(ranges[i].start, ranges[i].prefix, this.problem.baseIp)) {
-                return this._diagnostic('boundary', ['SIMULATION FAILED.', 'Zone ' + (i + 1) + ' starts on an invalid /' + ranges[i].prefix + ' boundary.', 'Snap the selected zone to a valid CIDR boundary.']);
-            }
-        }
-        for (let i = 0; i < ranges.length; i++) {
-            for (let j = i + 1; j < ranges.length; j++) {
-                if (tools.overlaps(ranges[i], ranges[j])) {
-                    return this._diagnostic('overlap', ['SIMULATION FAILED.', 'Two quarantine zones overlap in the matrix.', 'Separate zones so every address belongs to only one cage.']);
-                }
-            }
-        }
-        for (let p = 0; p < this.problem.protectedNodes.length; p++) {
-            for (let i = 0; i < ranges.length; i++) {
-                if (tools.contains(ranges[i], this.problem.protectedNodes[p])) {
-                    return this._diagnostic('protected', ['SIMULATION FAILED.', 'Zone ' + (i + 1) + ' captured protected infrastructure.', 'Shift or tighten the selected zone away from cyan safe nodes.']);
-                }
-            }
-        }
-        for (let s = 0; s < this.problem.shards.length; s++) {
-            const shard = this.problem.shards[s];
-            let contained = false;
-            for (let i = 0; i < ranges.length; i++) {
-                if (tools.contains(ranges[i], shard.start) && tools.contains(ranges[i], shard.end)) contained = true;
-            }
-            if (!contained) {
-                return this._diagnostic('miss', ['SIMULATION FAILED.', shard.id + ' is still leaking outside quarantine.', 'Each shard must be fully inside one CIDR zone.']);
-            }
-        }
-        const expected = this.problem.solutions.map((s) => tools.formatCIDR(s.start, s.prefix)).sort().join('|');
-        const entered = ranges.map((r) => tools.formatCIDR(r.start, r.prefix)).sort().join('|');
-        if (entered !== expected) {
-            return this._diagnostic('minimal', ['SIMULATION FAILED.', 'The matrix contains the shards, but at least one cage is not minimal.', 'Reduce broad zones until no unnecessary address space is quarantined.']);
-        }
-        return {
-            ok: true,
-            selectedCIDRs: ranges.map((r) => tools.formatCIDR(r.start, r.prefix)),
-            solutionCIDRs: this.problem.solutions.map((s) => tools.formatCIDR(s.start, s.prefix)),
-        };
-    }
-
-    _diagnostic(reason, lines) {
-        return { ok: false, reason, lines };
-    }
-
-    _showDiagnostic(result) {
-        const remaining = Math.max(0, this.maxAttempts - this.attemptsUsed);
-        const lines = (result.lines || ['SIMULATION FAILED.']).slice();
-        lines.push('Retries remaining: ' + remaining + '/' + this.maxAttempts + '.');
-        const after = () => {
-            if (this.attemptsUsed >= this.maxAttempts) {
-                this._failOut(result);
-                return;
-            }
-            this.phase = 'build';
-        };
-        this.phase = 'diagnostic';
-        if (IP2Live.GameManager && typeof IP2Live.GameManager.handleGameplayMistake === 'function') {
-            IP2Live.GameManager.handleGameplayMistake('ip_cidr_quarantine_matrix', {
-                mapId: this.options.mapId || (this.options.spec && this.options.spec.mapId) || 13,
-                questId: this.options.questId,
-                objectiveId: this.options.objectiveId,
-                mistakes: [{ reason: result.reason, problemId: this.problem.id }],
-                attemptsRemaining: remaining,
-                onComplete: function () {},
-            });
-        }
-        if (IP2Live.ARDiagnosticRewind && typeof IP2Live.ARDiagnosticRewind.show === 'function') {
-            IP2Live.ARDiagnosticRewind.show({ title: 'AR DIAGNOSTIC REWIND', lines, onComplete: after });
-        } else {
-            after();
-        }
-    }
-
-    _finishSuccess(result) {
-        if (this.finished) return;
-        this.finished = true;
-        this._playConfirm();
-        if (typeof this.options.onComplete === 'function') {
-            this.options.onComplete({
-                gameplayId: 'ip_cidr_quarantine_matrix',
-                passed: true,
-                attemptsUsed: this.attemptsUsed + 1,
-                maxAttempts: this.maxAttempts,
-                retries: this.attemptsUsed,
-                problemId: this.problem.id,
-                baseCIDR: this.problem.baseCIDR,
-                zoneCount: this.problem.zoneCount,
-                selectedCIDRs: result.selectedCIDRs,
-                solutionCIDRs: result.solutionCIDRs,
-            });
-        }
-    }
-
-    _failOut(result) {
-        if (this.finished) return;
-        this.finished = true;
-        if (typeof this.options.onFailed === 'function') {
-            this.options.onFailed({
-                gameplayId: 'ip_cidr_quarantine_matrix',
-                passed: false,
-                reason: 'attempts_exhausted',
-                attemptsUsed: this.attemptsUsed,
-                maxAttempts: this.maxAttempts,
-                retries: this.attemptsUsed,
-                problemId: this.problem.id,
-                diagnosticReason: result && result.reason,
-                baseCIDR: this.problem.baseCIDR,
-                zoneCount: this.problem.zoneCount,
-            });
-        }
-    }
-
-    _cancel() {
-        if (this.finished) return;
-        this.finished = true;
-        this._playCancel();
-        if (typeof this.options.onCancel === 'function') this.options.onCancel();
-    }
-
-    _openPauseMenu() {
-        if (IP2Live.GameplayPause && typeof IP2Live.GameplayPause.open === 'function') {
-            IP2Live.GameplayPause.open(this, 'ip_cidr_quarantine_matrix');
-            return;
-        }
-        if (window.IP2LivePauseMenu && Manager && Manager.Stack && typeof Manager.Stack.push === 'function') {
-            Data.Systems.soundConfirmation.playSound();
-            Manager.Stack.push(new IP2LivePauseMenu());
-        } else {
-            this._cancel();
-        }
-    }
-
-    draw3D() {
-        if (Manager && Manager.GL && Manager.GL.renderer) Manager.GL.renderer.clear();
-    }
-
-    drawHUD() {
-        const ctx = Common && Common.Platform ? Common.Platform.ctx : null;
-        if (!ctx || !ctx.canvas) return;
-        const m = this._metrics();
-        this._buildInteractionRects(m);
-        this._drawBackdrop(ctx, m);
-        this._drawPanel(ctx, m);
-        this._drawGrid(ctx, m);
-        this._drawInfo(ctx, m);
-        this._drawControls(ctx, m);
-        if (IP2Live.DialogueManager && typeof IP2Live.DialogueManager.drawOverlay === 'function') {
-            IP2Live.DialogueManager.drawOverlay(ctx);
-        }
-    }
-
-    _metrics() {
-        const ctx = Common && Common.Platform ? Common.Platform.ctx : null;
-        const cW = ctx && ctx.canvas ? ctx.canvas.width : 1280;
-        const cH = ctx && ctx.canvas ? ctx.canvas.height : 720;
-        const sX = cW / 1280;
-        const sY = cH / 720;
-        return { cW, cH, sX, sY, panelX: 48 * sX, panelY: 44 * sY, panelW: cW - 96 * sX, panelH: cH - 88 * sY };
-    }
-
-    _gridCols() {
-        return this.problem.parentSize > 512 ? 32 : 32;
-    }
-
-    _buildInteractionRects(m) {
-        this.zoneRects = [];
-        const zoneX = m.panelX + m.panelW * 0.56;
-        const zoneY = m.panelY + 108 * m.sY;
-        for (let i = 0; i < this.zones.length; i++) {
-            this.zoneRects.push({ x: zoneX, y: zoneY + i * 48 * m.sY, w: 280 * m.sX, h: 38 * m.sY });
-        }
-        const y = m.panelY + m.panelH - 88 * m.sY;
-        const bw = 70 * m.sX;
-        const bh = 42 * m.sY;
-        const cx = m.panelX + m.panelW * 0.48;
-        this.buttonRects = [
-            { action: 'offsetLeft', x: cx - 220 * m.sX, y, w: bw, h: bh, label: '<' },
-            { action: 'offsetRight', x: cx - 138 * m.sX, y, w: bw, h: bh, label: '>' },
-            { action: 'prefixDown', x: cx + 52 * m.sX, y, w: bw, h: bh, label: '/+' },
-            { action: 'prefixUp', x: cx + 134 * m.sX, y, w: bw, h: bh, label: '/-' },
+    },
+    waves(problem) {
+        const p = problem;
+        const h = p.hostBits;
+        const candidates = [
+            { key: 'operator', title: 'CHOOSE THE OPERATOR', prompt: 'Which operation moves toward the requested address?', correct: p.operator,
+                choices: ['+', '-', '\u00d7'].map(value => ({ value, label: value, detail: value === '+' ? 'ADD THE BLOCK' : value === '-' ? 'SUBTRACT THE BLOCK' : 'MULTIPLY THE ADDRESS' })) },
+            { key: 'blockSize', title: 'LOAD THE BLOCK SIZE', prompt: 'Choose the total address count, including both endpoints.', correct: p.blockSize,
+                choices: [
+                    { value: p.blockSize, label: p.blockSize.toLocaleString('en-US'), detail: 'ADDRESSES' },
+                    { value: p.blockSize - 2, label: (p.blockSize - 2).toLocaleString('en-US'), detail: 'ADDRESSES' },
+                    { value: h * 2, label: String(h * 2), detail: 'ADDRESSES' },
+                ] },
         ];
-        this.submitRect = { x: m.panelX + m.panelW - 212 * m.sX, y, w: 166 * m.sX, h: bh };
-        const gridW = Math.min(m.panelW * 0.48, 620 * m.sX);
-        const rows = Math.ceil(this.problem.parentSize / this._gridCols());
-        this._gridRect = { x: m.panelX + 36 * m.sX, y: m.panelY + 100 * m.sY, w: gridW, h: gridW * (rows / this._gridCols()) };
-    }
-
-    _drawBackdrop(ctx, m) {
-        const g = ctx.createLinearGradient(0, 0, m.cW, m.cH);
-        g.addColorStop(0, '#040B12');
-        g.addColorStop(0.5, '#13212E');
-        g.addColorStop(1, '#050A12');
-        ctx.fillStyle = g;
-        ctx.fillRect(0, 0, m.cW, m.cH);
-        ctx.globalAlpha = 0.14;
-        ctx.strokeStyle = '#FFE600';
-        for (let y = -50 * m.sY + ((this.animTick * 0.7) % (50 * m.sY)); y < m.cH; y += 50 * m.sY) {
-            ctx.beginPath();
-            ctx.moveTo(0, y);
-            ctx.lineTo(m.cW, y + 90 * m.sY);
-            ctx.stroke();
-        }
-        ctx.globalAlpha = 1;
-    }
-
-    _drawPanel(ctx, m) {
-        this._fillChamferRect(ctx, m.panelX, m.panelY, m.panelW, m.panelH, 18 * m.sX, 'rgba(5,12,20,0.95)');
-        this._strokeChamferRect(ctx, m.panelX, m.panelY, m.panelW, m.panelH, 18 * m.sX, '#FFE600', 2 * m.sX);
-        ctx.fillStyle = '#FF003C';
-        this._fillChamferRect(ctx, m.panelX, m.panelY + 10 * m.sY, m.panelW * 0.52, 50 * m.sY, 8 * m.sX);
-        ctx.fillStyle = '#FFFFFF';
-        ctx.font = 'bold ' + Math.round(20 * m.sY) + 'px ' + this._titleFont();
-        ctx.textAlign = 'left';
-        ctx.fillText('CIDR QUARANTINE MATRIX :: MULTI ZONE', m.panelX + 24 * m.sX, m.panelY + 44 * m.sY);
-        ctx.font = 'bold ' + Math.round(12 * m.sY) + 'px monospace';
-        ctx.fillStyle = '#BDEEFF';
-        ctx.fillText('RELAY ' + this.problem.baseCIDR + '   ZONES REQUIRED ' + this.problem.zoneCount, m.panelX + m.panelW * 0.58, m.panelY + 42 * m.sY);
-    }
-
-    _drawGrid(ctx, m) {
-        const g = this._gridRect;
-        const cols = this._gridCols();
-        const rows = Math.ceil(this.problem.parentSize / cols);
-        const cellW = g.w / cols;
-        const cellH = g.h / rows;
-        const ranges = this.zones.map((z) => this._zoneRange(z));
-        ctx.fillStyle = 'rgba(10,24,36,0.96)';
-        ctx.fillRect(g.x, g.y, g.w, g.h);
-        for (let i = 0; i < this.problem.parentSize; i++) {
-            const x = g.x + (i % cols) * cellW;
-            const y = g.y + Math.floor(i / cols) * cellH;
-            const ip = (this.problem.baseIp + i) >>> 0;
-            let fill = 'rgba(30,48,63,0.92)';
-            for (let r = 0; r < ranges.length; r++) {
-                if (this.tools.contains(ranges[r], ip)) fill = r === this.activeZoneIndex ? 'rgba(255,216,74,0.82)' : 'rgba(140,172,255,0.58)';
+        // Equal host/borrowed counts or h=2 can produce duplicate answers.
+        // Keep three distinct values so only one barrier can be correct.
+        for (const wave of candidates) {
+            const seen = new Set();
+            for (const choice of wave.choices) {
+                if (seen.has(choice.value)) {
+                    let replacement = typeof wave.correct === 'number' ? wave.correct + 1 : '/';
+                    while (seen.has(replacement) || replacement === wave.correct) replacement++;
+                    choice.value = replacement;
+                    choice.label = String(replacement);
+                    choice.detail = 'ALTERNATE VALUE';
+                }
+                seen.add(choice.value);
             }
-            for (let s = 0; s < this.problem.shards.length; s++) {
-                if (ip >= this.problem.shards[s].start && ip <= this.problem.shards[s].end) fill = 'rgba(255,0,60,0.9)';
+        }
+        return candidates;
+    },
+    explain(problem, key) {
+        const p = problem;
+        if (key === 'operator') return p.asked === 'broadcast' ? 'Broadcast is the last address: add the block, then subtract 1.' : 'Network is the first address: subtract the block, then add 1.';
+        if (key === 'hostBits') return p.givenBits === 'host' ? 'Host bits are already given: use h = ' + p.hostBits + ' directly.' : 'Class ' + p.ipClass + ' has ' + p.availableBits + ' default host bits. ' + p.availableBits + ' - ' + p.borrowedBits + ' = ' + p.hostBits + ' host bits.';
+        return 'Use the familiar 2^h step: 2^' + p.hostBits + ' = ' + p.blockSize.toLocaleString('en-US') + ' total addresses. Keep all addresses for block size; do not subtract 2.';
+    },
+    calculate(expression) {
+        // A small arithmetic parser; never execute player input as JavaScript.
+        const source = String(expression).replace(/\s/g, '');
+        if (!source || source.length > 60 || /[^0-9.+\-*/^()]/.test(source)) throw new Error('Use numbers and arithmetic operators.');
+        const tokens = source.match(/(?:\d+(?:\.\d*)?|\.\d+)|[+\-*/^()]/g) || [];
+        if (tokens.join('') !== source) throw new Error('Check the expression.');
+        let i = 0;
+        const atom = () => {
+            if (tokens[i] === '(') {
+                i++;
+                const value = add();
+                if (tokens[i++] !== ')') throw new Error('Close the parentheses.');
+                return value;
             }
-            for (let p = 0; p < this.problem.protectedNodes.length; p++) {
-                if (ip === this.problem.protectedNodes[p]) fill = 'rgba(0,240,255,0.95)';
-            }
-            ctx.fillStyle = fill;
-            ctx.fillRect(x + 0.8 * m.sX, y + 0.8 * m.sY, cellW - 1.4 * m.sX, cellH - 1.4 * m.sY);
-        }
-        ctx.strokeStyle = '#DAEEFF';
-        ctx.lineWidth = 2 * m.sX;
-        ctx.strokeRect(g.x, g.y, g.w, g.h);
-    }
-
-    _drawInfo(ctx, m) {
-        const tools = this.tools;
-        ctx.font = 'bold ' + Math.round(15 * m.sY) + 'px monospace';
-        ctx.textAlign = 'left';
-        for (let i = 0; i < this.zoneRects.length; i++) {
-            const r = this.zoneRects[i];
-            const z = this.zones[i];
-            const selected = i === this.activeZoneIndex;
-            this._fillChamferRect(ctx, r.x, r.y, r.w, r.h, 7 * m.sX, selected ? 'rgba(255,216,74,0.24)' : 'rgba(35,55,75,0.72)');
-            this._strokeChamferRect(ctx, r.x, r.y, r.w, r.h, 7 * m.sX, selected ? '#FFE600' : '#70E9FF', 1.3 * m.sX);
-            ctx.fillStyle = selected ? '#FFFFFF' : '#D8F7FF';
-            ctx.fillText('ZONE ' + (i + 1) + '  ' + tools.formatCIDR((this.problem.baseIp + z.offset) >>> 0, z.prefix), r.x + 12 * m.sX, r.y + 25 * m.sY);
-        }
-        const textX = m.panelX + m.panelW * 0.56;
-        const textY = m.panelY + 300 * m.sY;
-        ctx.fillStyle = '#BDEEFF';
-        ctx.font = Math.round(12 * m.sY) + 'px monospace';
-        ctx.fillText('Red: AI shards. Cyan: protected infrastructure.', textX, textY);
-        for (let s = 0; s < this.problem.shards.length; s++) {
-            const shard = this.problem.shards[s];
-            ctx.fillText(shard.id + '  ' + tools.intToIp(shard.start) + ' - ' + tools.intToIp(shard.end), textX, textY + (28 + s * 22) * m.sY);
-        }
-    }
-
-    _drawControls(ctx, m) {
-        for (let i = 0; i < this.buttonRects.length; i++) this._drawButton(ctx, this.buttonRects[i], m, this.buttonRects[i].label);
-        this._drawButton(ctx, this.submitRect, m, 'SUBMIT');
-        ctx.font = 'bold ' + Math.round(11 * m.sY) + 'px monospace';
-        ctx.fillStyle = '#DAEEFF';
-        ctx.textAlign = 'left';
-        ctx.fillText('TRIES ' + this.attemptsUsed + '/' + this.maxAttempts + '   TAB changes zone   Arrow/A-D move   W/S prefix', m.panelX + 28 * m.sX, m.panelY + m.panelH - 24 * m.sY);
-    }
-
-    _drawButton(ctx, b, m, label) {
-        if (!b) return;
-        const g = ctx.createLinearGradient(b.x, b.y, b.x + b.w, b.y + b.h);
-        g.addColorStop(0, '#253747');
-        g.addColorStop(1, '#111C28');
-        ctx.fillStyle = g;
-        this._fillChamferRect(ctx, b.x, b.y, b.w, b.h, 7 * m.sX);
-        this._strokeChamferRect(ctx, b.x, b.y, b.w, b.h, 7 * m.sX, '#FFE600', 1.4 * m.sX);
-        ctx.fillStyle = '#FFFFFF';
-        ctx.font = 'bold ' + Math.round(14 * m.sY) + 'px monospace';
-        ctx.textAlign = 'center';
-        ctx.fillText(label, b.x + b.w * 0.5, b.y + b.h * 0.63);
-    }
-
-    _fillChamferRect(ctx, x, y, w, h, cut, fillStyle) {
-        if (fillStyle) ctx.fillStyle = fillStyle;
-        ctx.beginPath();
-        ctx.moveTo(x + cut, y);
-        ctx.lineTo(x + w, y);
-        ctx.lineTo(x + w - cut, y + h);
-        ctx.lineTo(x, y + h);
-        ctx.lineTo(x, y + cut);
-        ctx.closePath();
-        ctx.fill();
-    }
-
-    _strokeChamferRect(ctx, x, y, w, h, cut, strokeStyle, lineWidth) {
-        ctx.beginPath();
-        ctx.moveTo(x + cut, y);
-        ctx.lineTo(x + w, y);
-        ctx.lineTo(x + w - cut, y + h);
-        ctx.lineTo(x, y + h);
-        ctx.lineTo(x, y + cut);
-        ctx.closePath();
-        ctx.strokeStyle = strokeStyle || '#FFFFFF';
-        ctx.lineWidth = lineWidth || 1;
-        ctx.stroke();
-    }
-
-    _pointInRect(x, y, r) {
-        return r && x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h;
-    }
-
-    _titleFont() {
-        return IP2Live.Assets && IP2Live.Assets.nebulaLoaded ? 'Nebula-Regular' : 'monospace';
-    }
-
-    _playCursor() { try { if (Data.Systems.soundCursor) Data.Systems.soundCursor.playSound(); } catch (e) {} }
-    _playConfirm() { try { if (Data.Systems.soundConfirmation) Data.Systems.soundConfirmation.playSound(); } catch (e) {} }
-    _playCancel() { try { if (Data.Systems.soundCancel) Data.Systems.soundCancel.playSound(); } catch (e) {} }
-}
+            const token = tokens[i++];
+            if (!token || !/^(?:\d|\.)/.test(token)) throw new Error('Enter a number.');
+            return Number(token);
+        };
+        const power = () => { const left = atom(); return tokens[i] === '^' ? (i++, Math.pow(left, unary())) : left; };
+        const unary = () => tokens[i] === '-' ? (i++, -unary()) : tokens[i] === '+' ? (i++, unary()) : power();
+        const multiply = () => {
+            let value = unary();
+            while (tokens[i] === '*' || tokens[i] === '/') { const op = tokens[i++]; const right = unary(); value = op === '*' ? value * right : value / right; }
+            return value;
+        };
+        const add = () => {
+            let value = multiply();
+            while (tokens[i] === '+' || tokens[i] === '-') { const op = tokens[i++]; const right = multiply(); value = op === '+' ? value + right : value - right; }
+            return value;
+        };
+        const result = add();
+        if (i !== tokens.length || !Number.isFinite(result) || Math.abs(result) > Number.MAX_SAFE_INTEGER) throw new Error('Check the expression or result size.');
+        return result;
+    },
+};
 
 class IP2LiveCIDRQuarantineMatrixConnectorScreen extends Scene.Base {
-    constructor(options) {
-        super(true);
-        this.options = options || {};
-        this._configure();
-    }
-
-    initialize() {
-        this.options = this.options || {};
-        this._configure();
-    }
-
+    static ADDRESS_DROP = { release: 260, fall: 620, hold: 2600, transfer: 950, settle: 700 };
+    static DOCK_TYPING = { erase: 180, stagger: 25, type: 420,
+        fields: ['classValue', 'addressLabel', 'addressValue', 'bitsLabel', 'bitsValue', 'formulaGiven', 'operator', 'blockSize', 'correction', 'answer'] };
+    constructor(options) { super(true); this.options = options || {}; this._configure(); }
+    initialize() { this.options = this.options || {}; this._configure(); }
     _configure() {
-        this.tools = IP2Live.CIDRTools;
-        this.animTick = 0;
-        this.finished = false;
-        this.phase = 'build';
-        this.tutorialMode = !!this.options.tutorialMode;
-        this.maxAttempts = this.tutorialMode ? 999999 : Math.max(1, Number(this.options.maxAttempts) || 3);
-        this.attemptsUsed = 0;
-        this.directionWeights = { R: 1, L: 2, U: 3, D: 4 };
-        this.problem = this.options.problem || this._generateProblem(this.options.spec || {});
-        this.directionWeights = this._normalizeDirectionWeights(this.problem.directionWeights || this.directionWeights);
-        this._initVirusSpread();
-        this.paths = [];
-        for (let i = 0; i < this.problem.pairs.length; i++) {
-            this.paths.push([this._cloneTile(this.problem.pairs[i].start)]);
-        }
-        this.activePairIndex = 0;
-        this.draggingPath = false;
+        this.gameplayId = 'ip_cidr_quarantine_matrix';
+        this.gameplayVersion = 'subnet-blaster-v4';
+        this.tutorialMode = !!(this.options.tutorialMode || (this.options.spec && this.options.spec.tutorial));
+        this.finished = false; this.maxAttempts = 3; this.attemptsUsed = 0;
+        this.hearts = 3; this.bossHP = 3; this.previousBossHP = 3;
+        this.correctShots = 0; this.totalShots = 0; this.bulletsFired = 0;
+        this.roundHistory = [];
+        this.decisionHistory = [];
+        this.decisionHistoryComplete = true;
+        this.activeElapsedMs = 0; this.preparationMs = 0; this.preparationSkips = 0;
+        this.calculatorUses = 0; this.calculatorElapsedMs = 0; this.helpElapsedMs = 0;
+        this.phaseDurationsMs = {}; this.barrierImpacts = 0; this.bossBulletImpacts = 0;
+        this.classOrder = IP2LiveSubnetBlasterRules.shuffle(['A', 'B', 'C']);
+        this.askedOrder = IP2LiveSubnetBlasterRules.shuffle(['broadcast', 'network']);
+        this.bitsOrder = IP2LiveSubnetBlasterRules.shuffle(['borrowed', 'host']);
+        this.challengeSerial = 0; this.animTick = 0; this.elapsedMs = 0; this.lastUpdateAt = null;
+        this.selectedLane = 1; this.calculatorOpen = false; this.helpOpen = false;
+        this.tutorialWalkthroughActive = false; this.tutorialPromptActive = false; this.tutorialSeenPhases = {};
+        this.pointerPosition = null;
+        this.skipHoverStartedAt = null;
         this.buttonRects = [];
-        this.pairRects = [];
-        this.confirmRect = null;
-        this.statusText = 'Connect every node pair without touching virus nodes.';
-        this.statusTone = 'idle';
-        this.lastDiagnostic = null;
-        this.trace = null;
-        this.tutorialPairIndex = 0;
-        this.tutorialReadyToSubmit = false;
-        this.tutorialPromptActive = false;
-        this.tutorialStarted = false;
+        this._newEncounter(this.options.problem);
     }
-
-    _generateProblem(spec) {
-        const profile = spec && spec.profile ? spec.profile : {};
-        const questIndex = Number(profile.index || 1) || 1;
-        const difficulty = this._difficultyProfile(questIndex);
-        if (spec && spec.tutorial === true && questIndex === 1) return this._createDefaultTutorialProblem(difficulty);
-
-        for (let attempt = 0; attempt < 90; attempt++) {
-            const directionWeights = this._randomDirectionWeights(questIndex, !!spec.tutorial);
-            this.directionWeights = directionWeights;
-            const desiredPairs = questIndex >= 4 ? 3 : 2;
-            const pairCount = spec.tutorial ? 2 : desiredPairs;
-            const anchors = this._randomPairAnchors(pairCount, difficulty.edgeMargin);
-            const usedSolutionKeys = {};
-            const pairs = [];
-            const allSolutionPaths = [];
-            let valid = true;
-
-            for (let i = 0; i < pairCount; i++) {
-                const classInfo = this._randomCIDRClass(difficulty);
-                const minAddedBits = Math.min(classInfo.maxAddedBits, Math.max(classInfo.minAddedBits, difficulty.minAddedBits + i));
-                const targetAddedBits = this._randomInt(minAddedBits, classInfo.maxAddedBits);
-                if (usedSolutionKeys[this._tileKey(anchors[i])]) {
-                    valid = false;
-                    break;
-                }
-                const route = this._generatePairRoute(anchors[i], targetAddedBits, questIndex, i, usedSolutionKeys, difficulty);
-                if (!route || !route.path || route.path.length < 3 || this._manhattan(route.path[0], route.path[route.path.length - 1]) < difficulty.minEndpointDistance) {
-                    valid = false;
-                    break;
-                }
-                for (let p = 0; p < route.path.length; p++) {
-                    if (usedSolutionKeys[this._tileKey(route.path[p])]) valid = false;
-                }
-                if (!valid) break;
-                for (let p = 0; p < route.path.length; p++) usedSolutionKeys[this._tileKey(route.path[p])] = true;
-                allSolutionPaths.push(route.path);
-
-                const targetCIDR = classInfo.originalCIDR + targetAddedBits;
-                const optimizedHostBits = Math.max(0, 32 - targetCIDR);
-                const ipAddress = this._randomIPForClass(classInfo.ipClass);
-                const ipInt = this.tools && typeof this.tools.ipToInt === 'function' ? this.tools.ipToInt(ipAddress) : null;
-                pairs.push({
-                    id: 'pair-' + (i + 1),
-                    label: 'PAIR ' + (i + 1),
-                    startLabel: 'A' + (i + 1),
-                    endLabel: 'B' + (i + 1),
-                    start: this._cloneTile(route.path[0]),
-                    end: this._cloneTile(route.path[route.path.length - 1]),
-                    solutionMoves: route.moves.slice(),
-                    solutionPath: route.path.map((t) => this._cloneTile(t)),
-                    ipAddress,
-                    ipInt,
-                    ipClass: classInfo.ipClass,
-                    originalCIDR: classInfo.originalCIDR,
-                    targetAddedBits,
-                    targetCIDR,
-                    optimizedHostBits,
-                    optimizedCapacity: this._capacityForHostBits(optimizedHostBits),
-                    requiredHosts: this._randomRequiredHosts(optimizedHostBits),
-                    allocatedCIDR: this._allocatedCIDR(ipInt, targetCIDR),
-                });
-            }
-            if (!valid || pairs.length !== pairCount) continue;
-
-            const solutionBufferKeys = this._buildMultiPathBufferKeys(allSolutionPaths);
-            const blockedKeys = {};
-            for (let i = 0; i < pairs.length; i++) {
-                const path = pairs[i].solutionPath;
-                for (let p = 0; p < path.length; p++) blockedKeys[this._tileKey(path[p])] = true;
-            }
-
-            const viruses = [];
-            for (let i = 0; i < pairs.length; i++) {
-                this._addDefaultPathDecoyViruses(viruses, blockedKeys, pairs[i].start, pairs[i].end, pairs[i].solutionPath, solutionBufferKeys, questIndex, i);
-            }
-
-            const desiredVirusCount = Math.min(difficulty.maxViruses, difficulty.baseViruses + questIndex * difficulty.virusStep + pairCount * 3);
-            this._fillRandomViruses(viruses, blockedKeys, pairs, solutionBufferKeys, desiredVirusCount, 1500);
-
-            const baseCIDR = pairs.map((p) => p.allocatedCIDR).join(' + ');
-            return {
-                id: ['dual-pair-matrix', questIndex, Date.now(), Math.floor(Math.random() * 9999)].join(':'),
-                questIndex,
-                difficulty,
-                directionWeights,
-                baseCIDR,
-                zoneCount: pairCount,
-                pairCount,
-                pairs,
-                viruses,
-                solutionBufferKeys,
-            };
-        }
-
-        return this._fallbackProblem(spec, difficulty);
+    async load() { this.loading = false; this.lastUpdateAt = null; this._paint(); }
+    _newEncounter(problem) {
+        const rules = IP2LiveSubnetBlasterRules, old = this.problem;
+        const previous = old && old.asked && old.givenAddress ? this._dockValues(old) : null;
+        const settings = { ipClass: this.classOrder[3 - this.bossHP], asked: this.askedOrder[this.challengeSerial % 2], givenBits: this.bitsOrder[Math.floor(this.challengeSerial / 2) % 2] };
+        this.problem = problem && problem.asked && problem.answerAddress ? problem : rules.generate(settings);
+        for (let n = 0; old && this.problem.id === old.id && n < 10; n++) this.problem = rules.generate(settings);
+        if (problem && problem.ipClass) this.classOrder = [problem.ipClass].concat(this.classOrder.filter(value => value !== problem.ipClass));
+        this.challengeSerial++;
+        this.waves = rules.waves(this.problem).map(wave => ({ ...wave, choices: rules.shuffle(wave.choices) }));
+        this.waveIndex = 0; this.weapon = {}; this.weaponLabels = {}; this.encounterResult = null;
+        this.encounterTelemetry = { preparationMs: 0, preparationSkipped: false, calculatorUses: 0, calculatorElapsedMs: 0,
+            activeElapsedMs: 0, barrierImpacts: 0, bossBulletImpacts: 0, collectedAtMs: {} };
+        this.thinkRemainingMs = 60000; this.pickup = null; this.projectiles = []; this.barrierHits = [0, 0, 0];
+        this.fireCooldownMs = 500; this.waveAgeMs = 0;
+        this.bossImpactCount = 0; this.bossImpactFlashMs = 0;
+        this.calculatorOpen = false; this.calculatorExponent = 0;
+        this.addressDrop = null;
+        this.dockTyping = previous && !this.options.reducedMotion ? { elapsedMs: 0, previous } : null;
+        this._setPhase('think'); this.lastUpdateAt = null; this._paint();
     }
-
-    _createDefaultTutorialProblem(difficulty) {
-        const directionWeights = { R: 1, L: 2, U: 3, D: 4 };
-        const routes = [
-            { start: { col: 2, row: 3 }, moves: ['R', 'U'], ipAddress: '172.20.18.44', ipClass: 'B', originalCIDR: 16, targetAddedBits: 4, requiredHosts: 900 },
-            { start: { col: 2, row: 11 }, moves: ['R', 'R', 'U'], ipAddress: '192.168.60.12', ipClass: 'C', originalCIDR: 24, targetAddedBits: 5, requiredHosts: 4 },
-        ];
-        this.directionWeights = directionWeights;
-        const pairs = routes.map((entry, index) => {
-            const solutionPath = this._routeFromMoves(entry.start, entry.moves).path;
-            const targetCIDR = entry.originalCIDR + entry.targetAddedBits;
-            const ipInt = this.tools && typeof this.tools.ipToInt === 'function' ? this.tools.ipToInt(entry.ipAddress) : null;
-            return {
-                id: 'pair-' + (index + 1), label: 'PAIR ' + (index + 1), startLabel: 'A' + (index + 1), endLabel: 'B' + (index + 1),
-                start: this._cloneTile(solutionPath[0]), end: this._cloneTile(solutionPath[solutionPath.length - 1]),
-                solutionMoves: entry.moves.slice(), solutionPath: solutionPath.map((tile) => this._cloneTile(tile)),
-                ipAddress: entry.ipAddress, ipInt, ipClass: entry.ipClass, originalCIDR: entry.originalCIDR,
-                targetAddedBits: entry.targetAddedBits, targetCIDR,
-                optimizedHostBits: 32 - targetCIDR, optimizedCapacity: this._capacityForHostBits(32 - targetCIDR),
-                requiredHosts: entry.requiredHosts, allocatedCIDR: this._allocatedCIDR(ipInt, targetCIDR),
-            };
-        });
-        const solutionBufferKeys = this._buildMultiPathBufferKeys(pairs.map((pair) => pair.solutionPath));
-        return {
-            id: 'cidr-matrix-tutorial-default-v1', questIndex: 1, difficulty, directionWeights,
-            baseCIDR: pairs.map((pair) => pair.allocatedCIDR).join(' + '), zoneCount: 2, pairCount: 2, pairs,
-            viruses: [{ col: 7, row: 2 }, { col: 11, row: 4 }, { col: 14, row: 7 }, { col: 7, row: 10 }, { col: 10, row: 12 }, { col: 14, row: 14 }],
-            solutionBufferKeys,
-        };
-    }
-
-    async load() {
-        this.loading = false;
-        if (Manager && Manager.Stack) Manager.Stack.requestPaintHUD = true;
-    }
-
-    update() {
-        this.animTick++;
-        if (IP2Live.GameplayCompletionPopup && typeof IP2Live.GameplayCompletionPopup.update === 'function') {
-            IP2Live.GameplayCompletionPopup.update(this);
-        }
-        if (this.tutorialMode && !this.tutorialStarted) {
-            this.tutorialStarted = true;
-            this._showTutorialIntro();
-        }
-        if (this.trace) this._updateTrace();
-        this._updateVirusSpread();
-        if (Manager && Manager.Stack) Manager.Stack.requestPaintHUD = true;
-    }
-
-    _showTutorialIntro() {
+    _setPhase(phase) { this.phase = phase; this.phaseElapsedMs = 0; if (phase !== 'think') this.skipHoverStartedAt = null; }
+    _paint() { if (Manager && Manager.Stack) Manager.Stack.requestPaintHUD = true; }
+    _dialogueActive() { return !!(IP2Live.DialogueManager && IP2Live.DialogueManager.isActive && IP2Live.DialogueManager.isActive()); }
+    startTutorialWalkthrough() {
         const helper = IP2Live.IPCIDRQuarantineMatrixTutorial;
-        if (!helper || typeof helper.showIntro !== 'function') {
-            this._showTutorialPairStep(0);
-            return;
-        }
-        this.tutorialPromptActive = true;
-        const started = helper.showIntro(this._tutorialContext(0), () => {
-            this.tutorialPromptActive = false;
-            this._showTutorialPairStep(0);
+        if (!helper || typeof helper.showIntro !== 'function') return false;
+        this._finishDockTyping();
+        this.tutorialWalkthroughActive = true;
+        const started = this._showTutorialLesson('intro', finish => helper.showIntro(this.problem, finish), () => {
+            if (!this.finished && !this._ip2liveGameplayExited && typeof helper.showPreparationGuide === 'function') {
+                this._showTutorialLesson('preparation', finish => helper.showPreparationGuide(this.problem, finish));
+            }
         });
-        if (!started) {
-            this.tutorialPromptActive = false;
-            this._showTutorialPairStep(0);
-        }
+        if (started === false) this.tutorialWalkthroughActive = false;
+        return started;
     }
-
-    onKeyPressed(key) {
-        if (IP2Live.DialogueManager && IP2Live.DialogueManager.isActive && IP2Live.DialogueManager.isActive()) {
-            const valueWhenDialogue = key && (key.name || key.code || key);
-            const upperWhenDialogue = String(valueWhenDialogue || '').toUpperCase();
-            if (upperWhenDialogue === 'ENTER' || upperWhenDialogue === 'SPACE' || upperWhenDialogue === 'SPACEBAR') IP2Live.DialogueManager.advance();
-            return true;
-        }
-        if (this.finished) return true;
-        const value = key && (key.name || key.code || key);
-        const upper = String(value || '').toUpperCase();
-        if (Data.Keyboards.checkCancelMenu && Data.Keyboards.checkCancelMenu(key)) {
-            this._openPauseMenu();
-            return true;
-        }
-        if (this.phase !== 'build') return true;
-        if (upper === 'TAB') this._selectPair((this.activePairIndex + 1) % this.problem.pairs.length);
-        if (upper === 'ARROWRIGHT' || upper === 'D') this._appendDirection('R');
-        if (upper === 'ARROWLEFT' || upper === 'A') this._appendDirection('L');
-        if (upper === 'ARROWUP' || upper === 'W') this._appendDirection('U');
-        if (upper === 'ARROWDOWN' || upper === 'S') this._appendDirection('D');
-        if (upper === 'Z' || upper === 'BACKSPACE') this._undoPath();
-        if (upper === 'R') this._clearPath();
-        if (upper === 'ENTER' || upper === 'SPACE' || upper === 'SPACEBAR') this._submit();
-        return true;
-    }
-
-    onMouseDown(x, y) {
-        if (IP2Live.DialogueManager && IP2Live.DialogueManager.isActive && IP2Live.DialogueManager.isActive()) {
-            IP2Live.DialogueManager.advance();
-            return true;
-        }
-        if (this.phase !== 'build') return true;
-        this._buildInteractionRects(this._metrics());
-        for (let i = 0; i < this.pairRects.length; i++) {
-            if (this._pointInRect(x, y, this.pairRects[i])) {
-                this._selectPair(i);
-                return true;
-            }
-        }
-        for (let i = 0; i < this.buttonRects.length; i++) {
-            const b = this.buttonRects[i];
-            if (this._pointInRect(x, y, b)) {
-                if (b.action === 'undo') this._undoPath();
-                if (b.action === 'clear') this._clearPath();
-                this._playCursor();
-                return true;
-            }
-        }
-        if (this.confirmRect && this._pointInRect(x, y, this.confirmRect)) {
-            this._submit();
-            return true;
-        }
-        const grid = this._gridRect;
-        if (grid && this._pointInRect(x, y, grid)) {
-            const tile = this._tileFromPoint(x, y, grid);
-            const pairIndex = this._pairIndexForNode(tile);
-            if (pairIndex !== -1) this._selectPair(pairIndex);
-            this.draggingPath = true;
-            this._handlePathTile(tile);
-        }
-        return true;
-    }
-
-    onMouseMove(x, y) {
-        if (this.phase !== 'build' || !this.draggingPath) return true;
-        const grid = this._gridRect;
-        if (grid && this._pointInRect(x, y, grid)) this._handlePathTile(this._tileFromPoint(x, y, grid));
-        return true;
-    }
-
-    onMouseUp() {
-        this.draggingPath = false;
-        return true;
-    }
-
-    _selectPair(index) {
-        const next = Math.max(0, Math.min(this.problem.pairs.length - 1, Number(index) || 0));
-        this.activePairIndex = next;
-        this._setStatus('Active route: Pair ' + (next + 1) + '.', 'idle');
-        this._playCursor();
-        this._afterTutorialAction('select');
-        return true;
-    }
-
-    _appendDirection(direction) {
-        const path = this._activePath();
-        const next = this._moveTile(path[path.length - 1], direction);
-        this._handlePathTile(next);
-    }
-
-    _handlePathTile(tile) {
-        if (!tile || this.phase !== 'build' || !this._inGrid(tile)) return false;
-        const pair = this._activePair();
-        const path = this._activePath();
-        const existingIndex = this._pathIndex(tile, path);
-        if (existingIndex === path.length - 1) return true;
-        if (existingIndex !== -1) return this._rewindTo(existingIndex);
-        const last = path[path.length - 1];
-        const distance = this._manhattan(last, tile);
-        if (distance > 1 && (last.col === tile.col || last.row === tile.row)) {
-            const direction = tile.col > last.col ? 'R' : (tile.col < last.col ? 'L' : (tile.row > last.row ? 'D' : 'U'));
-            let ok = true;
-            for (let i = 0; i < distance; i++) {
-                const before = path[path.length - 1];
-                const next = this._moveTile(before, direction);
-                ok = this._handlePathTile(next) && ok;
-                if (!ok || this._sameTile(next, tile)) break;
-            }
-            return ok;
-        }
-        if (!this._isAdjacent(last, tile)) {
-            if (this._sameTile(tile, pair.start)) this._clearPath();
-            else {
-                this._setStatus('Only adjacent tiles can extend the active connector.', 'bad');
-                if (this.tutorialMode) this._showTutorialFeedback('adjacent');
-            }
-            return false;
-        }
-        if (this._isVirus(tile)) {
-            this._setStatus('Virus node blocks that route. Choose another tile.', 'bad');
-            this._playCancel();
-            if (this.tutorialMode) this._showTutorialFeedback('virus');
-            return false;
-        }
-        if (this._isBlockedByOtherPair(tile, this.activePairIndex)) {
-            this._setStatus('That tile is reserved by the other connector.', 'bad');
-            this._playCancel();
-            if (this.tutorialMode) this._showTutorialFeedback('overlap');
-            return false;
-        }
-        path.push(this._cloneTile(tile));
-        const connected = this._sameTile(tile, pair.end);
-        this._syncTutorialSubmitReadiness();
-        this._setStatus(connected ? 'Pair ' + (this.activePairIndex + 1) + ' linked. Switch pairs or confirm both routes.' : 'Pair ' + (this.activePairIndex + 1) + ' path updated.', connected ? 'good' : 'idle');
-        this._playCursor();
-        this._afterTutorialAction(connected ? 'connect' : 'path');
-        return true;
-    }
-
-    _undoPath() {
-        const path = this._activePath();
-        if (this.phase !== 'build' || path.length <= 1) return false;
-        path.pop();
-        this._syncTutorialSubmitReadiness();
-        this._setStatus('Last tile removed from Pair ' + (this.activePairIndex + 1) + '.', 'idle');
-        return true;
-    }
-
-    _clearPath() {
-        if (this.phase !== 'build') return false;
-        const pair = this._activePair();
-        this.paths[this.activePairIndex] = [this._cloneTile(pair.start)];
-        this._syncTutorialSubmitReadiness();
-        this._setStatus('Pair ' + (this.activePairIndex + 1) + ' cleared.', 'idle');
-        return true;
-    }
-
-    _rewindTo(index) {
-        const path = this._activePath();
-        if (index < 0 || index >= path.length) return false;
-        this.paths[this.activePairIndex] = path.slice(0, index + 1);
-        this._syncTutorialSubmitReadiness();
-        this._setStatus('Pair ' + (this.activePairIndex + 1) + ' rewound.', 'idle');
-        this._playCursor();
-        return true;
-    }
-
-    _submit() {
-        if (this.phase !== 'build') return;
-        const result = this._evaluatePaths();
-        this.lastDiagnostic = result.ok ? null : result;
-        if (this.tutorialMode && !result.ok) {
-            this.tutorialReadyToSubmit = false;
-            if (result.reason === 'disconnected' || !this._allPairsGeometricallyConnected()) {
-                this._showTutorialFeedback('submitEarly');
-                return;
-            }
-            this._playCancel();
-            this._startTrace(result);
-            return;
-        }
-        if (!this.tutorialMode) this.attemptsUsed++;
-        if (result.ok) this._playConfirm();
-        else this._playCancel();
-        this._startTrace(result);
-    }
-
-    _evaluatePaths() {
-        const pairResults = [];
-        const occupied = {};
-        for (let i = 0; i < this.problem.pairs.length; i++) {
-            const pair = this.problem.pairs[i];
-            const stats = this._pathStats(i);
-            const result = Object.assign({}, stats, {
-                pairIndex: i,
-                label: pair.label,
-                targetCIDR: pair.targetCIDR,
-                optimizedCapacity: pair.optimizedCapacity,
-                requiredHosts: pair.requiredHosts,
-                targetAddedBits: pair.targetAddedBits,
-                solutionCIDR: pair.allocatedCIDR,
-            });
-            pairResults.push(result);
-            if (!stats.connected) return this._diagnostic('disconnected', 'Pair ' + (i + 1) + ' never reached ' + pair.endLabel + '.', pairResults);
-            if (stats.hitVirus) return this._diagnostic('virus', 'Pair ' + (i + 1) + ' touched a virus node.', pairResults);
-            if (stats.currentCIDR !== pair.targetCIDR) return this._diagnostic('not_optimized', 'Pair ' + (i + 1) + ' movement bits do not match the optimized CIDR.', pairResults);
-            if (stats.currentCapacity < pair.requiredHosts) return this._diagnostic('too_small', 'Pair ' + (i + 1) + ' host capacity is too small.', pairResults);
-            if (stats.currentCapacity > pair.optimizedCapacity) return this._diagnostic('too_big', 'Pair ' + (i + 1) + ' host capacity is larger than the optimized block.', pairResults);
-            for (let p = 0; p < this.paths[i].length; p++) {
-                const key = this._tileKey(this.paths[i][p]);
-                if (occupied[key]) return this._diagnostic('overlap', 'Both connectors are using tile ' + this._tileLabel(this.paths[i][p]) + '.', pairResults);
-                occupied[key] = true;
-            }
-        }
-        return Object.assign(this._baseResult(pairResults), { ok: true, passed: true, diagnosticReason: null });
-    }
-
-    _diagnostic(reason, line, pairResults) {
-        const lines = ['SIMULATION FAILED.', line || 'The connector matrix is not stable.', 'Connect all pairs cleanly and match the movement-bit targets.'];
-        return Object.assign(this._baseResult(pairResults || this._pairResults()), { ok: false, passed: false, reason, diagnosticReason: reason, lines });
-    }
-
-    _baseResult(pairResults) {
-        const results = pairResults || this._pairResults();
-        return {
-            gameplayId: 'ip_cidr_quarantine_matrix',
-            problemId: this.problem.id,
-            baseCIDR: this.problem.baseCIDR,
-            zoneCount: this.problem.zoneCount,
-            pairCount: this.problem.pairCount,
-            selectedCIDRs: results.map((r) => r.allocatedCIDR),
-            solutionCIDRs: this.problem.pairs.map((p) => p.allocatedCIDR),
-            pairResults: results,
-            pathTilesByPair: this.paths.map((path) => path.map((t) => this._cloneTile(t))),
-            moveWeightsByPair: results.map((r) => r.moves.map((m) => ({ direction: m.direction, weight: m.weight }))),
-            directionWeights: Object.assign({}, this.directionWeights),
-            difficulty: Object.assign({}, this.problem.difficulty || {}),
-            attemptsUsed: this.attemptsUsed,
-            maxAttempts: this.maxAttempts,
-            retries: Math.max(0, this.attemptsUsed - 1),
+    _showTutorialLesson(key, show, after) {
+        this.tutorialSeenPhases = this.tutorialSeenPhases || {};
+        this.tutorialSeenPhases[key] = true; this.tutorialPromptActive = true;
+        const finish = () => {
+            this.tutorialPromptActive = false; this.onGameplayResume(); this._paint();
+            if (typeof after === 'function') after();
         };
+        const started = show(finish);
+        if (started === false) this.tutorialPromptActive = false;
+        return started;
     }
-
-    _pairResults() {
-        const out = [];
-        for (let i = 0; i < this.problem.pairs.length; i++) {
-            const pair = this.problem.pairs[i];
-            out.push(Object.assign(this._pathStats(i), {
-                pairIndex: i,
-                label: pair.label,
-                targetCIDR: pair.targetCIDR,
-                optimizedCapacity: pair.optimizedCapacity,
-                requiredHosts: pair.requiredHosts,
-                targetAddedBits: pair.targetAddedBits,
-                solutionCIDR: pair.allocatedCIDR,
-            }));
+    _maybeShowTutorialGuide() {
+        if (!this.tutorialWalkthroughActive || this.tutorialPromptActive || this.finished || this.calculatorOpen || this.helpOpen || this._dialogueActive()) return;
+        const key = this.phase === 'barriers' ? this.waves[this.waveIndex].key : this.phase === 'boss' ? 'boss' : null;
+        const helper = IP2Live.IPCIDRQuarantineMatrixTutorial;
+        if (!key || this.tutorialSeenPhases[key] || !helper || typeof helper.showPhaseGuide !== 'function') return;
+        this._showTutorialLesson(key, finish => helper.showPhaseGuide(key, this.problem, finish));
+    }
+    _ensureSessionCompatible() {
+        if (this.gameplayVersion !== 'subnet-blaster-v4' || !this.problem || !this.problem.asked || !Array.isArray(this.projectiles) ||
+            !['think', 'barriers', 'pickup', 'boss_enter', 'boss', 'boss_hit', 'counterattack', 'player_hit', 'boss_retreat', 'drop', 'success', 'failed'].includes(this.phase)) this._configure();
+        // Resume older v4 scenes without inventing the telemetry they never stored.
+        if (!this.encounterTelemetry) {
+            this.decisionHistoryComplete = false;
+            this.encounterTelemetry = { preparationMs: 0, preparationSkipped: false, calculatorUses: 0, calculatorElapsedMs: 0,
+                activeElapsedMs: 0, barrierImpacts: 0, bossBulletImpacts: 0, collectedAtMs: {} };
         }
-        return out;
-    }
-
-    _pathStats(pairIndex, pathOverride) {
-        const pair = this.problem.pairs[pairIndex];
-        const path = pathOverride || this.paths[pairIndex] || [];
-        const moves = [];
-        let addedBits = 0;
-        let hitVirus = false;
-        for (let i = 0; i < path.length; i++) {
-            if (this._isVirus(path[i])) hitVirus = true;
-            if (i === 0) continue;
-            const direction = this._directionBetween(path[i - 1], path[i]);
-            const weight = this.directionWeights[direction] || 0;
-            addedBits += weight;
-            moves.push({ direction, weight, from: this._cloneTile(path[i - 1]), to: this._cloneTile(path[i]) });
+        for (const key of ['activeElapsedMs', 'preparationMs', 'preparationSkips', 'calculatorUses', 'calculatorElapsedMs', 'helpElapsedMs', 'barrierImpacts', 'bossBulletImpacts']) {
+            if (!Number.isFinite(this[key])) this[key] = 0;
         }
-        const currentCIDR = Number(pair.originalCIDR || 0) + addedBits;
-        return {
-            addedBits,
-            currentCIDR,
-            currentHostBits: Math.max(0, 32 - currentCIDR),
-            currentCapacity: this._capacityForHostBits(Math.max(0, 32 - currentCIDR)),
-            allocatedCIDR: this._allocatedCIDR(pair.ipInt, currentCIDR),
-            moves,
-            pathLength: path.length,
-            pathTiles: path.map((t) => this._cloneTile(t)),
-            connected: this._sameTile(path[path.length - 1], pair.end),
-            hitVirus,
-        };
+        this.phaseDurationsMs = this.phaseDurationsMs || {}; this.decisionHistory = this.decisionHistory || [];
+        this.tutorialSeenPhases = this.tutorialSeenPhases || {};
+        if (!this.addressDrop && this.encounterResult && this.encounterResult.passed &&
+            ['boss_hit', 'boss_retreat', 'drop', 'success'].includes(this.phase)) {
+            // Existing v4 saves keep their current encounter and join the new pickup sequence.
+            const elapsed = this.phase === 'boss_hit' ? this.phaseElapsedMs
+                : this.phase === 'boss_retreat' ? 950 + this.phaseElapsedMs : 1800 + this.phaseElapsedMs;
+            this.addressDrop = { elapsedMs: elapsed, installed: this.phase === 'success' || elapsed >= this._addressArrivalMs() };
+        }
+        if (this.addressDrop === undefined) this.addressDrop = null;
+        if (this.dockTyping === undefined) this.dockTyping = null;
     }
-
-    _startTrace(result) {
-        this.phase = 'tracing';
-        this.trace = { result, tick: 0, stepTicks: 18, finished: false, resolveDelay: 62 };
-        this.activePairIndex = 0;
-        this.statusText = result.ok ? 'Matrix signal locked. Replaying connector simulation.' : 'Matrix unstable. Replaying fault trace.';
-        this.statusTone = result.ok ? 'good' : 'bad';
-    }
-
-    _updateTrace() {
-        if (!this.trace) return;
-        this.trace.tick++;
-        const totalMoves = this._traceTotalMoves();
-        const endTick = totalMoves * this.trace.stepTicks + this.trace.resolveDelay;
-        if (this.trace.tick >= totalMoves * this.trace.stepTicks) this.trace.finished = true;
-        this.activePairIndex = this._traceActivePairIndex();
-        if (this.trace.tick >= endTick) this._resolveTrace();
-    }
-
-    _resolveTrace() {
-        if (!this.trace) return;
-        const result = this.trace.result;
-        this.trace = null;
-        if (result.ok) {
-            if (this.tutorialMode && IP2Live.IPCIDRQuarantineMatrixTutorial && typeof IP2Live.IPCIDRQuarantineMatrixTutorial.showComplete === 'function') {
-                this.phase = 'tutorial_complete';
-                IP2Live.IPCIDRQuarantineMatrixTutorial.showComplete(() => this._finishSuccess(result));
-                return;
+    update() {
+        this._ensureSessionCompatible();
+        const now = Date.now(), dt = this.lastUpdateAt === null ? 0 : Math.max(0, Math.min(100, now - this.lastUpdateAt));
+        this.lastUpdateAt = now;
+        const popup = IP2Live.GameplayCompletionPopup;
+        if (popup && popup.update) popup.update(this);
+        if (this.finished || this._dialogueActive() || this.tutorialPromptActive || this.calculatorOpen || this.helpOpen) {
+            if (!this.finished && this.helpOpen) this.helpElapsedMs = (this.helpElapsedMs || 0) + dt;
+            this._paint(); return;
+        }
+        this._maybeShowTutorialGuide();
+        if (this._dialogueActive() || this.tutorialPromptActive) { this._paint(); return; }
+        if (this.phase === 'think' && this._dockTypingActive()) {
+            this.dockTyping.elapsedMs += dt;
+            if (!this.options.reducedMotion) this.animTick += dt / 16.667;
+            this._paint(); return;
+        }
+        if (this.addressDrop) {
+            this.addressDrop.elapsedMs += dt;
+            if (this.addressDrop.elapsedMs >= this._addressArrivalMs()) this.addressDrop.installed = true;
+        }
+        this.phaseDurationsMs = this.phaseDurationsMs || {};
+        this.phaseDurationsMs[this.phase] = (this.phaseDurationsMs[this.phase] || 0) + dt;
+        if (this.phase === 'barriers') {
+            this.activeElapsedMs = (this.activeElapsedMs || 0) + dt;
+            this.encounterTelemetry.activeElapsedMs += dt;
+        }
+        if (this.phase === 'think') { this.preparationMs = (this.preparationMs || 0) + dt; this.encounterTelemetry.preparationMs += dt; }
+        this.elapsedMs += dt; this.phaseElapsedMs += dt;
+        this.bossImpactFlashMs = Math.max(0, this.bossImpactFlashMs - dt);
+        if (!this.options.reducedMotion) this.animTick += dt / 16.667;
+        const phase = this.phase;
+        if (phase === 'think') {
+            this.thinkRemainingMs = Math.max(0, this.thinkRemainingMs - dt);
+            if (!this.thinkRemainingMs) this._beginWave();
+        } else if (phase === 'barriers' || phase === 'boss') {
+            this.waveAgeMs += dt;
+            this._updateShots(dt);
+            if (this.phase === phase) {
+                this.fireCooldownMs -= dt;
+                if (this.fireCooldownMs <= 0) { this._fire(); this.fireCooldownMs += 160; }
             }
-            this._finishSuccess(result);
-            return;
-        }
-        if (this.tutorialMode) {
-            this.phase = 'build';
-            this._showTutorialFeedback(result.reason || 'submitWrong');
-            return;
-        }
-        if (this.attemptsUsed >= this.maxAttempts) {
-            this._failOut(result);
-            return;
-        }
-        this._showDiagnostic(result);
-    }
-
-    _traceTotalMoves() {
-        let total = 0;
-        for (let i = 0; i < this.paths.length; i++) total += Math.max(0, (this.paths[i] || []).length - 1);
-        return total;
-    }
-
-    _traceElapsedMoves() {
-        if (!this.trace) return this._traceTotalMoves();
-        return Math.max(0, Math.min(this._traceTotalMoves(), Math.floor(this.trace.tick / this.trace.stepTicks)));
-    }
-
-    _traceVisibleMoves(pairIndex) {
-        if (!this.trace) return Math.max(0, (this.paths[pairIndex] || []).length - 1);
-        let remaining = this._traceElapsedMoves();
-        for (let i = 0; i < this.paths.length; i++) {
-            const moves = Math.max(0, (this.paths[i] || []).length - 1);
-            if (i === pairIndex) return Math.max(0, Math.min(moves, remaining));
-            remaining -= moves;
-        }
-        return 0;
-    }
-
-    _traceActivePairIndex() {
-        if (!this.trace) return this.activePairIndex || 0;
-        let remaining = this._traceElapsedMoves();
-        for (let i = 0; i < this.paths.length; i++) {
-            const moves = Math.max(0, (this.paths[i] || []).length - 1);
-            if (remaining <= moves) return i;
-            remaining -= moves;
-        }
-        return Math.max(0, this.paths.length - 1);
-    }
-
-    _traceStats(pairIndex) {
-        const path = this.paths[pairIndex] || [];
-        const visibleMoves = this._traceVisibleMoves(pairIndex);
-        return this._pathStats(pairIndex, path.slice(0, Math.min(path.length, visibleMoves + 1)));
-    }
-
-    _traceCalculationLine(pairIndex) {
-        const pair = this.problem.pairs[pairIndex];
-        const visibleMoves = this._traceVisibleMoves(pairIndex);
-        const stats = this._traceStats(pairIndex);
-        if (visibleMoves <= 0 || !stats.moves.length) return pair.label + ': path bits +0. CIDR stays /' + pair.originalCIDR + '.';
-        const last = stats.moves[stats.moves.length - 1];
-        const before = stats.addedBits - last.weight;
-        return pair.label + ' move ' + last.direction + ' +' + last.weight + ': bits +' + before + ' + ' + last.weight + ' = +' + stats.addedBits;
-    }
-
-    _traceCIDRLine(pairIndex, stats) {
-        const pair = this.problem.pairs[pairIndex];
-        const s = stats || this._traceStats(pairIndex);
-        if (this.tutorialMode) return pair.label + ': /' + pair.originalCIDR + ' +' + s.addedBits + ' = /' + s.currentCIDR + '  |  host bits 32-' + s.currentCIDR + ' = ' + s.currentHostBits;
-        return pair.label + ': /' + pair.originalCIDR + ' +' + s.addedBits + ' = /' + s.currentCIDR;
-    }
-
-    _finalTraceLine() {
-        const result = this.trace && this.trace.result;
-        if (result && !result.ok) return 'Fault: ' + this._reasonLabel(result.reason) + '. Review the highlighted connector values.';
-        return 'Final: all pairs linked, optimized, and clear of virus nodes.';
-    }
-
-    _showDiagnostic(result) {
-        const remaining = Math.max(0, this.maxAttempts - this.attemptsUsed);
-        const lines = (result.lines || ['SIMULATION FAILED.']).slice();
-        lines.push('Retries remaining: ' + this._retryLabel(remaining) + '/' + this._attemptLimitLabel() + '.');
-        const after = () => {
-            if (this.attemptsUsed >= this.maxAttempts) {
-                this._failOut(result);
-                return;
+        } else if (phase === 'pickup') {
+            if (this.phaseElapsedMs >= 720) this._completePickup();
+        } else if (phase === 'boss_enter') {
+            if (this.phaseElapsedMs >= 850) { this._setPhase('boss'); this.fireCooldownMs = 180; }
+        } else if (phase === 'boss_hit') {
+            if (this.phaseElapsedMs >= 950) this._setPhase('boss_retreat');
+        } else if (phase === 'counterattack') {
+            if (this.phaseElapsedMs >= 1100) this._takeBossAttack();
+        } else if (phase === 'player_hit') {
+            if (this.phaseElapsedMs >= 700) this._setPhase('boss_retreat');
+        } else if (phase === 'boss_retreat') {
+            if (this.phaseElapsedMs >= 850) {
+                if (this.encounterResult.passed) this._setPhase('drop');
+                else if (!this.hearts) this._failOut();
+                else this._newEncounter();
             }
-            this.phase = 'build';
-            this.statusText = 'Path rejected: ' + this._reasonLabel(result.reason) + '. Adjust all pairs and confirm again.';
-            this.statusTone = 'bad';
-        };
-        this.phase = 'diagnostic';
-        if (IP2Live.GameManager && typeof IP2Live.GameManager.handleGameplayMistake === 'function') {
-            IP2Live.GameManager.handleGameplayMistake('ip_cidr_quarantine_matrix', {
-                mapId: this.options.mapId || (this.options.spec && this.options.spec.mapId) || 13,
-                questId: this.options.questId,
-                objectiveId: this.options.objectiveId,
-                mistakes: [{ reason: result.reason, problemId: this.problem.id }],
-                attemptsRemaining: remaining,
-                result,
-                onComplete: function () {},
-            });
+        } else if (phase === 'drop' && this.addressDrop &&
+            this.addressDrop.elapsedMs >= this._addressArrivalMs() + this.constructor.ADDRESS_DROP.settle) this._continue();
+        this._paint();
+    }
+    _skipPreparation() {
+        if (this.phase !== 'think' || this.finished || this.calculatorOpen || this.helpOpen || this.tutorialPromptActive || this._dialogueActive()) return;
+        this._finishDockTyping();
+        this.preparationSkips = (this.preparationSkips || 0) + 1; this.encounterTelemetry.preparationSkipped = true;
+        this._beginWave(); this._paint();
+    }
+    _beginWave() {
+        this._setPhase('barriers'); this.barrierHits = [0, 0, 0]; this.projectiles = [];
+        this.waveAgeMs = 0; this.fireCooldownMs = 500;
+    }
+    _updateShots(dt) {
+        const remaining = [];
+        for (const bullet of this.projectiles) {
+            bullet.y -= dt * 1.05;
+            if (bullet.y <= (bullet.kind === 'boss' ? 345 : 355)) {
+                if (bullet.kind === 'boss') this._hitBoss();
+                else this._hitBarrier(bullet.lane);
+                if (!['barriers', 'boss'].includes(this.phase)) break;
+            } else remaining.push(bullet);
         }
-        if (IP2Live.ARDiagnosticRewind && typeof IP2Live.ARDiagnosticRewind.show === 'function') {
-            IP2Live.ARDiagnosticRewind.show({ title: 'AR DIAGNOSTIC REWIND', lines, onComplete: after });
+        this.projectiles = ['barriers', 'boss'].includes(this.phase) ? remaining : [];
+    }
+    _fire() {
+        if (this.finished || this.calculatorOpen || this.helpOpen || this.tutorialPromptActive || this._dialogueActive() || !['barriers', 'boss'].includes(this.phase)) return false;
+        if (this.phase === 'boss' && this.projectiles.length) return false;
+        this.projectiles.push({ lane: this.selectedLane, y: 510, kind: this.phase === 'boss' ? 'boss' : 'barrier' });
+        this.bulletsFired++; return true;
+    }
+    _hitBarrier(lane) {
+        if (this.phase !== 'barriers' || lane < 0 || lane > 2) return;
+        this.barrierHits[lane]++;
+        this.barrierImpacts = (this.barrierImpacts || 0) + 1; this.encounterTelemetry.barrierImpacts++;
+        if (this.barrierHits[lane] < 10) return;
+        const wave = this.waves[this.waveIndex], choice = wave.choices[lane];
+        this.pickup = { key: wave.key, value: choice.value, label: choice.label, lane, x: 240 + lane * 400, y: 285 };
+        this.projectiles = []; this._setPhase('pickup'); this._sound('soundCursor');
+    }
+    _completePickup() {
+        if (this.phase !== 'pickup' || !this.pickup) return;
+        const item = this.pickup;
+        // Every choice is collected. Nothing is graded or rejected before APEX.
+        this.weapon[item.key] = item.value; this.weaponLabels[item.key] = item.label;
+        this.encounterTelemetry.collectedAtMs[item.key] = this.encounterTelemetry.activeElapsedMs;
+        this.pickup = null; this.waveIndex++;
+        if (this.waveIndex >= this.waves.length) { this._setPhase('boss_enter'); this.projectiles = []; }
+        else this._beginWave();
+    }
+    _hitBoss() {
+        if (this.phase !== 'boss') return;
+        this.bossImpactCount++; this.bossImpactFlashMs = 180;
+        this.bossBulletImpacts = (this.bossBulletImpacts || 0) + 1; this.encounterTelemetry.bossBulletImpacts++;
+        if (this.bossImpactCount < 5) return;
+        const p = this.problem;
+        const mistakes = ['operator', 'blockSize'].filter(key => this.weapon[key] !== p[key]);
+        this.totalShots += 2; this.correctShots += 2 - mistakes.length;
+        this.decisionHistory = this.decisionHistory || [];
+        for (const key of ['operator', 'blockSize']) this.decisionHistory.push({
+            stepKey: key === 'operator' ? 'address_operator' : 'subnet_block_size',
+            concept: key === 'operator' ? 'network_broadcast_direction' : 'host_bits_to_block_size',
+            submitted: this.weapon[key], expected: p[key], correct: this.weapon[key] === p[key],
+            issueType: this.weapon[key] === p[key] ? null : key === 'operator' ? 'wrong_address_direction'
+                : this.weapon[key] === p.blockSize - 2 ? 'usable_hosts_instead_of_total_addresses'
+                : this.weapon[key] === p.hostBits * 2 ? 'linear_instead_of_exponential' : 'wrong_block_size',
+            problemId: p.id, ipClass: p.ipClass, asked: p.asked, givenBits: p.givenBits, hostBits: p.hostBits,
+            borrowedBits: p.borrowedBits, givenAddress: p.givenAddress, collectedAtMs: this.encounterTelemetry.collectedAtMs[key] || 0,
+        });
+        this.encounterResult = { passed: !mistakes.length, mistakes, weapon: { ...this.weapon } };
+        this.projectiles = [];
+        if (mistakes.length) {
+            this._setPhase('counterattack');
         } else {
-            after();
+            this.previousBossHP = this.bossHP; this.bossHP--;
+            this.addressDrop = { elapsedMs: 0, installed: false };
+            this._recordEncounter(true, []); this._setPhase('boss_hit'); this._sound('soundConfirmation');
         }
     }
-
+    _takeBossAttack() {
+        if (this.phase !== 'counterattack') return;
+        this.hearts--; this.attemptsUsed++;
+        const mistakes = this.encounterResult.mistakes;
+        this._recordEncounter(false, mistakes); this._setPhase('player_hit'); this._sound('soundImpossible');
+        if (IP2Live.GameManager && typeof IP2Live.GameManager.handleGameplayMistake === 'function') {
+            IP2Live.GameManager.handleGameplayMistake(this.gameplayId, {
+                mapId: this.options.mapId || 13, questId: this.options.questId, objectiveId: this.options.objectiveId,
+                spec: this.options.spec,
+                developerTest: !!this.options.developerTest,
+                mistakes: this.decisionHistory.slice(-2).filter(decision => !decision.correct).map(decision => ({ ...decision, reason: decision.stepKey })),
+                attemptsRemaining: this.hearts, telemetryOnly: true,
+                result: { weapon: { ...this.weapon }, expected: { operator: this.problem.operator, blockSize: this.problem.blockSize } }, onComplete() {},
+            });
+        }
+    }
+    _recordEncounter(passed, mistakes) {
+        const p = this.problem;
+        this.roundHistory.push({ problemId: p.id, ipClass: p.ipClass, asked: p.asked, givenBits: p.givenBits, prefix: p.prefix,
+            defaultPrefix: p.defaultPrefix, availableBits: p.availableBits, hostBits: p.hostBits, borrowedBits: p.borrowedBits,
+            givenAddress: p.givenAddress, blockSize: p.blockSize, answer: p.answerAddress, correction: p.correction,
+            expected: { operator: p.operator, blockSize: p.blockSize }, passed, mistakes: mistakes.slice(), weapon: { ...this.weapon },
+            ...this.encounterTelemetry, collectedAtMs: { ...this.encounterTelemetry.collectedAtMs } });
+    }
+    _continue() {
+        if (this.finished || this.phase !== 'drop' || !this.addressDrop || !this.addressDrop.installed) return;
+        if (!this.hearts) this._failOut();
+        else if (!this.bossHP) this._finishSuccess();
+        else this._newEncounter();
+    }
+    _result(passed) {
+        return { telemetrySchemaVersion: 2, gameplayVersion: this.gameplayVersion, gameplayId: this.gameplayId, passed, problemId: this.problem.id,
+            baseCIDR: this.problem.baseCIDR, attemptsUsed: this.attemptsUsed + (passed ? 1 : 0), maxAttempts: 3,
+            retries: this.attemptsUsed, mistakeCount: this.attemptsUsed, heartsRemaining: this.hearts,
+            bossHits: 3 - this.bossHP, correctShots: this.correctShots, totalShots: this.totalShots, bulletsFired: this.bulletsFired,
+            correctDecisions: this.correctShots, totalDecisions: this.totalShots, incorrectDecisions: this.totalShots - this.correctShots,
+            decisionHistory: (this.decisionHistory || []).map(decision => ({ ...decision })), decisionHistoryComplete: this.decisionHistoryComplete === true,
+            activeElapsedMs: this.activeElapsedMs, durationMethod: 'subnet_decisions_v1', timingMethod: 'active_decision_clock', preparationMs: this.preparationMs, preparationSkips: this.preparationSkips,
+            calculatorUses: this.calculatorUses, calculatorElapsedMs: this.calculatorElapsedMs, helpElapsedMs: this.helpElapsedMs,
+            assistanceElapsedMs: this.calculatorElapsedMs + this.helpElapsedMs, phaseDurationsMs: { ...this.phaseDurationsMs },
+            barrierImpacts: this.barrierImpacts, bossBulletImpacts: this.bossBulletImpacts,
+            roundHistory: this.roundHistory.map(round => ({ ...round, mistakes: round.mistakes.slice(), weapon: { ...round.weapon },
+                expected: { ...round.expected }, collectedAtMs: { ...round.collectedAtMs } })), elapsedMs: this.elapsedMs };
+    }
     _finishSuccess(result) {
         if (this.finished) return;
-        this.finished = true;
-        this.phase = 'success';
-        this._playConfirm();
-        const completedAttempts = this.tutorialMode ? this.attemptsUsed + 1 : this.attemptsUsed;
-        const payload = Object.assign({}, result, {
-            gameplayId: 'ip_cidr_quarantine_matrix',
-            passed: true,
-            attemptsUsed: completedAttempts,
-            maxAttempts: this.maxAttempts,
-            retries: Math.max(0, completedAttempts - 1),
-        });
-        const complete = () => {
-            if (typeof this.options.onComplete === 'function') this.options.onComplete(payload);
-        };
-        const sharedPopup = IP2Live.GameplayCompletionPopup;
-        if (sharedPopup && typeof sharedPopup.begin === 'function' && sharedPopup.begin(this, {
-            gameplayId: 'ip_cidr_quarantine_matrix',
-            label: this.options.questLabel || (this.options.spec && this.options.spec.label) || 'CIDR quarantine matrix secured',
-            footer: 'ALL CONNECTOR PAIRS VERIFIED  //  PROGRESS SECURED',
-            durationMs: 950,
-            result: payload,
-            onComplete: complete,
-        })) {
-            return;
-        }
+        this.finished = true; this._setPhase('success');
+        const payload = { ...result, ...this._result(true) };
+        const complete = () => { if (typeof this.options.onComplete === 'function') this.options.onComplete(payload); };
+        const popup = IP2Live.GameplayCompletionPopup;
+        if (popup && popup.begin && popup.begin(this, { gameplayId: this.gameplayId, label: 'Subnet Blaster cleared', footer: 'THREE ADDRESS CORES RECOVERED', durationMs: 950, result: payload, onComplete: complete })) return;
         complete();
     }
-
-    _failOut(result) {
+    _failOut() {
         if (this.finished) return;
-        this.finished = true;
-        if (typeof this.options.onFailed === 'function') {
-            this.options.onFailed(Object.assign({}, result || {}, {
-                gameplayId: 'ip_cidr_quarantine_matrix',
-                passed: false,
-                reason: 'attempts_exhausted',
-                attemptsUsed: this.attemptsUsed,
-                maxAttempts: this.maxAttempts,
-                retries: this.attemptsUsed,
-                problemId: this.problem.id,
-                baseCIDR: this.problem.baseCIDR,
-                zoneCount: this.problem.zoneCount,
-            }));
-        }
-    }
-
-    _cancel() {
-        if (this.finished) return;
-        this.finished = true;
-        this._playCancel();
-        if (typeof this.options.onCancel === 'function') this.options.onCancel();
-    }
-
-    _openPauseMenu() {
-        if (IP2Live.GameplayPause && typeof IP2Live.GameplayPause.open === 'function') {
-            IP2Live.GameplayPause.open(this, 'ip_cidr_quarantine_matrix');
-            return;
-        }
-        if (window.IP2LivePauseMenu && Manager && Manager.Stack && typeof Manager.Stack.push === 'function') {
-            Data.Systems.soundConfirmation.playSound();
-            Manager.Stack.push(new IP2LivePauseMenu());
-        } else {
-            this._cancel();
-        }
-    }
-
-    draw3D() {
-        if (Manager && Manager.GL && Manager.GL.renderer) Manager.GL.renderer.clear();
-    }
-
-    drawHUD() {
-        const ctx = Common && Common.Platform ? Common.Platform.ctx : null;
-        if (!ctx || !ctx.canvas) return;
-        const m = this._metrics();
-        this._buildInteractionRects(m);
-        this._drawBackdrop(ctx, m);
-        this._drawPanel(ctx, m);
-        this._drawGrid(ctx, m);
-        this._drawInfo(ctx, m);
-        this._drawControls(ctx, m);
-        this._drawVirusAlert(ctx, m);
-        this._drawTutorialFocus(ctx, m);
-        if (IP2Live.DialogueManager && typeof IP2Live.DialogueManager.drawOverlay === 'function') IP2Live.DialogueManager.drawOverlay(ctx);
-        if (IP2Live.GameplayCompletionPopup && typeof IP2Live.GameplayCompletionPopup.drawFor === 'function') {
-            IP2Live.GameplayCompletionPopup.drawFor(this, ctx, { tick: this.animTick || 0 });
-        }
-    }
-
-    _drawTutorialFocus(ctx, m) {
-        if (!this.tutorialMode) return;
-        const dialogue = IP2Live.DialogueManager && IP2Live.DialogueManager._active;
-        if (!dialogue || String(dialogue.id || '').indexOf('stage3.cidrmatrix.') !== 0) return;
-        const slide = Number(dialogue.slideIndex) || 0;
-        const sideX = m.panelX + m.panelW * 0.57;
-        const pairCount = this.problem && this.problem.pairs ? this.problem.pairs.length : 2;
-        const detailY = m.panelY + (pairCount > 2 ? 270 : 244) * m.sY;
-        const deckRect = { x: sideX, y: detailY + 12 * m.sY, w: 330 * m.sX, h: 206 * m.sY };
-        const focus = (type) => {
-            if (type === 'grid') return { label: 'FOCUS // MATRIX ROUTES', rects: [this._gridRect] };
-            if (type === 'pairs') return { label: 'FOCUS // PAIR SELECTOR', rects: this.pairRects.slice() };
-            if (type === 'target') return { label: 'FOCUS // ACTIVE HOST TARGET', rects: [deckRect] };
-            if (type === 'actions') return { label: 'FOCUS // ROUTE ACTIONS', rects: this.buttonRects.concat(this.confirmRect ? [this.confirmRect] : []) };
-            return { label: 'FOCUS // ACTIVE ROUTE', rects: [this._gridRect, deckRect] };
-        };
-        const id = String(dialogue.id);
-        let selected = focus('deck');
-        if (id.indexOf('.intro.') !== -1) selected = focus(slide === 0 ? 'grid' : (slide === 1 ? 'pairs' : (slide === 2 ? 'actions' : 'target')));
-        else if (id.indexOf('.step.') !== -1) selected = focus(id.indexOf('.submit.') !== -1 ? 'actions' : 'deck');
-        else if (id.indexOf('.feedback.') !== -1) selected = focus('grid');
-
-        const rects = selected.rects.filter(Boolean);
-        if (!rects.length) return;
-        ctx.save();
-        ctx.fillStyle = 'rgba(1, 7, 13, 0.56)';
-        ctx.fillRect(m.panelX + 4 * m.sX, m.panelY + 64 * m.sY, m.panelW - 8 * m.sX, m.panelH - 72 * m.sY);
-        for (let i = 0; i < rects.length; i++) {
-            const r = rects[i];
-            ctx.fillStyle = 'rgba(104, 143, 155, 0.16)';
-            ctx.fillRect(r.x - 5 * m.sX, r.y - 5 * m.sY, r.w + 10 * m.sX, r.h + 10 * m.sY);
-            ctx.strokeStyle = i === 0 ? '#D2B75C' : '#79CFE0';
-            ctx.lineWidth = 2 * m.sX;
-            ctx.strokeRect(r.x - 5 * m.sX, r.y - 5 * m.sY, r.w + 10 * m.sX, r.h + 10 * m.sY);
-        }
-        const first = rects[0];
-        ctx.fillStyle = '#D2B75C';
-        ctx.font = 'bold ' + Math.round(10 * m.sY) + 'px monospace';
-        ctx.textAlign = 'left';
-        ctx.fillText(selected.label, first.x, Math.max(m.panelY + 82 * m.sY, first.y - 12 * m.sY));
-        ctx.restore();
-    }
-
-    _metrics() {
-        const ctx = Common && Common.Platform ? Common.Platform.ctx : null;
-        const cW = ctx && ctx.canvas ? ctx.canvas.width : 1280;
-        const cH = ctx && ctx.canvas ? ctx.canvas.height : 720;
-        const sX = cW / 1280;
-        const sY = cH / 720;
-        return { cW, cH, sX, sY, panelX: 48 * sX, panelY: 44 * sY, panelW: cW - 96 * sX, panelH: cH - 88 * sY };
-    }
-
-    _buildInteractionRects(m) {
-        const gridSize = Math.min(m.panelW * 0.50, m.panelH - 170 * m.sY, 590 * m.sX);
-        this._gridRect = { x: m.panelX + 34 * m.sX, y: m.panelY + 92 * m.sY, w: gridSize, h: gridSize };
-        const sideX = m.panelX + m.panelW * 0.57;
-        const pairY = m.panelY + 102 * m.sY;
-        this.pairRects = [];
-        const pairCount = this.problem && this.problem.pairs ? this.problem.pairs.length : 2;
-        const pairH = pairCount > 2 ? 42 * m.sY : 48 * m.sY;
-        const gap = pairCount > 2 ? 48 * m.sY : 58 * m.sY;
-        for (let i = 0; i < pairCount; i++) {
-            this.pairRects.push({ x: sideX, y: pairY + i * gap, w: 300 * m.sX, h: pairH });
-        }
-        const railX = m.panelX + m.panelW - 92 * m.sX;
-        const railY = m.panelY + 140 * m.sY;
-        this.buttonRects = [
-            { action: 'undo', label: 'UNDO', icon: '↶', x: railX, y: railY, w: 64 * m.sX, h: 52 * m.sY },
-            { action: 'clear', label: 'CLEAR', icon: '×', x: railX, y: railY + 66 * m.sY, w: 64 * m.sX, h: 52 * m.sY },
-        ];
-        this.confirmRect = { action: 'confirm', label: 'CONFIRM', icon: '✓', x: railX, y: railY + 132 * m.sY, w: 64 * m.sX, h: 52 * m.sY };
-    }
-
-    _drawBackdrop(ctx, m) {
-        const g = ctx.createLinearGradient(0, 0, m.cW, m.cH);
-        g.addColorStop(0, '#040B12');
-        g.addColorStop(0.5, '#13212E');
-        g.addColorStop(1, '#050A12');
-        ctx.fillStyle = g;
-        ctx.fillRect(0, 0, m.cW, m.cH);
-        ctx.globalAlpha = 0.13;
-        ctx.strokeStyle = '#FFE600';
-        for (let y = -50 * m.sY + ((this.animTick * 0.7) % (50 * m.sY)); y < m.cH; y += 50 * m.sY) {
-            ctx.beginPath();
-            ctx.moveTo(0, y);
-            ctx.lineTo(m.cW, y + 90 * m.sY);
-            ctx.stroke();
-        }
-        ctx.globalAlpha = 1;
-    }
-
-    _drawPanel(ctx, m) {
-        this._fillChamferRect(ctx, m.panelX, m.panelY, m.panelW, m.panelH, 18 * m.sX, 'rgba(5,12,20,0.95)');
-        this._strokeChamferRect(ctx, m.panelX, m.panelY, m.panelW, m.panelH, 18 * m.sX, '#FFE600', 2 * m.sX);
-        ctx.fillStyle = '#FF003C';
-        this._fillChamferRect(ctx, m.panelX, m.panelY + 10 * m.sY, m.panelW * 0.52, 50 * m.sY, 8 * m.sX);
-        ctx.fillStyle = '#FFFFFF';
-        ctx.font = 'bold ' + Math.round(19 * m.sY) + 'px ' + this._titleFont();
-        ctx.textAlign = 'left';
-        ctx.fillText('CIDR QUARANTINE MATRIX :: MULTI CONNECTOR', m.panelX + 24 * m.sX, m.panelY + 44 * m.sY);
-        ctx.font = 'bold ' + Math.round(12 * m.sY) + 'px monospace';
-        ctx.fillStyle = '#BDEEFF';
-        ctx.fillText('CONNECT ' + this.problem.pairCount + ' PAIRS   VIRUS NODES OFF LIMITS', m.panelX + m.panelW * 0.58, m.panelY + 42 * m.sY);
-    }
-
-    _drawGrid(ctx, m) {
-        const g = this._gridRect;
-        const cell = g.w / 16;
-        ctx.fillStyle = 'rgba(10,24,36,0.96)';
-        ctx.fillRect(g.x, g.y, g.w, g.h);
-        for (let row = 0; row < 16; row++) {
-            for (let col = 0; col < 16; col++) {
-                const x = g.x + col * cell;
-                const y = g.y + row * cell;
-                ctx.fillStyle = (row + col) % 2 === 0 ? 'rgba(24,42,56,0.92)' : 'rgba(30,48,63,0.92)';
-                ctx.fillRect(x + 0.8 * m.sX, y + 0.8 * m.sY, cell - 1.4 * m.sX, cell - 1.4 * m.sY);
-            }
-        }
-        for (let i = 0; i < this.problem.viruses.length; i++) {
-            const p = this._cellCenter(this.problem.viruses[i], g);
-            this._drawVirusIcon(ctx, p.x, p.y, cell * 0.34, m);
-        }
-        const colors = ['#FFE600', '#70E9FF', '#96FFB8'];
-        for (let i = 0; i < this.paths.length; i++) this._drawPath(ctx, m, this.paths[i], colors[i], i === this.activePairIndex ? 1 : 0.62, this._traceVisibleMoves(i));
-        for (let i = 0; i < this.problem.pairs.length; i++) {
-            const pair = this.problem.pairs[i];
-            const active = i === this.activePairIndex;
-            this._drawNodeIcon(ctx, this._cellCenter(pair.start, g), cell * 0.36, active ? '#00D8FF' : '#5EDCFF', m, pair.startLabel);
-            this._drawNodeIcon(ctx, this._cellCenter(pair.end, g), cell * 0.36, active ? '#2F80FF' : '#789BFF', m, pair.endLabel);
-        }
-        ctx.strokeStyle = '#DAEEFF';
-        ctx.lineWidth = 2 * m.sX;
-        ctx.strokeRect(g.x, g.y, g.w, g.h);
-    }
-
-    _drawInfo(ctx, m) {
-        const sideX = m.panelX + m.panelW * 0.57;
-        const deckW = 330 * m.sX;
-        ctx.font = 'bold ' + Math.round(14 * m.sY) + 'px monospace';
-        ctx.textAlign = 'left';
-        for (let i = 0; i < this.pairRects.length; i++) {
-            const r = this.pairRects[i];
-            const pair = this.problem.pairs[i];
-            const stats = this.trace ? this._traceStats(i) : this._pathStats(i);
-            const selected = i === this.activePairIndex;
-            this._fillChamferRect(ctx, r.x, r.y, r.w, r.h, 7 * m.sX, selected ? 'rgba(255,216,74,0.24)' : 'rgba(35,55,75,0.72)');
-            this._strokeChamferRect(ctx, r.x, r.y, r.w, r.h, 7 * m.sX, selected ? '#FFE600' : '#70E9FF', 1.3 * m.sX);
-            ctx.fillStyle = selected ? '#FFFFFF' : '#D8F7FF';
-            ctx.fillText('PAIR ' + (i + 1) + '  ' + (stats.connected ? 'LINKED' : 'OPEN') + '  /' + stats.currentCIDR, r.x + 12 * m.sX, r.y + 20 * m.sY);
-            ctx.fillStyle = selected ? '#FFE600' : '#BDEEFF';
-            ctx.fillText('NEEDED HOSTS  ' + this._formatHosts(pair.requiredHosts), r.x + 12 * m.sX, r.y + (this.problem.pairCount > 2 ? 36 : 38) * m.sY);
-        }
-        const activeIndex = this.trace ? this._traceActivePairIndex() : this.activePairIndex;
-        const activePair = this.problem.pairs[activeIndex] || this._activePair();
-        const activeStats = this.trace ? this._traceStats(activeIndex) : this._pathStats(activeIndex);
-        ctx.fillStyle = '#8FF8FF';
-        ctx.font = 'bold ' + Math.round(12 * m.sY) + 'px monospace';
-        const detailY = m.panelY + (this.problem.pairCount > 2 ? 270 : 244) * m.sY;
-        ctx.fillText('ACTIVE PAIR // ROUTE TARGET', sideX, detailY);
-        this._fillChamferRect(ctx, sideX, detailY + 12 * m.sY, deckW, 58 * m.sY, 7 * m.sX, 'rgba(32, 51, 61, 0.82)');
-        this._strokeChamferRect(ctx, sideX, detailY + 12 * m.sY, deckW, 58 * m.sY, 7 * m.sX, '#C7A94C', 1.2 * m.sX);
-        ctx.fillStyle = '#E0C66A';
-        ctx.font = 'bold ' + Math.round(11 * m.sY) + 'px monospace';
-        ctx.fillText('NEEDED USABLE HOSTS', sideX + 12 * m.sX, detailY + 31 * m.sY);
-        ctx.font = 'bold ' + Math.round(22 * m.sY) + 'px monospace';
-        ctx.fillText(this._formatHosts(activePair.requiredHosts), sideX + 12 * m.sX, detailY + 59 * m.sY);
-        ctx.font = 'bold ' + Math.round(12 * m.sY) + 'px monospace';
-        ctx.fillStyle = '#BDEEFF';
-        ctx.fillText('IP ADDRESS  ' + activePair.ipAddress, sideX, detailY + 96 * m.sY);
-        ctx.fillText('START CIDR  /' + activePair.originalCIDR + '     CLASS ' + activePair.ipClass, sideX, detailY + 120 * m.sY);
-        ctx.fillStyle = '#FFFFFF';
-        ctx.fillText('GOAL  BORROW BITS  +' + activeStats.addedBits + ' / +' + activePair.targetAddedBits, sideX, detailY + 150 * m.sY);
-        ctx.fillStyle = '#8FF8FF';
-        ctx.fillText('→ +' + this.directionWeights.R + '    ← +' + this.directionWeights.L + '    ↑ +' + this.directionWeights.U + '    ↓ +' + this.directionWeights.D, sideX, detailY + 176 * m.sY);
-        ctx.fillStyle = '#FFE600';
-        ctx.font = 'bold ' + Math.round(15 * m.sY) + 'px monospace';
-        ctx.fillText('PATH TOTAL  +' + activeStats.addedBits + '    CIDR /' + activeStats.currentCIDR, sideX, detailY + 206 * m.sY);
-        if (this.trace) {
-            ctx.fillStyle = '#FFFFFF';
-            ctx.font = 'bold ' + Math.round(11 * m.sY) + 'px monospace';
-            ctx.fillText(this._traceCalculationLine(activeIndex), sideX, detailY + 234 * m.sY);
-            return;
-        }
-        this._drawVirusMeter(ctx, m, sideX, detailY + 228 * m.sY, deckW, 18 * m.sY);
-        ctx.fillStyle = this.statusTone === 'bad' ? '#FF8AA8' : (this.statusTone === 'good' ? '#96FFB8' : '#DAEEFF');
-        ctx.font = 'bold ' + Math.round(10 * m.sY) + 'px monospace';
-        ctx.fillText(this.statusText, sideX, detailY + 274 * m.sY);
-    }
-
-    _drawControls(ctx, m) {
-        for (let i = 0; i < this.buttonRects.length; i++) this._drawButton(ctx, this.buttonRects[i], m, this.buttonRects[i].label);
-        this._drawButton(ctx, this.confirmRect, m, this.confirmRect.label);
-        ctx.font = 'bold ' + Math.round(11 * m.sY) + 'px monospace';
-        ctx.fillStyle = '#DAEEFF';
-        ctx.textAlign = 'left';
-        ctx.fillText('TRIES ' + this.attemptsUsed + '/' + this._attemptLimitLabel() + '   TAB: SWITCH PAIR   DRAG / CLICK: BUILD PATH', m.panelX + 28 * m.sX, m.panelY + m.panelH - 24 * m.sY);
-    }
-
-    _drawVirusMeter(ctx, m, x, y, w, h) {
-        const density = this._virusDensity();
-        const difficulty = this.problem && this.problem.difficulty ? this.problem.difficulty : {};
-        const warning = Number(difficulty.warningDensity) || 0.34;
-        const critical = Number(difficulty.criticalDensity) || 0.52;
-        const totalTiles = this.virusState && this.virusState.totalTiles ? this.virusState.totalTiles : 256;
-        const pulse = 0.5 + 0.5 * Math.sin(this.animTick * 0.24);
-        const fillW = Math.max(0, Math.min(w, w * density));
-        const danger = density >= critical;
-        ctx.save();
-        ctx.fillStyle = 'rgba(255,255,255,0.08)';
-        ctx.fillRect(x, y, w, h);
-        ctx.fillStyle = danger ? 'rgba(255, 0, 56, ' + (0.70 + pulse * 0.25) + ')' : (density >= warning ? '#FFB000' : '#70E9FF');
-        ctx.fillRect(x, y, fillW, h);
-        ctx.strokeStyle = danger ? '#FF2D6F' : '#FFE600';
-        ctx.lineWidth = 1.3 * m.sX;
-        ctx.strokeRect(x, y, w, h);
-        ctx.fillStyle = danger ? '#FFB7C6' : '#BDEEFF';
-        ctx.font = 'bold ' + Math.round(11 * m.sY) + 'px monospace';
-        ctx.textAlign = 'left';
-        ctx.fillText('Virus pressure ' + this.problem.viruses.length + '/' + totalTiles, x, y + h + 16 * m.sY);
-        ctx.restore();
-    }
-
-    _drawVirusAlert(ctx, m) {
-        const density = this._virusDensity();
-        const difficulty = this.problem && this.problem.difficulty ? this.problem.difficulty : {};
-        const warning = Number(difficulty.warningDensity) || 0.34;
-        const critical = Number(difficulty.criticalDensity) || 0.52;
-        const overrun = !!(this.virusState && this.virusState.overrun);
-        if (density < warning && !overrun) return;
-        const severe = overrun || density >= critical;
-        const pulse = 0.5 + 0.5 * Math.sin(this.animTick * (overrun ? 0.48 : (severe ? 0.34 : 0.22)));
-        ctx.save();
-        ctx.globalAlpha = severe ? 0.26 + pulse * 0.20 : 0.12 + pulse * 0.08;
-        ctx.strokeStyle = '#FF0B2F';
-        ctx.lineWidth = (severe ? 10 : 6) * m.sX;
-        ctx.strokeRect(4 * m.sX, 4 * m.sY, m.cW - 8 * m.sX, m.cH - 8 * m.sY);
-        ctx.fillStyle = overrun ? 'rgba(255, 11, 47, 0.16)' : 'rgba(255, 11, 47, 0.10)';
-        ctx.fillRect(0, 0, m.cW, m.cH);
-        ctx.restore();
-    }
-
-    _virusDensity() {
-        const count = this.problem && this.problem.viruses ? this.problem.viruses.length : 0;
-        const totalTiles = this.virusState && this.virusState.totalTiles ? this.virusState.totalTiles : 256;
-        return count / totalTiles;
-    }
-
-    _initVirusSpread() {
-        if (!this.problem) return;
-        if (!Array.isArray(this.problem.viruses)) this.problem.viruses = [];
-        const solutionKeys = {};
-        const endpointKeys = {};
-        const solutionPaths = [];
-        const pairs = this.problem.pairs || [];
-        for (let i = 0; i < pairs.length; i++) {
-            const pair = pairs[i];
-            if (pair.start) endpointKeys[this._tileKey(pair.start)] = true;
-            if (pair.end) endpointKeys[this._tileKey(pair.end)] = true;
-            const path = pair.solutionPath || [];
-            solutionPaths.push(path);
-            for (let p = 0; p < path.length; p++) solutionKeys[this._tileKey(path[p])] = true;
-        }
-        const virusKeys = {};
-        for (let i = 0; i < this.problem.viruses.length; i++) virusKeys[this._tileKey(this.problem.viruses[i])] = true;
-        const solutionBufferKeys = this.problem.solutionBufferKeys || this._buildMultiPathBufferKeys(solutionPaths);
-        const totalTiles = 16 * 16;
-        const totalSolutionTiles = Object.keys(solutionKeys).length;
-        const totalNonSolutionTiles = Math.max(0, totalTiles - totalSolutionTiles);
-        const totalSpawnableNonSolution = this._countSpawnableNonSolutionTiles(solutionBufferKeys, solutionKeys, endpointKeys);
-        this.virusState = {
-            elapsedTicks: 0,
-            lastSpawnTick: 0,
-            overrun: false,
-            overrunTick: 0,
-            totalTiles,
-            totalSolutionTiles,
-            totalNonSolutionTiles,
-            totalSpawnableNonSolution,
-            revealThreshold: Math.max(8, Math.round(totalSpawnableNonSolution * 0.05)),
-            solutionKeys,
-            solutionBufferKeys,
-            endpointKeys,
-            virusKeys,
-            virusNonSolutionCount: this._countNonSolutionViruses(virusKeys, solutionKeys),
-            initialViruses: this.problem.viruses.map((v) => this._cloneTile(v)),
-        };
-    }
-
-    _updateVirusSpread() {
-        if (this.finished) return;
-        if (!this.virusState) this._initVirusSpread();
-        if (!this.virusState) return;
-        if (this.phase === 'tracing' || this.phase === 'diagnostic' || this.phase === 'tutorial_complete' || this.tutorialPromptActive || this._isDialogueActive()) return;
-        if (this.virusState.overrun) {
-            this._advanceVirusOverrun();
-            return;
-        }
-        if (this.phase !== 'build') return;
-        this.virusState.elapsedTicks++;
-        const elapsedSeconds = this.virusState.elapsedTicks / 60;
-        const config = this._virusGrowthConfig(elapsedSeconds);
-        if (this.virusState.elapsedTicks - this.virusState.lastSpawnTick < config.interval) return;
-        this.virusState.lastSpawnTick = this.virusState.elapsedTicks;
-        this._spawnVirusBatch(config.batch, {
-            allowSolution: false,
-            avoidPath: true,
-            minPathDistance: this._virusMinPathDistance(elapsedSeconds),
-        });
-        if (this._shouldTriggerOverrun()) this._triggerVirusOverrun();
-    }
-
-    _virusGrowthConfig(elapsedSeconds) {
-        if (elapsedSeconds < 25) return { interval: 300, batch: 1 };
-        if (elapsedSeconds < 55) return { interval: 250, batch: 1 };
-        if (elapsedSeconds < 90) return { interval: 210, batch: 1 };
-        if (elapsedSeconds < 130) return { interval: 170, batch: 2 };
-        if (elapsedSeconds < 180) return { interval: 135, batch: 2 };
-        return { interval: 100, batch: 2 };
-    }
-
-    _virusMinPathDistance(elapsedSeconds) {
-        if (elapsedSeconds < 60) return 2;
-        if (elapsedSeconds < 130) return 1;
-        return 0;
-    }
-
-    _shouldTriggerOverrun() {
-        if (!this.virusState) return false;
-        return this._remainingSpawnableNonSolution() <= this.virusState.revealThreshold;
-    }
-
-    _triggerVirusOverrun() {
-        if (!this.virusState || this.virusState.overrun) return;
-        this.virusState.overrun = true;
-        this.virusState.overrunTick = 0;
-        this._setStatus('Virus pressure critical. Finalize the matrix before the surge completes.', 'bad');
-        this._playCancel();
-    }
-
-    _advanceVirusOverrun() {
-        if (!this.virusState) return;
-        this.virusState.overrunTick++;
-        const burst = this.virusState.overrunTick < 35 ? 4 : 7;
-        this._spawnVirusBatch(burst, {
-            allowSolution: false,
-            avoidPath: false,
-            minPathDistance: 0,
-        });
-        if (this.virusState.overrunTick >= 90 || this._remainingSpawnableNonSolution() <= 0) this._applyVirusOverrunFailure();
-    }
-
-    _applyVirusOverrunFailure() {
-        if (this.finished) return;
-        const result = this._diagnostic('virus_overrun', 'The virus reached critical density and consumed the connector matrix.', this._pairResults());
-        if (result.lines && result.lines.length > 2) result.lines[2] = 'Retry before the next surge overwhelms the open connectors.';
-        this.lastDiagnostic = result;
-        if (this.tutorialMode) {
-            this._resetVirusMutationForRetry();
-            this._showTutorialFeedback('virus_overrun');
-            return;
-        }
-        this.attemptsUsed++;
-        this._playCancel();
-        if (this.attemptsUsed >= this.maxAttempts) {
-            this._failOut(result);
-            return;
-        }
-        this._resetVirusMutationForRetry();
-        this._showDiagnostic(result);
-    }
-
-    _resetVirusMutationForRetry() {
-        if (!this.virusState) return;
-        this.problem.viruses = this.virusState.initialViruses.map((v) => this._cloneTile(v));
-        this.paths = [];
-        const pairs = this.problem.pairs || [];
-        for (let i = 0; i < pairs.length; i++) this.paths.push([this._cloneTile(pairs[i].start)]);
-        this.activePairIndex = Math.min(this.activePairIndex || 0, Math.max(0, pairs.length - 1));
-        this._initVirusSpread();
-        this.phase = 'build';
-        this.statusText = 'Attempt reset. Reconnect each pair with the same clues.';
-        this.statusTone = 'idle';
-    }
-
-    _spawnVirusBatch(count, options) {
-        const opts = options || {};
-        const allowSolution = !!opts.allowSolution;
-        const avoidPath = opts.avoidPath !== false;
-        const minPathDistance = Number(opts.minPathDistance || 0);
-        let spawned = 0;
-        let tries = 0;
-        const maxTries = Math.max(60, count * 70);
-        while (spawned < count && tries < maxTries) {
-            tries++;
-            const tile = { col: this._randomInt(0, 15), row: this._randomInt(0, 15) };
-            if (!this._isSpawnableVirusTile(tile, allowSolution, avoidPath, minPathDistance)) continue;
-            this._addVirus(tile, { allowSolution });
-            spawned++;
-        }
-        if (spawned < count && !allowSolution && this._remainingSpawnableNonSolution() <= 0) this._triggerVirusOverrun();
-        return spawned;
-    }
-
-    _isSpawnableVirusTile(tile, allowSolution, avoidPath, minPathDistance) {
-        if (!this._inGrid(tile)) return false;
-        const state = this.virusState;
-        const key = this._tileKey(tile);
-        if (state && state.virusKeys[key]) return false;
-        if (this._isVirus(tile)) return false;
-        if (state && state.endpointKeys[key]) return false;
-        if (!allowSolution && state && (state.solutionKeys[key] || state.solutionBufferKeys[key])) return false;
-        if (this._distanceToAnyEndpoint(tile, this.problem.pairs || []) <= 1) return false;
-        if (avoidPath && this._pathIndexAny(tile) !== -1) return false;
-        if (avoidPath && minPathDistance > 0 && this._distanceToAnyCurrentPath(tile) <= minPathDistance) return false;
-        return true;
-    }
-
-    _addVirus(tile, options) {
-        if (!this.problem.viruses) this.problem.viruses = [];
-        const key = this._tileKey(tile);
-        if (this.virusState && this.virusState.virusKeys[key]) return false;
-        this.problem.viruses.push(this._cloneTile(tile));
-        if (this.virusState) {
-            this.virusState.virusKeys[key] = true;
-            const allowSolution = options && options.allowSolution;
-            if (!allowSolution && !this.virusState.solutionKeys[key]) this.virusState.virusNonSolutionCount++;
-        }
-        return true;
-    }
-
-    _countNonSolutionViruses(virusKeys, solutionKeys) {
-        let count = 0;
-        for (const key in virusKeys) if (Object.prototype.hasOwnProperty.call(virusKeys, key) && !solutionKeys[key]) count++;
-        return count;
-    }
-
-    _countSpawnableNonSolutionTiles(solutionBufferKeys, solutionKeys, endpointKeys) {
-        let count = 0;
-        for (let row = 0; row < 16; row++) {
-            for (let col = 0; col < 16; col++) {
-                const key = this._tileKey({ col, row });
-                if (solutionKeys[key] || solutionBufferKeys[key] || endpointKeys[key]) continue;
-                if (this._distanceToAnyEndpoint({ col, row }, this.problem.pairs || []) <= 1) continue;
-                count++;
-            }
-        }
-        return count;
-    }
-
-    _remainingSpawnableNonSolution() {
-        if (!this.virusState) return 0;
-        return Math.max(0, this.virusState.totalSpawnableNonSolution - this.virusState.virusNonSolutionCount);
-    }
-
-    _pathIndexAny(tile) {
-        for (let i = 0; i < this.paths.length; i++) {
-            const index = this._pathIndex(tile, this.paths[i]);
-            if (index !== -1) return index;
-        }
-        return -1;
-    }
-
-    _distanceToAnyCurrentPath(tile) {
-        let best = 99;
-        for (let i = 0; i < this.paths.length; i++) {
-            best = Math.min(best, this._distanceToTileList(tile, this.paths[i]));
-            if (best <= 0) return best;
-        }
-        return best;
-    }
-
-    _attemptLimitLabel() {
-        return (this.tutorialMode || this.options.practiceMode) ? '∞' : String(this.maxAttempts);
-    }
-
-    _retryLabel(value) {
-        return (this.tutorialMode || this.options.practiceMode) ? '∞' : String(Math.max(0, Number(value) || 0));
-    }
-
-    _drawButton(ctx, b, m, label) {
-        if (!b) return;
-        const g = ctx.createLinearGradient(b.x, b.y, b.x + b.w, b.y + b.h);
-        g.addColorStop(0, '#253747');
-        g.addColorStop(1, '#111C28');
-        ctx.fillStyle = g;
-        this._fillChamferRect(ctx, b.x, b.y, b.w, b.h, 7 * m.sX);
-        this._strokeChamferRect(ctx, b.x, b.y, b.w, b.h, 7 * m.sX, '#FFE600', 1.4 * m.sX);
-        ctx.fillStyle = '#FFFFFF';
-        ctx.font = 'bold ' + Math.round(20 * m.sY) + 'px monospace';
-        ctx.textAlign = 'center';
-        ctx.fillText(b.icon || label, b.x + b.w * 0.5, b.y + b.h * 0.48);
-        ctx.font = 'bold ' + Math.round(7 * m.sY) + 'px monospace';
-        ctx.fillText(label, b.x + b.w * 0.5, b.y + b.h * 0.79);
-    }
-
-    _drawPath(ctx, m, path, color, alpha, visibleMoves) {
-        if (!path || path.length < 2 || !this._gridRect) return;
-        const g = this._gridRect;
-        const maxIndex = visibleMoves === undefined ? path.length - 1 : Math.max(0, Math.min(path.length - 1, Number(visibleMoves) || 0));
-        if (maxIndex <= 0) return;
-        ctx.save();
-        ctx.globalAlpha = alpha === undefined ? 1 : alpha;
-        ctx.lineCap = 'round';
-        ctx.lineJoin = 'round';
-        ctx.shadowColor = color;
-        ctx.shadowBlur = 12 * m.sX;
-        ctx.strokeStyle = color;
-        ctx.lineWidth = 7 * m.sX;
-        ctx.beginPath();
-        const first = this._cellCenter(path[0], g);
-        ctx.moveTo(first.x, first.y);
-        for (let i = 1; i <= maxIndex; i++) {
-            const p = this._cellCenter(path[i], g);
-            ctx.lineTo(p.x, p.y);
-        }
-        ctx.stroke();
-        ctx.shadowBlur = 0;
-        for (let i = 0; i <= maxIndex; i++) {
-            const p = this._cellCenter(path[i], g);
-            ctx.fillStyle = i === maxIndex && this.trace ? '#FFFFFF' : color;
-            ctx.beginPath();
-            ctx.arc(p.x, p.y, 4.2 * m.sX, 0, Math.PI * 2);
-            ctx.fill();
-        }
-        ctx.restore();
-    }
-
-    _drawNodeIcon(ctx, point, radius, color, m, label) {
-        ctx.save();
-        ctx.shadowColor = color;
-        ctx.shadowBlur = 18 * m.sX;
-        ctx.fillStyle = 'rgba(4,20,35,0.96)';
-        ctx.strokeStyle = color;
-        ctx.lineWidth = 3 * m.sX;
-        ctx.beginPath();
-        ctx.arc(point.x, point.y, radius, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.stroke();
-        ctx.shadowBlur = 0;
-        ctx.fillStyle = '#FFFFFF';
-        ctx.font = 'bold ' + Math.round(11 * m.sY) + 'px monospace';
-        ctx.textAlign = 'center';
-        ctx.fillText(label, point.x, point.y + 4 * m.sY);
-        ctx.restore();
-    }
-
-    _drawVirusIcon(ctx, x, y, radius, m) {
-        ctx.save();
-        ctx.shadowColor = '#FF0048';
-        ctx.shadowBlur = 12 * m.sX;
-        ctx.fillStyle = '#FF0048';
-        ctx.strokeStyle = '#FFD1DC';
-        ctx.lineWidth = 1.5 * m.sX;
-        ctx.beginPath();
-        for (let i = 0; i < 12; i++) {
-            const a = (Math.PI * 2 * i) / 12;
-            const r = i % 2 === 0 ? radius * 1.12 : radius * 0.78;
-            const px = x + Math.cos(a) * r;
-            const py = y + Math.sin(a) * r;
-            if (i === 0) ctx.moveTo(px, py);
-            else ctx.lineTo(px, py);
-        }
-        ctx.closePath();
-        ctx.fill();
-        ctx.stroke();
-        ctx.restore();
-    }
-
-    _afterTutorialAction(action) {
-        if (!this.tutorialMode || this.tutorialPromptActive) return;
-        if (action === 'connect') {
-            if (this.tutorialPairIndex === this.activePairIndex && this._pathStats(this.activePairIndex).connected) {
-                const pairReason = this._tutorialPairFeedbackReason(this.activePairIndex);
-                if (pairReason !== 'submitReady') {
-                    this._showTutorialFeedback(pairReason);
-                    return;
-                }
-                if (this.tutorialPairIndex + 1 < this.problem.pairs.length) {
-                    this.tutorialPairIndex++;
-                    this._selectPair(this.tutorialPairIndex);
-                    this._showTutorialPairStep(this.tutorialPairIndex);
-                } else if (this._syncTutorialSubmitReadiness()) {
-                    this.tutorialReadyToSubmit = true;
-                    this._showTutorialSubmitStep();
-                }
-            }
-            return;
-        }
-        if (action === 'path' && this.tutorialReadyToSubmit && !this._syncTutorialSubmitReadiness()) {
-            this.tutorialPairIndex = Math.max(0, Math.min(this.activePairIndex, this.problem.pairs.length - 1));
-        }
-    }
-
-    _tutorialPairFeedbackReason(pairIndex) {
-        const idx = Math.max(0, Math.min(this.problem.pairs.length - 1, Number(pairIndex) || 0));
-        const pair = this.problem.pairs[idx];
-        const stats = this._pathStats(idx);
-        if (!stats.connected) return 'disconnected';
-        if (stats.hitVirus) return 'virus';
-        if (stats.currentCIDR !== pair.targetCIDR) return 'not_optimized';
-        if (stats.currentCapacity < pair.requiredHosts) return 'too_small';
-        if (stats.currentCapacity > pair.optimizedCapacity) return 'too_big';
-        return 'submitReady';
-    }
-
-    _syncTutorialSubmitReadiness() {
-        if (!this.tutorialMode) return false;
-        const ready = !!this._evaluatePaths().ok;
-        this.tutorialReadyToSubmit = ready;
-        return ready;
-    }
-
-    _allPairsGeometricallyConnected() {
-        for (let i = 0; i < this.problem.pairs.length; i++) {
-            if (!this._pathStats(i).connected) return false;
-        }
-        return true;
-    }
-
-    _tutorialContext(pairIndex) {
-        const idx = Math.max(0, Math.min(this.problem.pairs.length - 1, Number(pairIndex === undefined ? this.tutorialPairIndex : pairIndex) || 0));
-        const pair = this.problem.pairs[idx];
-        const stats = this._pathStats(idx);
-        return {
-            pairIndex: idx,
-            pairLabel: 'Pair ' + (idx + 1),
-            totalPairs: this.problem.pairs.length,
-            ipAddress: pair.ipAddress,
-            ipClass: pair.ipClass,
-            originalCIDR: pair.originalCIDR,
-            targetCIDR: pair.targetCIDR,
-            targetAddedBits: pair.targetAddedBits,
-            requiredHosts: this._formatHosts(pair.requiredHosts),
-            currentAddedBits: stats.addedBits,
-            currentCIDR: stats.currentCIDR,
-            optimizedCapacity: this._formatHosts(pair.optimizedCapacity),
-            currentCapacity: this._formatHosts(stats.currentCapacity),
-            startLabel: pair.startLabel,
-            endLabel: pair.endLabel,
-            directionWeights: Object.assign({}, this.directionWeights),
-            moveWeightsLine: this._directionWeightLine(),
-        };
-    }
-
-    _showTutorialPairStep(pairIndex) {
-        const helper = IP2Live.IPCIDRQuarantineMatrixTutorial;
-        if (!helper || typeof helper.showStep !== 'function') return false;
-        this.tutorialPromptActive = true;
-        const started = helper.showStep('pair', this._tutorialContext(pairIndex), () => {
-            this.tutorialPromptActive = false;
-        });
-        if (!started) this.tutorialPromptActive = false;
-        return started;
-    }
-
-    _showTutorialSubmitStep() {
-        const helper = IP2Live.IPCIDRQuarantineMatrixTutorial;
-        if (!helper || typeof helper.showStep !== 'function') return false;
-        this.tutorialPromptActive = true;
-        const started = helper.showStep('submit', this._tutorialContext(this.problem.pairs.length - 1), () => {
-            this.tutorialPromptActive = false;
-        });
-        if (!started) this.tutorialPromptActive = false;
-        return started;
-    }
-
-    _showTutorialFeedback(reason) {
-        const helper = IP2Live.IPCIDRQuarantineMatrixTutorial;
-        if (!helper || typeof helper.showFeedback !== 'function') return false;
-        this.tutorialPromptActive = true;
-        const started = helper.showFeedback(reason, this._tutorialContext(this.tutorialPairIndex), () => {
-            this.tutorialPromptActive = false;
-        });
-        if (!started) this.tutorialPromptActive = false;
-        return started;
-    }
-
-    _difficultyProfile(questIndex) {
-        const q = Math.max(1, Number(questIndex) || 1);
-        return {
-            level: q,
-            minAddedBits: Math.min(14, 3 + q * 2),
-            minEndpointDistance: Math.min(7, 2 + q),
-            maxRouteMoves: Math.min(13, 6 + q * 2),
-            edgeMargin: q >= 3 ? 2 : 1,
-            baseViruses: 18 + q * 2,
-            virusStep: 4,
-            maxViruses: Math.min(58, 31 + q * 5),
-            warningDensity: Math.max(0.28, 0.36 - q * 0.02),
-            criticalDensity: Math.max(0.44, 0.56 - q * 0.02),
-        };
-    }
-
-    _normalizeDirectionWeights(weights) {
-        const source = weights || {};
-        const fallback = { R: 1, L: 2, U: 3, D: 4 };
-        const out = {};
-        const used = {};
-        const dirs = ['R', 'L', 'U', 'D'];
-        for (let i = 0; i < dirs.length; i++) {
-            const d = dirs[i];
-            let value = Math.max(1, Math.min(4, Number(source[d]) || fallback[d]));
-            while (used[value]) value = value % 4 + 1;
-            out[d] = value;
-            used[value] = true;
-        }
-        return out;
-    }
-
-    _randomDirectionWeights(questIndex, tutorialMode) {
-        if (tutorialMode && Number(questIndex || 1) <= 1) return { R: 1, L: 2, U: 3, D: 4 };
-        const values = [1, 2, 3, 4];
-        for (let i = values.length - 1; i > 0; i--) {
-            const j = this._randomInt(0, i);
-            const tmp = values[i];
-            values[i] = values[j];
-            values[j] = tmp;
-        }
-        const dirs = ['R', 'L', 'U', 'D'];
-        const out = {};
-        for (let i = 0; i < dirs.length; i++) out[dirs[i]] = values[i];
-        return out;
-    }
-
-    _directionWeightLine() {
-        const w = this.directionWeights || {};
-        return 'Move bits: R +' + (w.R || 0) + '  L +' + (w.L || 0) + '  U +' + (w.U || 0) + '  D +' + (w.D || 0);
-    }
-
-    _maxDirectionWeight() {
-        const w = this.directionWeights || {};
-        return Math.max(1, Number(w.R) || 1, Number(w.L) || 1, Number(w.U) || 1, Number(w.D) || 1);
-    }
-
-    _minDirectionWeight() {
-        const w = this.directionWeights || {};
-        return Math.max(1, Math.min(Number(w.R) || 1, Number(w.L) || 1, Number(w.U) || 1, Number(w.D) || 1));
-    }
-
-    _randomPairAnchors(pairCount, edgeMargin) {
-        const anchors = [];
-        const used = {};
-        const margin = Math.max(0, Math.min(5, Number(edgeMargin) || 0));
-        for (let tries = 0; anchors.length < pairCount && tries < 300; tries++) {
-            const tile = { col: this._randomInt(margin, 15 - margin), row: this._randomInt(margin, 15 - margin) };
-            const key = this._tileKey(tile);
-            if (used[key]) continue;
-            if (this._distanceToTileList(tile, anchors) < 4) continue;
-            used[key] = true;
-            anchors.push(tile);
-        }
-        while (anchors.length < pairCount) {
-            anchors.push({ col: 1 + anchors.length * 4, row: anchors.length % 2 === 0 ? 3 : 11 });
-        }
-        return anchors.map((t) => this._cloneTile(t));
-    }
-
-    _fillRandomViruses(viruses, blockedKeys, pairs, solutionBufferKeys, desiredCount, maxTries) {
-        for (let tries = 0; viruses.length < desiredCount && tries < maxTries; tries++) {
-            const tile = { col: this._randomInt(0, 15), row: this._randomInt(0, 15) };
-            const key = this._tileKey(tile);
-            if (blockedKeys[key] || (solutionBufferKeys && solutionBufferKeys[key])) continue;
-            if (this._distanceToAnyEndpoint(tile, pairs) <= 1) continue;
-            blockedKeys[key] = true;
-            viruses.push(this._cloneTile(tile));
-        }
-    }
-
-    _fallbackProblem(spec, difficulty) {
-        const profile = spec && spec.profile ? spec.profile : {};
-        const questIndex = Number(profile.index || 1) || 1;
-        this.directionWeights = { R: 1, L: 2, U: 3, D: 4 };
-        const pairCount = 2;
-        const anchors = [{ col: 2, row: 3 }, { col: 2, row: 11 }];
-        const usedKeys = {};
-        const pairs = [];
-        const allPaths = [];
-        for (let i = 0; i < pairCount; i++) {
-            const classInfo = { ipClass: i === 0 ? 'B' : 'C', originalCIDR: i === 0 ? 16 : 24, minAddedBits: 4 + i, maxAddedBits: i === 0 ? 10 : 6 };
-            const targetAddedBits = Math.min(classInfo.maxAddedBits, Math.max(classInfo.minAddedBits, difficulty.minAddedBits + i));
-            const route = this._generatePairRoute(anchors[i], targetAddedBits, questIndex, i, usedKeys, difficulty) || this._routeFromMoves(anchors[i], this._fallbackMovesForBits(targetAddedBits));
-            for (let p = 0; p < route.path.length; p++) usedKeys[this._tileKey(route.path[p])] = true;
-            allPaths.push(route.path);
-            const targetCIDR = classInfo.originalCIDR + targetAddedBits;
-            const optimizedHostBits = Math.max(0, 32 - targetCIDR);
-            const ipAddress = this._randomIPForClass(classInfo.ipClass);
-            const ipInt = this.tools && typeof this.tools.ipToInt === 'function' ? this.tools.ipToInt(ipAddress) : null;
-            pairs.push({
-                id: 'pair-' + (i + 1),
-                label: 'PAIR ' + (i + 1),
-                startLabel: 'A' + (i + 1),
-                endLabel: 'B' + (i + 1),
-                start: this._cloneTile(route.path[0]),
-                end: this._cloneTile(route.path[route.path.length - 1]),
-                solutionMoves: route.moves.slice(),
-                solutionPath: route.path.map((t) => this._cloneTile(t)),
-                ipAddress,
-                ipInt,
-                ipClass: classInfo.ipClass,
-                originalCIDR: classInfo.originalCIDR,
-                targetAddedBits,
-                targetCIDR,
-                optimizedHostBits,
-                optimizedCapacity: this._capacityForHostBits(optimizedHostBits),
-                requiredHosts: this._randomRequiredHosts(optimizedHostBits),
-                allocatedCIDR: this._allocatedCIDR(ipInt, targetCIDR),
-            });
-        }
-        const solutionBufferKeys = this._buildMultiPathBufferKeys(allPaths);
-        const blockedKeys = {};
-        for (let i = 0; i < allPaths.length; i++) for (let p = 0; p < allPaths[i].length; p++) blockedKeys[this._tileKey(allPaths[i][p])] = true;
-        const viruses = [];
-        this._fillRandomViruses(viruses, blockedKeys, pairs, solutionBufferKeys, Math.min(28, difficulty.baseViruses), 600);
-        return {
-            id: ['dual-pair-matrix-fallback', questIndex, Date.now(), Math.floor(Math.random() * 9999)].join(':'),
-            questIndex,
-            difficulty,
-            directionWeights: this._normalizeDirectionWeights(this.directionWeights),
-            baseCIDR: pairs.map((p) => p.allocatedCIDR).join(' + '),
-            zoneCount: pairCount,
-            pairCount,
-            pairs,
-            viruses,
-            solutionBufferKeys,
-        };
-    }
-
-    _generatePairRoute(start, bits, questIndex, pairIndex, avoidKeys, difficulty) {
-        const candidates = this._routeCandidatesForBits(start, bits, questIndex, pairIndex, avoidKeys, difficulty);
-        if (candidates.length) {
-            candidates.sort((a, b) => b.score - a.score);
-            const topCount = Math.min(Math.max(4, Number(questIndex || 1) + 2), candidates.length);
-            const chosen = candidates[this._randomInt(0, topCount - 1)];
-            return { moves: chosen.moves.slice(), path: chosen.path.map((t) => this._cloneTile(t)) };
-        }
-        const fallback = this._routeFromMoves(start, this._fallbackMovesForBits(bits));
-        return fallback && fallback.path && fallback.path.length > 2 ? fallback : null;
-    }
-
-    _routeCandidatesForBits(start, bits, questIndex, pairIndex, avoidKeys, difficulty) {
-        const total = Math.max(1, Number(bits) || 1);
-        const candidates = [];
-        const directions = this._routeDirectionOrder(questIndex, pairIndex);
-        const maxWeight = this._maxDirectionWeight();
-        const minWeight = this._minDirectionWeight();
-        const targetMoves = Math.ceil(total / maxWeight) + Math.max(1, Math.floor(Number(questIndex || 1) / 2));
-        const maxMoves = Math.min((difficulty && difficulty.maxRouteMoves) || 13, Math.max(4, targetMoves + 5, Math.ceil(total / minWeight)));
-        const startTile = this._cloneTile(start);
-        const used = {};
-        used[this._tileKey(startTile)] = true;
-
-        const visit = (tile, remaining, moves, path) => {
-            if (candidates.length >= 520) return;
-            if (remaining === 0) {
-                const score = this._scoreRouteCandidate(startTile, path, moves, questIndex);
-                if (score > 0) candidates.push({ moves: moves.slice(), path: path.map((t) => this._cloneTile(t)), score });
-                return;
-            }
-            if (moves.length >= maxMoves) return;
-            if (remaining > (maxMoves - moves.length) * maxWeight) return;
-            for (let i = 0; i < directions.length; i++) {
-                const direction = directions[i];
-                const weight = this.directionWeights[direction] || 0;
-                if (weight <= 0 || weight > remaining) continue;
-                const next = this._moveTile(tile, direction);
-                const key = this._tileKey(next);
-                if (!this._inGrid(next) || used[key] || (avoidKeys && avoidKeys[key])) continue;
-                used[key] = true;
-                moves.push(direction);
-                path.push(next);
-                visit(next, remaining - weight, moves, path);
-                path.pop();
-                moves.pop();
-                delete used[key];
-            }
-        };
-
-        visit(startTile, total, [], [startTile]);
-        return candidates;
-    }
-
-    _routeDirectionOrder(questIndex, pairIndex) {
-        const orders = [
-            ['R', 'D', 'U', 'L'],
-            ['R', 'U', 'D', 'L'],
-            ['D', 'R', 'U', 'L'],
-            ['U', 'R', 'D', 'L'],
-            ['D', 'L', 'R', 'U'],
-            ['U', 'L', 'R', 'D'],
-        ];
-        const order = orders[(Math.abs(Number(questIndex || 1)) + Number(pairIndex || 0) + this._randomInt(0, orders.length - 1)) % orders.length].slice();
-        if (Math.random() < 0.5) order.reverse();
-        return order;
-    }
-
-    _scoreRouteCandidate(start, path, moves, questIndex) {
-        if (!path || path.length < 3 || !moves || moves.length < 2) return -100;
-        const end = path[path.length - 1];
-        const distinct = {};
-        let turns = 0;
-        for (let i = 0; i < moves.length; i++) {
-            distinct[moves[i]] = true;
-            if (i > 0 && moves[i] !== moves[i - 1]) turns++;
-        }
-        const distinctCount = Object.keys(distinct).length;
-        if (distinctCount < 2 || turns < 1) return -100;
-        const rowDelta = Math.abs(end.row - start.row);
-        const colDelta = Math.abs(end.col - start.col);
-        let score = distinctCount * 24 + turns * 16 + Math.min(6, rowDelta) * 13 + Math.min(7, colDelta) * 4 + Math.min(9, moves.length) * 2;
-        if (end.row === start.row) score -= Number(questIndex || 1) > 1 ? 70 : 35;
-        if (this._manhattan(start, end) < 3) score -= 30;
-        if (moves.length > 8) score -= (moves.length - 8) * 4;
-        return score;
-    }
-
-    _routeFromMoves(start, moves) {
-        const solutionMoves = (moves || []).slice();
-        const solutionPath = [this._cloneTile(start)];
-        let cursor = this._cloneTile(start);
-        for (let i = 0; i < solutionMoves.length; i++) {
-            cursor = this._moveTile(cursor, solutionMoves[i]);
-            if (!this._inGrid(cursor)) break;
-            solutionPath.push(this._cloneTile(cursor));
-        }
-        return { moves: solutionMoves.slice(0, Math.max(0, solutionPath.length - 1)), path: solutionPath };
-    }
-
-    _fallbackMovesForBits(bits) {
-        const total = Math.max(1, Number(bits) || 1);
-        const moves = [];
-        let remaining = total;
-        const dirs = ['R', 'L', 'U', 'D'].sort((a, b) => (this.directionWeights[b] || 0) - (this.directionWeights[a] || 0));
-        while (remaining > 0 && moves.length < 18) {
-            let used = false;
-            for (let i = 0; i < dirs.length; i++) {
-                const weight = this.directionWeights[dirs[i]] || 0;
-                if (weight > 0 && weight <= remaining) {
-                    moves.push(dirs[i]);
-                    remaining -= weight;
-                    used = true;
-                    break;
-                }
-            }
-            if (!used) break;
-        }
-        return moves;
-    }
-
-    _addDefaultPathDecoyViruses(viruses, blockedKeys, start, end, solutionPath, solutionBufferKeys, questIndex, pairIndex) {
-        const desired = Math.min(4, Math.max(2, Number(questIndex || 2)));
-        const candidates = this._defaultPathDecoyCandidates(start, end, solutionPath);
-        let placed = 0;
-        for (let i = 0; i < candidates.length && placed < desired; i++) {
-            const tile = candidates[i].tile;
-            const key = this._tileKey(tile);
-            if (blockedKeys[key]) continue;
-            if (solutionBufferKeys[key] && placed > 0) continue;
-            if (this._distanceToTileList(tile, solutionPath) <= 1) continue;
-            if (this._manhattan(tile, start) <= 1 || this._manhattan(tile, end) <= 1) continue;
-            blockedKeys[key] = true;
-            viruses.push(this._cloneTile(tile));
-            placed++;
-        }
-        return placed;
-    }
-
-    _defaultPathDecoyCandidates(start, end, solutionPath) {
-        const directPath = this._directCorridorTiles(start, end);
-        const candidates = [];
-        const seen = {};
-        const midpoint = Math.max(0, Math.floor((directPath.length - 1) / 2));
-        for (let offset = 0; offset < directPath.length; offset++) {
-            const indexes = offset === 0 ? [midpoint] : [midpoint - offset, midpoint + offset];
-            for (let i = 0; i < indexes.length; i++) {
-                const index = indexes[i];
-                if (index < 0 || index >= directPath.length) continue;
-                const base = directPath[index];
-                this._pushDecoyCandidate(candidates, seen, base, 130 - offset * 9);
-                const neighbors = [
-                    { col: base.col + 1, row: base.row },
-                    { col: base.col - 1, row: base.row },
-                    { col: base.col, row: base.row + 1 },
-                    { col: base.col, row: base.row - 1 },
-                    { col: base.col + 2, row: base.row },
-                    { col: base.col - 2, row: base.row },
-                    { col: base.col, row: base.row + 2 },
-                    { col: base.col, row: base.row - 2 },
-                ];
-                for (let n = 0; n < neighbors.length; n++) {
-                    const solutionDistance = this._distanceToTileList(neighbors[n], solutionPath);
-                    this._pushDecoyCandidate(candidates, seen, neighbors[n], 110 - offset * 8 + Math.min(3, solutionDistance) * 3);
-                }
-            }
-        }
-        candidates.sort((a, b) => b.score - a.score);
-        return candidates;
-    }
-
-    _pushDecoyCandidate(candidates, seen, tile, score) {
-        if (!this._inGrid(tile)) return false;
-        const key = this._tileKey(tile);
-        if (seen[key]) return false;
-        seen[key] = true;
-        candidates.push({ tile: this._cloneTile(tile), score });
-        return true;
-    }
-
-    _directCorridorTiles(start, end) {
-        const path = [this._cloneTile(start)];
-        const cursor = this._cloneTile(start);
-        while (cursor.col !== end.col) {
-            cursor.col += end.col >= cursor.col ? 1 : -1;
-            path.push(this._cloneTile(cursor));
-        }
-        while (cursor.row !== end.row) {
-            cursor.row += end.row >= cursor.row ? 1 : -1;
-            path.push(this._cloneTile(cursor));
-        }
-        return path;
-    }
-
-    _buildMultiPathBufferKeys(paths) {
-        const keys = {};
-        for (let i = 0; i < paths.length; i++) {
-            for (let p = 0; p < paths[i].length; p++) {
-                const base = paths[i][p];
-                for (let row = base.row - 1; row <= base.row + 1; row++) {
-                    for (let col = base.col - 1; col <= base.col + 1; col++) {
-                        const tile = { col, row };
-                        if (this._inGrid(tile) && this._manhattan(base, tile) <= 1) keys[this._tileKey(tile)] = true;
-                    }
-                }
-            }
-        }
-        return keys;
-    }
-
-    _pairAnchors(questIndex) {
-        const layouts = [
-            [{ col: 1, row: 3 }, { col: 2, row: 11 }],
-            [{ col: 2, row: 2 }, { col: 2, row: 12 }],
-            [{ col: 1, row: 6 }, { col: 7, row: 13 }],
-            [{ col: 2, row: 3 }, { col: 10, row: 11 }],
-            [{ col: 1, row: 12 }, { col: 5, row: 4 }],
-        ];
-        const selected = layouts[(Math.max(1, Number(questIndex) || 1) - 1) % layouts.length];
-        return selected.map((t) => this._cloneTile(t));
-    }
-
-    _randomCIDRClass(difficulty) {
-        const classes = [
-            { ipClass: 'A', originalCIDR: 8, minAddedBits: 4, maxAddedBits: 16 },
-            { ipClass: 'B', originalCIDR: 16, minAddedBits: 3, maxAddedBits: 11 },
-            { ipClass: 'C', originalCIDR: 24, minAddedBits: 2, maxAddedBits: 6 },
-        ];
-        const minBits = difficulty ? difficulty.minAddedBits : 1;
-        const viable = classes.filter((c) => c.maxAddedBits >= minBits);
-        const pool = viable.length ? viable : classes;
-        return pool[this._randomInt(0, pool.length - 1)];
-    }
-
-    _randomIPForClass(ipClass) {
-        const core = IP2Live.IPWiresCore;
-        if (core && typeof core.generateIPForClass === 'function') {
-            const generated = core.generateIPForClass(ipClass);
-            if (generated && generated.ip) return generated.ip;
-        }
-        const ranges = { A: [1, 126], B: [128, 191], C: [192, 223] };
-        const range = ranges[ipClass] || ranges.C;
-        return [this._randomInt(range[0], range[1]), this._randomInt(0, 255), this._randomInt(0, 255), this._randomInt(1, 254)].join('.');
-    }
-
-    _randomRequiredHosts(hostBits) {
-        const bits = Math.max(1, Number(hostBits) || 1);
-        const capacity = this._capacityForHostBits(bits);
-        const minimum = Math.max(1, this._capacityForHostBits(bits - 1) + 1);
-        const maximum = Math.max(minimum, capacity - 1);
-        return this._randomInt(minimum, maximum);
-    }
-
-    _capacityForHostBits(hostBits) {
-        const bits = Math.max(0, Number(hostBits) || 0);
-        if (bits <= 52) return Math.pow(2, bits);
-        return '2^' + bits;
-    }
-
-    _allocatedCIDR(ipInt, prefix) {
-        const tools = this.tools || IP2Live.CIDRTools;
-        const p = Number(prefix);
-        if (!tools || typeof tools.networkStart !== 'function' || typeof tools.formatCIDR !== 'function') return 'unknown /' + p;
-        if (!Number.isInteger(p) || p < 0 || p > 32) return 'invalid /' + p;
-        const base = Number(ipInt);
-        if (!Number.isFinite(base)) return 'unknown /' + p;
-        return tools.formatCIDR(tools.networkStart(base >>> 0, p), p);
-    }
-
-    _activePair() { return this.problem.pairs[this.activePairIndex] || this.problem.pairs[0]; }
-    _activePath() { return this.paths[this.activePairIndex] || this.paths[0]; }
-    _setStatus(text, tone) { this.statusText = text; this.statusTone = tone || 'idle'; }
-    _isDialogueActive() { return !!(IP2Live.DialogueManager && IP2Live.DialogueManager.isActive && IP2Live.DialogueManager.isActive()); }
-
-    _isBlockedByOtherPair(tile, activeIndex) {
-        for (let i = 0; i < this.problem.pairs.length; i++) {
-            if (i === activeIndex) continue;
-            if (this._sameTile(tile, this.problem.pairs[i].start) || this._sameTile(tile, this.problem.pairs[i].end)) return true;
-            if (this._pathIndex(tile, this.paths[i]) !== -1) return true;
-        }
+        this.finished = true; this._setPhase('failed');
+        if (typeof this.options.onFailed === 'function') this.options.onFailed({ ...this._result(false), reason: 'hearts_exhausted' });
+    }
+    _cancel() { if (this.finished) return; this.finished = true; if (typeof this.options.onCancel === 'function') this.options.onCancel(); }
+    _openPauseMenu() { this.lastUpdateAt = null; if (IP2Live.GameplayPause && IP2Live.GameplayPause.open) IP2Live.GameplayPause.open(this, this.gameplayId); else this._cancel(); }
+    onGameplayResume() {
+        this.lastUpdateAt = null;
+        if (!this._dialogueActive()) this.tutorialPromptActive = false;
+        const top = Manager && Manager.Stack && Manager.Stack.top;
+        // Durable saves restore the gameplay scene; transient helper overlays are reopened manually.
+        if (this.calculatorOpen && !(top && top.options && top.options.backgroundScene === this)) this.calculatorOpen = false;
+    }
+    _closeGameplayOverlay() {
+        if (this.helpOpen) { this.helpOpen = false; this.onGameplayResume(); return true; }
         return false;
     }
-
-    _pairIndexForNode(tile) {
-        for (let i = 0; i < this.problem.pairs.length; i++) {
-            const pair = this.problem.pairs[i];
-            if (this._sameTile(tile, pair.start) || this._sameTile(tile, pair.end)) return i;
+    _keyToken(key) { return String(key && (key.code || key.name || key) || '').toUpperCase().replace(/^KEY/, '').replace(/^(DIGIT|NUMPAD)(\d)$/, '$2'); }
+    onKeyPressed(key) {
+        const token = this._keyToken(key);
+        if (this._dialogueActive()) { if (['ENTER', 'SPACE', 'SPACEBAR', ' '].includes(token)) IP2Live.DialogueManager.advance(); return true; }
+        if (this.tutorialPromptActive) return true;
+        if (token === 'ESCAPE' || (Data.Keyboards.checkCancelMenu && Data.Keyboards.checkCancelMenu(key))) { if (!this._closeGameplayOverlay()) this._openPauseMenu(); return true; }
+        if (this.finished) return true;
+        if (this.helpOpen) { if (['ENTER', 'SPACE', 'SPACEBAR', ' '].includes(token)) { this.helpOpen = false; this.onGameplayResume(); } return true; }
+        if (this.calculatorOpen) return true;
+        if (token === 'C') { this._openCalculator(); return true; }
+        if (token === 'H') { this.helpOpen = true; return true; }
+        if (['ENTER', 'SPACE', 'SPACEBAR', ' '].includes(token)) {
+            if (this.phase === 'think') this._skipPreparation();
+            else if (this.phase === 'drop') this._continue();
+            return true;
         }
-        return -1;
+        this._aimKey(token); this._paint(); return true;
     }
-
-    _distanceToAnyEndpoint(tile, pairs) {
-        let best = 99;
-        for (let i = 0; i < pairs.length; i++) {
-            best = Math.min(best, this._manhattan(tile, pairs[i].start), this._manhattan(tile, pairs[i].end));
+    _aimKey(token) {
+        if (this.phase !== 'barriers') return;
+        if (['ARROWLEFT', 'A'].includes(token)) this.selectedLane = Math.max(0, this.selectedLane - 1);
+        if (['ARROWRIGHT', 'D'].includes(token)) this.selectedLane = Math.min(2, this.selectedLane + 1);
+        if (/^[123]$/.test(token)) this.selectedLane = Number(token) - 1;
+    }
+    onKeyPressedRepeat() { return true; }
+    onKeyPressedAndRepeat() { return true; }
+    _layout() {
+        this.consoleRect = { x: 16, y: 46, w: 1248, h: 538 };
+        this.aimRect = { x: 40, y: 214, w: 1200, h: 348 };
+        this.formulaTargets = { operator: { x: 625, y: 661 }, blockSize: { x: 767, y: 661 }, answer: { x: 1101, y: 661 } };
+        this.buttonRects = [
+            { x: 1096, y: 9, w: 97, h: 27, action: 'calculator', label: 'CALC [C]' },
+            { x: 1202, y: 9, w: 62, h: 27, action: 'help', label: '? [H]' },
+        ];
+        if (this.phase === 'think') this.buttonRects.push({ x: 618, y: 364, w: 44, h: 44, radius: 22, action: 'skip', tooltip: 'Skip preparation' });
+        if (this.helpOpen) this.buttonRects = [{ x: 500, y: 542, w: 280, h: 44, action: 'closeHelp', label: 'ENTER THE CONSOLE [ENTER]' }];
+        if (this.calculatorOpen) this.buttonRects = [];
+    }
+    _toLogical(x, y) {
+        const canvas = Common.Platform.ctx.canvas, scale = Math.min(canvas.width / 1280, canvas.height / 720);
+        return { x: (x - (canvas.width - 1280 * scale) / 2) / scale, y: (y - (canvas.height - 720 * scale) / 2) / scale };
+    }
+    _inside(x, y, rect) {
+        if (rect.radius) return Math.hypot(x - rect.x - rect.w / 2, y - rect.y - rect.h / 2) <= rect.radius;
+        return x >= rect.x && x <= rect.x + rect.w && y >= rect.y && y <= rect.y + rect.h;
+    }
+    onMouseDown(x, y) {
+        if (this._dialogueActive()) { IP2Live.DialogueManager.advance(); return true; }
+        if (this.tutorialPromptActive) return true;
+        if (this.finished) return true;
+        if (this.calculatorOpen) return true;
+        const p = this._toLogical(x, y); this._layout();
+        const b = this.buttonRects.find(rect => this._inside(p.x, p.y, rect));
+        if (b) {
+            if (b.action === 'calculator') this._openCalculator();
+            if (b.action === 'help') this.helpOpen = true;
+            if (b.action === 'skip') this._skipPreparation();
+            if (b.action === 'closeHelp') { this.helpOpen = false; this.onGameplayResume(); }
+        } else this._aimPointer(p);
+        this._paint(); return true;
+    }
+    _aimPointer(p) { if (!this.helpOpen && !this.calculatorOpen && !this.tutorialPromptActive && !this._dialogueActive() && this.phase === 'barriers' && this._inside(p.x, p.y, this.aimRect)) this.selectedLane = Math.max(0, Math.min(2, Math.floor((p.x - 40) / 400))); }
+    onMouseMove(x, y) {
+        if (!this.finished) {
+            this._layout(); this.pointerPosition = this._toLogical(x, y);
+            const skip = this.buttonRects.find(button => button.action === 'skip');
+            if (skip && this._inside(this.pointerPosition.x, this.pointerPosition.y, skip)) {
+                if (this.skipHoverStartedAt == null) this.skipHoverStartedAt = Date.now();
+            } else this.skipHoverStartedAt = null;
+            this._aimPointer(this.pointerPosition); this._paint();
         }
-        return best;
+        return true;
     }
-
-    _distanceToTileList(tile, tiles) {
-        if (!tile || !tiles || !tiles.length) return 99;
-        let best = 99;
-        for (let i = 0; i < tiles.length; i++) {
-            const d = this._manhattan(tile, tiles[i]);
-            if (d < best) best = d;
-            if (best <= 0) return best;
+    onMouseLeave() { this.pointerPosition = null; this.skipHoverStartedAt = null; this._paint(); return true; }
+    onMouseUp() { return true; }
+    _sound(name) { const sound = Data.Systems && Data.Systems[name]; if (sound && sound.playSound) sound.playSound(); }
+    _openCalculator() {
+        const manager = IP2Live.HostPowerToolManager;
+        if (this.finished || this.calculatorOpen || this.helpOpen || this.tutorialPromptActive || this._dialogueActive() || !['think', 'barriers', 'boss_enter', 'boss'].includes(this.phase) || !manager) return false;
+        this.calculatorOpen = true;
+        const p = this.problem;
+        const opened = manager.launchHostPowerTool({
+            targetClass: p.ipClass, requiredHosts: 1, startExponent: this.calculatorExponent,
+            align: 'right', showIntro: false, sourceGameplayId: this.gameplayId,
+            backgroundScene: this, preserveBackground: true, neutralFeedback: true, lockScenario: true,
+            calculationMode: 'blockSize', closeKey: 'C',
+            subnetContext: { ipClass: p.ipClass, defaultPrefix: p.defaultPrefix, givenBits: p.givenBits, bitCount: p.givenBits === 'borrowed' ? p.borrowedBits : p.hostBits },
+            onBackgroundUpdate: () => { this.update(); return this.finished; },
+            onClose: result => {
+                const dwell = Math.max(0, Date.now() - this.calculatorOpenedAt);
+                this.calculatorElapsedMs += dwell; this.encounterTelemetry.calculatorElapsedMs += dwell;
+                this.calculatorOpenedAt = null;
+                this.calculatorExponent = result.exponent; this.calculatorOpen = false; this.onGameplayResume(); this._paint();
+            },
+        });
+        if (!opened) this.calculatorOpen = false;
+        else { this.calculatorOpenedAt = Date.now(); this.calculatorUses++; this.encounterTelemetry.calculatorUses++; }
+        this._paint(); return opened;
+    }
+    draw3D() { if (Manager && Manager.GL && Manager.GL.renderer) Manager.GL.renderer.clear(); }
+    drawHUD() {
+        this._ensureSessionCompatible();
+        const ctx = Common.Platform.ctx; if (!ctx || !ctx.canvas) return;
+        const w = ctx.canvas.width, h = ctx.canvas.height, scale = Math.min(w / 1280, h / 720);
+        ctx.save(); ctx.fillStyle = '#03040e'; ctx.fillRect(0, 0, w, h);
+        ctx.translate((w - 1280 * scale) / 2, (h - 720 * scale) / 2); ctx.scale(scale, scale);
+        this._layout(); this._drawConsole(ctx); this._drawDock(ctx); this._drawPickup(ctx); this._drawAddressDrop(ctx);
+        if (this.helpOpen) this._drawHelp(ctx);
+        for (const button of this.buttonRects) this._button(ctx, button);
+        ctx.restore();
+        this._drawTutorialFocus(ctx);
+        if (IP2Live.DialogueManager && IP2Live.DialogueManager.drawOverlay) IP2Live.DialogueManager.drawOverlay(ctx);
+        if (IP2Live.GameplayCompletionPopup && IP2Live.GameplayCompletionPopup.drawFor) IP2Live.GameplayCompletionPopup.drawFor(this, ctx, { tick: this.animTick });
+    }
+    _tutorialViewport(ctx) {
+        const w = ctx.canvas.width, h = ctx.canvas.height, scale = Math.min(w / 1280, h / 720);
+        return { w, h, scale, x: (w - 1280 * scale) / 2, y: (h - 720 * scale) / 2 };
+    }
+    _tutorialFocusRects(dialogue, view) {
+        const targets = dialogue.context.gameplayFocus[Number(dialogue.slideIndex) || 0] || [];
+        const entry = this.options.reducedMotion ? 0 : Math.max(0, 1 - this.waveAgeMs / 380) * 26;
+        const bounds = {
+            console: [{ x: 24, y: 54, w: 1232, h: 522 }],
+            given: [{ x: 31, y: 609, w: 325, h: 84 }],
+            class: [{ x: 31, y: 609, w: 325, h: 25 }],
+            bits: [{ x: 31, y: 667, w: 325, h: 25 }],
+            answer: [{ x: 962, y: 647, w: 278, h: 28 }],
+            formula: [{ x: 391, y: 639, w: 854, h: 43 }],
+            operator: [{ x: 584, y: 647, w: 82, h: 28 }],
+            blockSize: [{ x: 680, y: 647, w: 174, h: 28 }],
+            correction: [{ x: 872, y: 647, w: 44, h: 28 }],
+            preparation: [{ x: 450, y: 248, w: 380, h: 81 }],
+            skip: [{ x: 618, y: 364, w: 44, h: 44 }],
+            calculator: [{ x: 1096, y: 9, w: 97, h: 27 }],
+            range: [{ x: 230, y: 328, w: 820, h: 114 }],
+            barriers: [0, 1, 2].map(i => ({ x: 78 + i * 400, y: 225 - entry, w: 324, h: 130 })),
+            boss: [{ x: 452, y: 190, w: 376, h: 221 }],
+            bossHP: [{ x: 410, y: 68, w: 460, h: 34 }],
+            hearts: [{ x: 1113, y: 61, w: 120, h: 37 }],
+        };
+        return targets.flatMap(name => bounds[name] || []).map(r => ({
+            x: view.x + r.x * view.scale, y: view.y + r.y * view.scale,
+            w: r.w * view.scale, h: r.h * view.scale,
+        }));
+    }
+    _drawTutorialFocus(ctx) {
+        const dialogue = IP2Live.DialogueManager && IP2Live.DialogueManager._active;
+        if (!this.tutorialWalkthroughActive || !dialogue || !String(dialogue.id || '').startsWith('stage3.subnetblaster.')) return;
+        const context = dialogue.context || {};
+        if (!context.gameplayFocus) return;
+        const targets = context.gameplayFocus[Number(dialogue.slideIndex) || 0] || [];
+        const view = this._tutorialViewport(ctx);
+        const rects = this._tutorialFocusRects(dialogue, view);
+        let panel = { x: 260, y: 150, w: 760 };
+        if (targets.includes('console')) panel = { x: 280, y: 210, w: 720 };
+        else if (targets.includes('preparation')) panel = { x: 240, y: 435, w: 800 };
+        else if (targets.includes('barriers')) panel = { x: 78, y: 365, w: 1124 };
+        else if (targets.includes('boss')) panel = { x: 54, y: 210, w: 350 };
+        else if (targets.includes('hearts')) panel = { x: 260, y: 185, w: 760 };
+        else if (targets.includes('range')) panel = { x: 240, y: 80, w: 800 };
+        // DialogueManager uses independent axis scaling; convert from this game's letterboxed canvas.
+        const resolution = Common.ScreenResolution || { SCREEN_X: 1280, SCREEN_Y: 720 };
+        context.panelBounds = {
+            x: (view.x + panel.x * view.scale) * resolution.SCREEN_X / view.w,
+            y: (view.y + panel.y * view.scale) * resolution.SCREEN_Y / view.h,
+            w: panel.w * view.scale * resolution.SCREEN_X / view.w,
+        };
+        if (targets.includes('range')) {
+            ctx.save(); ctx.translate(view.x, view.y); ctx.scale(view.scale, view.scale);
+            this._drawTutorialRange(ctx); ctx.restore();
         }
-        return best;
+        if (!rects.length) return;
+        const pad = 4 * view.scale;
+        ctx.save(); ctx.save();
+        for (const r of rects) {
+            ctx.beginPath(); ctx.rect(0, 0, view.w, view.h);
+            ctx.rect(r.x - pad, r.y - pad, r.w + 2 * pad, r.h + 2 * pad); ctx.clip('evenodd');
+        }
+        ctx.fillStyle = 'rgba(0,4,10,0.68)'; ctx.fillRect(0, 0, view.w, view.h); ctx.restore();
+        ctx.strokeStyle = '#ffe38a'; ctx.lineWidth = 1.5 * view.scale;
+        for (const r of rects) ctx.strokeRect(r.x - pad, r.y - pad, r.w + 2 * pad, r.h + 2 * pad);
+        ctx.restore();
     }
-
-    _tileFromPoint(x, y, grid) {
-        const cell = grid.w / 16;
-        return { col: Math.max(0, Math.min(15, Math.floor((x - grid.x) / cell))), row: Math.max(0, Math.min(15, Math.floor((y - grid.y) / cell))) };
+    _drawTutorialRange(ctx) {
+        this._panel(ctx, 230, 328, 820, 114, '#0a1525', '#36576c');
+        this._text(ctx, 'NETWORK', 300, 351, 14, '#9ffff0', 'center');
+        this._text(ctx, 'USABLE DEVICE ADDRESSES', 640, 351, 12, '#b7cadb', 'center');
+        this._text(ctx, 'BROADCAST', 980, 351, 14, '#ffadd1', 'center');
+        ctx.fillStyle = '#224457'; ctx.fillRect(300, 377, 680, 20);
+        ctx.fillStyle = '#80e8da'; ctx.fillRect(291, 373, 18, 28);
+        ctx.fillStyle = '#ef8db7'; ctx.fillRect(971, 373, 18, 28);
+        for (let i = 1; i < 16; i++) { ctx.fillStyle = '#4a6c7d'; ctx.fillRect(300 + i * 42.5, 381, 1, 12); }
+        this._text(ctx, 'FIRST ADDRESS', 300, 421, 11, '#a0b8c6', 'center');
+        this._text(ctx, 'LAST ADDRESS', 980, 421, 11, '#a0b8c6', 'center');
     }
-
-    _cellCenter(tile, grid) {
-        const cell = grid.w / 16;
-        return { x: grid.x + tile.col * cell + cell / 2, y: grid.y + tile.row * cell + cell / 2 };
+    _text(ctx, text, x, y, size = 14, color = '#bfd4e5', align = 'left', font = 'Oxanium-Medium, monospace') {
+        ctx.font = size + 'px ' + font; ctx.textAlign = align; ctx.textBaseline = 'middle'; ctx.fillStyle = color; ctx.fillText(text, x, y);
     }
-
-    _moveTile(tile, direction) {
-        const t = this._cloneTile(tile);
-        if (direction === 'R') t.col++;
-        if (direction === 'L') t.col--;
-        if (direction === 'U') t.row--;
-        if (direction === 'D') t.row++;
-        return t;
+    _fitText(ctx, text, x, y, width, size = 18, color = '#d8f8f7', align = 'left') {
+        ctx.font = size + 'px Oxanium-Medium, monospace';
+        while (size > 10 && ctx.measureText(text).width > width) { size--; ctx.font = size + 'px Oxanium-Medium, monospace'; }
+        this._text(ctx, text, x, y, size, color, align);
     }
-
-    _directionBetween(a, b) {
-        if (!a || !b) return '';
-        if (b.col === a.col + 1 && b.row === a.row) return 'R';
-        if (b.col === a.col - 1 && b.row === a.row) return 'L';
-        if (b.col === a.col && b.row === a.row - 1) return 'U';
-        if (b.col === a.col && b.row === a.row + 1) return 'D';
-        return '';
+    _panel(ctx, x, y, w, h, fill = '#0b1022', stroke = '#283553') {
+        ctx.fillStyle = fill; ctx.fillRect(x, y, w, h); ctx.strokeStyle = stroke; ctx.lineWidth = 1; ctx.strokeRect(x, y, w, h);
     }
-
-    _isAdjacent(a, b) { return !!a && !!b && Math.abs(a.col - b.col) + Math.abs(a.row - b.row) === 1; }
-    _inGrid(tile) { return tile && tile.col >= 0 && tile.col < 16 && tile.row >= 0 && tile.row < 16; }
-    _isVirus(tile) { const key = this._tileKey(tile); return this.problem.viruses.some((v) => this._tileKey(v) === key); }
-    _pathIndex(tile, path) { for (let i = 0; path && i < path.length; i++) if (this._sameTile(path[i], tile)) return i; return -1; }
-    _sameTile(a, b) { return !!a && !!b && Number(a.col) === Number(b.col) && Number(a.row) === Number(b.row); }
-    _cloneTile(tile) { return { col: Number(tile && tile.col) || 0, row: Number(tile && tile.row) || 0 }; }
-    _tileKey(tile) { return String(Number(tile && tile.col) || 0) + ':' + String(Number(tile && tile.row) || 0); }
-    _tileLabel(tile) { return 'C' + tile.col + ' R' + tile.row; }
-    _manhattan(a, b) { return Math.abs((a && a.col) - (b && b.col)) + Math.abs((a && a.row) - (b && b.row)); }
-    _formatHosts(value) { const n = Number(value); return Number.isFinite(n) && n.toLocaleString ? n.toLocaleString('en-US') : String(value || 0); }
-
-    _fillChamferRect(ctx, x, y, w, h, cut, fillStyle) {
-        if (fillStyle) ctx.fillStyle = fillStyle;
-        ctx.beginPath();
-        ctx.moveTo(x + cut, y);
-        ctx.lineTo(x + w, y);
-        ctx.lineTo(x + w - cut, y + h);
-        ctx.lineTo(x, y + h);
-        ctx.lineTo(x, y + cut);
-        ctx.closePath();
-        ctx.fill();
+    _cutPanel(ctx, x, y, w, h, fill, stroke) {
+        ctx.beginPath(); ctx.moveTo(x + 12, y); ctx.lineTo(x + w, y); ctx.lineTo(x + w, y + h - 12); ctx.lineTo(x + w - 12, y + h); ctx.lineTo(x, y + h); ctx.lineTo(x, y + 12); ctx.closePath();
+        ctx.fillStyle = fill; ctx.fill(); ctx.strokeStyle = stroke; ctx.lineWidth = 1.3; ctx.stroke();
     }
-
-    _strokeChamferRect(ctx, x, y, w, h, cut, strokeStyle, lineWidth) {
-        ctx.beginPath();
-        ctx.moveTo(x + cut, y);
-        ctx.lineTo(x + w, y);
-        ctx.lineTo(x + w - cut, y + h);
-        ctx.lineTo(x, y + h);
-        ctx.lineTo(x, y + cut);
-        ctx.closePath();
-        ctx.strokeStyle = strokeStyle || '#FFFFFF';
-        ctx.lineWidth = lineWidth || 1;
-        ctx.stroke();
+    _button(ctx, b) {
+        if (b.action !== 'skip') {
+            this._cutPanel(ctx, b.x, b.y, b.w, b.h, '#102336', '#397b88');
+            this._text(ctx, b.label, b.x + b.w / 2, b.y + b.h / 2, 11, '#9bf9eb', 'center'); return;
+        }
+        const hovered = this.pointerPosition && this._inside(this.pointerPosition.x, this.pointerPosition.y, b);
+        const cx = b.x + b.w / 2, cy = b.y + b.h / 2;
+        ctx.save(); ctx.shadowColor = '#59e2d0'; ctx.shadowBlur = hovered ? 18 : 8;
+        const fill = ctx.createLinearGradient(b.x, b.y, b.x, b.y + b.h);
+        fill.addColorStop(0, hovered ? '#205462' : '#173f4b'); fill.addColorStop(1, '#0b202e');
+        ctx.beginPath(); ctx.arc(cx, cy, b.radius, 0, Math.PI * 2); ctx.fillStyle = fill; ctx.fill();
+        ctx.strokeStyle = hovered ? '#b4fff1' : '#78e8d7'; ctx.lineWidth = 1.3; ctx.stroke(); ctx.shadowBlur = 0;
+        this._polygon(ctx, [[cx-10,cy-7],[cx-1,cy],[cx-10,cy+7]], '#dcfff6');
+        this._polygon(ctx, [[cx-1,cy-7],[cx+8,cy],[cx-1,cy+7]], '#dcfff6');
+        ctx.fillStyle = '#dcfff6'; ctx.fillRect(cx+9,cy-7,2,14);
+        if (hovered && this.skipHoverStartedAt != null) {
+            const fade = this.options.reducedMotion ? 1 : Math.min(1, Math.max(0, (Date.now() - this.skipHoverStartedAt) / 180));
+            if (fade > 0) {
+                ctx.globalAlpha *= fade;
+                this._text(ctx, b.tooltip, cx, b.y + b.h + 20, 11, '#c8e4e0', 'center');
+            }
+        }
+        ctx.restore();
     }
-
-    _pointInRect(x, y, r) { return r && x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h; }
-    _reasonLabel(reason) {
-        const labels = { disconnected: 'route incomplete', virus: 'virus contact', virus_overrun: 'virus overrun', overlap: 'path overlap', too_small: 'hosts too small', too_big: 'hosts too large', not_optimized: 'CIDR not optimized' };
-        return labels[reason] || 'not optimized';
+    _drawConsole(ctx) {
+        this._text(ctx, '06 / SUBNET BLASTER', 24, 23, 18, '#e4faff');
+        this._panel(ctx, 16, 46, 1248, 538, '#06091a', '#57618c');
+        ctx.save(); ctx.beginPath(); ctx.rect(18, 48, 1244, 534); ctx.clip();
+        this._drawBackdrop(ctx);
+        if (this.phase !== 'think') this._drawCombatHUD(ctx);
+        if (this.phase === 'think') this._drawThinking(ctx);
+        else if (this.phase === 'barriers' || this.phase === 'pickup') this._drawBarriers(ctx);
+        else if (['boss_enter', 'boss', 'boss_hit', 'boss_retreat', 'counterattack', 'player_hit'].includes(this.phase)) this._drawBossEncounter(ctx);
+        else if (this.phase !== 'drop') this._drawReview(ctx);
+        if (['barriers', 'pickup', 'boss_enter', 'boss', 'boss_hit', 'counterattack', 'player_hit', 'boss_retreat', 'drop'].includes(this.phase)) this._drawShip(ctx);
+        for (const bullet of this.projectiles) {
+            const x = bullet.kind === 'boss' ? 640 : 240 + bullet.lane * 400;
+            ctx.shadowColor = '#6cffff'; ctx.shadowBlur = 14; ctx.fillStyle = '#adffff'; ctx.fillRect(x - 2, bullet.y, 4, 21); ctx.shadowBlur = 0;
+            ctx.fillStyle = '#cc61ff'; ctx.fillRect(x - 1, bullet.y + 21, 2, 9);
+        }
+        if (this.phase === 'player_hit') { ctx.fillStyle = 'rgba(255,45,94,' + (0.22 * (1 - this.phaseElapsedMs / 700)) + ')'; ctx.fillRect(18, 48, 1244, 534); }
+        for (let y = 50; y < 584; y += 4) { ctx.fillStyle = 'rgba(1,2,9,0.065)'; ctx.fillRect(18, y, 1244, 1); }
+        ctx.restore();
+        this._drawConsoleFrame(ctx);
     }
-    _titleFont() { return IP2Live.Assets && IP2Live.Assets.nebulaLoaded ? 'Nebula-Regular' : 'monospace'; }
-    _randomInt(min, max) { const lo = Math.ceil(Number(min) || 0); const hi = Math.floor(Number(max) || 0); if (hi <= lo) return lo; return lo + Math.floor(Math.random() * (hi - lo + 1)); }
-    _playCursor() { try { if (Data.Systems.soundCursor) Data.Systems.soundCursor.playSound(); } catch (e) {} }
-    _playConfirm() { try { if (Data.Systems.soundConfirmation) Data.Systems.soundConfirmation.playSound(); } catch (e) {} }
-    _playCancel() { try { if (Data.Systems.soundCancel) Data.Systems.soundCancel.playSound(); } catch (e) {} }
+    _drawConsoleFrame(ctx) {
+        const { x, y, w, h } = this.consoleRect;
+        ctx.save();
+        const edge = ctx.createLinearGradient(0, y, 0, y + h);
+        edge.addColorStop(0, '#40556b'); edge.addColorStop(0.45, '#162334'); edge.addColorStop(1, '#324253');
+        ctx.strokeStyle = edge; ctx.lineWidth = 6; ctx.strokeRect(x, y, w, h);
+        ctx.strokeStyle = '#0a1222'; ctx.lineWidth = 2; ctx.strokeRect(x + 4, y + 4, w - 8, h - 8);
+        ctx.strokeStyle = 'rgba(113,194,197,0.35)'; ctx.lineWidth = 1; ctx.strokeRect(x + 7, y + 7, w - 14, h - 14);
+        // Cut metal corner plates, inset fasteners and short luminous rails frame the glass.
+        for (const [cx, cy, dx, dy] of [[x,y,1,1],[x+w,y,-1,1],[x,y+h,1,-1],[x+w,y+h,-1,-1]]) {
+            ctx.save(); ctx.translate(cx, cy); ctx.scale(dx, dy);
+            this._polygon(ctx, [[-3,-3],[65,-3],[53,5],[24,5],[5,24],[5,49],[-3,61]], '#142638', '#567887');
+            this._polygon(ctx, [[1,1],[51,1],[42,5],[21,5],[5,21],[5,39],[1,44]], '#285363');
+            ctx.strokeStyle = '#87e9dc'; ctx.lineWidth = 2;
+            ctx.beginPath(); ctx.moveTo(8, 34); ctx.lineTo(8, 22); ctx.lineTo(22, 8); ctx.lineTo(46, 8); ctx.stroke();
+            ctx.fillStyle = '#07111f'; ctx.beginPath(); ctx.arc(13,13,3.5,0,Math.PI*2); ctx.fill();
+            ctx.strokeStyle = '#7e9aa4'; ctx.lineWidth = 0.8; ctx.beginPath(); ctx.moveTo(11,13); ctx.lineTo(15,13); ctx.stroke();
+            for (let i = 0; i < 3; i++) { ctx.fillStyle = '#67b5ba'; ctx.fillRect(58 + i * 7, -1, 3, 2); }
+            ctx.restore();
+        }
+        for (const side of [-1, 1]) {
+            const cx = side < 0 ? x : x + w;
+            this._panel(ctx, cx - 3, y + h / 2 - 34, 6, 68, '#0a1525', '#425363');
+            ctx.fillStyle = side < 0 ? '#76c9c7' : '#ba85c6'; ctx.fillRect(cx - 1, y + h / 2 - 19, 2, 38);
+            for (let i = 0; i < 4; i++) { ctx.fillStyle = '#556a7a'; ctx.fillRect(cx - 2, y + 74 + i * 7, 4, 2); }
+        }
+        ctx.restore();
+    }
+    _drawBackdrop(ctx) {
+        const glow = ctx.createRadialGradient(640, 275, 10, 640, 275, 700);
+        glow.addColorStop(0, '#25133f'); glow.addColorStop(0.5, '#101c36'); glow.addColorStop(1, '#040713');
+        ctx.fillStyle = glow; ctx.fillRect(18, 48, 1244, 534);
+        ctx.save(); ctx.filter = 'blur(3px)';
+        // A soft distant skyline sits behind the sharper foreground towers.
+        for (let i = 0; i < 26; i++) {
+            const x = 20 + i * 49, height = 35 + i * 73 % 145;
+            ctx.fillStyle = i % 3 ? '#171d3a' : '#23203e'; ctx.fillRect(x, 415 - height, 37, height);
+            ctx.fillStyle = 'rgba(94,100,177,0.3)'; ctx.fillRect(x + 8, 420 - height, 2, height - 14);
+        }
+        ctx.restore();
+        for (let i = 0; i < 85; i++) {
+            const x = 30 + (i * 151.7) % 1220, y = 125 + (i * 57.9 + this.animTick * (i % 3 + 1) * 0.12) % 310;
+            ctx.fillStyle = i % 5 ? '#6880a1' : '#f899f4'; ctx.fillRect(x, y, i % 3 ? 1 : 2, 2);
+        }
+        for (let i = 0; i < 32; i++) {
+            const x = 22 + i * 40, height = 25 + (i * 47) % 100;
+            ctx.fillStyle = '#0b1028'; ctx.fillRect(x, 426 - height, 30, height);
+            ctx.fillStyle = i % 2 ? '#3d3162' : '#1c4d63';
+            for (let y = 434 - height; y < 410; y += 13) ctx.fillRect(x + 7, y, 3, 4);
+        }
+        const mist = ctx.createLinearGradient(0, 325, 0, 445);
+        mist.addColorStop(0, 'rgba(43,48,89,0)'); mist.addColorStop(0.7, 'rgba(72,64,117,0.18)'); mist.addColorStop(1, 'rgba(24,40,68,0)');
+        ctx.fillStyle = mist; ctx.fillRect(18, 325, 1244, 120);
+        ctx.strokeStyle = '#733461'; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(18, 427); ctx.lineTo(1262, 427); ctx.stroke();
+        ctx.strokeStyle = '#26365a';
+        for (let i = 0; i < 17; i++) { ctx.beginPath(); ctx.moveTo(640, 395); ctx.lineTo(-250 + i * 112, 584); ctx.stroke(); }
+        for (let i = 0; i < 7; i++) { const y = 431 + Math.pow(i / 6, 1.8) * 153; ctx.beginPath(); ctx.moveTo(18, y); ctx.lineTo(1262, y); ctx.stroke(); }
+        // Stable fine grain avoids flicker and keeps text and foreground art crisp.
+        for (let i = 0; i < 220; i++) {
+            ctx.fillStyle = i % 2 ? 'rgba(179,199,240,0.035)' : 'rgba(0,0,0,0.08)';
+            ctx.fillRect(20 + i * 137.3 % 1240, 50 + i * 83.7 % 530, 2, 1);
+        }
+        const vignette = ctx.createRadialGradient(640, 290, 180, 640, 290, 700);
+        vignette.addColorStop(0, 'rgba(2,4,14,0)'); vignette.addColorStop(1, 'rgba(1,3,12,0.75)');
+        ctx.fillStyle = vignette; ctx.fillRect(18, 48, 1244, 534);
+        if (this.phase === 'think') { ctx.fillStyle = 'rgba(4,8,20,0.35)'; ctx.fillRect(18, 48, 1244, 534); }
+        if (['barriers', 'pickup'].includes(this.phase)) {
+            ctx.setLineDash([3, 11]); ctx.strokeStyle = '#35576d';
+            for (const x of [440, 840]) { ctx.beginPath(); ctx.moveTo(x, 225); ctx.lineTo(x, 565); ctx.stroke(); } ctx.setLineDash([]);
+            const x = 240 + this.selectedLane * 400;
+            const beam = ctx.createLinearGradient(x, 360, x, 555); beam.addColorStop(0, 'rgba(61,226,242,0)'); beam.addColorStop(1, 'rgba(61,226,242,0.09)');
+            ctx.fillStyle = beam; ctx.fillRect(x - 150, 360, 300, 195);
+        }
+    }
+    _drawCombatHUD(ctx) {
+        const hit = this.phase === 'boss_hit', age = this.phaseElapsedMs;
+        const hp = hit ? this.previousBossHP + (this.bossHP - this.previousBossHP) * Math.min(1, age / 500) : this.bossHP;
+        const trail = hit ? this.previousBossHP + (this.bossHP - this.previousBossHP) * Math.max(0, Math.min(1, (age - 220) / 650)) : this.bossHP;
+        ctx.save(); ctx.shadowColor = hit ? '#ff426d' : '#ad67e3'; ctx.shadowBlur = hit ? 19 : 9;
+        this._cutPanel(ctx, 410, 68, 460, 34, '#141326', hit ? '#ff7494' : '#786091'); ctx.shadowBlur = 0;
+        this._cutPanel(ctx, 416, 73, 448, 24, '#060b19', '#30253f');
+        for (let segment = 0; segment < 3; segment++) {
+            const x = 423 + segment * 146, width = 138;
+            ctx.fillStyle = '#1e1a30'; ctx.fillRect(x, 78, width, 14);
+            ctx.fillStyle = '#fbc29f'; ctx.fillRect(x, 78, width * Math.max(0, Math.min(1, trail - segment)), 14);
+            const paint = ctx.createLinearGradient(x, 78, x, 92);
+            paint.addColorStop(0, hit ? '#ffadbd' : '#f9a1e6'); paint.addColorStop(0.4, hit ? '#f34a79' : '#cc5dc4'); paint.addColorStop(1, hit ? '#9b204d' : '#783573');
+            ctx.fillStyle = paint; ctx.fillRect(x, 78, width * Math.max(0, Math.min(1, hp - segment)), 14);
+            ctx.fillStyle = 'rgba(255,255,255,0.22)'; ctx.fillRect(x, 78, width * Math.max(0, Math.min(1, hp - segment)), 2);
+            for (let mark = 1; mark < 8; mark++) { ctx.fillStyle = 'rgba(5,7,18,0.25)'; ctx.fillRect(x + mark * width / 8, 87, 1, 5); }
+        }
+        ctx.restore();
+        for (let i = 0; i < 3; i++) this._text(ctx, i < this.hearts ? '\u2665' : '\u2661', 1132 + i * 39, 80, 29, i < this.hearts ? '#ff709d' : '#4b3d57', 'center', 'sans-serif');
+    }
+    _drawThinking(ctx) {
+        ctx.save(); ctx.globalAlpha = this.options.reducedMotion ? 1 : 0.45 + 0.55 * (0.5 + 0.5 * Math.sin(this.animTick * 0.055));
+        this._text(ctx, 'PREPARATION PHASE', 640, 271, 22, '#d8fff7', 'center', 'Abnes, "Arial Black", sans-serif'); ctx.restore();
+        const seconds = Math.ceil(this.thinkRemainingMs / 1000);
+        this._text(ctx, Math.floor(seconds / 60) + ':' + String(seconds % 60).padStart(2, '0'), 640, 313, 18, '#a9bccd', 'center');
+    }
+    _drawBarriers(ctx) {
+        const wave = this.waves[this.waveIndex];
+        this._text(ctx, wave.title, 640, 167, 24, '#edf6ff', 'center');
+        wave.choices.forEach((choice, i) => {
+            if (this.phase === 'pickup' && this.pickup && this.pickup.lane === i) {
+                this._drawBarrierShards(ctx, 240 + i * 400, 285);
+                return;
+            }
+            const entry = this.options.reducedMotion ? 0 : Math.max(0, 1 - this.waveAgeMs / 380) * 26;
+            const x = 78 + i * 400, y = 225 - entry, active = this.selectedLane === i;
+            const glass = ctx.createLinearGradient(x, y, x + 324, y + 130);
+            glass.addColorStop(0, active ? '#23445a' : '#252343'); glass.addColorStop(0.45, '#101d32'); glass.addColorStop(1, active ? '#123444' : '#18172d');
+            ctx.save(); ctx.shadowColor = active ? '#44dce0' : '#ad56d1'; ctx.shadowBlur = active ? 16 : 7;
+            this._cutPanel(ctx, x, y, 324, 130, glass, active ? '#6ceeea' : '#67547e'); ctx.restore();
+            this._cutPanel(ctx, x + 7, y + 7, 310, 116, 'rgba(15,28,45,0.25)', active ? '#315d70' : '#383352');
+            ctx.fillStyle = active ? '#62e9e2' : '#b859d4'; ctx.fillRect(x, y + 16, 3, 90);
+            this._fitText(ctx, choice.label, x + 162, y + 58, 290, wave.key === 'operator' ? 45 : 25, '#e7ffff', 'center');
+            this._text(ctx, choice.detail, x + 162, y + 92, 10, '#a0adc9', 'center');
+            this._drawBarrierCracks(ctx, x, y, this.barrierHits[i], i);
+        });
+    }
+    _drawBarrierCracks(ctx, x, y, hits, lane) {
+        if (!hits) return;
+        ctx.save(); ctx.beginPath(); ctx.rect(x + 5, y + 5, 314, 120); ctx.clip();
+        ctx.translate(x, y);
+        ctx.strokeStyle = 'rgba(177,245,255,' + (0.3 + hits * 0.06) + ')'; ctx.lineWidth = 0.7 + hits / 18;
+        ctx.shadowColor = '#65e6ff'; ctx.shadowBlur = 4;
+        // Fractures grow outward from the bullet impact; each hit extends the glass damage.
+        const reach = 12 + hits * 12;
+        for (let ray = 0; ray < 7; ray++) {
+            const angle = Math.PI + ray * Math.PI / 6 + Math.sin(lane + ray) * 0.12;
+            const length = reach * (0.55 + (ray % 3) * 0.2);
+            const dx = Math.cos(angle), dy = Math.sin(angle);
+            ctx.beginPath(); ctx.moveTo(162, 124);
+            for (let segment = 1; segment <= 4; segment++) {
+                const r = length * segment / 4, bend = Math.sin(ray * 7 + segment * 5 + lane) * 7;
+                ctx.lineTo(162 + dx * r - dy * bend, 124 + dy * r + dx * bend);
+            }
+            ctx.stroke();
+            if (hits >= 4) {
+                const r = length * 0.6, direction = angle + (ray % 2 ? 0.7 : -0.7);
+                ctx.beginPath(); ctx.moveTo(162 + dx * r, 124 + dy * r);
+                ctx.lineTo(162 + dx * r + Math.cos(direction) * hits * 3, 124 + dy * r + Math.sin(direction) * hits * 3); ctx.stroke();
+            }
+        }
+        if (hits >= 7) {
+            ctx.fillStyle = 'rgba(157,228,255,0.08)';
+            ctx.beginPath(); ctx.moveTo(162, 124); ctx.lineTo(106, 89); ctx.lineTo(126, 119); ctx.lineTo(203, 106); ctx.closePath(); ctx.fill();
+        }
+        ctx.restore();
+    }
+    _drawBarrierShards(ctx, x, y) {
+        const t = Math.min(1, this.phaseElapsedMs / 720);
+        ctx.save(); ctx.globalAlpha = (1 - t) * 0.85;
+        ctx.fillStyle = '#83edf3'; ctx.strokeStyle = '#b6ffff'; ctx.lineWidth = 0.7;
+        for (let i = 0; i < 14; i++) {
+            const angle = i * 2.399, travel = this.options.reducedMotion ? 20 : 15 + t * (60 + i * 4);
+            const sx = x + Math.cos(angle) * travel * 1.6, sy = y + Math.sin(angle) * travel;
+            ctx.beginPath(); ctx.moveTo(sx, sy - 5); ctx.lineTo(sx + 7, sy + 3); ctx.lineTo(sx - 4, sy + 7); ctx.closePath(); ctx.fill(); ctx.stroke();
+        }
+        ctx.restore();
+    }
+    _drawShip(ctx) {
+        const arena = ['barriers', 'pickup'].includes(this.phase), x = arena ? 240 + this.selectedLane * 400 : 640;
+        const hurt = this.phase === 'player_hit';
+        const shake = hurt && !this.options.reducedMotion ? Math.sin(this.phaseElapsedMs / 16) * 9 * (1 - this.phaseElapsedMs / 700) : 0;
+        ctx.save(); ctx.translate(x + shake, 536);
+        const accent = hurt ? '#ff6b91' : '#71ecdf', tick = this.options.reducedMotion ? 0 : this.animTick;
+        ctx.fillStyle = 'rgba(0,3,12,0.5)'; ctx.beginPath(); ctx.ellipse(0, 21, 58, 10, 0, 0, Math.PI * 2); ctx.fill();
+        for (const side of [-1, 1]) {
+            const ex = side * 17, length = 16 + Math.sin(tick * 0.7 + side) * 4;
+            const exhaust = ctx.createLinearGradient(ex, 15, ex, 43);
+            exhaust.addColorStop(0, '#b6fff5'); exhaust.addColorStop(0.3, '#797aff'); exhaust.addColorStop(1, 'rgba(116,70,255,0)');
+            ctx.shadowColor = '#747dff'; ctx.shadowBlur = 13;
+            this._polygon(ctx, [[ex - 5, 15], [ex + 5, 15], [ex + 3, 24], [ex, 24 + length], [ex - 3, 24]], exhaust);
+        }
+        ctx.shadowColor = accent; ctx.shadowBlur = 12;
+        this._polygon(ctx, [[0,-39],[9,-22],[14,-6],[29,-16],[27,-1],[49,20],[30,17],[12,14],[0,23],[-12,14],[-30,17],[-49,20],[-27,-1],[-29,-16],[-14,-6],[-9,-22]], '#1e3a50', accent);
+        ctx.shadowBlur = 0;
+        for (const side of [-1, 1]) {
+            const mirror = points => points.map(([px, py]) => [px * side, py]);
+            this._polygon(ctx, mirror([[9,-18],[14,-5],[25,5],[12,13],[8,2]]), hurt ? '#ac4f70' : '#567e91', '#8dc6d0');
+            this._polygon(ctx, mirror([[14,-5],[27,-1],[44,16],[25,10],[12,13]]), '#29475e', '#58889b');
+            this._polygon(ctx, mirror([[27,-1],[49,20],[31,13],[23,1]]), hurt ? '#d57994' : '#7da8b5');
+            this._polygon(ctx, mirror([[29,-16],[27,-1],[23,1],[23,-10]]), '#658998', '#b5dfe3');
+            this._polygon(ctx, mirror([[12,1],[22,5],[22,19],[12,18]]), '#112338', '#4f8299');
+            this._polygon(ctx, mirror([[12,14],[22,14],[20,20],[14,20]]), '#070d24', '#b183ee');
+            for (let vent = 0; vent < 3; vent++) {
+                ctx.strokeStyle = '#0b2031'; ctx.lineWidth = 1.5; ctx.beginPath();
+                ctx.moveTo(side * (24 + vent * 4), 6 + vent * 2); ctx.lineTo(side * (27 + vent * 4), 10 + vent * 2); ctx.stroke();
+            }
+            ctx.fillStyle = accent; ctx.fillRect(side * 25 - 1, -14, 2, 10);
+            ctx.shadowColor = '#f09cff'; ctx.shadowBlur = 6; ctx.fillStyle = '#e5b4ff'; ctx.fillRect(side * 32 - 2, 10, 4, 2); ctx.shadowBlur = 0;
+        }
+        this._polygon(ctx, [[0,-39],[5,-24],[7,10],[0,20],[-7,10],[-5,-24]], hurt ? '#b06787' : '#86aaba', '#c8e8ec');
+        this._polygon(ctx, [[0,-25],[5,-15],[4,-1],[0,4],[-4,-1],[-5,-15]], '#092b41', '#65d8de');
+        this._polygon(ctx, [[0,-22],[3,-14],[2,-4],[0,-2]], '#77dbe0');
+        this._polygon(ctx, [[-3,7],[3,7],[2,15],[-2,15]], '#203d52');
+        ctx.fillStyle = '#dcfff7'; ctx.fillRect(-1, -40, 2, 8);
+        ctx.restore();
+    }
+    _polygon(ctx, points, fill, stroke) {
+        ctx.beginPath(); ctx.moveTo(points[0][0], points[0][1]);
+        for (let i = 1; i < points.length; i++) ctx.lineTo(points[i][0], points[i][1]);
+        ctx.closePath(); ctx.fillStyle = fill; ctx.fill();
+        if (stroke) { ctx.strokeStyle = stroke; ctx.lineWidth = 0.8; ctx.stroke(); }
+    }
+    _drawBossEncounter(ctx) {
+        const t = this.phaseElapsedMs;
+        const entering = this.phase === 'boss_enter', hit = this.phase === 'boss_hit', retreat = this.phase === 'boss_retreat';
+        const danger = ['counterattack', 'player_hit'].includes(this.phase);
+        const progress = retreat ? Math.min(1, t / 850) : entering ? Math.min(1, t / 850) : 0;
+        const y = (entering ? 105 + 190 * progress : retreat ? 295 - 210 * progress : 295) + (hit && !this.options.reducedMotion ? Math.cos(t / 13) * 4 * (1 - t / 950) : 0);
+        const size = retreat ? 1.65 * (1 - progress * 0.75) : 1.65;
+        const shake = hit && !this.options.reducedMotion ? (Math.sin(t / 11) * 11 + Math.sin(t / 7) * 4) * (1 - t / 950) : 0;
+        this._text(ctx, hit ? 'DIRECT HIT / SHIELD BREAK' : danger ? 'INCOMING / COUNTERATTACK' : retreat ? this.bossHP ? 'APEX RETREATING' : 'APEX NEUTRALIZED' : 'WEAPON ASSEMBLED / ENGAGING APEX', 640, 151, 22, danger ? '#ff91af' : '#e9f7ff', 'center');
+        ctx.save(); ctx.globalAlpha = retreat ? Math.max(0, 1 - progress) : entering ? progress : 1;
+        this._drawBoss(ctx, 640 + shake, y, size, hit, danger);
+        if (this.phase === 'boss' && this.bossImpactFlashMs > 0) {
+            ctx.strokeStyle = 'rgba(147,255,242,' + this.bossImpactFlashMs / 180 + ')'; ctx.lineWidth = 2;
+            ctx.shadowColor = '#87f9ff'; ctx.shadowBlur = 12;
+            ctx.beginPath(); ctx.arc(640, 347, 12 + (180 - this.bossImpactFlashMs) * 0.15, 0, Math.PI * 2); ctx.stroke(); ctx.shadowBlur = 0;
+        }
+        ctx.restore();
+        if (!hit && !retreat) this._text(ctx, danger ? 'APEX is charging a return shot...' : 'AUTO FIRE / testing the assembled formula', 640, 443, 12, danger ? '#ff9ab6' : '#a7b3cd', 'center');
+        if (danger) this._drawBossAttack(ctx);
+    }
+    _drawBossAttack(ctx) {
+        const impacting = this.phase === 'player_hit', t = this.phaseElapsedMs;
+        const charge = impacting ? 1 : Math.min(1, t / 750);
+        const motion = this.options.reducedMotion ? 0 : this.animTick;
+        ctx.save();
+        if (!impacting) {
+            const aura = ctx.createRadialGradient(640, 354, 2, 640, 354, 64 * charge + 1);
+            aura.addColorStop(0, '#fff2ef'); aura.addColorStop(0.15, '#ff8fa9'); aura.addColorStop(0.4, 'rgba(255,44,104,0.65)'); aura.addColorStop(1, 'rgba(255,30,95,0)');
+            ctx.fillStyle = aura; ctx.fillRect(572, 286, 136, 136);
+            for (let ring = 0; ring < 3; ring++) {
+                ctx.strokeStyle = ring === 1 ? '#ffcfda' : '#f45b99'; ctx.lineWidth = ring === 1 ? 1 : 2;
+                const angle = motion * 0.06 * (ring % 2 ? -1 : 1) + ring * 2;
+                ctx.beginPath(); ctx.arc(640, 354, 14 + charge * (9 + ring * 10), angle, angle + Math.PI * 1.4); ctx.stroke();
+            }
+            for (let spark = 0; spark < 12; spark++) {
+                const angle = spark * Math.PI / 6 + motion * 0.02, radius = 65 * (1 - charge) + 22;
+                ctx.fillStyle = '#ffa6c5'; ctx.fillRect(640 + Math.cos(angle) * radius, 354 + Math.sin(angle) * radius, 2, 2);
+            }
+        }
+        const end = impacting ? 530 : 354 + 180 * Math.min(1, Math.max(0, (t - 750) / 250));
+        if (impacting || t > 750) {
+            ctx.globalAlpha = impacting ? Math.max(0, 1 - t / 300) : 1;
+            ctx.shadowColor = '#ff286e'; ctx.shadowBlur = 22; ctx.lineCap = 'round';
+            for (const [width, color] of [[32,'rgba(255,36,111,0.18)'],[16,'#bd245e'],[8,'#ff739c'],[3,'#fff5ed']]) {
+                ctx.strokeStyle = color; ctx.lineWidth = width; ctx.beginPath(); ctx.moveTo(640, 354); ctx.lineTo(640, end); ctx.stroke();
+            }
+        }
+        if (impacting) {
+            const fade = Math.max(0, 1 - t / 700), radius = 8 + t * 0.12;
+            ctx.globalAlpha = fade; ctx.shadowBlur = 12; ctx.lineWidth = 2;
+            ctx.strokeStyle = '#ffc7d9'; ctx.beginPath(); ctx.ellipse(640, 529, radius, radius * 0.45, 0, 0, Math.PI * 2); ctx.stroke();
+            for (let i = 0; i < 24; i++) {
+                const angle = i * 2.399, distance = this.options.reducedMotion ? 26 : 10 + t * (0.05 + i % 4 * 0.03);
+                ctx.fillStyle = i % 3 ? '#ff729d' : '#fff5e9';
+                ctx.fillRect(640 + Math.cos(angle) * distance, 528 + Math.sin(angle) * distance, i % 3 ? 2 : 4, 2);
+            }
+        }
+        ctx.restore();
+    }
+    _drawBoss(ctx, x, y, size, hit, danger) {
+        ctx.save(); ctx.translate(x, y); ctx.scale(size, size);
+        if (hit && !this.options.reducedMotion) ctx.rotate(Math.sin(this.phaseElapsedMs / 17) * 0.025 * (1 - this.phaseElapsedMs / 950));
+        const color = hit ? '#ff355e' : danger ? '#ff597a' : '#cc6beb';
+        const tick = this.options.reducedMotion ? 0 : this.animTick;
+        const damage = 3 - this.bossHP;
+        const opacity = ctx.globalAlpha;
+        const aura = ctx.createRadialGradient(0, 0, 12, 0, 0, 140);
+        aura.addColorStop(0, hit ? 'rgba(255,42,88,0.5)' : 'rgba(137,59,213,0.25)'); aura.addColorStop(1, 'rgba(44,18,84,0)');
+        ctx.fillStyle = aura; ctx.fillRect(-145, -145, 290, 290);
+        // Orbiting debris and suspended energy particles belong to the guardian.
+        for (let i = 0; i < 42; i++) {
+            const angle = i * 2.399 + tick * (i % 2 ? 0.006 : -0.004);
+            const radius = 106 + i % 6 * 7 + Math.sin(tick * 0.03 + i) * 5;
+            const px = Math.cos(angle) * radius, py = Math.sin(angle) * radius * 0.66;
+            ctx.globalAlpha = opacity * (0.25 + (Math.sin(tick * 0.05 + i) + 1) * 0.3);
+            ctx.fillStyle = hit || danger ? '#ff7f9d' : i % 3 ? '#be8cff' : '#75ffed';
+            ctx.shadowColor = ctx.fillStyle; ctx.shadowBlur = i % 4 ? 0 : 9;
+            ctx.fillRect(px, py, i % 4 ? 1.4 : 3, i % 4 ? 1.4 : 3);
+        }
+        ctx.globalAlpha = opacity; ctx.shadowBlur = 0;
+        ctx.strokeStyle = hit ? '#ff647f' : '#514773'; ctx.lineWidth = 1;
+        for (const side of [-1, 1]) {
+            ctx.beginPath(); ctx.arc(0, 0, 111, side < 0 ? 2.5 : -0.65, side < 0 ? 3.8 : 0.65); ctx.stroke();
+            const drift = Math.sin(tick * 0.04) * 3;
+            if (damage < 2 || side > 0) {
+                this._cutPanel(ctx, side < 0 ? -132 : 104, -27 + drift, 28, 58, '#1c2543', color);
+                ctx.fillStyle = hit ? '#ffb9c5' : '#70f4ed'; ctx.fillRect(side < 0 ? -126 : 110, -15 + drift, 3, 26);
+            }
+        }
+        ctx.shadowColor = color; ctx.shadowBlur = hit ? 35 : 17;
+        ctx.strokeStyle = color; ctx.lineWidth = 2;
+        ctx.beginPath(); ctx.moveTo(-100, -25); ctx.lineTo(-62, -66); ctx.lineTo(-48, -33); ctx.lineTo(-25, -47); ctx.lineTo(25, -47); ctx.lineTo(48, -33); ctx.lineTo(62, -66); ctx.lineTo(100, -25); ctx.lineTo(78, 29); ctx.lineTo(45, 26); ctx.lineTo(24, 57); ctx.lineTo(-24, 57); ctx.lineTo(-45, 26); ctx.lineTo(-78, 29); ctx.closePath();
+        const armor = ctx.createLinearGradient(-80, -65, 70, 65);
+        armor.addColorStop(0, hit ? '#d84266' : '#675183'); armor.addColorStop(0.4, hit ? '#8b1e41' : '#252943'); armor.addColorStop(1, hit ? '#421329' : '#14172c');
+        ctx.fillStyle = armor; ctx.fill(); ctx.stroke();
+        ctx.shadowBlur = 0; ctx.strokeStyle = hit ? '#ffb2c3' : '#7b548b';
+        for (const side of [-1, 1]) {
+            ctx.beginPath(); ctx.moveTo(side * 25, -47); ctx.lineTo(side * 48, 6); ctx.lineTo(side * 24, 57); ctx.stroke();
+            ctx.fillStyle = hit ? '#c44462' : '#34304f';
+            ctx.beginPath(); ctx.moveTo(side * 57, -34); ctx.lineTo(side * 87, -21); ctx.lineTo(side * 70, 16); ctx.lineTo(side * 51, 9); ctx.closePath(); ctx.fill(); ctx.stroke();
+            ctx.strokeStyle = hit ? '#ff95ad' : '#b276cc';
+            for (let i = 0; i < 3; i++) {
+                ctx.beginPath(); ctx.moveTo(side * (61 + i * 3), -17 + i * 8); ctx.lineTo(side * (77 - i * 2), -13 + i * 8); ctx.stroke();
+            }
+            ctx.strokeStyle = hit ? '#ffb2c3' : '#7b548b';
+        }
+        ctx.fillStyle = '#11162c'; ctx.beginPath(); ctx.moveTo(-25, -33); ctx.lineTo(0, -43); ctx.lineTo(25, -33); ctx.lineTo(19, 16); ctx.lineTo(0, 28); ctx.lineTo(-19, 16); ctx.closePath(); ctx.fill(); ctx.stroke();
+        ctx.strokeStyle = color; ctx.beginPath(); ctx.moveTo(0, -36); ctx.lineTo(0, -17); ctx.stroke();
+        ctx.shadowColor = hit || danger ? '#ff6088' : '#6df3f1'; ctx.shadowBlur = 13;
+        ctx.fillStyle = hit ? '#ffcfda' : danger ? '#ff719a' : '#6df3f1'; ctx.fillRect(-45, -11, 29, 9); ctx.fillRect(16, -11, 29, 9);
+        ctx.strokeStyle = color; ctx.beginPath(); ctx.moveTo(-19, 25); ctx.lineTo(0, 13); ctx.lineTo(19, 25); ctx.stroke();
+        ctx.strokeStyle = color; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.arc(0, 37, 11, 0, Math.PI * 2); ctx.stroke();
+        ctx.fillStyle = hit ? '#fff0f3' : danger ? '#ff90ae' : '#b4fff5'; ctx.beginPath(); ctx.arc(0, 37, 5 + Math.sin(tick * 0.09), 0, Math.PI * 2); ctx.fill();
+        if (damage) this._drawBossWear(ctx, damage, hit);
+        ctx.restore();
+    }
+    _drawBossWear(ctx, damage, hit) {
+        ctx.save(); ctx.shadowBlur = 0;
+        for (let scar = 0; scar < damage * 5; scar++) {
+            const x = -70 + scar * 37 % 135, y = -27 + scar * 29 % 64;
+            this._polygon(ctx, [[x-4,y-7],[x+9,y-3],[x+4,y+8],[x-7,y+3]], '#0b1021', '#704154');
+            ctx.strokeStyle = '#d58481'; ctx.lineWidth = 0.7;
+            ctx.beginPath(); ctx.moveTo(x-8,y-11); ctx.lineTo(x-2,y-4); ctx.lineTo(x-4,y+1); ctx.lineTo(x+5,y+12); ctx.stroke();
+        }
+        // Broken edge pixels persist into later encounters as the armor wears down.
+        for (let chip = 0; chip < damage * 9; chip++) {
+            const side = chip % 2 ? 1 : -1, x = side * (72 + chip * 7 % 18), y = -28 + chip * 11 % 54;
+            ctx.fillStyle = '#080e20'; ctx.fillRect(x, y, 4 + chip % 4, 4 + chip % 3);
+            ctx.fillStyle = '#b76e83'; ctx.fillRect(x, y + 4 + chip % 3, 3, 1);
+        }
+        if (damage >= 2) {
+            this._polygon(ctx, [[-65,-64],[-57,-48],[-64,-39],[-76,-38],[-70,-50]], '#080e20');
+            this._polygon(ctx, [[41,27],[30,36],[28,51],[24,57],[24,39],[34,29]], '#080e20');
+        }
+        if (hit) {
+            const t = Math.min(1, this.phaseElapsedMs / 950), opacity = ctx.globalAlpha;
+            ctx.globalAlpha = opacity * (1 - t);
+            for (let particle = 0; particle < 36; particle++) {
+                const angle = particle * 2.399, radius = this.options.reducedMotion ? 85 : 45 + t * (55 + particle % 6 * 15);
+                const px = Math.cos(angle) * radius, py = Math.sin(angle) * radius * 0.65 + (this.options.reducedMotion ? 0 : t * t * 25);
+                ctx.fillStyle = particle % 3 ? '#d36490' : '#ffe6f0';
+                const width = 2 + particle % 4; ctx.fillRect(px, py, width, width);
+                if (!this.options.reducedMotion) { ctx.fillStyle = 'rgba(255,121,157,0.2)'; ctx.fillRect(px - Math.cos(angle) * 7, py - Math.sin(angle) * 7, width, width); }
+            }
+        }
+        ctx.restore();
+    }
+    _drawReview(ctx) {
+        const passed = this.encounterResult && this.encounterResult.passed;
+        if (passed) {
+            this._text(ctx, 'SECTOR SECURED / APEX DEFEATED', 640, 189, 27, '#cbfff1', 'center');
+        } else {
+            this._text(ctx, 'HULL DEPLETED', 640, 295, 27, '#ff9fba', 'center');
+        }
+    }
+    _dockValues(problem = this.problem) {
+        const p = problem, weapon = this.weapon || {};
+        return {
+            classValue: p.ipClass + '  /  default /' + p.defaultPrefix,
+            addressLabel: p.asked === 'broadcast' ? 'Network' : 'Broadcast', addressValue: p.givenAddress,
+            bitsLabel: p.givenBits === 'borrowed' ? 'Borrowed bits' : 'Host bits',
+            bitsValue: String(p.givenBits === 'borrowed' ? p.borrowedBits : p.hostBits), formulaGiven: p.givenAddress,
+            operator: weapon.operator === undefined ? '?' : String(weapon.operator),
+            blockSize: weapon.blockSize === undefined ? 'BLOCK ?' : Number(weapon.blockSize).toLocaleString('en-US'),
+            correction: p.correction,
+            answer: this.addressDrop && this.addressDrop.installed ? p.answerAddress : p.asked.toUpperCase() + ' ?',
+        };
+    }
+    _dockTypingDurationMs() {
+        const t = this.constructor.DOCK_TYPING;
+        return t.erase + (t.fields.length - 1) * t.stagger + t.type;
+    }
+    _dockTypingActive() {
+        return !!(this.dockTyping && !this.options.reducedMotion && this.dockTyping.elapsedMs < this._dockTypingDurationMs());
+    }
+    _finishDockTyping() { if (this.dockTyping) this.dockTyping.elapsedMs = this._dockTypingDurationMs(); }
+    _dockText(key, text) {
+        if (!this._dockTypingActive() || this.phase !== 'think') return text;
+        const t = this.constructor.DOCK_TYPING, age = this.dockTyping.elapsedMs;
+        if (age < t.erase) {
+            const previous = this.dockTyping.previous[key] || '';
+            return previous.slice(0, Math.ceil(previous.length * (1 - age / t.erase)));
+        }
+        const progress = Math.max(0, Math.min(1, (age - t.erase - t.fields.indexOf(key) * t.stagger) / t.type));
+        const partial = text.slice(0, Math.floor(text.length * progress));
+        return progress > 0 && progress < 1 && Math.floor(age / 150) % 2 === 0 ? partial + '\u258f' : partial;
+    }
+    _drawDock(ctx) {
+        const fields = this._dockValues();
+        ctx.save(); ctx.shadowColor = '#020610'; ctx.shadowBlur = 12;
+        const glass = ctx.createLinearGradient(0, 596, 0, 704);
+        glass.addColorStop(0, '#26303f'); glass.addColorStop(0.14, '#121c2d'); glass.addColorStop(1, '#090e1c');
+        this._panel(ctx, 16, 596, 1248, 108, glass, '#617281'); ctx.shadowBlur = 0;
+        ctx.strokeStyle = '#030811'; ctx.lineWidth = 3; ctx.strokeRect(20, 600, 1240, 100);
+        ctx.save(); ctx.beginPath(); ctx.rect(23, 603, 1234, 94); ctx.clip();
+        this._polygon(ctx, [[374,603],[1248,603],[1230,630],[390,630]], 'rgba(103,144,162,0.08)');
+        ctx.strokeStyle = 'rgba(159,188,202,0.035)'; ctx.lineWidth = 10;
+        for (let i = 0; i < 26; i++) {
+            const x = 340 + i * 39; ctx.beginPath(); ctx.moveTo(x,603); ctx.lineTo(x-70,697); ctx.stroke();
+        }
+        // Halftone ink, slash marks and paper-bright edge cuts give the rectangular chassis character.
+        ctx.fillStyle = 'rgba(189,211,221,0.065)';
+        for (let row = 0; row < 4; row++) for (let col = 0; col < 28; col++) {
+            ctx.beginPath(); ctx.arc(35 + col * 9 + row % 2 * 4, 606 + row * 5, 0.75, 0, Math.PI * 2); ctx.fill();
+        }
+        this._polygon(ctx, [[1159,603],[1176,603],[1168,615],[1151,615]], '#e5e6df');
+        this._polygon(ctx, [[1181,603],[1193,603],[1185,615],[1173,615]], '#e5e6df');
+        this._polygon(ctx, [[1198,603],[1207,603],[1199,615],[1190,615]], '#e98cab');
+        ctx.fillStyle = '#99b9bf'; ctx.fillRect(392, 695, 807, 1);
+        ctx.strokeStyle = '#495c6b'; ctx.lineWidth = 1;
+        for (let i = 0; i < 60; i++) { const x = 398 + i * 14; ctx.beginPath(); ctx.moveTo(x,697); ctx.lineTo(x+3,693); ctx.stroke(); }
+        ctx.restore();
+        ctx.fillStyle = '#c9dfd9'; ctx.fillRect(24, 618, 3, 66);
+        ctx.fillStyle = '#e790ac'; ctx.fillRect(24, 618, 3, 16);
+        ctx.fillStyle = '#030914'; ctx.fillRect(368, 608, 4, 84);
+        ctx.fillStyle = '#425567'; ctx.fillRect(372, 608, 1, 84);
+        ctx.fillStyle = 'rgba(199,215,220,0.2)'; ctx.fillRect(24, 601, 1228, 1);
+        const rows = [622, 651, 680];
+        const values = ['classValue', 'addressValue', 'bitsValue'].map(key => this._dockText(key, fields[key]));
+        const labels = ['Class', this._dockText('addressLabel', fields.addressLabel), this._dockText('bitsLabel', fields.bitsLabel)];
+        labels.forEach((label, i) => {
+            this._text(ctx, label, 36, rows[i], 11, '#839ab5');
+            this._fitText(ctx, values[i], 155, rows[i], 193, i === 2 ? 17 : 14, i === 2 ? '#d9a3fc' : '#d6f3f1');
+        });
+        this._text(ctx, 'FORMULA / WEAPON ASSEMBLY', 398, 620, 10, '#b5d1d3');
+        const token = (key, x, width) => {
+            const loaded = this.weapon[key] !== undefined;
+            this._drawRecessedScreen(ctx, x, 647, width, 28,
+                this._dockText(key, fields[key]), loaded);
+        };
+        this._fitText(ctx, this._dockText('formulaGiven', fields.formulaGiven), 398, 661, 170, 17, '#e3f4ee');
+        token('operator', 584, 82); token('blockSize', 680, 174);
+        this._text(ctx, this._dockText('correction', fields.correction), 878, 661, 17, '#d4b6dc'); this._text(ctx, '=', 935, 661, 17, '#d3e2df');
+        this._drawRecessedScreen(ctx, 962, 647, 278, 28,
+            this._dockText('answer', fields.answer), !!(this.addressDrop && this.addressDrop.installed));
+        ctx.restore();
+    }
+    _drawRecessedScreen(ctx, x, y, w, h, text, loaded) {
+        ctx.save();
+        const bezel = ctx.createLinearGradient(0,y,0,y+h);
+        bezel.addColorStop(0,'#080d17'); bezel.addColorStop(0.55,'#1a2635'); bezel.addColorStop(1,'#536371');
+        ctx.fillStyle = bezel; ctx.fillRect(x,y,w,h);
+        ctx.strokeStyle = '#4b5866'; ctx.lineWidth = 1; ctx.strokeRect(x+0.5,y+0.5,w-1,h-1);
+        ctx.fillStyle = '#03070e'; ctx.fillRect(x+1,y+1,w-2,h-2);
+        const sx = x+4, sy = y+3, sw = w-8, sh = h-6;
+        const lcd = ctx.createLinearGradient(0,sy,0,sy+sh);
+        lcd.addColorStop(0,loaded ? '#0d292c' : '#0b171f'); lcd.addColorStop(1,loaded ? '#183a3a' : '#142830');
+        ctx.fillStyle = lcd; ctx.fillRect(sx,sy,sw,sh);
+        ctx.save(); ctx.beginPath(); ctx.rect(sx,sy,sw,sh); ctx.clip();
+        for (let line = 0; line < sh; line += 3) { ctx.fillStyle = 'rgba(170,216,207,0.035)'; ctx.fillRect(sx,sy+line,sw,1); }
+        this._polygon(ctx, [[sx+sw*0.55,sy],[sx+sw*0.8,sy],[sx+sw*0.45,sy+sh],[sx+sw*0.2,sy+sh]], 'rgba(205,238,223,0.025)');
+        // The dark inner lip and lower reflection make the display sit inside the housing.
+        ctx.fillStyle = 'rgba(0,0,0,0.55)'; ctx.fillRect(sx,sy,sw,2); ctx.fillRect(sx,sy,1,sh);
+        ctx.fillStyle = 'rgba(181,220,211,0.12)'; ctx.fillRect(sx,sy+sh-1,sw,1);
+        ctx.shadowColor = loaded ? '#9cf3d6' : '#8fbcb7'; ctx.shadowBlur = loaded ? 5 : 2;
+        this._fitText(ctx, text, x+w/2, y+h/2, sw-12, 17, loaded ? '#c6ffdf' : '#96b4b5', 'center');
+        ctx.restore(); ctx.restore();
+    }
+    _drawPickup(ctx) {
+        if (this.phase !== 'pickup' || !this.pickup) return;
+        const item = this.pickup, target = this.formulaTargets[item.key];
+        const t = Math.min(1, this.phaseElapsedMs / 720), ease = 1 - Math.pow(1 - t, 3);
+        const x = item.x + (target.x - item.x) * ease, y = item.y + (target.y - item.y) * ease - (this.options.reducedMotion ? 0 : Math.sin(t * Math.PI) * 85);
+        const w = 210 * (1 - t) + 70 * t;
+        ctx.save(); ctx.shadowColor = '#6af6e6'; ctx.shadowBlur = 20;
+        this._cutPanel(ctx, x - w / 2, y - 18, w, 36, '#123344', '#9affed'); ctx.shadowBlur = 0;
+        this._fitText(ctx, t < 0.65 ? item.label : String(item.value), x, y, w - 12, 18, '#cffff3', 'center'); ctx.restore();
+    }
+    _addressArrivalMs() {
+        const t = this.constructor.ADDRESS_DROP;
+        return t.release + t.fall + t.hold + t.transfer;
+    }
+    _addressDropPose() {
+        if (!this.addressDrop || this.addressDrop.installed) return null;
+        const age = this.addressDrop.elapsedMs, t = this.constructor.ADDRESS_DROP;
+        if (age < t.release) return null;
+        const fall = Math.min(1, (age - t.release) / t.fall);
+        const transfer = Math.max(0, Math.min(1, (age - t.release - t.fall - t.hold) / t.transfer));
+        if (this.options.reducedMotion) return { x: 640, y: 385, size: 34, alpha: 1, transfer: 0, stage: 'hold' };
+        if (fall < 1) {
+            const ease = 1 - Math.pow(1 - fall, 3);
+            return { x: 640, y: 305 + ease * 80 - Math.sin(fall * Math.PI) * 18,
+                size: 18 + 16 * ease, alpha: Math.min(1, fall * 4), transfer: 0, stage: 'fall' };
+        }
+        if (transfer <= 0) return { x: 640, y: 385 + Math.sin((age - t.release - t.fall) / 270) * 3,
+            size: 34, alpha: 1, transfer: 0, stage: 'hold' };
+        const ease = transfer < 0.5 ? 2 * transfer * transfer : 1 - Math.pow(-2 * transfer + 2, 2) / 2;
+        const position = this._addressTransferPoint(ease);
+        return { ...position, size: 34 - 17 * ease, alpha: 1, transfer: ease, stage: 'transfer' };
+    }
+    _addressTransferPoint(t) {
+        const target = this.formulaTargets && this.formulaTargets.answer || { x: 1101, y: 661 };
+        const u = 1 - t;
+        return { x: u*u*u*640 + 3*u*u*t*780 + 3*u*t*t*1080 + t*t*t*target.x,
+            y: u*u*u*385 + 3*u*u*t*370 + 3*u*t*t*545 + t*t*t*target.y };
+    }
+    _drawAddressDrop(ctx) {
+        if (!this.addressDrop) return;
+        const pose = this._addressDropPose();
+        if (!pose) {
+            const sinceArrival = this.addressDrop.elapsedMs - this._addressArrivalMs();
+            if (this.addressDrop.installed && sinceArrival < this.constructor.ADDRESS_DROP.settle && !this.options.reducedMotion) {
+                ctx.save(); ctx.globalAlpha = Math.max(0, 1 - sinceArrival / this.constructor.ADDRESS_DROP.settle);
+                ctx.shadowColor = '#9affdf'; ctx.shadowBlur = 20; ctx.strokeStyle = '#baffed'; ctx.lineWidth = 1.5;
+                ctx.strokeRect(963, 648, 276, 26); ctx.restore();
+            }
+            return;
+        }
+        ctx.save(); ctx.globalAlpha = pose.alpha;
+        const radius = 120 * pose.size / 34;
+        const aura = ctx.createRadialGradient(pose.x, pose.y, 1, pose.x, pose.y, radius);
+        aura.addColorStop(0, 'rgba(86,255,211,0.15)'); aura.addColorStop(1, 'rgba(86,255,211,0)');
+        ctx.fillStyle = aura; ctx.fillRect(pose.x-radius, pose.y-radius, radius*2, radius*2);
+        if (!this.options.reducedMotion) {
+            if (pose.stage === 'transfer') {
+                for (let i = 1; i <= 8; i++) {
+                    const p = this._addressTransferPoint(Math.max(0, pose.transfer - i * 0.018));
+                    ctx.fillStyle = 'rgba(131,255,226,' + (0.3 * (1 - i/9)) + ')';
+                    ctx.fillRect(p.x - 2, p.y - 2, 3, 3);
+                }
+            }
+            for (let i = 0; i < 16; i++) {
+                const angle = i * 2.399 + this.addressDrop.elapsedMs / 1400;
+                const spread = (0.5 + i % 4 * 0.13) * pose.size / 34;
+                const x = pose.x + Math.cos(angle) * 175 * spread, y = pose.y + Math.sin(angle) * 45 * spread;
+                ctx.fillStyle = i % 3 ? '#74ddc8' : '#e0fff1';
+                ctx.globalAlpha = pose.alpha * (0.25 + i % 4 * 0.12); ctx.fillRect(x, y, i % 3 + 1, i % 3 + 1);
+            }
+        }
+        ctx.globalAlpha = pose.alpha; ctx.shadowColor = '#73ffd9'; ctx.shadowBlur = 17 * pose.size / 34;
+        this._text(ctx, this.problem.answerAddress, pose.x, pose.y, pose.size, '#b3ffed', 'center');
+        ctx.shadowBlur = 0;
+        if (pose.stage === 'hold') this._text(ctx, this.problem.asked.toUpperCase() + ' ADDRESS', pose.x, pose.y + 32, 11, '#9bbfbf', 'center');
+        ctx.restore();
+    }
+    _drawHelp(ctx) {
+        ctx.fillStyle = 'rgba(2,3,14,0.94)'; ctx.fillRect(0, 0, 1280, 720);
+        this._panel(ctx, 235, 104, 810, 508, '#0e132b', '#72cfcf');
+        this._text(ctx, 'PILOT BRIEFING / SUBNET BLASTER', 275, 144, 23, '#e0fff7');
+        const lines = [
+            'Default host bits: A = 24, B = 16, C = 8.',
+            'h = default host bits - borrowed bits. If h is given, use it directly.',
+            'Block = 2^h: the familiar host-capacity step, counting ALL addresses.',
+            'Keep network + broadcast. Do not subtract 2; that counts usable hosts.',
+            'Broadcast = network + block - 1. Network = broadcast - block + 1.',
+            'Choose operator, then block size. The -1 or +1 is already in the bar.',
+            'Prepare for one minute, or Skip / Enter. C opens the calculator.',
+            'Aim: A/D, arrows, 1/2/3 or mouse. Auto-fire: 10 hits per barrier.',
+            'Five boss hits: correct drops the answer; wrong costs a heart. APEX retreats.',
+            'Win three times before losing three hearts. Escape closes this briefing.',
+        ];
+        lines.forEach((line, i) => this._fitText(ctx, line, 275, 191 + i * 34, 730, 13,
+            i === 2 || i === 4 ? '#ddc397' : '#b9c7df'));
+    }
 }
 
+IP2Live.SubnetBlasterRules = IP2LiveSubnetBlasterRules;
+IP2Live.SubnetBlasterGameplayScreen = IP2LiveCIDRQuarantineMatrixConnectorScreen;
+
 const CIDRQuarantineMatrixGameplayManager = {
-    VERSION: 'ip-cidr-quarantine-matrix-manager-20260530-01',
+    VERSION: 'subnet-blaster-manager-20261011-01',
     _active: false,
     _activeAttempt: null,
     _introShown: false,
@@ -2659,7 +1271,7 @@ const CIDRQuarantineMatrixGameplayManager = {
     RECOVERY_LIMIT: 3,
 
     CIDR_MATRIX_QUESTS: [
-        { id: 'stage.13.mixed.05.cidr_matrix.tutorial', objectiveId: 'solve_cidr_matrix_13_05', title: 'CALIBRATE MULTI-ZONE MATRIX', label: 'Matrix Node 05', mapId: 13, sequence: 5, tutorial: true, targetTile: { x: 18, y: 0, z: 1 }, profile: { index: 1, zoneCount: 2, parentPrefix: 23 } },
+        { id: 'stage.13.mixed.05.cidr_matrix.tutorial', objectiveId: 'solve_cidr_matrix_13_05', title: 'CALIBRATE SUBNET BLASTER', label: 'Subnet Blaster Node 05', mapId: 13, sequence: 5, tutorial: true, targetTile: { x: 18, y: 0, z: 1 }, profile: { index: 1 } },
     ],
 
     _questSpecs() {
@@ -2777,7 +1389,7 @@ const CIDRQuarantineMatrixGameplayManager = {
         if (this._activeAttempt === attemptKey && !isReservedAttempt && opts.questId) return false;
         this._active = true;
         if (opts.questId) this._activeAttempt = attemptKey;
-        const problem = this._freshProblem(opts.spec || this._defaultQuestSpec(opts.mapId));
+        const problem = opts.problem || null;
         const open = () => {
             const screen = new IP2LiveCIDRQuarantineMatrixConnectorScreen({
                 spec: opts.spec,
@@ -2786,13 +1398,15 @@ const CIDRQuarantineMatrixGameplayManager = {
                 mapId: opts.mapId || (opts.spec && opts.spec.mapId) || 13,
                 maxAttempts: 3,
                 problem,
-                tutorialMode: !!(opts.spec && opts.spec.tutorial),
+                tutorialMode: !!(opts.tutorialMode || (opts.spec && opts.spec.tutorial)),
+                developerTest: !!(opts.developerTest || (opts.spec && opts.spec.developerTest)),
+                reducedMotion: !!opts.reducedMotion,
                 onComplete: (result) => this._onComplete(opts, result),
                 onFailed: (result) => this._onFailed(opts, result),
                 onCancel: () => this._onCancel(opts),
             });
             const openGameplay = () => {
-                this._playMusicZone('GAMEPLAY_1');
+                this._playMusicZone('GAMEPLAY_56');
                 if (opts.tutorialReplay) IP2Live.GameManager.prepareTutorialReplayScreen(screen, opts);
                 const stack = Manager && Manager.Stack ? Manager.Stack : null;
                 if (stack) {
@@ -2800,9 +1414,14 @@ const CIDRQuarantineMatrixGameplayManager = {
                     else if (typeof stack.replace === 'function') stack.replace(screen);
                     else if (typeof stack.push === 'function') stack.push(screen);
                 }
-                if (opts.showIntro) this._introShown = true;
+                const shouldTeach = !opts.practiceGameplay && !opts._ip2liveResumeGameplay &&
+                    (opts.tutorialReplay || (screen.tutorialMode && opts.showIntro !== false && !this._introShown));
+                if (shouldTeach && typeof screen.startTutorialWalkthrough === 'function') {
+                    const started = screen.startTutorialWalkthrough();
+                    if (started !== false) this._introShown = true;
+                }
             };
-            if (opts.useLoading === true && this._showLoadingScreen2({ mode: 'push', status: 'Loading Gameplay', detail: 'Opening CIDR Quarantine Matrix', onComplete: openGameplay })) return;
+            if (opts.useLoading === true && this._showLoadingScreen2({ mode: 'push', status: 'Loading Gameplay', detail: 'Opening Subnet Blaster', onComplete: openGameplay })) return;
             openGameplay();
         };
         const openSafely = () => {
@@ -2815,9 +1434,8 @@ const CIDRQuarantineMatrixGameplayManager = {
         return true;
     },
 
-    _freshProblem(spec) {
-        const temp = new IP2LiveCIDRQuarantineMatrixConnectorScreen({ spec });
-        return temp.problem;
+    _freshProblem() {
+        return IP2LiveSubnetBlasterRules.generate();
     },
 
     _onComplete(options, result) {
@@ -2833,7 +1451,7 @@ const CIDRQuarantineMatrixGameplayManager = {
             if (Manager && Manager.Stack && typeof Manager.Stack.pop === 'function') Manager.Stack.pop();
             this._restoreStageMusic();
             // Always advance the quest so the next objective marker appears on the map.
-            if (opts.questId && opts.objectiveId && IP2Live.QuestManager) {
+            if (!(opts.developerTest || spec.developerTest) && opts.questId && opts.objectiveId && IP2Live.QuestManager) {
                 const qm = IP2Live.QuestManager;
                 // If the quest is not yet active (e.g. first time after tutorial launch), start it first.
                 if (qm.activeQuestId !== opts.questId) {
@@ -2851,7 +1469,7 @@ const CIDRQuarantineMatrixGameplayManager = {
             }
             if (typeof opts.onComplete === 'function') opts.onComplete(result);
             if (IP2Live.GameManager && typeof IP2Live.GameManager.handleGameplayCompleted === 'function') {
-                IP2Live.GameManager.handleGameplayCompleted('ip_cidr_quarantine_matrix', { gameplayId: 'ip_cidr_quarantine_matrix', spec, questId: opts.questId, objectiveId: opts.objectiveId, mapId, result });
+                IP2Live.GameManager.handleGameplayCompleted('ip_cidr_quarantine_matrix', { gameplayId: 'ip_cidr_quarantine_matrix', spec, developerTest: !!opts.developerTest, questId: opts.questId, objectiveId: opts.objectiveId, mapId, result });
             }
             if (Manager && Manager.Stack) Manager.Stack.requestPaintHUD = true;
         };
@@ -2870,7 +1488,7 @@ const CIDRQuarantineMatrixGameplayManager = {
             if (Manager && Manager.Stack && typeof Manager.Stack.pop === 'function') Manager.Stack.pop();
             this._restoreStageMusic();
             if (IP2Live.GameManager && typeof IP2Live.GameManager.handleGameplayFailed === 'function') {
-                IP2Live.GameManager.handleGameplayFailed('ip_cidr_quarantine_matrix', { gameplayId: 'ip_cidr_quarantine_matrix', spec, questId: opts.questId, objectiveId: opts.objectiveId, mapId, result });
+                IP2Live.GameManager.handleGameplayFailed('ip_cidr_quarantine_matrix', { gameplayId: 'ip_cidr_quarantine_matrix', spec, developerTest: !!opts.developerTest, questId: opts.questId, objectiveId: opts.objectiveId, mapId, result, skipDiagnosticScreen: true });
             }
             if (Manager && Manager.Stack) Manager.Stack.requestPaintHUD = true;
         };
@@ -2930,6 +1548,7 @@ const CIDRQuarantineMatrixGameplayManager = {
             IP2Live.GameManager.handleGameplayCancelled('ip_cidr_quarantine_matrix', {
                 gameplayId: 'ip_cidr_quarantine_matrix',
                 spec,
+                developerTest: !!opts.developerTest,
                 questId: opts.questId || spec.id,
                 objectiveId: opts.objectiveId || spec.objectiveId,
                 mapId: opts.mapId || spec.mapId || 13,

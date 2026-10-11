@@ -1,6 +1,8 @@
 /** A single, transactional recovery save, independent of the numbered save slots. */
 IP2Live.StoryAutosave = {
     SLOT: -2,
+    RECORD_VERSION: 2,
+    INTERVAL_MS: 30000,
     _generation: 0,
     _game: null,
     _pending: null,
@@ -10,6 +12,8 @@ IP2Live.StoryAutosave = {
     _status: null,
     _capture: null,
     _restore: null,
+    _nextPeriodicAt: 0,
+    _pollTimer: null,
 
     _clone(value) { return JSON.parse(JSON.stringify(value)); },
     _id() {
@@ -17,11 +21,15 @@ IP2Live.StoryAutosave = {
             ? crypto.randomUUID() : 'story-' + Date.now() + '-' + Math.random().toString(36).slice(2);
     },
     _valid(record) {
-        return !!(record && record.version === 1 && typeof record.storyRunId === 'string' && record.storyRunId && record.coreSave &&
+        const valid = !!(record && (record.version === 1 || record.version === this.RECORD_VERSION) && typeof record.storyRunId === 'string' && record.storyRunId && record.coreSave &&
             Number.isInteger(record.coreSave.currentMapId) && record.coreSave.currentMapId > 0 &&
             Array.isArray(record.coreSave.heroPosition) && record.coreSave.heroPosition.length === 3 && record.coreSave.heroPosition.every(Number.isFinite) &&
             record.snapshot && record.snapshot.storyRunId === record.storyRunId && Number.isFinite(record.snapshot.savedAt) && record.snapshot.savedAt > 0 &&
             Number(record.snapshot.mapId) === Number(record.coreSave.currentMapId));
+        if (!valid) return false;
+        const gm = IP2Live.GameManager;
+        if (record.version === 1 || !gm || typeof gm.validateStoryProgressSnapshot !== 'function') return true;
+        try { return gm.validateStoryProgressSnapshot(record.snapshot) === true; } catch (_) { return false; }
     },
     async getSummary() {
         const record = await IP2Live.DBManager.getRecord('storyAutosaves', 'current');
@@ -33,10 +41,18 @@ IP2Live.StoryAutosave = {
             location: stage && stage.name ? stage.name : 'Map ' + s.mapId };
     },
     _excluded(result) {
-        const node = IP2Live.GameManager && IP2Live.GameManager._activeGameplayNode;
+        const gm = IP2Live.GameManager, pause = IP2Live.GameplayPause;
+        const node = gm && gm._activeGameplayNode;
+        const screen = pause && pause.activeScreen;
+        const options = screen && screen.options || {};
+        const spec = options.spec || {};
         return !!((IP2Live.PracticeMode && IP2Live.PracticeMode.active) ||
             (IP2Live.TutorialReplay && IP2Live.TutorialReplay.session) ||
-            (result && (result.developerTest || result.tutorialReplay || result.practiceMode)) ||
+            (result && (result.developerTest || result.developerTesting || result.tutorialReplay || result.practiceMode || result.simulated)) ||
+            (screen && !screen._ip2liveGameplayExited && (options.developerTest || options.developerTesting || spec.developerTest ||
+                options.tutorialReplay || spec.tutorialReplay || options.practiceMode || spec.practiceMode || options.simulated ||
+                (gm && typeof gm._excludeAssessmentTelemetry === 'function' && gm._excludeAssessmentTelemetry(options)) ||
+                (pause && typeof pause._canRetainSession === 'function' && !pause._canRetainSession(options)))) ||
             (node && (node.developerTest || (node.spec && node.spec.developerTest))));
     },
     _invalidate() {
@@ -47,6 +63,7 @@ IP2Live.StoryAutosave = {
         if (this._pending) this._pending.waiters.forEach(resolve => resolve({saved:false, reason:'story-changed'}));
         this._pending = null;
         this._status = null;
+        this._nextPeriodicAt = 0;
     },
     beginStory(game, options = {}) {
         this._invalidate();
@@ -55,6 +72,7 @@ IP2Live.StoryAutosave = {
         if (!options.preserveId || !game._ip2liveStoryRunId) game._ip2liveStoryRunId = this._id();
         this._blockedScene = options.scene ? null : Scene.Map.current;
         this._destination = Number(game.currentMapID);
+        this._nextPeriodicAt = Date.now() + this.INTERVAL_MS;
         if (options.checkpoint !== false) this.checkpoint(options.reason || 'story_started');
     },
     checkpoint(reason = 'quest_completed', result) {
@@ -79,10 +97,28 @@ IP2Live.StoryAutosave = {
         if (mapId !== Number(game.currentMapID) || (this._destination && mapId !== this._destination)) return false;
         const qm = IP2Live.QuestManager;
         if (qm && Number(qm.activeMapId) !== mapId) return false;
-        return !(IP2Live.GameManager && IP2Live.GameManager._activeGameplayNode);
+        const gm = IP2Live.GameManager;
+        if (!gm || !gm._activeGameplayNode) return true;
+        const pause = IP2Live.GameplayPause;
+        const screen = pause && pause.activeScreen;
+        // Active gameplay may be recovered only through the same shared capture
+        // used by numbered saves. Never serialize an unidentified launch screen.
+        return !!(typeof gm.buildStoryProgressSnapshot === 'function' && screen && !screen._ip2liveGameplayExited &&
+            (!screen.options || !screen.options.mapId || Number(screen.options.mapId) === mapId));
+    },
+    _periodicReady(scene) {
+        if (typeof document !== 'undefined' && document.hidden) return false;
+        if (!this._ready(scene, this._game)) return false;
+        const top = Manager.Stack.top;
+        const screen = IP2Live.GameplayPause && IP2Live.GameplayPause.activeScreen;
+        return !top || top === scene || (screen && top === screen && !screen.finished && !screen.completed && !screen.menuOpen);
     },
     tick(scene) {
         if (this._status) Manager.Stack.requestPaintHUD = true;
+        if (this._game && !this._pending && !this._writing && Date.now() >= this._nextPeriodicAt && this._periodicReady(scene)) {
+            this._nextPeriodicAt = Date.now() + this.INTERVAL_MS;
+            this.checkpoint('periodic');
+        }
         if (!this._pending || this._writing || !this._ready(scene, this._pending.game)) return;
         const request = this._pending;
         this._pending = null;
@@ -100,11 +136,18 @@ IP2Live.StoryAutosave = {
             this._setStatus('Saving story...', true);
             const record = await this._serialize(request);
             await this._commit(record, request);
-            if (request.generation === this._generation) this._setStatus('Story autosaved');
+            if (request.generation === this._generation) {
+                this._nextPeriodicAt = Date.now() + this.INTERVAL_MS;
+                this._setStatus('Story autosaved');
+            }
             return {saved:true, snapshot:record.snapshot};
         }).then(result => {
             if (result) request.waiters.forEach(resolve => resolve(result));
         }).catch(error => {
+            if (request.generation !== this._generation || this._game !== request.game) {
+                request.waiters.forEach(resolve => resolve({saved:false, reason:'story-changed'}));
+                return;
+            }
             if (error.retryAfterMap && request.generation === this._generation) {
                 if (this._pending) this._pending.waiters.push(...request.waiters);
                 else this._pending = request;
@@ -112,6 +155,7 @@ IP2Live.StoryAutosave = {
             }
             if (request.generation === this._generation) {
                 console.warn('[IP2Live] Story autosave failed:', error);
+                this._nextPeriodicAt = Date.now() + this.INTERVAL_MS;
                 this._setStatus('Autosave failed. Use Save Story; retrying at the next checkpoint.', false, true);
             }
             request.waiters.forEach(resolve => resolve({saved:false, reason:'storage-error'}));
@@ -138,19 +182,24 @@ IP2Live.StoryAutosave = {
             const error = new Error('Map changed during capture.'); error.retryAfterMap = true; throw error;
         }
         const gm = IP2Live.GameManager, game = request.game;
-        const snapshot = {
+        const snapshot = typeof gm.buildStoryProgressSnapshot === 'function'
+            ? gm.buildStoryProgressSnapshot(game, {slot:this.SLOT, checkpointReason:request.reason}) : {
+            schemaVersion:2,
             storyRunId:game._ip2liveStoryRunId, profileName:gm._resolveProfileName(game), profileId:gm._resolveProfileId(game),
             mapId:Number(coreSave.currentMapId), heroPosition:gm._captureHeroPosition(game),
             questState:gm._buildQuestSnapshot(), gameStates:game.ip2liveGameStates || null,
             playTimeMs:gm.getPlayTimeMs(game), savedAt:Date.now(), checkpointReason:request.reason,
         };
-        const record = this._clone({id:'current', version:1, storyRunId:game._ip2liveStoryRunId, coreSave, snapshot});
+        const record = this._clone({id:'current', version:this.RECORD_VERSION, storyRunId:game._ip2liveStoryRunId, coreSave, snapshot});
         if (!this._valid(record)) throw new Error('Incomplete story autosave payload.');
         return record;
     },
     async _commit(record, request) {
         const db = await IP2Live.DBManager.initDB();
         if (request.generation !== this._generation || Core.Game.current !== request.game) throw new Error('Stale autosave.');
+        if (!this._ready(Scene.Map.current, request.game) || Number(record.snapshot.mapId) !== Number(request.game.currentMapID)) {
+            const error = new Error('Story moved while opening autosave storage.'); error.retryAfterMap = true; throw error;
+        }
         return new Promise((resolve, reject) => {
             let tx;
             try { tx = db.transaction(['storyAutosaves'], 'readwrite', {durability:'strict'}); }
@@ -160,7 +209,8 @@ IP2Live.StoryAutosave = {
             tx.oncomplete = () => { clear(); resolve(); };
             tx.onerror = () => { clear(); reject(tx.error || new Error('Autosave write failed.')); };
             tx.onabort = () => { clear(); reject(tx.error || new Error('Autosave write aborted.')); };
-            tx.objectStore('storyAutosaves').put(record);
+            try { tx.objectStore('storyAutosaves').put(record); }
+            catch (error) { clear(); try { tx.abort(); } catch (_) {} reject(error); }
         });
     },
     _setStatus(text, saving = false, failed = false) {
@@ -191,7 +241,7 @@ IP2Live.StoryAutosave = {
         try {
             const summary = await this.getSummary();
             if (!summary) { this._error('No recoverable story autosave is available.'); return; }
-            IP2Live.confirPopup.show({title:'RESUME AUTOSAVED STORY?', message:'Continue from your last completed quest.',
+            IP2Live.confirPopup.show({title:'RESUME AUTOSAVED STORY?', message:'Continue from your latest saved story state.',
                 detail:this._describe(summary), cancelLabel:'BACK', confirmLabel:'RESUME', onConfirm:()=>this.resume()});
         } catch (_) { this._error('Could not read the story autosave. Please try again.'); }
         finally { this._promptPending = false; }
@@ -224,13 +274,35 @@ IP2Live.StoryAutosave = {
         if (this._switching || !IP2Live.MenuTransition || IP2Live.MenuTransition.active) return false;
         const oldGame = Core.Game.current, oldMap = Scene.Map.current, gm = IP2Live.GameManager;
         const oldSlot = gm.getActiveSaveSlot(oldGame), oldQuest = gm._buildQuestSnapshot();
+        const runtimeKeys = ['state', '_activeGameplayNode', '_reportActiveAttempts', '_reportTutorialContexts',
+            '_reportSessionId', '_reportSessionProfileName', '_reportSessionProfileId', '_reportShutdownPrepared'];
+        const oldRuntime = Object.fromEntries(runtimeKeys.map(key => [key, gm[key]]));
+        const pause = IP2Live.GameplayPause;
+        const oldPause = pause && {activeScreen:pause.activeScreen, menuOpen:pause.menuOpen};
+        const oldCidr = IP2Live.CIDRGameplayState;
+        const oldReplay = IP2Live.TutorialReplay && IP2Live.TutorialReplay.session;
+        const oldManagers = typeof gm._storyGameplayManagers === 'function' ? gm._storyGameplayManagers().map(([name, owner]) => {
+            const fields = {};
+            for (const key of gm._storyGameplayStateKeys().concat(['_active','_activeAttempt','_triggerLocks'])) {
+                if (Object.prototype.hasOwnProperty.call(owner, key)) fields[key] = owner[key];
+            }
+            return {name, fields};
+        }) : [];
         let failed = false;
         this._invalidate(); this._switching = true;
         const failure = () => {
             failed = true;
             Core.Game.current = oldGame; Scene.Map.current = oldMap; this._switching = false;
+            Object.assign(gm, oldRuntime);
+            if (pause && oldPause) Object.assign(pause, oldPause);
+            if (oldCidr === undefined) delete IP2Live.CIDRGameplayState; else IP2Live.CIDRGameplayState = oldCidr;
+            if (IP2Live.TutorialReplay) IP2Live.TutorialReplay.session = oldReplay;
+            for (const previous of oldManagers) Object.assign(IP2Live[previous.name], previous.fields);
             if (oldSlot) gm.setActiveSaveSlot(oldSlot, oldGame); else gm.clearActiveSaveSlot();
             if (oldQuest && IP2Live.QuestManager && oldGame) IP2Live.QuestManager.restoreProgress(oldQuest, {mapId:oldGame.currentMapID});
+            if (oldMap && IP2Live.GameStateManager && IP2Live.GameStateManager.queueMapStateRestore) {
+                IP2Live.GameStateManager.queueMapStateRestore(oldMap, oldGame.currentMapID, {source:'story_load_rollback'});
+            }
             this._setStatus('Story could not be loaded. Your autosave is unchanged.', false, true);
         };
         const generation = this._generation;
@@ -277,7 +349,10 @@ IP2Live.StoryAutosave = {
                 assertActive();
                 const gm = IP2Live.GameManager;
                 gm.clearActiveSaveSlot(); game.slot = -1;
-                gm.restoreProgressFromSnapshot(record.snapshot,game,0);
+                const snapshot = game._ip2liveLoadedSnapshot || record.snapshot;
+                if (gm.prepareStoryReportRestore) await gm.prepareStoryReportRestore(snapshot);
+                assertActive();
+                gm.restoreProgressFromSnapshot(snapshot,game,0);
                 const scene = new Scene.Map(game.currentMapID);
                 gm.prepareLoadedMapScene(scene,game.currentMapID);
                 return scene;
@@ -285,6 +360,8 @@ IP2Live.StoryAutosave = {
         } catch (error) { this._error('Could not restore the autosaved story. Please try again.'); return false; }
     },
     install() {
+        if (this._installed) return;
+        this._installed = true;
         const service = this, platform = Common.Platform;
         const register = platform.registerSave, load = platform.loadSave;
         platform.registerSave = async function(slot, path, json) {
@@ -304,12 +381,18 @@ IP2Live.StoryAutosave = {
         if (maps && maps.goTo) {
             const goTo = maps.goTo;
             maps.goTo = function(mapId, ...args) {
-                if (Core.Game.current === service._game) {
+                if (Core.Game.current === service._game && !service._excluded()) {
                     service._destination = Number(mapId); service._blockedScene = Scene.Map.current;
-                    if (service._writing) service.checkpoint('map_transition');
+                    service.checkpoint('map_transition');
                 }
                 return goTo.call(this,mapId,...args);
             };
+        }
+        // Map.update is suspended while a gameplay or pause screen is on top.
+        // Polling lets eligible story gameplay retain its current decisions too.
+        if (typeof setInterval === 'function') {
+            this._pollTimer = setInterval(() => service.tick(Scene.Map.current), 1000);
+            if (this._pollTimer && typeof this._pollTimer.unref === 'function') this._pollTimer.unref();
         }
     },
 };

@@ -67,6 +67,7 @@ class IP2LiveSubnetSimulatorGameplayScreen extends Scene.Base {
         this.dragOriginSlotKey = null;
 
         this.validationAttempts = 0;
+        this.decisionHistory = [];
         this.enforceAttemptLimit = !!this.options.enforceAttemptLimit;
         this.maxAttempts = Math.max(1, Number(this.options.maxAttempts) || 3);
         this.slotStatTotals = {
@@ -1546,7 +1547,14 @@ class IP2LiveSubnetSimulatorGameplayScreen extends Scene.Base {
             const s = this.slots[i];
             const expected = this._expectedForSlot(s.key);
             const actual = this._slotValue(s.key);
+            this.decisionHistory = this.decisionHistory || [];
+            this.decisionHistory.push({ stepKey: s.key, concept: s.key, submitted: actual, expected,
+                correct: actual !== null && actual === expected, issueType: actual === null ? 'missing_answer' : actual === expected ? null : 'wrong_answer',
+                borrowedBits: this.borrowedBits, hostBits: this.hostBits, tryNumber: this.validationAttempts });
+            this.slotStatTotals.totalChecks++;
             if (actual === null) {
+                this.slotStatTotals.wrongChecks++;
+                this.slotStatTotals.wrongSlotFrequency[s.key] = (this.slotStatTotals.wrongSlotFrequency[s.key] || 0) + 1;
                 hasMissing = true;
                 s.result = 'wrong';
                 s.resultTimer = 75;
@@ -1561,7 +1569,6 @@ class IP2LiveSubnetSimulatorGameplayScreen extends Scene.Base {
                 });
                 continue;
             }
-            this.slotStatTotals.totalChecks++;
             if (actual === expected) {
                 correctCount++;
                 s.result = 'correct';
@@ -1706,6 +1713,7 @@ class IP2LiveSubnetSimulatorGameplayScreen extends Scene.Base {
         this.finished = true;
         if (typeof this.options.onComplete === 'function') {
             this.options.onComplete({
+                ...this._assessmentResult(),
                 gameplayId: 'ip_subnet_simulator',
                 handoffKey: this.cidrState && this.cidrState.handoffKey,
                 mask: this.cidrState && this.cidrState.mask,
@@ -1726,6 +1734,12 @@ class IP2LiveSubnetSimulatorGameplayScreen extends Scene.Base {
         if (Manager && Manager.Stack) Manager.Stack.pop();
     }
 
+    _assessmentResult() {
+        const history = this.decisionHistory || [], correct = history.filter(row => row.correct).length;
+        return { telemetrySchemaVersion: 2, totalDecisions: history.length, correctDecisions: correct,
+            incorrectDecisions: history.length - correct, decisionHistory: history.map(row => ({ ...row })) };
+    }
+
     _failOut(reason) {
         if (this.finished) return;
 
@@ -1733,6 +1747,7 @@ class IP2LiveSubnetSimulatorGameplayScreen extends Scene.Base {
         const failureReason = reason || this.failureReason || 'attempts_exhausted';
 
         const result = {
+            ...this._assessmentResult(),
             gameplayId: 'ip_subnet_simulator',
             handoffKey: this.cidrState && this.cidrState.handoffKey,
             mask: this.cidrState && this.cidrState.mask,

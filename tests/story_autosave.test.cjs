@@ -7,8 +7,10 @@ const read = p => fs.readFileSync(path.join(root,p),'utf8');
 const settle = async () => { for(let i=0;i<60;i++) await Promise.resolve(); };
 const clone = x => JSON.parse(JSON.stringify(x));
 
-function harness(disk = {record:null}) {
-    const transactions=[], manualWrites=[], prompts=[];
+function harness(disk = {record:null}, options = {}) {
+    const transactions=[], manualWrites=[], prompts=[], polls=[];
+    let now = options.now || Date.now();
+    class Clock extends Date { static now(){ return now; } }
     const db={transaction() {
         const tx={error:null, aborted:false, objectStore:()=>({put(record){tx.record=clone(record)}}),
             abort(){tx.aborted=true;tx.onabort?.()},
@@ -32,7 +34,8 @@ function harness(disk = {record:null}) {
     const qm={activeMapId:3,completedObjectives:{quest1:{first:true}},snapshotProgress(){return clone({activeMapId:this.activeMapId,completedObjectives:this.completedObjectives})},
         restoreProgress(s){this.activeMapId=s.activeMapId;this.completedObjectives=clone(s.completedObjectives)}};
     const sound={playSound(){}};
-    const env={console:{log(){},warn(){},error(){}},setTimeout,clearTimeout,window:{},Main:{},
+    const env={console:{log(){},warn(){},error(){}},Date:Clock,setTimeout,clearTimeout,
+        setInterval:(callback,ms)=>{polls.push({callback,ms});return {unref(){}}},window:{},Main:{},
         Common:{Platform:platform},Core:{Game},Scene:{Map:MapScene,Base:class{}},Data:{Systems:{soundCancel:sound,soundConfirmation:sound},Keyboards:{checkCancelMenu:k=>k==='Escape',checkActionMenu:()=>false}},
         Manager:{Stack:{top:{},requestPaintHUD:false,pop(){}}},IP2Live:{DBManager:{initDB:async()=>db,getRecord:async()=>clone(disk.record)},
             QuestManager:qm,MapManager:{stageFor:id=>({name:'Stage '+id}),goTo(id){Game.current.currentMapID=id;return new MapScene(id)}},
@@ -43,7 +46,8 @@ function harness(disk = {record:null}) {
     const service=env.IP2Live.StoryAutosave;
     const start=(name='NOVA')=>{const game=Game.current=new Game();game.infiltratorName=name;service.beginStory(game);const map=new MapScene(3);qm.activeMapId=3;return {game,map}};
     const flush=async(map)=>{service.tick(map);await settle();const tx=transactions.at(-1);assert.ok(tx?.record);tx.commit();await settle();};
-    return {env,service,gm,qm,disk,transactions,manualWrites,prompts,start,flush,Game,MapScene};
+    return {env,service,gm,qm,disk,transactions,manualWrites,prompts,polls,start,flush,Game,MapScene,
+        advance:ms=>{now+=ms;}};
 }
 
 (async()=>{
@@ -56,6 +60,7 @@ function harness(disk = {record:null}) {
     assert.equal(game.slot,originalSlot);assert.equal(game.saves,0);assert.equal(h.manualWrites.length,0);
     assert.equal(h.gm.getActiveSaveSlot(game),null);
     assert.equal(h.disk.record.coreSave.vars.doorOpen,true);
+    assert.equal(h.disk.record.version,2,'new recovery records carry the current schema envelope');
     assert.equal(h.disk.record.snapshot.gameStates.neuralLifeForce.lifeForce,76);
     assert.equal(s._status.text,'Story autosaved');
 
@@ -149,5 +154,82 @@ function harness(disk = {record:null}) {
     const popup=Object.create(restarted.env.window.confirPopup.prototype);
     popup.resolved=false;popup.onCancel=()=>resumes++;popup.onDismiss=()=>starts++;
     const oldResumes=resumes;popup.onKeyPressed('Escape');assert.equal(resumes,oldResumes);
+
+    // Older recovery saves are read without overwriting or inventing missing state.
+    const legacyRecord=clone(safe);legacyRecord.version=1;delete legacyRecord.snapshot.schemaVersion;
+    const legacy=harness({record:legacyRecord});
+    assert.ok(await legacy.service.getSummary());
+    assert.deepEqual(legacy.disk.record,legacyRecord);
+    const invalid=clone(safe);invalid.coreSave.currentMapId=99;
+    assert.equal(await harness({record:invalid}).service.getSummary(),null,'mismatched engine/story maps are rejected');
+
+    const periodic=harness();const active=periodic.start();await periodic.flush(active.map);
+    periodic.env.Manager.Stack.top=active.map;
+    assert.equal(periodic.polls.length,1);assert.equal(periodic.polls[0].ms,1000);
+    periodic.service.install();assert.equal(periodic.polls.length,1,'installing twice does not stack hooks or timers');
+    let count=periodic.transactions.length;
+    periodic.advance(periodic.service.INTERVAL_MS-1);periodic.polls[0].callback();await settle();
+    assert.equal(periodic.transactions.length,count,'periodic saving respects the interval');
+    periodic.advance(1);periodic.polls[0].callback();await settle();
+    assert.equal(periodic.transactions.length,count+1);
+    periodic.transactions.at(-1).commit();await settle();
+    assert.equal(periodic.disk.record.snapshot.checkpointReason,'periodic');
+    periodic.env.document={hidden:true};periodic.advance(periodic.service.INTERVAL_MS);periodic.polls[0].callback();await settle();
+    assert.equal(periodic.transactions.length,count+1,'background tabs do not generate periodic saves');
+    periodic.env.document.hidden=false;periodic.env.Manager.Stack.top={isMenu:true};periodic.polls[0].callback();await settle();
+    assert.equal(periodic.transactions.length,count+1,'title/menu screens do not generate periodic saves');
+
+    // A map transition creates its own checkpoint, even without a completed quest.
+    periodic.env.Manager.Stack.top=active.map;
+    const travel=periodic.env.IP2Live.MapManager.goTo(4);periodic.qm.activeMapId=4;
+    periodic.env.Manager.Stack.top=travel;await periodic.flush(travel);
+    assert.equal(periodic.disk.record.snapshot.mapId,4);
+    assert.equal(periodic.disk.record.snapshot.checkpointReason,'map_transition');
+
+    // Active gameplay uses the shared snapshot builder so formula choices,
+    // preparation time and the report attempt identity travel together.
+    const gameplay=harness();const current=gameplay.start();await gameplay.flush(current.map);
+    const screen={options:{mapId:3,questId:'quest1',objectiveId:'first'},phase:'boss',
+        bossBulletImpacts:4,operator:'+',blockSize:32,hearts:2,preparationMs:25000,
+        roundHistory:[{problemId:'question-1',passed:true}],decisionHistory:[{correct:true,stepKey:'operator'}]};
+    gameplay.gm._activeGameplayNode='ip_cidr_quarantine_matrix:quest1:first';
+    gameplay.env.IP2Live.GameplayPause={activeScreen:screen};gameplay.env.Manager.Stack.top=screen;
+    let captures=0;
+    const shared=gameplay.gm.buildStoryProgressSnapshot;
+    gameplay.gm.buildStoryProgressSnapshot=function(game,opts){
+        captures++;game.ip2liveGameStates.gameplaySessions={current:{state:clone(screen)}};
+        const snapshot=shared ? shared.call(this,game,opts) : {schemaVersion:2,storyRunId:game._ip2liveStoryRunId,
+            profileName:game.infiltratorName,profileId:game.profileId,mapId:game.currentMapID,
+            heroPosition:this._captureHeroPosition(game),questState:this._buildQuestSnapshot(),
+            gameStates:clone(game.ip2liveGameStates),playTimeMs:this.getPlayTimeMs(game),savedAt:gameplay.env.Date.now(),
+            checkpointReason:opts.checkpointReason};
+        snapshot.reportContext={activeAttempts:{blaster:{attemptId:'attempt-preserved',elapsedMs:14000}}};
+        return snapshot;
+    };
+    gameplay.advance(gameplay.service.INTERVAL_MS);gameplay.polls[0].callback();await settle();
+    const inFlight=gameplay.transactions.at(-1);assert.ok(captures>0);
+    const state=inFlight.record.snapshot.gameStates.gameplaySessions.current.state;
+    assert.equal(state.bossBulletImpacts,4);assert.equal(state.hearts,2);assert.equal(state.preparationMs,25000);
+    assert.equal(inFlight.record.snapshot.reportContext.activeAttempts.blaster.attemptId,'attempt-preserved');
+    screen.bossBulletImpacts=0;assert.equal(state.bossBulletImpacts,4,'transaction payload is detached from live gameplay');
+    inFlight.commit();await settle();
+    const gameplayCount=gameplay.transactions.length;
+    screen.options.developerTest=true;gameplay.advance(gameplay.service.INTERVAL_MS);gameplay.polls[0].callback();await settle();
+    assert.equal(gameplay.transactions.length,gameplayCount,'developer testing never overwrites story recovery');
+    assert.equal((await gameplay.service.checkpoint('developer')).saved,false);
+
+    // Do not commit a captured source map if opening IndexedDB yields while
+    // the story moves to a destination. Re-capture that destination instead.
+    const delayed=harness();const source=delayed.start();await delayed.flush(source.map);
+    let releaseDB;const init=delayed.env.IP2Live.DBManager.initDB;
+    delayed.env.IP2Live.DBManager.initDB=()=>new Promise(resolve=>{releaseDB=()=>init().then(resolve)});
+    const moving=delayed.service.checkpoint('travel');delayed.service.tick(source.map);await settle();
+    const beforeTravel=clone(delayed.disk.record), beforeCount=delayed.transactions.length;
+    const destination=delayed.env.IP2Live.MapManager.goTo(4);delayed.qm.activeMapId=4;
+    delayed.env.IP2Live.DBManager.initDB=init;releaseDB();await settle();
+    assert.deepEqual(delayed.disk.record,beforeTravel);
+    assert.equal(delayed.transactions.length,beforeCount,'stale source payload never starts a write transaction');
+    await delayed.flush(destination);assert.equal((await moving).saved,true);
+    assert.equal(delayed.disk.record.snapshot.mapId,4);
     console.log('Story autosave: persistence, isolation, atomic failure, queueing, map changes, restore and prompts passed.');
 })().catch(e=>{console.error(e);process.exitCode=1});

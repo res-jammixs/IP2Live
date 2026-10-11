@@ -101,6 +101,27 @@ assert.ok(text.every(row => !row.value.includes('Lucas')), 'engine default name 
 assert.equal(states.length, 0, 'rendering balances canvas state');
 
 async function main() {
+    const nativeLoad=Core.Game.prototype.load, warn=console.warn;
+    const beforeEnumeration=Core.Game.current={currentMapID:3,infiltratorName:'RUNNING'};
+    let slotRead=0;
+    Core.Game.prototype.load=async function(){
+        slotRead++;
+        if(slotRead!==2) throw new Error('unsupported story snapshot');
+        this.isEmpty=false;this.currentMapID=4;this.infiltratorName='LOADABLE';
+    };
+    console.warn=()=>{};
+    const archive=new windowObject.IP2LiveLoadGameMenu();
+    try { await archive.load(); }
+    finally { Core.Game.prototype.load=nativeLoad;console.warn=warn; }
+    assert.equal(archive.loading,false,'unreadable slots cannot leave the archive loading forever');
+    assert.equal(archive.gamesData.length,9);
+    assert.equal(archive._slotDetails(0).unavailable,true);
+    assert.equal(archive._slotDetails(1).empty,false,'other saves remain accessible');
+    assert.equal(Core.Game.current,beforeEnumeration,'enumeration preserves the running story even after a failed read');
+    archive.selectedIndex=0;archive._confirmSelection();
+    assert.equal(confirmation.title,'SAVE UNAVAILABLE');
+    archive._openSaveNameDialog(1);
+    assert.equal(archive.saveNameDialog.hasExistingSave,true,'overwriting an unreadable record still requires overwrite confirmation');
     const records = [];
     const coreTimes = [];
     const game = Core.Game.current = { currentMapID: 4, infiltratorName: 'NOVA', playTime: { time: 3723000 }, save: async function () { coreTimes.push(this.playTime.time); } };

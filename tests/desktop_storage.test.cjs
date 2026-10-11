@@ -111,6 +111,30 @@ async function main() {
         assert.equal(recovered.recoveredFromBackup, true);
         assert.equal(recovered.data.currentMapId, 3);
 
+        assert.equal(await storage.readProgressSnapshot(1, 'TESTER', 'different-profile'), null,
+            'same-name profiles with different stable IDs cannot share a snapshot');
+        fs.writeFileSync(savePath, JSON.stringify({ currentMapId: 9, _ip2liveStorage: {
+            profileId: 'other-profile', snapshot: { mapId: 9, profileName: 'OTHER', profileId: 'other-profile', savedAt: 300 },
+        } }), 'utf8');
+        assert.equal((await storage.readProgressSnapshot(1, 'OTHER', 'other-profile')).mapId, 9,
+            'a newly committed slot replaces metadata cached from an earlier load');
+        assert.equal(await storage.readProgressSnapshot(1, 'TESTER', 'profile-test'), null);
+        fs.writeFileSync(savePath, JSON.stringify({ currentMapId: 10 }), 'utf8');
+        assert.equal(await storage.readProgressSnapshot(1, 'OTHER', 'other-profile'), null,
+            'a legacy core save without metadata cannot inherit cached progress');
+        assert.equal(storage.getLoadedSaveMetadata(1), null);
+
+        const embedded = { schemaVersion: 2, mapId: 11, savedAt: 400, profileName: 'NOVA', profileId: 'nova-profile',
+            gameStates: { gameplaySession: { state: { phase: 'boss', bossBulletImpacts: 4 } } } };
+        await storage.writeCoreSave(2, { currentMapId: 11, _ip2liveProgress: embedded });
+        const embeddedRead = await storage.readCoreSave(2);
+        assert.deepEqual(embeddedRead.data._ip2liveProgress, embedded);
+        assert.deepEqual(embeddedRead.metadata.snapshot, embedded);
+        await storage.writeCoreSave(2, { currentMapId: 12 });
+        assert.equal(await storage.readProgressSnapshot(2, 'NOVA', 'nova-profile'), null,
+            'a core overwrite without snapshot evidence drops stale quest/gameplay state');
+        assert.equal(storage.prepareSaveMetadata(1.5, {}), false);
+
         const event = {
             eventId: 'event-test-1',
             eventType: 'attempt_end',
@@ -128,6 +152,32 @@ async function main() {
         assert.equal(reportResult.ok, true);
         assert.equal(fs.readFileSync(reportResult.path, 'utf8'), 'report-bytes');
         assert.equal(fs.existsSync(reportResult.path + '.sha256'), true);
+
+        // The desktop bridge is asynchronous. Finishing an older write must
+        // not consume metadata that was prepared for the next save in that slot.
+        const bridgeWrites = [];
+        storage._bridge = {
+            writeSave(payload) { return new Promise(resolve => bridgeWrites.push({ payload, resolve })); },
+            readSave: async () => null,
+        };
+        storage.prepareSaveMetadata(3, { savedAt: 500, snapshot: { mapId: 3, profileId: 'first' } });
+        const firstBridgeWrite = storage.writeCoreSave(3, { currentMapId: 3 });
+        storage.prepareSaveMetadata(3, { savedAt: 600, snapshot: { mapId: 4, profileId: 'second' } });
+        bridgeWrites[0].resolve({ ok: true });
+        await firstBridgeWrite;
+        assert.equal(storage._pendingSaveMetadata['3'].snapshot.profileId, 'second');
+        const secondBridgeWrite = storage.writeCoreSave(3, { currentMapId: 4 });
+        assert.equal(bridgeWrites[1].payload.metadata.snapshot.profileId, 'second');
+        bridgeWrites[1].resolve({ ok: true });
+        await secondBridgeWrite;
+        assert.equal(storage._pendingSaveMetadata['3'], undefined);
+
+        storage.prepareSaveMetadata(3, { savedAt: 700, snapshot: { mapId: 5, profileId: 'failed' } });
+        const rejectedBridgeWrite = storage.writeCoreSave(3, { currentMapId: 5 });
+        bridgeWrites[2].resolve({ ok: false });
+        await assert.rejects(rejectedBridgeWrite, /not committed/);
+        assert.equal(storage.getLoadedSaveMetadata(3).snapshot.profileId, 'second', 'failed writes do not become loaded metadata');
+        assert.equal(storage._pendingSaveMetadata['3'].snapshot.profileId, 'failed', 'failed writes keep their retry metadata');
 
         console.log('desktop_storage.test.cjs: PASS');
     } finally {

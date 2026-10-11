@@ -76,6 +76,7 @@
             state.successStreak = 0;
             state.runOver = true;
             state.lastChange = this._changeRecord('developer-game-over', -100, payload || {});
+            this._recordGameOver(Object.assign({}, payload || {}, { simulated: true }), state);
             this._requestHudPaint();
             this._showGameOver();
             return true;
@@ -144,7 +145,7 @@
             const result = data.result || {};
             const state = this._state();
             if (state.runOver) return { handled: true, gameOver: true, reason: 'run-over' };
-            if (String(result.reason || '') !== 'attempts_exhausted') return { handled: false, reason: 'not-terminal' };
+            if (!['attempts_exhausted', 'hearts_exhausted'].includes(String(result.reason || ''))) return { handled: false, reason: 'not-terminal' };
             // Actual tutorials stay penalty-free. The developer button explicitly
             // simulates a campaign failure, including at tutorial quest locations.
             // Optional replays remain isolated even if a caller sets the dev flag.
@@ -175,6 +176,7 @@
                 state.runOver = true;
                 data.neuralGameOver = true;
                 data.neuralRecoveryHandled = true;
+                this._recordGameOver(data, state);
                 this._requestHudPaint();
                 this._showGameOver();
                 return { handled: true, gameOver: true, delta: -loss, state: this.getState() };
@@ -278,15 +280,18 @@
             const gameplayId = this._canonicalGameplayId(data);
             const catalog = gm && gm.gameplayCatalog && gm.gameplayCatalog[gameplayId];
             const stage = gm && typeof gm._stageFor === 'function' ? gm._stageFor(data.mapId) : null;
+            const offerId = gm && typeof gm._newEventId === 'function' ? gm._newEventId('tutorial-offer') : 'tutorial-offer-' + Date.now() + '-' + count;
+            const triggerReason = 'repeated_terminal_failures';
+            let selected = false;
             const log = (choice) => {
                 if (gm && typeof gm._logTelemetryEvent === 'function') gm._logTelemetryEvent('neural_tutorial_offer', {
                     gameplayId, mapId: data.mapId, questId: data.questId, objectiveId: data.objectiveId,
-                    payload: { failureCount: count, choice },
+                    developerQuestFail: data.developerQuestFail,
+                    payload: { failureCount: count, choice, tutorialOfferId: offerId, triggerReason, sourceAttemptId: data.attemptId || null },
                 });
                 if (gm && typeof gm._queueCheckpoint === 'function') gm._queueCheckpoint('neural_tutorial_offer');
             };
-            log('shown');
-            return overlay.show({
+            const shown = overlay.show({
                 title: 'APEX SECURITY ALERT',
                 eyebrow: 'NEURAL DECK / AR DIAGNOSTIC',
                 gameplayLabel: catalog ? catalog.label : gameplayId,
@@ -296,14 +301,19 @@
                 tutorialSection: true,
                 actions: [
                     { id: 'tutorial', label: 'See Tutorial Again', onSelect: () => {
+                        if (selected) return;
+                        selected = true;
                         log('tutorial');
-                        if (!gm || typeof gm.launchTutorialReplay !== 'function' || !gm.launchTutorialReplay(gameplayId, data)) {
+                        const replayContext = Object.assign({}, data, { tutorialOfferId: offerId, tutorialTriggerReason: triggerReason, tutorialFailureCount: count });
+                        if (!gm || typeof gm.launchTutorialReplay !== 'function' || !gm.launchTutorialReplay(gameplayId, replayContext)) {
                             overlay.show({ title: 'TUTORIAL UNAVAILABLE', lines: ['Your current quest is ready to retry. The tutorial could not be opened right now.'] });
                         }
                     } },
-                    { id: 'continue', label: 'Continue', onSelect: () => log('continue') },
+                    { id: 'continue', label: 'Continue', onSelect: () => { if (!selected) { selected = true; log('continue'); } } },
                 ],
             });
+            if (shown !== false) log('shown');
+            return shown;
         },
 
         _newState() {
@@ -318,6 +328,8 @@
                 pendingTutorialRecovery: null,
                 acknowledgedFailureMilestones: {},
                 runOver: false,
+                neuralRunId: this._newRunId(),
+                gameOverEventId: null,
             };
         },
 
@@ -350,7 +362,33 @@
             state.pendingTutorialRecovery = null;
             state.version = this.VERSION;
             state.runOver = !!state.runOver;
+            if (!state.neuralRunId) state.neuralRunId = this._newRunId();
             return state;
+        },
+
+        _newRunId() {
+            const gm = IP2Live.GameManager;
+            return gm && typeof gm._newEventId === 'function' ? gm._newEventId('neural-run') : 'neural-run-' + Date.now() + '-' + Math.floor(Math.random() * 1000000000);
+        },
+
+        _recordGameOver(data, state) {
+            if (state.gameOverEventId) return false;
+            const gm = IP2Live.GameManager;
+            const simulated = !!(data.simulated || data.developerQuestFail || data.developerTest || (data.spec && data.spec.developerTest));
+            state.gameOverEventId = gm && typeof gm._newEventId === 'function' ? gm._newEventId('game-over') : 'game-over-' + state.neuralRunId;
+            data.neuralRunId = state.neuralRunId;
+            data.gameOverEventId = state.gameOverEventId;
+            if (!simulated && gm && typeof gm._logTelemetryEvent === 'function') {
+                gm._logTelemetryEvent('neural_game_over', {
+                    eventId: state.gameOverEventId,
+                    gameplayId: this._canonicalGameplayId(data),
+                    mapId: data.mapId || this._currentMapId(), questId: data.questId, objectiveId: data.objectiveId,
+                    attemptId: data.attemptId || null, neuralLifeForce: 0,
+                    payload: { neuralRunId: state.neuralRunId, triggerReason: 'life_force_depleted', simulated: false, failureStreak: state.failureStreak },
+                });
+                if (typeof gm._queueCheckpoint === 'function') gm._queueCheckpoint('neural_game_over');
+            }
+            return true;
         },
 
         _isTutorial(data) {
@@ -387,6 +425,7 @@
             data.neuralCritical = Number(state.lifeForce) <= CRITICAL_LIFE_FORCE;
             data.neuralSuccessStreak = Number(state.successStreak) || 0;
             data.neuralFailureStreak = Number(state.failureStreak) || 0;
+            data.neuralRunId = state.neuralRunId;
         },
 
         _canonicalGameplayId(data) {

@@ -11,7 +11,7 @@
  */
 
 const IP2LiveDesktopStorage = {
-    VERSION: 'desktop-storage-20260821-02',
+    VERSION: 'desktop-storage-20261011-03',
     SAVE_SCHEMA_VERSION: 2,
     TELEMETRY_SCHEMA_VERSION: 1,
     APPLICATION_ID: 'IP2Live',
@@ -312,8 +312,9 @@ const IP2LiveDesktopStorage = {
     },
 
     prepareSaveMetadata(slot, metadata) {
-        const key = String(Number(slot) || 0);
-        if (key === '0') return false;
+        const resolvedSlot = Number(slot);
+        if (!Number.isInteger(resolvedSlot) || resolvedSlot < 1 || resolvedSlot > 999) return false;
+        const key = String(resolvedSlot);
         this._pendingSaveMetadata[key] = this._clonePlain(metadata || {});
         return true;
     },
@@ -327,18 +328,19 @@ const IP2LiveDesktopStorage = {
         return value ? this._clonePlain(value) : null;
     },
 
-    async readProgressSnapshot(slot, profileName) {
-        const key = String(Number(slot) || 0);
-        let metadata = this._loadedSaveMetadata[key] || null;
-        if (!metadata) {
-            const stored = await this.readCoreSave(slot);
-            metadata = stored && stored.metadata ? stored.metadata : null;
-        }
+    async readProgressSnapshot(slot, profileName, profileId) {
+        // Read the same committed record as the core save. An old slot cache can
+        // otherwise restore another profile's progress after an overwrite or recovery.
+        const stored = await this.readCoreSave(slot);
+        const metadata = stored && stored.metadata ? stored.metadata : null;
         const snapshot = metadata && metadata.snapshot ? metadata.snapshot : null;
         if (!snapshot) return null;
         const expected = String(profileName || '').trim();
         const actual = String(snapshot.profileName || '').trim();
         if (expected && actual && expected !== actual) return null;
+        const expectedId = String(profileId || '').trim();
+        const actualId = String(snapshot.profileId || (metadata && metadata.profileId) || '').trim();
+        if (expectedId && actualId && expectedId !== actualId) return null;
         return this._clonePlain(snapshot);
     },
 
@@ -364,17 +366,35 @@ const IP2LiveDesktopStorage = {
 
     async writeCoreSave(slot, gameJson, options) {
         const resolvedSlot = Number(slot) || 0;
-        if (!this.enabled || resolvedSlot < 1) {
+        if (!this.enabled || !Number.isInteger(resolvedSlot) || resolvedSlot < 1 || resolvedSlot > 999) {
             if (this._originalPlatform && this._originalPlatform.registerSave) {
                 return this._originalPlatform.registerSave(slot, options && options.enginePath, gameJson);
             }
             throw new Error('Durable desktop save storage is unavailable.');
         }
         const key = String(resolvedSlot);
-        let metadata = this._pendingSaveMetadata[key] || null;
+        const preparedMetadata = this._pendingSaveMetadata[key] || null;
+        const embedded = gameJson && gameJson._ip2liveProgress;
+        const embeddedSnapshot = embedded && (embedded.snapshot || embedded);
+        const validEmbedded = embeddedSnapshot && Number(embeddedSnapshot.mapId) === Number(gameJson.currentMapId)
+            ? embeddedSnapshot : null;
+        let metadata = preparedMetadata ? this._clonePlain(preparedMetadata) : null;
+        if (!metadata && validEmbedded) {
+            metadata = {
+                profileId: validEmbedded.profileId || null,
+                profileName: validEmbedded.profileName || null,
+                savedAt: validEmbedded.savedAt,
+                snapshot: this._clonePlain(validEmbedded),
+            };
+        }
         if (!metadata) {
             const existing = await this.readCoreSave(resolvedSlot, { quiet: true });
             metadata = existing && existing.metadata ? existing.metadata : {};
+            metadata = Object.assign({}, metadata);
+            // A new engine save without progress evidence cannot reuse the old
+            // quest/gameplay snapshot merely because it occupies the same slot.
+            delete metadata.snapshot;
+            metadata.savedAt = Date.now();
         }
         metadata = Object.assign({}, this._clonePlain(metadata || {}), {
             applicationId: this.APPLICATION_ID,
@@ -400,14 +420,16 @@ const IP2LiveDesktopStorage = {
             });
             result = { ok: true, path: filePath, savedAt: metadata.savedAt };
         }
-        this._loadedSaveMetadata[key] = metadata;
-        delete this._pendingSaveMetadata[key];
+        if (result && result.ok === false) throw new Error('The desktop save was not committed.');
+        this._loadedSaveMetadata[key] = this._clonePlain(metadata);
+        if (this._pendingSaveMetadata[key] === preparedMetadata) delete this._pendingSaveMetadata[key];
         return result;
     },
 
     async readCoreSave(slot, options) {
         const resolvedSlot = Number(slot) || 0;
-        if (!this.enabled || resolvedSlot < 1) return null;
+        if (!this.enabled || !Number.isInteger(resolvedSlot) || resolvedSlot < 1 || resolvedSlot > 999) return null;
+        const key = String(resolvedSlot);
         let result = null;
         try {
             if (this._bridge) {
@@ -416,12 +438,14 @@ const IP2LiveDesktopStorage = {
                 result = this._readNodeSaveWithBackup(resolvedSlot);
             }
         } catch (error) {
+            delete this._loadedSaveMetadata[key];
             if (!options || !options.quiet) console.warn('[IP2Live] Save slot ' + resolvedSlot + ' could not be read:', error);
             return null;
         }
-        if (!result || !result.data) return null;
+        if (!result || !result.data) { delete this._loadedSaveMetadata[key]; return null; }
         const metadata = result.metadata || result.data._ip2liveStorage || null;
-        if (metadata) this._loadedSaveMetadata[String(resolvedSlot)] = this._clonePlain(metadata);
+        if (metadata) this._loadedSaveMetadata[key] = this._clonePlain(metadata);
+        else delete this._loadedSaveMetadata[key];
         return {
             data: result.data,
             metadata: metadata,

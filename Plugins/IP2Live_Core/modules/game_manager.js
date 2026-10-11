@@ -8,7 +8,7 @@
  */
 
 const IP2LiveGameManager = {
-    VERSION: 'game-manager-20260918-14',
+    VERSION: 'game-manager-20261011-story-state-15',
 
     STATE: {
         BOOT: 'BOOT',
@@ -49,6 +49,8 @@ const IP2LiveGameManager = {
     _registeredGameplayQuestIds: {},
     _reportSessionId: null,
     _reportSessionProfileName: null,
+    _reportSessionProfileId: null,
+    _reportTutorialContexts: {},
     _reportActiveAttempts: {},
     _reportTelemetrySequence: 0,
     _reportPendingWrites: new Set(),
@@ -320,7 +322,7 @@ const IP2LiveGameManager = {
         ip_subnet_simulator: { gameplayId: 'ip_subnet_simulator', label: 'Subnet Simulator', competencyKey: 'hosts_subnets_calculation', competencyLabel: 'Hosts and subnets calculation', targetClearMs: 150000, objectiveHandler: { manager: 'SubnetSimulatorGameplayManager', method: '_handleObjective' } },
         ip_host_power_reactor: { gameplayId: 'ip_host_power_reactor', label: 'Host-Power Reactor', competencyKey: 'host_bit_power_calculation', competencyLabel: 'Host-bit exponent and usable-address capacity calculation', targetClearMs: 60000, objectiveHandler: { manager: 'HostPowerReactorGameplayManager', method: '_handleObjective' } },
         ip_cidr_quarantine: { gameplayId: 'ip_cidr_quarantine', label: 'CIDR Quarantine', competencyKey: 'cidr_quarantine_zone', competencyLabel: 'CIDR quarantine zone construction', targetClearMs: 150000, objectiveHandler: { manager: 'CIDRQuarantineGameplayManager', method: '_handleObjective' } },
-        ip_cidr_quarantine_matrix: { gameplayId: 'ip_cidr_quarantine_matrix', label: 'CIDR Quarantine Matrix', competencyKey: 'cidr_multi_zone_quarantine', competencyLabel: 'Multi-zone CIDR quarantine construction', targetClearMs: 180000, objectiveHandler: { manager: 'CIDRQuarantineMatrixGameplayManager', method: '_handleObjective' } },
+        ip_cidr_quarantine_matrix: { gameplayId: 'ip_cidr_quarantine_matrix', label: 'Subnet Blaster', competencyKey: 'subnet_address_analysis', competencyLabel: 'Network and broadcast address analysis', targetClearMs: 180000, objectiveHandler: { manager: 'CIDRQuarantineMatrixGameplayManager', method: '_handleObjective' } },
         ip_network_repair: { gameplayId: 'ip_network_repair', label: 'Network Repair PCs', competencyKey: 'network_broadcast_usable_range', competencyLabel: 'Network, broadcast, and usable IP range calculation', targetClearMs: 180000, pcCount: 5, objectiveHandler: { manager: 'NetworkRepairGameplayManager', method: '_handleObjective' } },
         ip_vlsm_allocator: { gameplayId: 'ip_vlsm_allocator', label: 'VLSM Infiltration Grid', competencyKey: 'vlsm_subnet_allocation', competencyLabel: 'VLSM subnet allocation and route planning', targetClearMs: 240000, objectiveHandler: { manager: 'VLSMAllocatorGameplayManager', method: '_handleObjective' } },
     },
@@ -465,7 +467,7 @@ const IP2LiveGameManager = {
                 { id: 'stage.13.mixed.04.cidr_quarantine', sequence: 4, objectiveId: 'solve_cidr_quarantine_13_04', title: 'SEAL APEX RELAY AI', label: 'Quarantine Node 04', targetTile: { x: 10, y: 0, z: 25 }, profile: { index: 5, minHosts: 96, maxHosts: 180 } },
             ],
             ip_cidr_quarantine_matrix: [
-                { id: 'stage.13.mixed.05.cidr_matrix.tutorial', sequence: 5, objectiveId: 'solve_cidr_matrix_13_05', title: 'CALIBRATE MULTI-ZONE MATRIX', label: 'Matrix Node 05', tutorial: true, targetTile: { x: 18, y: 0, z: 1 }, profile: { index: 1, zoneCount: 2, parentPrefix: 23 } },
+                { id: 'stage.13.mixed.05.cidr_matrix.tutorial', sequence: 5, objectiveId: 'solve_cidr_matrix_13_05', title: 'CALIBRATE SUBNET BLASTER', label: 'Subnet Blaster Node 05', tutorial: true, targetTile: { x: 18, y: 0, z: 1 }, profile: { index: 1 } },
             ],
         } },
         14: { mapId: 14, gameplays: {} },
@@ -583,11 +585,13 @@ const IP2LiveGameManager = {
 
     _ensureReportSession() {
         const profileName = this._deriveTelemetryProfileName({});
-        if (this._reportSessionId && this._reportSessionProfileName === profileName) return this._reportSessionId;
-        if (this._reportSessionId && this._reportSessionProfileName !== profileName) {
+        const profileId = this._deriveTelemetryProfileId({});
+        if (this._reportSessionId && this._reportSessionProfileName === profileName && this._reportSessionProfileId === profileId) return this._reportSessionId;
+        if (this._reportSessionId) {
             this._logTelemetryEvent('session_end', {
                 sessionId: this._reportSessionId,
                 infiltratorName: this._reportSessionProfileName || 'UNKNOWN',
+                profileId: this._reportSessionProfileId,
                 timestamp: Date.now(),
                 notes: 'profile_changed',
             });
@@ -596,9 +600,11 @@ const IP2LiveGameManager = {
         const ts = Date.now();
         this._reportSessionId = 'session-' + ts + '-' + Math.floor(Math.random() * 99999);
         this._reportSessionProfileName = profileName;
+        this._reportSessionProfileId = profileId;
         this._logTelemetryEvent('session_start', {
             sessionId: this._reportSessionId,
             infiltratorName: profileName,
+            profileId: profileId,
             mapId: this._currentMapId(),
         });
         return this._reportSessionId;
@@ -620,6 +626,10 @@ const IP2LiveGameManager = {
 
     _deriveTelemetryProfileId(payload) {
         const game = Core && Core.Game ? Core.Game.current : null;
+        if (payload && Object.prototype.hasOwnProperty.call(payload, 'profileId')) {
+            const explicitId = String(payload.profileId || '').trim();
+            return explicitId || null;
+        }
         const candidates = [
             payload && payload.profileId,
             game && game._ip2liveProfileId,
@@ -660,8 +670,14 @@ const IP2LiveGameManager = {
 
     async prepareForShutdown(reason) {
         const why = String(reason || 'application_quit');
+        if (this._reportShutdownPrepared) { await this.flushTelemetryWrites(); return true; }
+        this._reportShutdownPrepared = true;
+        if (IP2Live.GameplayPause && IP2Live.GameplayPause.captureActiveSession) {
+            IP2Live.GameplayPause.captureActiveSession('shutdown');
+        }
         const activeIds = Object.keys(this._reportActiveAttempts || {});
         for (let i = 0; i < activeIds.length; i++) {
+            if (this._suspendReportAttempt(activeIds[i], why)) continue;
             this._closeReportAttempt(activeIds[i], {
                 cancelled: true,
                 reason: 'interrupted',
@@ -673,12 +689,14 @@ const IP2LiveGameManager = {
             this._logTelemetryEvent('session_end', {
                 sessionId: this._reportSessionId,
                 infiltratorName: this._reportSessionProfileName || this._deriveTelemetryProfileName({}),
+                profileId: this._reportSessionProfileId,
                 timestamp: Date.now(),
                 endedAt: Date.now(),
                 notes: why,
             });
             this._reportSessionId = null;
             this._reportSessionProfileName = null;
+            this._reportSessionProfileId = null;
         }
         if (this._hasExplicitSaveSlot() && Core && Core.Game && Core.Game.current) {
             try {
@@ -686,6 +704,11 @@ const IP2LiveGameManager = {
             } catch (error) {
                 console.warn('[IP2Live] Shutdown checkpoint failed:', error);
             }
+        }
+        const autosave = IP2Live.StoryAutosave;
+        const game = Core && Core.Game && Core.Game.current;
+        if (autosave && game && autosave._ready(Scene.Map.current, game)) {
+            await autosave.checkpoint('shutdown');
         }
         await this.flushTelemetryWrites();
         return true;
@@ -696,8 +719,13 @@ const IP2LiveGameManager = {
         this._shutdownListenerInstalled = true;
         const self = this;
         window.addEventListener('beforeunload', function () {
+            if (self._reportShutdownPrepared) return;
+            if (IP2Live.GameplayPause && IP2Live.GameplayPause.captureActiveSession) {
+                IP2Live.GameplayPause.captureActiveSession('window_closed');
+            }
             const activeIds = Object.keys(self._reportActiveAttempts || {});
             for (let i = 0; i < activeIds.length; i++) {
+                if (self._suspendReportAttempt(activeIds[i], 'window_closed')) continue;
                 self._closeReportAttempt(activeIds[i], {
                     cancelled: true,
                     reason: 'window_closed',
@@ -708,18 +736,40 @@ const IP2LiveGameManager = {
                 self._logTelemetryEvent('session_end', {
                     sessionId: self._reportSessionId,
                     infiltratorName: self._reportSessionProfileName || self._deriveTelemetryProfileName({}),
+                    profileId: self._reportSessionProfileId,
                     timestamp: Date.now(),
                     endedAt: Date.now(),
                     notes: 'window_closed',
                 });
                 self._reportSessionId = null;
                 self._reportSessionProfileName = null;
+                self._reportSessionProfileId = null;
             }
         });
     },
 
     _logTelemetryEvent(eventType, payload) {
-        const data = payload || {};
+        const data = Object.assign({}, payload || {});
+        if (this._excludeAssessmentTelemetry(data)) return Promise.resolve(false);
+        // Replay launch/finish events are emitted by the dedicated replay owner.
+        // Enrich that established event instead of creating duplicate counters.
+        if (eventType === 'neural_tutorial_replay') {
+            const replay = this._tutorialReplaySession;
+            const context = (replay && replay.reportContext) || this._reportTutorialContexts[data.gameplayId] || {};
+            if (context.excludedTelemetry) return Promise.resolve(false);
+            data.payload = Object.assign({}, data.payload || {}, context);
+            if (replay) data.payload.tutorialReplayId = replay.options.questId;
+            if (data.payload.action === 'started') {
+                data.payload.startedAt = Number(data.timestamp) || Date.now();
+                this._reportTutorialContexts[data.gameplayId] = Object.assign({}, data.payload);
+            } else if (data.payload.action !== 'shown') {
+                const startedAt = Number(context.startedAt) || 0;
+                data.payload.durationMs = startedAt ? Math.max(0, Date.now() - startedAt) : null;
+            }
+            // The action belongs to this event, never the earlier launch context.
+            data.payload.action = payload && payload.payload && payload.payload.action;
+            data.tutorial = true;
+        }
         const catalogEntry = data.gameplayId && this.gameplayCatalog[data.gameplayId]
             ? this.gameplayCatalog[data.gameplayId]
             : null;
@@ -732,7 +782,7 @@ const IP2LiveGameManager = {
             ? Number(data.levelId || 0) || 0
             : Number(stageMeta.level || 0) || 0;
         const record = {
-            telemetryVersion: 'telemetry-20260817-02',
+            telemetryVersion: 'telemetry-20261011-03',
             eventId: data.eventId || this._newEventId('telemetry'),
             sequence: this._nextTelemetrySeq(),
             sessionId: data.sessionId || this._ensureReportSession(),
@@ -743,6 +793,7 @@ const IP2LiveGameManager = {
             infiltratorName: this._deriveTelemetryProfileName(data),
             profileId: this._deriveTelemetryProfileId(data),
             gameplayId: data.gameplayId || null,
+            gameplayVersion: data.gameplayVersion || (data.payload && data.payload.gameplayVersion) || null,
             gameplayLabel: data.gameplayLabel || (catalogEntry && catalogEntry.label) || null,
             competencyKey: data.competencyKey || (catalogEntry && catalogEntry.competencyKey) || null,
             competencyLabel: data.competencyLabel || (catalogEntry && catalogEntry.competencyLabel) || null,
@@ -765,8 +816,14 @@ const IP2LiveGameManager = {
             maxAttempts: Number(data.maxAttempts || 0) || 0,
             retries: Number(data.retries || 0) || 0,
             mistakeCount: Number(data.mistakeCount || 0) || 0,
-            mistakeRate: Number(data.mistakeRate || 0) || 0,
-            accuracy: Number(data.accuracy || 0) || 0,
+            mistakeRate: this._nullableTelemetryNumber(data.mistakeRate),
+            accuracy: this._nullableTelemetryNumber(data.accuracy),
+            accuracyKnown: data.accuracyKnown === undefined ? this._nullableTelemetryNumber(data.accuracy) !== null : !!data.accuracyKnown,
+            correctDecisions: this._nullableTelemetryNumber(data.correctDecisions),
+            totalDecisions: this._nullableTelemetryNumber(data.totalDecisions),
+            incorrectDecisions: this._nullableTelemetryNumber(data.incorrectDecisions),
+            activeDurationMs: this._nullableTelemetryNumber(data.activeDurationMs),
+            durationMethod: data.durationMethod || null,
             securityStrikeCount: Number(data.securityStrikeCount || 0) || 0,
             securityTriggered: !!data.securityTriggered,
             rollbackQuestId: data.rollbackQuestId || null,
@@ -793,6 +850,18 @@ const IP2LiveGameManager = {
         return Promise.resolve(false);
     },
 
+    _nullableTelemetryNumber(value) {
+        return value !== undefined && value !== null && value !== '' && Number.isFinite(Number(value)) ? Number(value) : null;
+    },
+
+    _excludeAssessmentTelemetry(data) {
+        const source = data || {}, spec = source.spec || {};
+        return !!(source.developerTest || source.developerTesting || spec.developerTest || source.practiceMode || spec.practiceMode || source.practiceGameplay || spec.practiceGameplay || source.simulated ||
+            source.developerQuestSkip || source.developerQuestFail ||
+            (source.result && (source.result.developerTest || source.result.developerSkip || source.result.developerFail || source.result.practiceMode)) ||
+            (IP2Live.PracticeMode && IP2Live.PracticeMode.active));
+    },
+
     _reportActiveAttempt(gameplayId) {
         if (!gameplayId) return null;
         return this._reportActiveAttempts[gameplayId] || null;
@@ -800,6 +869,34 @@ const IP2LiveGameManager = {
 
     _openReportAttempt(gameplayId, payload) {
         const data = payload || {};
+        if (this._excludeAssessmentTelemetry(data)) return null;
+        const current = this._reportActiveAttempt(gameplayId);
+        const game = Core && Core.Game ? Core.Game.current : null;
+        const candidates = game && game._ip2liveRestoredReportAttempts;
+        const saved = candidates && candidates[gameplayId];
+        const matches = attempt => attempt && attempt.gameplayId === gameplayId &&
+            String(attempt.questId || '') === String(data.questId || '') &&
+            String(attempt.objectiveId || '') === String(data.objectiveId || '') &&
+            Number(attempt.mapId) === Number(data.mapId || this._currentMapId()) &&
+            (!attempt.profileId || attempt.profileId === this._deriveTelemetryProfileId(data)) &&
+            attempt.infiltratorName === this._deriveTelemetryProfileName(data);
+        if (data.resumeGameplay && matches(current)) {
+            if (current.suspended) { current.resumedAt = Date.now(); current.suspended = false; }
+            return current;
+        }
+        if (data.resumeGameplay && matches(saved) && !saved.checkpointAlreadyFinished) {
+            const resumed = this._clonePlain(saved);
+            resumed.resumedAt = Date.now();
+            resumed.suspended = false;
+            resumed.elapsedBeforeResumeMs = Math.max(0, Number(saved.elapsedBeforeResumeMs) || 0);
+            this._reportActiveAttempts[gameplayId] = resumed;
+            delete candidates[gameplayId];
+            this._logTelemetryEvent('attempt_resume', Object.assign({}, resumed, {
+                sessionId: this._ensureReportSession(), notes: 'story_checkpoint_restored',
+            }));
+            return resumed;
+        }
+        if (candidates) delete candidates[gameplayId];
         const catalog = gameplayId ? this.gameplayCatalog[gameplayId] : null;
         const spec = data.spec || {};
         const mapId = Number(data.mapId || spec.mapId || this._currentMapId() || 0) || 0;
@@ -808,6 +905,8 @@ const IP2LiveGameManager = {
             attemptId: 'attempt-' + gameplayId + '-' + Date.now() + '-' + Math.floor(Math.random() * 99999),
             startedAt: Date.now(),
             sessionId: this._ensureReportSession(),
+            infiltratorName: this._deriveTelemetryProfileName(data),
+            profileId: this._deriveTelemetryProfileId(data),
             gameplayId: gameplayId,
             gameplayLabel: catalog && catalog.label ? catalog.label : gameplayId,
             competencyKey: catalog && catalog.competencyKey ? catalog.competencyKey : null,
@@ -820,7 +919,7 @@ const IP2LiveGameManager = {
             questLabel: data.questLabel || spec.label || spec.title || null,
             questSequence: Number(data.questSequence || spec.sequence || 0) || 0,
             objectiveId: data.objectiveId || null,
-            tutorial: !!(data.tutorial || spec.tutorial),
+            tutorial: !!(data.tutorial || spec.tutorial || data.tutorialMode || data.guidedTutorial || data.harderIntro || spec.harderIntro),
             retries: 0,
             mistakeCount: 0,
             mistakes: [],
@@ -831,21 +930,42 @@ const IP2LiveGameManager = {
         return attempt;
     },
 
+    _suspendReportAttempt(gameplayId, reason) {
+        const open = this._reportActiveAttempt(gameplayId);
+        const pause = IP2Live.GameplayPause;
+        if (!open || !pause || !pause.findSession || !pause.findSession(gameplayId, open)) return false;
+        if (!open.suspended) {
+            open.elapsedBeforeResumeMs = Math.max(0, Number(open.elapsedBeforeResumeMs) || 0) +
+                Math.max(0, Date.now() - Number(open.resumedAt || open.startedAt || Date.now()));
+            open.suspended = true;
+            this._logTelemetryEvent('attempt_suspend', Object.assign({}, open, { notes: reason || 'gameplay_paused' }));
+        }
+        return true;
+    },
+
     _closeReportAttempt(gameplayId, payload, passed) {
         const data = payload || {};
+        if (this._excludeAssessmentTelemetry(data)) {
+            delete this._reportActiveAttempts[gameplayId];
+            return null;
+        }
         const open = this._reportActiveAttempt(gameplayId) || this._openReportAttempt(gameplayId, data);
         const endedAt = Date.now();
-        const durationMs = Math.max(0, endedAt - Number(open.startedAt || endedAt));
+        const durationMs = Math.max(0, Number(open.elapsedBeforeResumeMs) || 0) +
+            Math.max(0, endedAt - Number(open.resumedAt || open.startedAt || endedAt));
         const rawResult = data.result || data.payload || {};
         const cancelled = !!(data.cancelled || rawResult.cancelled);
         const metrics = this._extractGameplayMetrics(gameplayId, rawResult, !!passed);
         const retries = Math.max(Number(open.retries || 0) || 0, Number(metrics.retries || 0) || 0);
         const mistakeCount = Math.max(Number(open.mistakeCount || 0) || 0, Number(metrics.mistakeCount || 0) || 0);
         const failureReason = cancelled ? 'cancelled' : (!passed ? (rawResult.reason || data.reason || 'failed') : null);
+        const terminalFailure = !passed && !cancelled && ['attempts_exhausted', 'hearts_exhausted'].includes(String(failureReason || ''));
         const recoveryAction = data.recoveryAction || null;
 
         const completion = {
             sessionId: open.sessionId,
+            infiltratorName: open.infiltratorName,
+            profileId: open.profileId,
             attemptId: open.attemptId,
             startedAt: open.startedAt,
             endedAt: endedAt,
@@ -872,8 +992,14 @@ const IP2LiveGameManager = {
             mistakeCount: mistakeCount,
             attemptsUsed: Number(metrics.attemptsUsed || 0) || 0,
             maxAttempts: Number(metrics.maxAttempts || 0) || 0,
-            mistakeRate: Number(metrics.mistakeRate || 0) || 0,
-            accuracy: Number(metrics.accuracy || 0) || 0,
+            mistakeRate: metrics.mistakeRate,
+            accuracy: metrics.accuracy,
+            accuracyKnown: metrics.accuracy !== null,
+            correctDecisions: metrics.correctDecisions,
+            totalDecisions: metrics.totalDecisions,
+            incorrectDecisions: metrics.incorrectDecisions,
+            activeDurationMs: metrics.activeDurationMs,
+            durationMethod: metrics.durationMethod,
             securityStrikeCount: Number(data.securityStrikeCount || 0) || 0,
             securityTriggered: !!data.securityTriggered,
             rollbackQuestId: data.rollbackQuestId || null,
@@ -885,6 +1011,11 @@ const IP2LiveGameManager = {
             neuralRecovery: data.neuralRecovery || null,
             recoveryAction: recoveryAction,
             payload: Object.assign({}, metrics.payload || {}, {
+                terminalFailure: terminalFailure,
+                gameplayGameOver: terminalFailure ? { attemptId: open.attemptId, reason: failureReason, timestamp: endedAt, tutorial: !!open.tutorial } : null,
+                neuralGameOver: !!data.neuralGameOver,
+                neuralRunId: data.neuralRunId || null,
+                gameOverEventId: data.gameOverEventId || null,
                 result: this._clonePlain(rawResult || {}),
                 mistakes: this._clonePlain(open.mistakes || []),
                 mistakeEvents: this._clonePlain(open.mistakeEvents || []),
@@ -896,7 +1027,109 @@ const IP2LiveGameManager = {
         return completion;
     },
 
+    _attachReportTiming(gameplayId, payload) {
+        const data = Object.assign({}, payload || {});
+        const pause = IP2Live.GameplayPause;
+        const timing = pause && typeof pause.getReportTiming === 'function' ? pause.getReportTiming(gameplayId, data) : null;
+        const screen = pause && pause.activeScreen;
+        let partialResult = {};
+        if (!data.result && screen && screen.options) {
+            const options = screen.options, spec = options.spec || {};
+            const actualGameplayId = screen.gameplayId || options.gameplayId || spec.gameplayId || (pause._screenFallbackIds && pause._screenFallbackIds.get(screen));
+            if (actualGameplayId === gameplayId && (!data.questId || data.questId === (options.questId || spec.id)) &&
+                (!data.objectiveId || data.objectiveId === (options.objectiveId || spec.objectiveId))) {
+                if (typeof screen._assessmentResult === 'function') partialResult = screen._assessmentResult();
+                else if (typeof screen._result === 'function') partialResult = screen._result(false);
+            }
+        }
+        const result = Object.assign({}, partialResult || {}, data.result || {});
+        if (!timing) {
+            if (Object.keys(partialResult || {}).length) data.result = result;
+            return data;
+        }
+        // A gameplay-specific clock has an explicit, versioned definition.
+        // Otherwise use the shared frame clock, never infer active time from
+        // launch-to-exit wall time or a remaining countdown.
+        if (!(result.durationMethod || result.timingMethod) || this._nullableTelemetryNumber(result.activeElapsedMs) === null) {
+            Object.assign(result, timing);
+        } else {
+            for (const key of ['assistanceElapsedMs', 'calculatorElapsedMs', 'calculatorUses', 'helpElapsedMs', 'preparationMs']) {
+                if (result[key] === undefined) result[key] = timing[key];
+            }
+        }
+        data.result = result;
+        return data;
+    },
+
     _extractGameplayMetrics(gameplayId, result, passed) {
+        const r = result || {};
+        const metrics = this._extractLegacyGameplayMetrics(gameplayId, r, passed);
+        const observedNumber = (key) => this._nullableTelemetryNumber(r[key]);
+        const decisions = Array.isArray(r.decisionHistory) ? r.decisionHistory.filter((entry) => entry && typeof entry.correct === 'boolean') : [];
+        let total = null, correct = null, method = 'unavailable';
+        if (decisions.length) {
+            total = decisions.length;
+            correct = decisions.filter((entry) => entry.correct).length;
+            method = 'observed_decisions';
+        } else if (observedNumber('totalDecisions') !== null && observedNumber('correctDecisions') !== null) {
+            total = Math.max(0, observedNumber('totalDecisions'));
+            correct = Math.max(0, Math.min(total, observedNumber('correctDecisions')));
+            method = 'observed_decision_counts';
+        } else if (gameplayId === 'ip_cidr_quarantine_matrix' && /^subnet-blaster-v[1-4]$/.test(r.gameplayVersion || '') && observedNumber('totalShots') !== null && observedNumber('correctShots') !== null) {
+            total = Math.max(0, observedNumber('totalShots'));
+            correct = Math.max(0, Math.min(total, observedNumber('correctShots')));
+            method = 'observed_formula_modules';
+        } else if (gameplayId === 'ip_patch_panel_classes' && observedNumber('delivered') > 0 && observedNumber('mistakes') !== null) {
+            total = observedNumber('delivered');
+            correct = Math.max(0, total - observedNumber('mistakes'));
+            method = 'observed_packet_routes';
+        } else if (gameplayId === 'ip_subnet_simulator' && r.slotStats && Number(r.slotStats.totalChecks) > 0 && this._nullableTelemetryNumber(r.slotStats.wrongChecks) !== null) {
+            total = Number(r.slotStats.totalChecks);
+            correct = Math.max(0, total - Number(r.slotStats.wrongChecks));
+            method = 'observed_slot_checks';
+        } else if (gameplayId === 'ip_host_power_reactor' && Array.isArray(r.calculationAttempts) && r.calculationAttempts.length) {
+            const attempts = r.calculationAttempts.filter((entry) => entry && (typeof entry.success === 'boolean' || typeof entry.correct === 'boolean' || typeof entry.passed === 'boolean' || ['just-right', 'under', 'over'].includes(entry.status)));
+            if (attempts.length) {
+                total = attempts.length;
+                correct = attempts.filter((entry) => entry.correct === true || entry.success === true || entry.passed === true || entry.status === 'just-right').length;
+                method = 'observed_calculation_submissions';
+            }
+        }
+        // Missing checks and unspent chances are never counted as correct answers.
+        metrics.correctDecisions = correct;
+        metrics.totalDecisions = total;
+        metrics.incorrectDecisions = total === null ? null : Math.max(0, total - correct);
+        metrics.accuracy = total > 0 ? correct / total : null;
+        metrics.mistakeRate = total > 0 ? (total - correct) / total : null;
+        if (metrics.accuracy === null && observedNumber('accuracy') !== null && total === null) {
+            metrics.accuracy = Math.max(0, Math.min(1, observedNumber('accuracy')));
+            method = 'reported_accuracy';
+        }
+        if (r.telemetrySchemaVersion >= 2 && total !== null) metrics.mistakeCount = Math.max(0, total - correct);
+        metrics.activeDurationMs = observedNumber('activeElapsedMs');
+        if (metrics.activeDurationMs === null) metrics.activeDurationMs = observedNumber('activeDurationMs');
+        metrics.durationMethod = metrics.activeDurationMs === null ? 'wall_clock_only' : (r.durationMethod || r.timingMethod || 'reported_active_v1');
+        metrics.payload = Object.assign({}, metrics.payload || {}, {
+            telemetrySchemaVersion: observedNumber('telemetrySchemaVersion'),
+            accuracyEvidence: method,
+            accuracyKnown: metrics.accuracy !== null,
+            correctDecisions: correct,
+            totalDecisions: total,
+            incorrectDecisions: metrics.incorrectDecisions,
+            decisionHistory: this._clonePlain(r.decisionHistory || []),
+            activeDurationMs: metrics.activeDurationMs,
+            durationMethod: metrics.durationMethod,
+            wallElapsedMs: observedNumber('elapsedMs'),
+            roundCount: Array.isArray(r.roundHistory) ? r.roundHistory.length : null,
+        });
+        for (const key of ['preparationMs', 'preparationSkips', 'calculatorUses', 'calculatorElapsedMs', 'helpUses', 'helpElapsedMs', 'assistanceElapsedMs', 'phaseDurationsMs', 'bulletsFired', 'barrierImpacts', 'bossImpacts', 'bossBulletImpacts']) {
+            if (r[key] !== undefined) metrics.payload[key] = this._clonePlain(r[key]);
+        }
+        if (r.timingCoverage) metrics.payload.timingCoverage = r.timingCoverage;
+        return metrics;
+    },
+
+    _extractLegacyGameplayMetrics(gameplayId, result, passed) {
         const r = result || {};
         if (gameplayId === 'ip_class_wires' || gameplayId === 'ip_class_wires_harder') {
             const mistakes = Array.isArray(r.mistakes) ? r.mistakes : [];
@@ -1056,6 +1289,27 @@ const IP2LiveGameManager = {
             };
         }
         if (gameplayId === 'ip_cidr_quarantine_matrix') {
+            if (['subnet-blaster-v1', 'subnet-blaster-v2', 'subnet-blaster-v3', 'subnet-blaster-v4'].includes(r.gameplayVersion)) {
+                const mistakes = Math.max(0, Number(r.mistakeCount) || 0);
+                const totalShots = Math.max(0, Number(r.totalShots) || 0);
+                const correctShots = Math.max(0, Number(r.correctShots) || 0);
+                return {
+                    attemptsUsed: Number(r.attemptsUsed) || 0,
+                    maxAttempts: 3,
+                    retries: mistakes,
+                    mistakeCount: mistakes,
+                    mistakeRate: totalShots > 0 ? (r.gameplayVersion === 'subnet-blaster-v1' ? mistakes : totalShots - correctShots) / totalShots : 0,
+                    accuracy: totalShots > 0 ? correctShots / totalShots : 0,
+                    payload: {
+                        gameplayVersion: r.gameplayVersion,
+                        problemId: r.problemId || null,
+                        baseCIDR: r.baseCIDR || null,
+                        bossHits: Number(r.bossHits) || 0,
+                        heartsRemaining: Number(r.heartsRemaining) || 0,
+                        roundHistory: this._clonePlain(r.roundHistory || []),
+                    },
+                };
+            }
             const attemptsUsed = Number(r.attemptsUsed || 0) || 0;
             const maxAttempts = Number(r.maxAttempts || 3) || 3;
             const passed = r.passed !== false;
@@ -1142,6 +1396,7 @@ const IP2LiveGameManager = {
 
     startNewGameFlow(playerName) {
         const game = Core.Game.current;
+        this.resetStoryRuntime(game);
         const states = IP2Live.GameStateManager;
         if (states && typeof states.resetStoryState === 'function') states.resetStoryState(game);
         else if (game) game.ip2liveGameStates = {};
@@ -1410,7 +1665,9 @@ const IP2LiveGameManager = {
                 return IP2Live.CIDRQuarantineMatrixGameplayManager.launchCIDRQuarantineMatrixGameplay(Object.assign({}, gameplayLaunchOpts, {
                     _fromGameManager: true,
                     showIntro: resumeSession ? false : opts.showIntro,
-                    mode: gameplayLaunchOpts.mode || 'push',
+                    // Replace the developer test loader so exit returns to the testing menu.
+                    mode: isDeveloperTest ? 'replace' : (gameplayLaunchOpts.mode || 'push'),
+                    questId: isDeveloperTest ? null : payload.questId,
                 }));
             }
             if (node.id === 'ip_class_wires_harder' && IP2Live.HarderWiresGameplayManager && typeof IP2Live.HarderWiresGameplayManager.launchHarderWireGameplay === 'function') {
@@ -1479,6 +1736,8 @@ const IP2LiveGameManager = {
             this._logTelemetryEvent('attempt_mistake', {
                 attemptId: active.attemptId,
                 sessionId: active.sessionId,
+                infiltratorName: active.infiltratorName,
+                profileId: active.profileId,
                 gameplayId: gameplayId,
                 mapId: Number(data.mapId || active.mapId || this._currentMapId() || 0) || 0,
                 questId: data.questId || active.questId || null,
@@ -1545,6 +1804,7 @@ const IP2LiveGameManager = {
     },
 
     handleGameplayCompleted(gameplayId, payload) {
+        payload = this._attachReportTiming(gameplayId, payload);
         if (this.finishTutorialReplay(gameplayId, payload, 'completed', payload && payload.result)) return true;
         if (IP2Live.PracticeMode) IP2Live.PracticeMode.recordCompletion(gameplayId, payload);
         const data = Object.assign({}, payload || {}, {
@@ -1580,6 +1840,7 @@ const IP2LiveGameManager = {
     },
 
     handleGameplayFailed(gameplayId, payload) {
+        payload = this._attachReportTiming(gameplayId, payload);
         if (this.finishTutorialReplay(gameplayId, payload, 'failed', payload && payload.result)) return true;
         const data = Object.assign({}, payload || {}, {
             gameplayId,
@@ -1598,6 +1859,8 @@ const IP2LiveGameManager = {
             return true;
         }
         const spec = data.spec || {};
+        const reportAttempt = this._reportActiveAttempt(gameplayId);
+        if (reportAttempt) data.attemptId = reportAttempt.attemptId;
         if (IP2Live.NeuralLifeForce && typeof IP2Live.NeuralLifeForce.handleTerminalFailure === 'function') {
             IP2Live.NeuralLifeForce.handleTerminalFailure(data);
         }
@@ -1622,6 +1885,7 @@ const IP2LiveGameManager = {
     },
 
     handleGameplayCancelled(gameplayId, payload) {
+        payload = this._attachReportTiming(gameplayId, payload);
         if (this.finishTutorialReplay(gameplayId, payload, 'cancelled', payload && payload.result)) return true;
         const data = Object.assign({}, payload || {}, {
             gameplayId,
@@ -1641,9 +1905,11 @@ const IP2LiveGameManager = {
         this._ensureQuestMinimap();
         this._activeGameplayNode = null;
         this.emit('gameplay.cancelled', data);
-        this._closeReportAttempt(gameplayId, Object.assign({}, data, {
-            result: Object.assign({}, data.result || {}, { cancelled: true }),
-        }), false);
+        if (!this._suspendReportAttempt(gameplayId, 'returned_to_quest')) {
+            this._closeReportAttempt(gameplayId, Object.assign({}, data, {
+                result: Object.assign({}, data.result || {}, { cancelled: true }),
+            }), false);
+        }
         this._setState(this.STATE.NEXT_NODE, data);
         return true;
     },
@@ -2289,9 +2555,9 @@ const IP2LiveGameManager = {
 
     _clonePlain(value) {
         try {
-            return JSON.parse(JSON.stringify(value || null));
+            return JSON.parse(JSON.stringify(value === undefined ? null : value));
         } catch (e) {
-            return value || null;
+            return value === undefined ? null : value;
         }
     },
 
@@ -2540,12 +2806,18 @@ const IP2LiveGameManager = {
         const resolvedSlot = this._resolveActiveSaveSlot(slot);
         const opts = options || {};
         const profileName = String(opts.infiltratorName || this._resolveProfileName(opts.loadedGame) || '').trim();
+        const loadedGame = opts.loadedGame;
+        const profileId = this._resolveProfileId(loadedGame);
+        if (loadedGame && loadedGame._ip2liveLoadedSnapshot) {
+            return this.validateStoryProgressSnapshot(loadedGame._ip2liveLoadedSnapshot, loadedGame)
+                ? this._clonePlain(loadedGame._ip2liveLoadedSnapshot) : null;
+        }
 
         const desktopStorage = IP2Live.DesktopStorage;
         if (desktopStorage && typeof desktopStorage.readProgressSnapshot === 'function') {
             try {
-                const durableSnapshot = await desktopStorage.readProgressSnapshot(resolvedSlot, profileName);
-                if (durableSnapshot) return durableSnapshot;
+                const durableSnapshot = await desktopStorage.readProgressSnapshot(resolvedSlot, profileName, profileId);
+                if (durableSnapshot && this.validateStoryProgressSnapshot(durableSnapshot, loadedGame)) return durableSnapshot;
             } catch (error) {
                 console.warn('[IP2Live] GameManager: durable slot metadata could not be read:', error);
             }
@@ -2555,8 +2827,8 @@ const IP2LiveGameManager = {
         if (profileName) profileSnapshot = await this._readProfileSlotSnapshot(profileName, resolvedSlot);
         const cachedSnapshot = this._readSlotSnapshot(resolvedSlot, profileName);
 
-        if (profileSnapshot) return profileSnapshot;
-        return cachedSnapshot || null;
+        if (profileSnapshot && this.validateStoryProgressSnapshot(profileSnapshot, loadedGame)) return profileSnapshot;
+        return cachedSnapshot && this.validateStoryProgressSnapshot(cachedSnapshot, loadedGame) ? cachedSnapshot : null;
     },
 
     getPlayTimeMs(game) {
@@ -2598,6 +2870,153 @@ const IP2LiveGameManager = {
             completedObjectives: qm.completedObjectives || {},
             capturedAt: Date.now(),
         };
+    },
+
+    isStorySaveExcluded(game) {
+        const pause = IP2Live.GameplayPause;
+        const screen = pause && pause.activeScreen;
+        const options = screen && screen.options || {};
+        const spec = options.spec || {};
+        return !!((IP2Live.PracticeMode && IP2Live.PracticeMode.active) ||
+            (IP2Live.TutorialReplay && IP2Live.TutorialReplay.session) ||
+            options.developerTest || options.developerTesting || spec.developerTest || spec.developerTesting ||
+            options.practiceMode || spec.practiceMode || options.tutorialReplay || spec.tutorialReplay ||
+            options.simulated || spec.simulated ||
+            String(options.questId || spec.id || '').startsWith('developer.'));
+    },
+
+    _storyGameplayManagers() {
+        return Array.from(new Set(Object.values(this.flowConfig.gameplayNodes || {}).map(node => node.manager)))
+            .filter(name => IP2Live[name]).map(name => [name, IP2Live[name]]);
+    },
+
+    _storyGameplayStateKeys() {
+        return ['_state', '_introShown', '_introShownMaps', '_tutorialShownKeys', '_recoveryLoops'];
+    },
+
+    _captureStoryGameplayState() {
+        const managers = {};
+        for (const [name, owner] of this._storyGameplayManagers()) {
+            managers[name] = {};
+            for (const key of this._storyGameplayStateKeys()) {
+                if (Object.prototype.hasOwnProperty.call(owner, key)) managers[name][key] = owner[key];
+            }
+        }
+        return {version:1, managers, cidrState:IP2Live.CIDRGameplayState || null};
+    },
+
+    _restoreStoryGameplayState(saved) {
+        if (!saved || saved.version !== 1) return;
+        for (const [name, owner] of this._storyGameplayManagers()) {
+            const state = saved.managers && saved.managers[name];
+            if (!state || typeof state !== 'object') continue;
+            for (const key of this._storyGameplayStateKeys()) {
+                if (Object.prototype.hasOwnProperty.call(owner, key) && Object.prototype.hasOwnProperty.call(state, key)) {
+                    owner[key] = this._clonePlain(state[key]);
+                }
+            }
+        }
+        if (saved.cidrState && typeof saved.cidrState === 'object') IP2Live.CIDRGameplayState = this._clonePlain(saved.cidrState);
+    },
+
+    buildStoryProgressSnapshot(game, options) {
+        const target = game || (Core && Core.Game && Core.Game.current);
+        if (!target || this.isStorySaveExcluded(target)) return null;
+        const opts = options || {};
+        if (Core.Game.current === target && IP2Live.GameplayPause && IP2Live.GameplayPause.captureActiveSession) {
+            IP2Live.GameplayPause.captureActiveSession(opts.checkpointReason || 'story_checkpoint');
+        }
+        const mapId = Number(target.currentMapID) || this._currentMapId();
+        const stage = this._stageFor(mapId) || {};
+        const savedAt = Date.now();
+        const attempts = {};
+        const sessions = target.ip2liveGameStates && target.ip2liveGameStates.gameplaySessions || {};
+        for (const [id, attempt] of Object.entries(this._reportActiveAttempts || {})) {
+            if (attempt.profileId && attempt.profileId !== this._resolveProfileId(target)) continue;
+            if (attempt.infiltratorName !== this._resolveProfileName(target)) continue;
+            const retained = Object.values(sessions).some(s => s && !s.completed && s.gameplayId === id &&
+                s.questId === attempt.questId && s.objectiveId === attempt.objectiveId);
+            if (!retained) continue;
+            attempts[id] = Object.assign({}, attempt, {
+                elapsedBeforeResumeMs: Math.max(0, Number(attempt.elapsedBeforeResumeMs) || 0) +
+                    (attempt.suspended ? 0 : Math.max(0, savedAt - Number(attempt.resumedAt || attempt.startedAt || savedAt))),
+            });
+        }
+        // Loaded attempts remain available until the player re-enters their terminal.
+        for (const [id, attempt] of Object.entries(target._ip2liveRestoredReportAttempts || {})) {
+            if (!attempts[id]) attempts[id] = attempt;
+        }
+        return this._clonePlain({
+            schemaVersion: 2, slot: Number(opts.slot) || 0,
+            storyRunId: target._ip2liveStoryRunId || null,
+            saveName: opts.saveName || null,
+            profileName: this._resolveProfileName(target), profileId: this._resolveProfileId(target),
+            mapId, stage: stage.stage || null, level: stage.level || null,
+            heroPosition: this._captureHeroPosition(target), questState: this._buildQuestSnapshot(),
+            gameStates: target.ip2liveGameStates || {}, playTimeMs: this.getPlayTimeMs(target), savedAt,
+            gameplayState: this._captureStoryGameplayState(),
+            checkpointReason: opts.checkpointReason || 'story_checkpoint',
+            reportContext: { version: 1, storyRunId: target._ip2liveStoryRunId || null, attempts },
+        });
+    },
+
+    validateStoryProgressSnapshot(snapshot, game) {
+        if (!snapshot || typeof snapshot !== 'object' || Array.isArray(snapshot)) return false;
+        if (snapshot.schemaVersion !== undefined && snapshot.schemaVersion !== 1 && snapshot.schemaVersion !== 2) return false;
+        if (!Number.isInteger(Number(snapshot.mapId)) || Number(snapshot.mapId) < 1) return false;
+        if (snapshot.heroPosition && !['x', 'y', 'z'].every(key => Number.isFinite(snapshot.heroPosition[key]))) return false;
+        if (snapshot.gameStates && (typeof snapshot.gameStates !== 'object' || Array.isArray(snapshot.gameStates))) return false;
+        if (!game) return true;
+        if (Number(game.currentMapID) > 0 && Number(game.currentMapID) !== Number(snapshot.mapId)) return false;
+        const profileId = this._resolveProfileId(game), name = this._resolveProfileName(game);
+        if (profileId && snapshot.profileId && profileId !== snapshot.profileId) return false;
+        if (name && name !== 'UNKNOWN' && snapshot.profileName && name !== snapshot.profileName) return false;
+        return true;
+    },
+
+    resetStoryRuntime(game) {
+        // These objects belong to live scenes; durable state is restored separately.
+        this.state = this.STATE.MAP_LOAD;
+        this._activeGameplayNode = null;
+        this._reportActiveAttempts = {};
+        this._reportTutorialContexts = {};
+        this._reportSessionId = null;
+        this._reportSessionProfileName = null;
+        this._reportSessionProfileId = null;
+        this._reportShutdownPrepared = false;
+        const pause = IP2Live.GameplayPause;
+        if (pause) { pause.activeScreen = null; pause.menuOpen = false; }
+        const replayOwner = IP2Live.TutorialReplay;
+        if (replayOwner) replayOwner.session = null;
+        for (const [, owner] of this._storyGameplayManagers()) {
+            if (owner._musicRestoreTimer && typeof clearTimeout === 'function') clearTimeout(owner._musicRestoreTimer);
+            if (Object.prototype.hasOwnProperty.call(owner, '_musicRestoreTimer')) owner._musicRestoreTimer = null;
+            if (Object.prototype.hasOwnProperty.call(owner, '_active')) owner._active = false;
+            if (Object.prototype.hasOwnProperty.call(owner, '_activeAttempt')) owner._activeAttempt = null;
+            if (Object.prototype.hasOwnProperty.call(owner, '_triggerLocks')) owner._triggerLocks = {};
+            for (const key of this._storyGameplayStateKeys()) {
+                if (Object.prototype.hasOwnProperty.call(owner, key)) owner[key] = key === '_state' ? null : key === '_introShown' ? false : {};
+            }
+        }
+        delete IP2Live.CIDRGameplayState;
+        if (game) delete game._ip2liveRestoredReportAttempts;
+    },
+
+    async prepareStoryReportRestore(snapshot) {
+        const context = snapshot && snapshot.reportContext;
+        if (!context || !context.attempts) return;
+        let rows = [];
+        try {
+            if (IP2Live.ReportManager && IP2Live.ReportManager._queryTelemetry) {
+                rows = await IP2Live.ReportManager._queryTelemetry(snapshot.profileName, 0, snapshot.profileId);
+            } else if (IP2Live.DBManager && IP2Live.DBManager.getRecordsByIndex) {
+                rows = await IP2Live.DBManager.getRecordsByIndex('telemetry', 'infiltratorName', snapshot.profileName);
+            }
+            const closed = new Set(rows.filter(row => row.eventType === 'attempt_end').map(row => row.attemptId));
+            for (const attempt of Object.values(context.attempts)) {
+                if (attempt && closed.has(attempt.attemptId)) attempt.checkpointAlreadyFinished = true;
+            }
+        } catch (error) { console.warn('[IP2Live] Could not check saved attempt completion:', error); }
     },
 
     _captureHeroPosition(game) {
@@ -2738,6 +3157,7 @@ const IP2LiveGameManager = {
         if (IP2Live.PracticeMode && IP2Live.PracticeMode.active) return { saved: false, reason: 'practice-mode' };
         const game = Core && Core.Game ? Core.Game.current : null;
         if (!game) return { saved: false, reason: 'no-game' };
+        if (this.isStorySaveExcluded(game)) return { saved: false, reason: 'not-story-gameplay' };
         const opts = options || {};
         const preferred = Number(preferredSlot);
         const maxSlots = Math.max(1, Number(Data && Data.Systems && Data.Systems.saveSlots) || 1);
@@ -2767,26 +3187,13 @@ const IP2LiveGameManager = {
         if (!hasPreferredSlot && this.getActiveSaveSlot(game) !== slot) {
             return { saved: false, reason: 'save-slot-changed-before-checkpoint', slot: slot };
         }
-        if (IP2Live.GameplayPause && typeof IP2Live.GameplayPause.captureActiveSession === 'function') {
-            IP2Live.GameplayPause.captureActiveSession((options && options.checkpointReason) || 'save_game');
-        }
         const requestedSaveName = String(saveName || '').trim();
-        const snapshot = {
-            slot: slot,
-            storyRunId: game._ip2liveStoryRunId || null,
-            saveName: requestedSaveName || (previousSnapshot && previousSnapshot.saveName) || null,
-            profileName: profileName || null,
-            profileId: profileId || null,
-            mapId: mapId,
-            stage: stage.stage || null,
-            level: stage.level || null,
-            heroPosition: this._captureHeroPosition(game),
-            questState: this._buildQuestSnapshot(),
-            gameStates: this._clonePlain(game.ip2liveGameStates || null),
-            playTimeMs: this.getPlayTimeMs(game),
-            savedAt: Date.now(),
+        const snapshot = this.buildStoryProgressSnapshot(game, {
+            slot, saveName: requestedSaveName || (previousSnapshot && previousSnapshot.saveName) || null,
             checkpointReason: opts.checkpointReason || (requestedSaveName ? 'manual_save' : 'checkpoint'),
-        };
+        });
+        if (!snapshot) return { saved: false, reason: 'snapshot-unavailable', slot };
+        if (IP2Live.StoryPersistence) IP2Live.StoryPersistence.prepareSave(slot, snapshot, game);
 
         const desktopStorage = IP2Live.DesktopStorage;
         if (desktopStorage && typeof desktopStorage.prepareSaveMetadata === 'function') {
@@ -2800,6 +3207,7 @@ const IP2LiveGameManager = {
 
         const coreSaved = await this._saveCoreGame(slot, game);
         if (!coreSaved) {
+            if (IP2Live.StoryPersistence) IP2Live.StoryPersistence.clearPendingSave(slot);
             if (desktopStorage && typeof desktopStorage.clearPendingSaveMetadata === 'function') {
                 desktopStorage.clearPendingSaveMetadata(slot);
             }
@@ -2866,6 +3274,7 @@ const IP2LiveGameManager = {
             // resume before constructing Scene.Map. This prevents the
             // first-entry briefing from replaying while leaving the engine's
             // own loaded state untouched.
+            this.resetStoryRuntime(game);
             const coreOnlySnapshot = {
                 mapId: Number(game.currentMapID) || this._currentMapId() || 0,
                 profileName: this._resolveProfileName(game),
@@ -2888,6 +3297,8 @@ const IP2LiveGameManager = {
     },
 
     restoreProgressFromSnapshot(snapshot, game, slot = 0) {
+        if (!game || !this.validateStoryProgressSnapshot(snapshot, game)) return { restored: false, reason: 'invalid-story-snapshot' };
+        this.resetStoryRuntime(game);
         if (snapshot.storyRunId) game._ip2liveStoryRunId = snapshot.storyRunId;
         const profileName = String(snapshot.profileName || '').trim();
         if (profileName) {
@@ -2904,6 +3315,11 @@ const IP2LiveGameManager = {
         }
         if (snapshot.gameStates && typeof snapshot.gameStates === 'object') {
             game.ip2liveGameStates = this._clonePlain(snapshot.gameStates);
+        }
+        this._restoreStoryGameplayState(snapshot.gameplayState);
+        const report = snapshot.reportContext;
+        if (report && report.version === 1 && (!report.storyRunId || report.storyRunId === snapshot.storyRunId)) {
+            game._ip2liveRestoredReportAttempts = this._clonePlain(report.attempts || {});
         }
 
         const qm = IP2Live.QuestManager;
@@ -2935,7 +3351,8 @@ const IP2LiveGameManager = {
 
     async exportProgressReport(options) {
         const opts = options || {};
-        const scopeDays = Number(opts.scopeDays || 90) || 90;
+        const requestedScope = Number(opts.scopeDays);
+        const scopeDays = Number.isFinite(requestedScope) && requestedScope >= 0 ? requestedScope : 90;
         const format = String(opts.format || 'both').toLowerCase();
         const currentGame = (Core && Core.Game) ? Core.Game.current : null;
         const profileName = this._resolveProfileName(currentGame) || 'UNKNOWN';
@@ -3019,11 +3436,45 @@ const IP2LiveGameManager = {
     },
 
     launchTutorialReplay(gameplayId, context) {
-        return !!(IP2Live.TutorialReplay && IP2Live.TutorialReplay.launch(gameplayId, context));
+        if (!IP2Live.TutorialReplay) return false;
+        const data = context || {};
+        const tracked = !this._excludeAssessmentTelemetry(data);
+        this._reportTutorialContexts[gameplayId] = tracked ? {
+            tutorialOfferId: data.tutorialOfferId || null,
+            triggerReason: data.tutorialTriggerReason || data.triggerReason || 'learner_requested',
+            failureCount: this._nullableTelemetryNumber(data.tutorialFailureCount),
+            sourceAttemptId: data.attemptId || null,
+        } : { excludedTelemetry: true };
+        return !!IP2Live.TutorialReplay.launch(gameplayId, context);
     },
 
     prepareTutorialReplayScreen(screen, options) {
-        return !!(IP2Live.TutorialReplay && IP2Live.TutorialReplay.prepareScreen(screen, options));
+        const prepared = !!(IP2Live.TutorialReplay && IP2Live.TutorialReplay.prepareScreen(screen, options));
+        const replay = this._tutorialReplaySession;
+        if (prepared && replay && !replay.practice && !replay.developerTest) {
+            replay.reportContext = Object.assign({}, this._reportTutorialContexts[replay.gameplayId] || {}, {
+                tutorialReplayId: replay.options.questId,
+            });
+            // Launchers attach the replay immediately before pushing its screen.
+            // Wait for that push; the universal screen hook also confirms it.
+            if (!this._recordTutorialReplayShown(screen)) setTimeout(() => this._recordTutorialReplayShown(screen), 0);
+        }
+        return prepared;
+    },
+
+    _recordTutorialReplayShown(screen) {
+        const replay = this._tutorialReplaySession;
+        if (!replay || replay.screen !== screen || replay.reportShown || replay.practice || replay.developerTest ||
+            (replay.reportContext && replay.reportContext.excludedTelemetry) ||
+            (Manager && Manager.Stack && Manager.Stack.top && Manager.Stack.top !== screen)) return false;
+        replay.reportShown = true;
+        this._logTelemetryEvent('neural_tutorial_replay', {
+            gameplayId: replay.gameplayId, mapId: replay.options.mapId,
+            questId: replay.returnQuestId, objectiveId: replay.returnObjectiveId,
+            tutorial: true,
+            payload: Object.assign({}, replay.reportContext, { action: 'shown' }),
+        });
+        return true;
     },
 
     finishTutorialReplay(gameplayId, options, outcome, result) {

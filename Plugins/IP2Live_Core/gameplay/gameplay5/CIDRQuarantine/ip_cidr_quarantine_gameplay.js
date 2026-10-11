@@ -23,6 +23,7 @@ class IP2LiveCIDRQuarantineGameplayScreen extends Scene.Base {
         this.tutorialMode = !!this.options.tutorialMode;
         this.maxAttempts = this.tutorialMode ? 999999 : Math.max(1, Number(this.options.maxAttempts) || 3);
         this.attemptsUsed = 0;
+        this.decisionHistory = [];
         const virusConfig = this.options.virusConfig || {};
         this.virusConfig = {
             edgeBuffer: Math.max(0, Number(virusConfig.edgeBuffer) || 0),
@@ -222,6 +223,7 @@ class IP2LiveCIDRQuarantineGameplayScreen extends Scene.Base {
             if (!raw) return false;
             const answer = raw.toUpperCase().match(/^(?:CLASS\s+)?([ABC])$/);
             if (!answer || answer[1] !== p.ipClass) {
+                this._recordAssessment('classify', answer ? answer[1] : raw, p.ipClass, false);
                 this.classMistakes++;
                 this.answer = '';
                 this._playCancel();
@@ -244,6 +246,8 @@ class IP2LiveCIDRQuarantineGameplayScreen extends Scene.Base {
             host_bits: p.targetHostBits, host_capacity: p.optimizedCapacity };
         let correct = this.phase === 'classify' ? true : numeric === expected[this.phase];
         if (this.phase === 'borrow_bits') correct = this.borrowedBits === p.borrowedBits;
+        this._recordAssessment(this.phase, this.phase === 'classify' ? p.ipClass : this.phase === 'borrow_bits' ? this.borrowedBits : Number.isFinite(numeric) ? numeric : raw,
+            this.phase === 'classify' ? p.ipClass : this.phase === 'borrow_bits' ? p.borrowedBits : expected[this.phase], correct);
         if (!correct) {
             const hints = {
                 default_prefix: 'Recall the legacy prefixes: A /8, B /16, C /24.',
@@ -268,6 +272,27 @@ class IP2LiveCIDRQuarantineGameplayScreen extends Scene.Base {
         }
         this._playConfirm();
         return true;
+    }
+
+    _recordAssessment(stepKey, submitted, expected, correct, extra = {}) {
+        const concepts = { classify: 'ipv4_classification', default_prefix: 'class_default_prefix', borrow_bits: 'subnet_demand_to_borrowed_bits',
+            new_cidr: 'borrowed_bits_to_cidr', host_bits: 'cidr_to_host_bits', host_capacity: 'host_bits_to_usable_hosts', route_host_bits: 'route_host_bit_total' };
+        const row = { stepKey, concept: concepts[stepKey] || stepKey, submitted, expected, correct,
+            problemId: this.problem.id, ipClass: this.problem.ipClass, requiredSubnets: this.problem.requiredSubnets,
+            atMs: this.questElapsedMs, ...extra };
+        this.decisionHistory = this.decisionHistory || []; this.decisionHistory.push(row);
+        if (!correct && IP2Live.GameManager && typeof IP2Live.GameManager.handleGameplayMistake === 'function') {
+            IP2Live.GameManager.handleGameplayMistake('ip_cidr_quarantine', { spec: this.options.spec,
+                questId: this.options.questId, objectiveId: this.options.objectiveId, mapId: this.options.mapId || 12,
+                mistakes: [{ ...row, issueType: row.issueType || 'wrong_answer' }], telemetryOnly: true });
+        }
+    }
+
+    _assessmentResult() {
+        const history = this.decisionHistory || [], correct = history.filter(row => row.correct).length;
+        return { telemetrySchemaVersion: 2, totalDecisions: history.length, correctDecisions: correct,
+            incorrectDecisions: history.length - correct, decisionHistory: history.map(row => ({ ...row })),
+            questClockElapsedMs: this.questElapsedMs };
     }
 
     _setBorrowedBits(bits) {
@@ -1337,6 +1362,11 @@ class IP2LiveCIDRQuarantineGameplayScreen extends Scene.Base {
         }
         this.attemptsUsed++;
         const result = this._evaluatePath();
+        const stats = this._pathStats();
+        this._recordAssessment('route_host_bits', { hostBits: stats.currentHostBits, connected: stats.connected, hitVirus: stats.hitVirus },
+            { hostBits: this.problem.targetHostBits, connected: true, hitVirus: false }, result.ok,
+            { issueType: result.diagnosticReason || null, concept: ['virus', 'disconnected'].includes(result.diagnosticReason) ? 'quarantine_route_navigation' : 'route_host_bit_total' });
+        Object.assign(result, this._assessmentResult());
         this.lastDiagnostic = result.ok ? null : result;
         if (result.ok) this._playConfirm();
         else this._playCancel();
@@ -2417,6 +2447,7 @@ class IP2LiveCIDRQuarantineGameplayScreen extends Scene.Base {
 
     _baseResult(stats) {
         return {
+            ...this._assessmentResult(),
             gameplayId: 'ip_cidr_quarantine',
             problemId: this.problem.id,
             ipAddress: this.problem.ipAddress,
