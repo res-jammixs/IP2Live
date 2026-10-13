@@ -8,7 +8,7 @@ const settle = async () => { for(let i=0;i<60;i++) await Promise.resolve(); };
 const clone = x => JSON.parse(JSON.stringify(x));
 
 function harness(disk = {record:null}, options = {}) {
-    const transactions=[], manualWrites=[], prompts=[], polls=[];
+    const transactions=[], manualWrites=[], prompts=[], polls=[], musicCalls=[];
     let now = options.now || Date.now();
     class Clock extends Date { static now(){ return now; } }
     const db={transaction() {
@@ -30,29 +30,33 @@ function harness(disk = {record:null}, options = {}) {
             this.currentMapID=j.currentMapId;this.variables=j.vars;this.items=j.itm;this.playTime.time=j.t;this.isEmpty=false;}
         async loadPositions(){}
     }
-    class MapScene {constructor(id){this.id=id;this.loading=false;MapScene.current=this;}update(){}drawHUD(){}}
+    class MapScene {constructor(id){this.id=id;this.loading=false;MapScene.current=this;}update(){}drawHUD(){}onKeyPressed(key){this.lastKey=key;}}
     const qm={activeMapId:3,completedObjectives:{quest1:{first:true}},snapshotProgress(){return clone({activeMapId:this.activeMapId,completedObjectives:this.completedObjectives})},
         restoreProgress(s){this.activeMapId=s.activeMapId;this.completedObjectives=clone(s.completedObjectives)}};
     const sound={playSound(){}};
     const env={console:{log(){},warn(){},error(){}},Date:Clock,setTimeout,clearTimeout,
         setInterval:(callback,ms)=>{polls.push({callback,ms});return {unref(){}}},window:{},Main:{},
-        Common:{Platform:platform},Core:{Game},Scene:{Map:MapScene,Base:class{}},Data:{Systems:{soundCancel:sound,soundConfirmation:sound},Keyboards:{checkCancelMenu:k=>k==='Escape',checkActionMenu:()=>false}},
+        Common:{Platform:platform,Inputs:{keysPressed:new Set(),lockedKeys:new Map()}},Core:{Game},Scene:{Map:MapScene,Base:class{}},Data:{Systems:{soundCancel:sound,soundConfirmation:sound},Keyboards:{checkCancelMenu:k=>k==='Escape',checkActionMenu:()=>false,
+            get:id=>({id,sc:[[['w','s','a','d'][id-1]]]}),isKeyEqual:(key,kb)=>kb.sc.some(group=>group[0].toUpperCase()===String(key).toUpperCase())}},
         Manager:{Stack:{top:{},requestPaintHUD:false,pop(){}}},IP2Live:{DBManager:{initDB:async()=>db,getRecord:async()=>clone(disk.record)},
+            MusicManager:{playMap:mapId=>musicCalls.push({mapId}),currentZone:()=> 'MAIN_MENU',play:zone=>musicCalls.push({zone})},
             QuestManager:qm,MapManager:{stageFor:id=>({name:'Stage '+id}),goTo(id){Game.current.currentMapID=id;return new MapScene(id)}},
             confirPopup:{show:o=>prompts.push(o)}}};
     vm.createContext(env);vm.runInContext(read('modules/game_manager.js'),env);
     const gm=env.IP2Live.GameManager;gm._ensureQuestMinimap=()=>{};
     vm.runInContext(read('modules/story_autosave.js'),env);
+    vm.runInContext(read('modules/input_guard.js'),env);
     const service=env.IP2Live.StoryAutosave;
     const start=(name='NOVA')=>{const game=Game.current=new Game();game.infiltratorName=name;service.beginStory(game);const map=new MapScene(3);qm.activeMapId=3;return {game,map}};
     const flush=async(map)=>{service.tick(map);await settle();const tx=transactions.at(-1);assert.ok(tx?.record);tx.commit();await settle();};
-    return {env,service,gm,qm,disk,transactions,manualWrites,prompts,polls,start,flush,Game,MapScene,
+    return {env,service,gm,qm,disk,transactions,manualWrites,prompts,polls,musicCalls,start,flush,Game,MapScene,
         advance:ms=>{now+=ms;}};
 }
 
 (async()=>{
     const h=harness(), {service:s}=h, {game,map}=h.start();
     const originalSlot=game.slot;
+    h.env.Common.Inputs.keysPressed.add('W');h.env.Common.Inputs.lockedKeys.set('W',90);
     s.tick(map);await settle();
     assert.equal(h.disk.record,null,'request success is not a durable commit');
     assert.equal(s._status.text,'Saving story...');
@@ -63,6 +67,8 @@ function harness(disk = {record:null}, options = {}) {
     assert.equal(h.disk.record.version,2,'new recovery records carry the current schema envelope');
     assert.equal(h.disk.record.snapshot.gameStates.neuralLifeForce.lifeForce,76);
     assert.equal(s._status.text,'Story autosaved');
+    assert.ok(h.env.Common.Inputs.keysPressed.has('W'),'background autosaving leaves held movement intact');
+    assert.equal(h.env.Common.Inputs.lockedKeys.get('W'),90,'background autosaving leaves camera locks intact');
 
     const before=clone(h.disk.record);
     h.qm.completedObjectives.quest1.second=true;
@@ -110,6 +116,7 @@ function harness(disk = {record:null}, options = {}) {
 
     // A new service instance shares only durable storage, as on application restart.
     const restarted=harness(h.disk);let transition;
+    restarted.env.Common.Inputs.keysPressed.add('D');restarted.env.Common.Inputs.lockedKeys.set('D',90);
     restarted.env.IP2Live.MenuTransition={replace(factory,options){transition={factory,options};return true}};
     assert.equal((await restarted.service.getSummary()).profileName,safe.snapshot.profileName);
     assert.equal(await restarted.service.resume(),true);
@@ -120,7 +127,15 @@ function harness(disk = {record:null}, options = {}) {
     assert.equal(restored.ip2liveGameStates.neuralLifeForce.lifeForce,76);
     assert.equal(restored.hero.position.x,8);assert.equal(restarted.gm.getActiveSaveSlot(restored),null);
     assert.equal(restored.slot,-1);assert.equal(restarted.gm.isResumingMapFromSave(restored.currentMapID,restoredScene),true);
+    assert.equal(restarted.musicCalls.at(-1).mapId,restored.currentMapID,'autosave resume selects destination music without replaying the entry dialogue');
     assert.equal(restarted.service._pending,null,'resuming does not rewrite the recovery point');
+    assert.equal(restarted.env.Common.Inputs.keysPressed.size,0,'autosave restore clears old held keys');
+    assert.equal(restarted.env.Common.Inputs.lockedKeys.size,0,'autosave restore clears old camera locks');
+    restarted.env.Manager.Stack.top=restoredScene;
+    for(const key of ['W','S','A','D']) {
+        restarted.env.Common.Inputs.keysPressed.add(key);restoredScene.onKeyPressed(key);assert.equal(restoredScene.lastKey,key);
+        restarted.env.IP2Live.InputGuard.release({key:key.toLowerCase()});
+    }
     assert.deepEqual(h.disk.record,safe);
 
     const recoveredRecord=clone(restarted.disk.record);

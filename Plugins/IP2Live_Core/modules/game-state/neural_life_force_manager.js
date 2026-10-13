@@ -102,12 +102,14 @@
                     * this.SETTINGS.criticalPatchSpeedMultiplier;
             }
             if (gameplayId === 'ip_host_power_reactor') {
-                const baseSeconds = Number(opts.durationSeconds);
+                const baseSeconds = IP2Live.GameplayTimer
+                    ? IP2Live.GameplayTimer.resolve(opts, undefined, 60, ['durationSeconds']) : Number(opts.durationSeconds);
                 opts.durationSeconds = Math.max(
                     10,
                     (Number.isFinite(baseSeconds) && baseSeconds > 0 ? baseSeconds : 60)
                         * this.SETTINGS.criticalTimerMultiplier
                 );
+                if (IP2Live.GameplayTimer) opts.timeLimitSeconds = opts.durationSeconds;
             }
             return opts;
         },
@@ -761,7 +763,7 @@
          * Futuristic Canvas HUD Renderer
          */
         drawHUD(ctx) {
-            if (IP2Live.PracticeMode && IP2Live.PracticeMode.active) return false;
+            if ((IP2Live.PracticeMode && IP2Live.PracticeMode.active) || (IP2Live.PVPMode && IP2Live.PVPMode.active)) return false;
             if (!ctx || !ctx.canvas || this.isRunOver() || !this._shouldDrawWithQuestPanel()) return false;
             const sX = ctx.canvas.width / 1280, sY = ctx.canvas.height / 720;
             const state = this._state();

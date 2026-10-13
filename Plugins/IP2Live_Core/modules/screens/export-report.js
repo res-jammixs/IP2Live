@@ -240,7 +240,8 @@ class IP2LiveExportReportMenu extends Scene.Base {
             if(i<2){ctx.textAlign='right';ctx.fillStyle='#b8cba1';ctx.fillText('<  >',l.rowX+l.rowW-14,y+31);}
         });
         ['CANCEL',this.busy?'EXPORTING...':'EXPORT'].forEach((label,i)=>chrome.button(ctx,{x:i?l.actionRightX:l.actionLeftX,y:l.actionY,w:l.actionBtnW,h:l.rowH},1,1,label,'Oxanium-Medium',this.selectedIndex===i+3?1:0,this.animTick,!i));
-        if(this.statusLine){ctx.fillStyle='#a6bcc2';ctx.font='11px Oxanium-Medium, sans-serif';chrome.text(ctx,this.statusLine,l.x+l.w/2,l.y+l.h-17,.3);}
+        ctx.fillStyle='#a6bcc2';ctx.font='11px Oxanium-Medium, sans-serif';
+        chrome.text(ctx,this.statusLine || 'Includes practice, endless participation and improvement analysis.',l.x+l.w/2,l.y+l.h-17,.3);
         ctx.restore();
     }
 

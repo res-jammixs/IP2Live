@@ -150,13 +150,75 @@ function Get-ExportedSongNames {
     return ,$names
 }
 
+function Get-BundledPrologueSongNames {
+    param([string]$PluginRoot)
+    $bundleRoot = Join-Path $PluginRoot 'assets\audio\story-prologue'
+    $manifestPath = Join-Path $bundleRoot 'manifest.json'
+    if (-not (Test-Path -LiteralPath $manifestPath -PathType Leaf)) { return @() }
+    $bundle = [IO.File]::ReadAllText($manifestPath) | ConvertFrom-Json
+    if ($bundle.version -ne 1 -or @($bundle.entries).Count -ne 8) {
+        throw 'The prologue audio bundle must contain all eight recovery assets.'
+    }
+    $allowedFiles = @('01-arrival', '02-taking', '03-fortress', '04-our-way-inside') | ForEach-Object {
+        $_ + '-ost.wav'
+        $_ + '-sfx.wav'
+    }
+    $names = New-Object 'System.Collections.Generic.HashSet[string]' ([StringComparer]::Ordinal)
+    foreach ($entry in $bundle.entries) {
+        $file = [string]$entry.file
+        if ($allowedFiles -cnotcontains $file -or $entry.name -cne ('StoryPrologue/' + $file)) {
+            throw "Invalid prologue audio bundle entry: $file"
+        }
+        if (-not $names.Add([string]$entry.name)) { throw "Duplicate prologue audio bundle entry: $file" }
+        $asset = Join-Path $bundleRoot $file
+        if (-not (Test-Path -LiteralPath $asset -PathType Leaf)) { throw "Missing bundled prologue audio: $file" }
+        if ((Get-FileHash -LiteralPath $asset -Algorithm SHA256).Hash -ine [string]$entry.sha256) {
+            throw "Bundled prologue audio SHA256 mismatch: $file"
+        }
+    }
+    return @($names | Sort-Object)
+}
+
+function Get-BundledGameplaySongNames {
+    param([string]$PluginRoot)
+    $bundleRoot = Join-Path $PluginRoot 'assets\audio\gameplay'
+    $manifestPath = Join-Path $bundleRoot 'manifest.json'
+    if (-not (Test-Path -LiteralPath $manifestPath -PathType Leaf)) { return @() }
+    $bundle = [IO.File]::ReadAllText($manifestPath) | ConvertFrom-Json
+    $expected = @(
+        '03-bitstream-decoder.wav', '04-subnet-relay.wav', '04_5-reactor-lattice.wav',
+        '05-quarantine-breach.wav', '06-matrix-lockdown.wav',
+        '07-repair-uplink.wav', '08-allocation-protocol.wav'
+    )
+    if ($bundle.version -ne 1 -or @($bundle.entries).Count -ne $expected.Count) {
+        throw 'The gameplay audio bundle must contain all seven recovery assets.'
+    }
+    $names = New-Object 'System.Collections.Generic.HashSet[string]' ([StringComparer]::Ordinal)
+    foreach ($entry in $bundle.entries) {
+        $file = [string]$entry.file
+        $expectedId = 22 + [array]::IndexOf($expected, $file)
+        if ($expected -cnotcontains $file -or $entry.name -cne ('Gameplay/' + $file) -or
+            [int]$entry.kind -ne 1 -or [int]$entry.id -ne $expectedId) {
+            throw "Invalid gameplay audio bundle entry: $file"
+        }
+        if (-not $names.Add([string]$entry.name)) { throw "Duplicate gameplay audio bundle entry: $file" }
+        $asset = Join-Path $bundleRoot $file
+        if (-not (Test-Path -LiteralPath $asset -PathType Leaf)) { throw "Missing bundled gameplay audio: $file" }
+        if ((Get-FileHash -LiteralPath $asset -Algorithm SHA256).Hash -ine [string]$entry.sha256) {
+            throw "Bundled gameplay audio SHA256 mismatch: $file"
+        }
+    }
+    return @($names | Sort-Object)
+}
+
 function Assert-CustomSongsRegistered {
     param(
         [string[]]$ExpectedNames,
-        [string]$ExportedSongsPath
+        [string]$ExportedSongsPath,
+        [string[]]$BundledSongNames = @()
     )
     $exportedNames = Get-ExportedSongNames -SongsPath $ExportedSongsPath
-    $missing = @($ExpectedNames | Where-Object { -not $exportedNames.Contains($_) })
+    $missing = @($ExpectedNames | Where-Object { -not $exportedNames.Contains($_) -and $BundledSongNames -cnotcontains $_ })
     if ($missing.Count -gt 0) {
         $missingList = $missing -join ', '
         throw "Exported build\songs.json is missing custom song registrations: $missingList. Re-export after registering songs in RPG Paper Maker; this release tool does not embed or convert audio files."
@@ -259,7 +321,14 @@ if ($pluginCode -notmatch 'DesktopStorageReady' -or $pluginCode -notmatch 'deskt
 }
 
 $sourceSongsPath = Join-Path $sourceRoot 'resources\app\build\songs.json'
-Assert-CustomSongsRegistered -ExpectedNames $customSongNames -ExportedSongsPath $sourceSongsPath
+$audioPluginRoot = if ($syncProjectPlugin) { $projectPluginRoot } else {
+    Join-Path $sourceRoot 'resources\app\build\Plugins\IP2Live_Core'
+}
+$bundledSongNames = @(
+    Get-BundledPrologueSongNames -PluginRoot $audioPluginRoot
+    Get-BundledGameplaySongNames -PluginRoot $audioPluginRoot
+) | Sort-Object
+Assert-CustomSongsRegistered -ExpectedNames $customSongNames -ExportedSongsPath $sourceSongsPath -BundledSongNames $bundledSongNames
 
 $sourcePackagePath = Join-Path $sourceRoot 'resources\app\package.json'
 try {
@@ -272,7 +341,8 @@ if ($sourcePackage.main -ne 'main.js' -or $sourcePackage.type -ne 'module') {
 }
 
 $templateRoot = Join-Path $repositoryRoot 'deployment\windows'
-$templateFiles = @('main.js', 'preload.cjs', 'storage-service.js')
+$templateFiles = @('main.js', 'preload.cjs', 'storage-service.js', 'pvp-service.js')
+$pvpRulesSource = Assert-RequiredFile -Root $repositoryRoot -RelativePath 'Plugins\IP2Live_Core\modules\pvp_rules.js'
 foreach ($templateFile in $templateFiles) {
     Assert-RequiredFile -Root $templateRoot -RelativePath $templateFile | Out-Null
 }
@@ -297,6 +367,7 @@ if ($syncProjectPlugin) {
 foreach ($templateFile in $templateFiles) {
     Copy-Item -LiteralPath (Join-Path $templateRoot $templateFile) -Destination (Join-Path $destinationApp $templateFile) -Force -ErrorAction Stop
 }
+Copy-Item -LiteralPath $pvpRulesSource -Destination (Join-Path $destinationApp 'pvp-rules.cjs') -Force -ErrorAction Stop
 $obsoletePreload = Join-Path $destinationApp 'preload.js'
 if (Test-Path -LiteralPath $obsoletePreload -PathType Leaf) {
     Remove-Item -LiteralPath $obsoletePreload -Force -ErrorAction Stop
@@ -321,15 +392,16 @@ if (-not (Test-Path -LiteralPath $saveDirectory -PathType Container)) {
 }
 
 $hashes = [ordered]@{}
-foreach ($runtimeFile in @('main.js', 'preload.cjs', 'storage-service.js', 'package.json')) {
+foreach ($runtimeFile in @('main.js', 'preload.cjs', 'storage-service.js', 'pvp-service.js', 'pvp-rules.cjs', 'package.json')) {
     $hashes[$runtimeFile] = (Get-FileHash -LiteralPath (Join-Path $destinationApp $runtimeFile) -Algorithm SHA256).Hash.ToLowerInvariant()
 }
 $manifest = [ordered]@{
     applicationId = 'IP2Live'
-    hostTemplateVersion = 1
+    hostTemplateVersion = 2
     sourceDirectoryName = [IO.Path]::GetFileName($sourceRoot)
     projectPluginSynced = $syncProjectPlugin
     verifiedCustomSongs = $customSongNames
+    verifiedBundledSongs = $bundledSongNames
     excludedFromRelease = @('embedded .git directories', 'build/Saves/*.json developer saves')
     runtimeSha256 = $hashes
 }

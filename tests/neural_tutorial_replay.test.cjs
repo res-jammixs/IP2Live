@@ -211,6 +211,18 @@ for (const [file, gameplayId] of definitions) {
     dm.start('floor.pending');
     assert.equal(dm.isActive(), false, 'ordinary floor dialogue still waits for its title');
     assert.equal(dm._queuedStarts.length, 1);
+    // A walkthrough can show its authored briefing before a gameplay screen
+    // exists, even when a suspended story title is still marked active.
+    context.IP2Live.PracticeMode = { active: true, course: {} };
+    context.Core.Game.current = null;
+    dm.resetTransitionState({ stopActive: true, discardActive: true });
+    load('gameplay/gameplay2/IPPatchPanel/ip_patchpanel_tutorial.js');
+    let opened = false;
+    assert.equal(context.IP2Live.IPPatchPanelTutorial.showIntro(() => { opened = true; }), true);
+    assert.match(dm._active.id, /ippatchpanel\.intro\./);
+    assert.equal(dm._queuedStarts.length, 0, 'standalone teaching does not wait for the story map to update');
+    dm.stop(); assert.equal(opened, true, 'the teaching dialogue opens the gameplay when dismissed');
+    context.IP2Live.PracticeMode.active = false;
 }
 
 async function testReplayPause() {

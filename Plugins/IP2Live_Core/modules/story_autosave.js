@@ -46,7 +46,7 @@ IP2Live.StoryAutosave = {
         const screen = pause && pause.activeScreen;
         const options = screen && screen.options || {};
         const spec = options.spec || {};
-        return !!((IP2Live.PracticeMode && IP2Live.PracticeMode.active) ||
+        return !!((IP2Live.PracticeMode && IP2Live.PracticeMode.active) || (IP2Live.PVPMode && IP2Live.PVPMode.active) ||
             (IP2Live.TutorialReplay && IP2Live.TutorialReplay.session) ||
             (result && (result.developerTest || result.developerTesting || result.tutorialReplay || result.practiceMode || result.simulated)) ||
             (screen && !screen._ip2liveGameplayExited && (options.developerTest || options.developerTesting || spec.developerTest ||
@@ -273,6 +273,8 @@ IP2Live.StoryAutosave = {
     replaceWithStory(factory, options = {}) {
         if (this._switching || !IP2Live.MenuTransition || IP2Live.MenuTransition.active) return false;
         const oldGame = Core.Game.current, oldMap = Scene.Map.current, gm = IP2Live.GameManager;
+        const music = IP2Live.MusicManager;
+        const oldMusicZone = music && typeof music.currentZone === 'function' ? music.currentZone() : null;
         const oldSlot = gm.getActiveSaveSlot(oldGame), oldQuest = gm._buildQuestSnapshot();
         const runtimeKeys = ['state', '_activeGameplayNode', '_reportActiveAttempts', '_reportTutorialContexts',
             '_reportSessionId', '_reportSessionProfileName', '_reportSessionProfileId', '_reportShutdownPrepared'];
@@ -293,6 +295,7 @@ IP2Live.StoryAutosave = {
         const failure = () => {
             failed = true;
             Core.Game.current = oldGame; Scene.Map.current = oldMap; this._switching = false;
+            if (music && oldMusicZone) music.play(oldMusicZone);
             Object.assign(gm, oldRuntime);
             if (pause && oldPause) Object.assign(pause, oldPause);
             if (oldCidr === undefined) delete IP2Live.CIDRGameplayState; else IP2Live.CIDRGameplayState = oldCidr;

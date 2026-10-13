@@ -13,86 +13,140 @@
     const SECURITY_LIGHT_KEY = 'securityLight';
     const SECURITY_FAILURE_LIMIT = 5;
 
-    const DARKLIGHTS_CONFIGS = {
-        3: {
-            mapId: 3,
-            name: 'Stage 1 Level 1',
-            baselineBrightnessStep: 1,
-            gameplayIds: ['ip_class_wires'],
-            objectives: [
-                'repair_ip_wires_01',
-                'repair_ip_wires_02',
-                'repair_ip_wires_03',
-                'repair_ip_wires_04',
-            ],
-            quests: [
-                { questId: 'stage.3.ip_wires.01.tutorial', objectiveId: 'repair_ip_wires_01' },
-                { questId: 'stage.3.ip_wires.02', objectiveId: 'repair_ip_wires_02' },
-                { questId: 'stage.3.ip_wires.03', objectiveId: 'repair_ip_wires_03' },
-                { questId: 'stage.3.ip_wires.04', objectiveId: 'repair_ip_wires_04' },
-            ],
-            entryReason: 'stage-one-entry',
-            successReason: 'stage-one-wire-success',
-            clearReason: 'stage-one-levers-cleared',
-        },
-        4: {
-            mapId: 4,
-            name: 'Stage 1 Level 2',
-            baselineBrightnessStep: 1,
-            gameplayIds: ['ip_class_wires'],
-            objectives: [
-                'repair_stage4_ip_wires_01',
-                'repair_stage4_ip_wires_02',
-                'repair_stage4_ip_wires_04',
-                'repair_stage4_ip_wires_05',
-                'repair_stage4_ip_wires_07',
-            ],
-            quests: [
-                { questId: 'stage.4.mixed.01.ip_wires', objectiveId: 'repair_stage4_ip_wires_01' },
-                { questId: 'stage.4.mixed.02.ip_wires', objectiveId: 'repair_stage4_ip_wires_02' },
-                { questId: 'stage.4.mixed.04.ip_wires', objectiveId: 'repair_stage4_ip_wires_04' },
-                { questId: 'stage.4.mixed.05.ip_wires', objectiveId: 'repair_stage4_ip_wires_05' },
-                { questId: 'stage.4.mixed.07.ip_wires', objectiveId: 'repair_stage4_ip_wires_07' },
-            ],
-            entryReason: 'stage-one-level-two-entry',
-            successReason: 'stage-one-level-two-wire-success',
-            clearReason: 'stage-one-level-two-wires-cleared',
-        },
-        5: {
-            mapId: 5,
-            name: 'Stage 1 Level 3',
-            baselineBrightnessStep: 1,
-            gameplayIds: ['ip_class_wires', 'ip_class_wires_harder'],
-            objectives: [
-                'repair_stage5_ip_wires_01',
-                'repair_stage5_ip_wires_harder_04_tutorial',
-                'repair_stage5_ip_wires_05',
-                'repair_stage5_ip_wires_harder_06',
-                'repair_stage5_ip_wires_harder_09',
-                'repair_stage5_ip_wires_harder_10',
-            ],
-            quests: [
-                { questId: 'stage.5.mixed.01.ip_wires', objectiveId: 'repair_stage5_ip_wires_01' },
-                { questId: 'stage.5.mixed.04.ip_wires_harder.tutorial', objectiveId: 'repair_stage5_ip_wires_harder_04_tutorial' },
-                { questId: 'stage.5.mixed.05.ip_wires', objectiveId: 'repair_stage5_ip_wires_05' },
-                { questId: 'stage.5.mixed.06.ip_wires_harder', objectiveId: 'repair_stage5_ip_wires_harder_06' },
-                { questId: 'stage.5.mixed.09.ip_wires_harder', objectiveId: 'repair_stage5_ip_wires_harder_09' },
-                { questId: 'stage.5.mixed.10.ip_wires_harder', objectiveId: 'repair_stage5_ip_wires_harder_10' },
-            ],
-            entryReason: 'stage-one-level-three-entry',
-            successReason: 'stage-one-level-three-wire-success',
-            clearReason: 'stage-one-level-three-wires-cleared',
-        },
-    };
-
     const GameStateManager = {
-        VERSION: 'game-state-manager-20260915-06',
+        VERSION: 'game-state-manager-20261013-floor-progress',
         states: {},
         activeStates: {},
         _boundGameManager: null,
         _unsubscribers: [],
         _fallbackStore: {},
         _sceneHooksInstalled: false,
+        floorConfig: IP2Live.FloorStateConfig || {
+            gameplayStates: { ip_class_wires: ['darklights'], ip_class_wires_harder: ['darklights'] },
+            stateDefaults: { darklights: { baselineBrightnessStep: 1 } }, levels: {},
+        },
+        _floorConfigCache: new Map(),
+        _appliedFloorStates: {},
+
+        /** Rebuild after changing assignments/configuration at runtime. No frame polling. */
+        invalidateFloorStateConfig(mapId) {
+            if (Number(mapId)) this._floorConfigCache.delete(Number(mapId));
+            else this._floorConfigCache.clear();
+        },
+
+        /** Public, detached view: level -> gameplay -> state names and objective totals. */
+        getFloorDefinition(mapId) {
+            const floor = this._floorDefinitionForMap(mapId);
+            return this._clonePlain({ mapId: floor.mapId, name: floor.name, gameplays: floor.gameplays,
+                states: Object.fromEntries(Object.entries(floor.states).map(([name, config]) =>
+                    [name, { gameplayIds: config.gameplayIds, totalObjectives: config.quests.length, objectives: config.quests }])) });
+        },
+
+        getFloorStateCatalog() {
+            const gm = IP2Live.GameManager;
+            return Object.keys(gm?.mapGameplayAssignments || this.floorConfig.levels || {}).map(Number)
+                .sort((a, b) => a - b).map(id => this.getFloorDefinition(id));
+        },
+
+        _floorDefinitionForMap(mapId) {
+            const id = Number(mapId) || 0, gm = IP2Live.GameManager;
+            const assignment = gm?.mapGameplayAssignments?.[id], level = this.floorConfig.levels?.[id] || null;
+            const cached = this._floorConfigCache.get(id);
+            if (cached && cached.manager === gm && cached.assignment === assignment && cached.level === level) return cached.floor;
+            const floor = { mapId: id, name: level?.name || gm?.flowConfig?.maps?.[id]?.name || 'Map ' + id, gameplays: {}, states: {} };
+            const bindings = Object.assign({}, this.floorConfig.gameplayStates, level?.gameplays);
+            const quests = gm?.getMapQuestSpecs ? gm.getMapQuestSpecs(id) : [];
+            for (const quest of quests) for (const objective of quest.objectives?.length ? quest.objectives : [quest]) {
+                const gameplayId = objective.gameplayId || quest.gameplayId;
+                if (!gameplayId) continue;
+                const names = Array.isArray(bindings[gameplayId]) ? bindings[gameplayId] : [];
+                floor.gameplays[gameplayId] = names.slice();
+                for (const stateName of names) {
+                    const objectiveId = objective.objectiveId;
+                    if (!objectiveId) continue;
+                    const config = floor.states[stateName] || (floor.states[stateName] = Object.assign({},
+                        this.floorConfig.stateDefaults?.[stateName], level?.states?.[stateName], {
+                            mapId: id, name: floor.name, stateName, gameplayIds: [], objectives: [], quests: [],
+                            entryReason: 'floor-entry', successReason: 'floor-objective-completed', clearReason: 'floor-state-completed',
+                        }));
+                    if (!config.gameplayIds.includes(gameplayId)) config.gameplayIds.push(gameplayId);
+                    if (config.quests.some(item => item.questId === quest.id && item.objectiveId === objectiveId)) continue;
+                    config.objectives.push(objectiveId);
+                    config.quests.push({ questId: quest.id, objectiveId, gameplayId });
+                }
+            }
+            for (const config of Object.values(floor.states)) config.maxBrightnessStep = this._maxBrightnessStep(config);
+            // Do not cache an empty pre-GameManager bootstrap result.
+            if (gm?.getMapQuestSpecs) this._floorConfigCache.set(id, { manager: gm, assignment, level, floor });
+            return floor;
+        },
+
+        _isIsolatedContext(payload) {
+            const data = payload || {}, spec = data.spec || {};
+            return !Core?.Game?.current || !!(data.developerTest || spec.developerTest || data.tutorialReplay || spec.tutorialReplay ||
+                data.practiceMode || spec.practiceMode || data.endlessMode || data.pvpMode || IP2Live.TutorialReplay?.session ||
+                IP2Live.PracticeMode?.active || IP2Live.EndlessMode?.active || IP2Live.PVPMode?.active);
+        },
+
+        /** Quest completion is authoritative once that floor's quests are registered. */
+        _completedFloorObjectives(config, store) {
+            const qm = IP2Live.QuestManager, done = {}, completed = qm?.completedObjectives || {};
+            const authoritative = config.quests.some(item => qm?.quests?.[item.questId] ||
+                Object.prototype.hasOwnProperty.call(completed, item.questId));
+            for (const item of config.quests) {
+                if (authoritative ? completed[item.questId]?.[item.objectiveId] === true
+                    : store.completedObjectives?.[item.objectiveId] === true || store.cleared) done[item.objectiveId] = true;
+            }
+            return done;
+        },
+
+        _floorStateStore(config) {
+            if (config.stateName === DARKLIGHTS_KEY) return this._darklightsStore(config.mapId);
+            const root = this._rootStore();
+            if (!root.floorStates || typeof root.floorStates !== 'object') root.floorStates = { maps: {} };
+            if (!root.floorStates.maps || typeof root.floorStates.maps !== 'object') root.floorStates.maps = {};
+            const maps = root.floorStates.maps, key = String(config.mapId);
+            if (!maps[key]) maps[key] = {};
+            return maps[key][config.stateName] || (maps[key][config.stateName] = { completedObjectives: {} });
+        },
+
+        /** Event-driven reconciliation; repeated notifications never add light twice. */
+        syncFloorStates(mapId, options) {
+            const opts = options || {};
+            if (this._isIsolatedContext(opts)) return false;
+            const id = Number(mapId) || this._currentMapId(), floor = this._floorDefinitionForMap(id);
+            const scene = opts.scene || this._currentScene(), current = this._currentMapId() === id;
+            if (current) for (const [name, applied] of Object.entries(this._appliedFloorStates)) {
+                if (!floor.states[name] || applied.mapId !== id || applied.scene !== scene || applied.game !== Core.Game.current) {
+                    if (this.activeStates[name]) this.clear(name, { mapId: applied.mapId, scene: applied.scene, temporary: true });
+                    delete this._appliedFloorStates[name];
+                }
+            }
+            for (const [name, config] of Object.entries(floor.states)) {
+                const store = this._floorStateStore(config), done = this._completedFloorObjectives(config, store);
+                const count = Object.keys(done).length, total = config.objectives.length, progress = count / total;
+                const brightnessStep = (Number(config.baselineBrightnessStep) || 0) + count;
+                const changed = store.completedCount !== count || store.totalObjectives !== total || store.progress !== progress ||
+                    store.cleared !== (count === total) || (name === DARKLIGHTS_KEY && store.brightnessStep !== brightnessStep) ||
+                    config.objectives.some(objectiveId => !!store.completedObjectives?.[objectiveId] !== !!done[objectiveId]);
+                if (changed) {
+                    store.completedObjectives = done; store.completedCount = count; store.totalObjectives = total;
+                    store.progress = progress; store.cleared = count === total; store.progressInitialized = true;
+                    store.lastReason = opts.reason || 'floor-progress-sync';
+                    if (name === DARKLIGHTS_KEY) this._setBrightnessStep(store, brightnessStep, store.lastReason, config);
+                    this._syncStore();
+                }
+                if (!current || !this.states[name]) continue;
+                const applied = this._appliedFloorStates[name];
+                if (!opts.force && !changed && applied?.mapId === id && applied.scene === scene && applied.game === Core.Game.current) continue;
+                const context = Object.assign({}, opts, { mapId: id, scene, progress, completedCount: count,
+                    totalObjectives: total, completedObjectives: done, config });
+                if (store.cleared) this.clear(name, Object.assign(context, { fullRestore: true }));
+                else this.activate(name, context);
+                this._appliedFloorStates[name] = { mapId: id, scene, game: Core.Game.current };
+            }
+            return true;
+        },
 
         resetStoryState(game) {
             const target = game || (Core && Core.Game && Core.Game.current);
@@ -102,9 +156,10 @@
             // snapshot through a shared reference during runtime cleanup.
             target.ip2liveGameStates = {};
             this._fallbackStore = {};
-            for (const key of [DARKLIGHTS_KEY, SECURITY_LIGHT_KEY]) {
+            for (const key of new Set([DARKLIGHTS_KEY, SECURITY_LIGHT_KEY, ...Object.keys(this._appliedFloorStates)])) {
                 if (this.activeStates[key]) this.clear(key, { newStory: true });
             }
+            this._appliedFloorStates = {};
             const lighting = IP2Live.LightingManager;
             if (lighting) {
                 // Darklights creates per-map presets, including for maps that
@@ -294,43 +349,37 @@
         },
 
         recordDarklightsRollback(reason, mapId, objectiveId) {
+            if (this._isIsolatedContext()) return null;
             const config = this._darklightsConfigForMap(mapId || this._currentMapId() || STAGE_ONE_LEVEL_ONE_MAP_ID);
             if (!config) return null;
 
             const store = this._darklightsStore(config.mapId);
+            const done = this._completedFloorObjectives(config, store);
+            const item = objectiveId ? config.quests.find(row => row.objectiveId === String(objectiveId))
+                : config.quests.slice().reverse().find(row => done[row.objectiveId]);
+            if (!item || !done[item.objectiveId]) return store;
             store.cleared = false;
-            store.progressInitialized = true;
-            this._setBrightnessStep(store, store.brightnessStep - 1, reason || 'gameplay-rollback', config);
-            if (objectiveId && store.completedObjectives) delete store.completedObjectives[String(objectiveId)];
-            store.lastReason = reason || 'gameplay-rollback';
-            this._syncStore();
-            if (this._currentMapId() === config.mapId) {
-                this._activateDarklights(config, {
-                    scene: this._currentScene(),
-                    reason: store.lastReason,
-                });
-            }
+            delete store.completedObjectives[item.objectiveId];
+            const completed = IP2Live.QuestManager?.completedObjectives;
+            if (completed?.[item.questId]) delete completed[item.questId][item.objectiveId];
+            this.syncFloorStates(config.mapId, { reason: reason || 'gameplay-rollback' });
             return store;
         },
 
         resetDarklightsProgress(mapId, reason) {
+            if (this._isIsolatedContext()) return null;
             const config = this._darklightsConfigForMap(mapId || this._currentMapId() || STAGE_ONE_LEVEL_ONE_MAP_ID);
             if (!config) return null;
 
             const root = this._darklightsRoot();
+            const completed = IP2Live.QuestManager?.completedObjectives;
+            for (const item of config.quests) if (completed?.[item.questId]) delete completed[item.questId][item.objectiveId];
             const store = this._newDarklightsStore(config.mapId);
             store.lastReason = reason || 'darklights-progress-reset';
             root.maps[String(config.mapId)] = store;
             if (config.mapId === STAGE_ONE_LEVEL_ONE_MAP_ID) this._mirrorLegacyDarklightsRoot(root, store);
             this._syncStore();
-            if (this._currentMapId() === config.mapId) {
-                this._setBrightnessStep(store, config.baselineBrightnessStep, config.entryReason, config);
-                store.progressInitialized = true;
-                this._activateDarklights(config, {
-                    scene: this._currentScene(),
-                    reason: store.lastReason,
-                });
-            }
+            this.syncFloorStates(config.mapId, { reason: store.lastReason, force: true });
             return store;
         },
 
@@ -360,17 +409,20 @@
         },
 
         resetDarklights(mapId) {
+            if (this._isIsolatedContext()) return null;
             const config = this._darklightsConfigForMap(mapId || this._activeDarklightsMapId() || this._currentMapId() || STAGE_ONE_LEVEL_ONE_MAP_ID);
             if (!config) return null;
 
             const store = this._darklightsStore(config.mapId);
             this._setBrightnessStep(store, this._maxBrightnessStep(config), config.clearReason, config);
             store.cleared = true;
-            store.completedObjectives = {};
+            store.completedObjectives = Object.fromEntries(config.objectives.map(id => [id, true]));
+            store.completedCount = store.totalObjectives = config.objectives.length;
+            store.progress = 1;
             store.progressInitialized = true;
             store.lastReason = config.clearReason;
             this._syncStore();
-            this.clear(DARKLIGHTS_KEY, { fullRestore: true, mapId: config.mapId });
+            if (this._currentMapId() === config.mapId) this.clear(DARKLIGHTS_KEY, { fullRestore: true, mapId: config.mapId });
             return store;
         },
 
@@ -381,11 +433,16 @@
 
             this._unbindGameManager();
             this._boundGameManager = gm;
+            this.invalidateFloorStateConfig();
 
             const events = gm.EVENT || {};
             this._unsubscribers.push(gm.on(events.MAP_ENTERED || 'map.entered', (payload) => this._onMapEntered(payload)));
             this._unsubscribers.push(gm.on(events.GAMEPLAY_COMPLETED || 'gameplay.completed', (payload) => this._onGameplayCompleted(payload)));
+            this._unsubscribers.push(gm.on(events.GAMEPLAY_FAILED || 'gameplay.failed', (payload) => this._onGameplayFailed(payload)));
             this._unsubscribers.push(gm.on(events.QUEST_OBJECTIVE_COMPLETED || 'quest.objectiveCompleted', (payload) => this._onQuestObjectiveCompleted(payload)));
+            this._unsubscribers.push(gm.on(events.QUEST_PROGRESS_CHANGED || 'quest.progressChanged', (payload) => {
+                if (!this._isIsolatedContext(payload)) this.syncFloorStates(payload?.mapId, payload);
+            }));
             return true;
         },
 
@@ -403,6 +460,7 @@
 
         _onMapEntered(payload) {
             const data = payload || {};
+            if (this._isIsolatedContext(data)) return;
             const mapId = Number(data.mapId) || this._currentMapId();
             const context = data.context || {};
             const config = this._darklightsConfigForMap(mapId);
@@ -416,69 +474,37 @@
                 return;
             }
 
-            if (config) {
-                const store = this._darklightsStore(config.mapId);
-                if (store.cleared || this._darklightsObjectivesComplete(config.mapId)) {
-                    if (context.preservePersistentState) {
-                        // A completed saved level should load with full light,
-                        // but loading it must not erase the objective evidence
-                        // that made it complete.
-                        this.clear(DARKLIGHTS_KEY, {
-                            fullRestore: true,
-                            mapId: config.mapId,
-                            preservePersistentState: true,
-                        });
-                    } else {
-                        this.resetDarklights(config.mapId);
-                    }
-                } else {
-                    if (!store.progressInitialized && store.brightnessStep <= 0) {
-                        this._setBrightnessStep(store, config.baselineBrightnessStep, config.entryReason, config);
-                    }
-                    if (!store.progressInitialized) store.progressInitialized = true;
-                    this._syncStore();
-                    this._activateDarklights(config, {
-                        scene: data.scene || this._currentScene(),
-                        reason: context.restoreFromSave
-                            ? (store.lastReason || 'save-restore')
-                            : config.entryReason,
-                    });
-                }
-                return;
-            }
-
-            if (this.activeStates[DARKLIGHTS_KEY]) {
-                const activeMapId = this._activeDarklightsMapId();
-                this.clear(DARKLIGHTS_KEY, { mapId: activeMapId || mapId, temporary: true });
-            }
+            this.syncFloorStates(mapId, Object.assign({}, context, { scene: data.scene || this._currentScene(),
+                reason: context.restoreFromSave ? 'save-restore' : 'floor-entry', force: true }));
         },
 
         _onGameplayFailed(payload) {
-            // Terminal quest failures are centralized in NeuralLifeForce.
-            // Keep this no-op hook for third-party states that may still call
-            // it directly, but do not apply the legacy five-strike Stage 1
-            // Security Light / map-return path.
-            return false;
+            const data = payload || {};
+            if (this._isIsolatedContext(data)) return false;
+            // NeuralLifeForce has already reopened/reset the previous quest.
+            // A failure in any gameplay can therefore remove a wire completion.
+            return this.syncFloorStates(data.mapId || data.spec?.mapId, { reason: 'quest-setback' });
         },
 
         _onGameplayCompleted(payload) {
             const data = payload || {};
+            if (this._isIsolatedContext(data)) return;
             const spec = data.spec || {};
             const mapId = Number(data.mapId || spec.mapId || this._currentMapId());
-            const config = this._darklightsConfigForMap(mapId);
-            if (!config || !this._darklightsGameplayMatches(config, data.gameplayId)) return;
-            this._markDarklightsObjective(config.mapId, data.objectiveId || spec.objectiveId);
+            // Gameplay completion can precede QuestManager committing its objective.
+            // Read the quest table; QUEST_OBJECTIVE_COMPLETED will reconcile again.
+            this.syncFloorStates(mapId, { reason: 'gameplay-completed' });
         },
 
         _onQuestObjectiveCompleted(payload) {
             const data = payload || {};
+            if (this._isIsolatedContext(data)) return;
             const mapId = Number(data.mapId || this._currentMapId());
-            const config = this._darklightsConfigForMap(mapId);
-            if (!config) return;
-            this._markDarklightsObjective(config.mapId, data.objectiveId);
+            this.syncFloorStates(mapId, { reason: 'quest-objective-completed' });
         },
 
         _markDarklightsObjective(mapId, objectiveId) {
+            if (this._isIsolatedContext()) return false;
             const config = this._darklightsConfigForMap(mapId);
             if (!config) return false;
 
@@ -486,24 +512,9 @@
             if (config.objectives.indexOf(id) === -1) return false;
 
             const store = this._darklightsStore(config.mapId);
-            if (store.cleared) return true;
-            if (!store.completedObjectives) store.completedObjectives = {};
-            if (store.completedObjectives[id]) return true;
-
+            // Legacy callers can record evidence before the quest table is ready.
             store.completedObjectives[id] = true;
-            this._setBrightnessStep(store, store.brightnessStep + 1, config.successReason, config);
-            store.progressInitialized = true;
-            store.lastReason = config.successReason;
-            this._syncStore();
-
-            if (this._darklightsObjectivesComplete(config.mapId)) {
-                this.resetDarklights(config.mapId);
-            } else if (this._currentMapId() === config.mapId && !store.cleared) {
-                this._activateDarklights(config, {
-                    scene: this._currentScene(),
-                    reason: 'darklights-progress',
-                });
-            }
+            this.syncFloorStates(config.mapId, { reason: config.successReason });
             return true;
         },
 
@@ -512,24 +523,7 @@
             if (!config) return false;
 
             const store = this._darklightsStore(config.mapId);
-            const done = store.completedObjectives || {};
-            let trackedComplete = true;
-            for (let i = 0; i < config.objectives.length; i++) {
-                if (!done[config.objectives[i]]) {
-                    trackedComplete = false;
-                    break;
-                }
-            }
-            if (trackedComplete) return true;
-
-            const qm = IP2Live.QuestManager;
-            const completed = qm && qm.completedObjectives ? qm.completedObjectives : null;
-            if (!completed) return false;
-            for (let i = 0; i < config.quests.length; i++) {
-                const item = config.quests[i];
-                if (!completed[item.questId] || !completed[item.questId][item.objectiveId]) return false;
-            }
-            return true;
+            return Object.keys(this._completedFloorObjectives(config, store)).length === config.objectives.length;
         },
 
         _latestCompletedDarklightsQuestBefore(mapId, failedQuestId) {
@@ -584,112 +578,7 @@
         },
 
         _darklightsConfigForMap(mapId) {
-            const id = Number(mapId) || STAGE_ONE_LEVEL_ONE_MAP_ID;
-            const base = DARKLIGHTS_CONFIGS[id];
-            if (!base) return null;
-
-            const config = {
-                mapId: base.mapId,
-                name: base.name,
-                baselineBrightnessStep: Number(base.baselineBrightnessStep) || 0,
-                gameplayIds: (base.gameplayIds || []).slice(),
-                objectives: (base.objectives || []).slice(),
-                quests: (base.quests || []).map((item) => Object.assign({}, item)),
-                entryReason: base.entryReason || 'darklights-entry',
-                successReason: base.successReason || 'darklights-success',
-                clearReason: base.clearReason || 'darklights-cleared',
-            };
-
-            const gm = IP2Live.GameManager;
-            if (gm && typeof gm.getMapQuestSpecs === 'function') {
-                // Static rows above are only an early-load fallback. Once the
-                // GameManager is ready, the map-first curriculum is authoritative.
-                config.objectives = [];
-                config.quests = [];
-            }
-            this._augmentDarklightsConfigFromAssignments(config);
-            config.maxBrightnessStep = Math.max(1, config.baselineBrightnessStep + config.objectives.length);
-            return config;
-        },
-
-        _augmentDarklightsConfigFromAssignments(config) {
-            if (!config || !config.gameplayIds || !config.gameplayIds.length) return config;
-
-            const gm = IP2Live.GameManager;
-            if (gm && typeof gm.getMapQuestSpecs === 'function') {
-                const quests = gm.getMapQuestSpecs(config.mapId);
-                for (let q = 0; q < quests.length; q++) {
-                    const quest = quests[q] || {};
-                    const objectives = Array.isArray(quest.objectives) && quest.objectives.length
-                        ? quest.objectives
-                        : [quest];
-                    for (let o = 0; o < objectives.length; o++) {
-                        const objective = objectives[o] || {};
-                        const objectiveGameplayId = String(objective.gameplayId || quest.gameplayId || '');
-                        if (!this._darklightsGameplayMatches(config, objectiveGameplayId)) continue;
-                        this._addDarklightsObjective(config, {
-                            mapId: Number(objective.mapId || quest.mapId),
-                            questId: quest.id,
-                            objectiveId: objective.objectiveId || quest.objectiveId,
-                        });
-                    }
-                }
-                return config;
-            }
-
-            for (let i = 0; i < config.gameplayIds.length; i++) {
-                const gameplayId = config.gameplayIds[i];
-                const specs = gm && typeof gm.getGameplayQuestSpecs === 'function'
-                    ? gm.getGameplayQuestSpecs(gameplayId)
-                    : [];
-                for (let s = 0; s < specs.length; s++) {
-                    this._addDarklightsSpec(config, gameplayId, specs[s]);
-                }
-            }
-            return config;
-        },
-
-        _addDarklightsSpec(config, gameplayId, spec) {
-            if (!config || !spec) return false;
-            const specMapId = Number(spec.mapId || 0);
-
-            if (Array.isArray(spec.objectives) && spec.objectives.length) {
-                for (let i = 0; i < spec.objectives.length; i++) {
-                    const objective = spec.objectives[i] || {};
-                    const objectiveGameplayId = String(objective.gameplayId || spec.gameplayId || gameplayId);
-                    if (!this._darklightsGameplayMatches(config, objectiveGameplayId)) continue;
-                    this._addDarklightsObjective(config, {
-                        mapId: Number(objective.mapId || specMapId),
-                        questId: spec.id,
-                        objectiveId: objective.objectiveId,
-                    });
-                }
-                return true;
-            }
-
-            return this._addDarklightsObjective(config, {
-                mapId: specMapId,
-                questId: spec.id,
-                objectiveId: spec.objectiveId,
-            });
-        },
-
-        _addDarklightsObjective(config, item) {
-            if (!config || !item || Number(item.mapId) !== config.mapId) return false;
-            const objectiveId = String(item.objectiveId || '');
-            if (!objectiveId) return false;
-
-            if (config.objectives.indexOf(objectiveId) === -1) {
-                config.objectives.push(objectiveId);
-            }
-
-            const questId = String(item.questId || '');
-            if (!questId) return true;
-            for (let i = 0; i < config.quests.length; i++) {
-                if (config.quests[i].questId === questId && config.quests[i].objectiveId === objectiveId) return true;
-            }
-            config.quests.push({ questId, objectiveId });
-            return true;
+            return this._floorDefinitionForMap(Number(mapId) || STAGE_ONE_LEVEL_ONE_MAP_ID).states[DARKLIGHTS_KEY] || null;
         },
 
         _darklightsGameplayMatches(config, gameplayId) {
@@ -734,6 +623,7 @@
         _darklightsStore(mapId) {
             const config = this._darklightsConfigForMap(mapId || this._currentMapId() || STAGE_ONE_LEVEL_ONE_MAP_ID);
             const resolvedConfig = config || this._darklightsConfigForMap(STAGE_ONE_LEVEL_ONE_MAP_ID);
+            if (!resolvedConfig) return this._newDarklightsStore(mapId);
             const root = this._darklightsRoot();
             const key = String(resolvedConfig.mapId);
 

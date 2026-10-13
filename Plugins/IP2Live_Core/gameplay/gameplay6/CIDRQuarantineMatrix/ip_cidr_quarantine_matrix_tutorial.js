@@ -31,7 +31,7 @@ const IPCIDRQuarantineMatrixTutorial = {
             '{{highlight:Broadcast = network + block - 1}}. {{highlight:Network = broadcast - block + 1}}.',
             'We need ' + p.asked + ': {{highlight:' + p.givenAddress + ' ' + p.operator + ' ' + count + ' ' + p.correction + ' = ?}}. The bar already includes ' + p.correction + ' to stay inside the range.',
         ], [
-            'Use {{highlight:one minute}} to plan. {{highlight:C}} opens your familiar calculator and pauses the timer.',
+            'Use {{highlight:' + (p.preparationTimeSeconds || 60) + ' seconds}} to plan. {{highlight:C}} opens your familiar calculator and pauses the timer.',
             'Ready? Use the {{highlight:Skip icon}} or Enter. Only two choices follow: {{highlight:operator, then block size}}.',
         ]], onComplete, [
             ['given', 'answer'], ['range'], ['class', 'bits'], ['bits', 'blockSize'],

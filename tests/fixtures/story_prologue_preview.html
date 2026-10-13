@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<title>IP2Live — Canvas story prologue preview</title>
+<style>
+@font-face { font-family: Oxanium-Medium; src: url('../../Fonts/Oxanium-Medium.ttf'); }
+@font-face { font-family: Nebula-Regular; src: url('../../Fonts/Nebula-Regular.otf'); }
+* { box-sizing: border-box; } body { margin: 0; background: #02040a; color: #d8e8ec; font: 14px Oxanium-Medium, sans-serif; }
+header { padding: 12px 20px; display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
+select, button { color: #d8e8ec; background: #16212f; border: 1px solid #617280; padding: 6px 12px; }
+canvas { display: block; width: min(100vw, 177.77vh); height: auto; margin: auto; }
+</style>
+<header>
+  <label>Scene <select id="chapter"><option>The Arrival</option><option>The Taking</option><option>The Fortress</option><option>Our Way Inside</option></select></label>
+  <label><input id="full" type="checkbox" checked> Show full caption</label>
+  <label><input id="motion" type="checkbox" checked> Ambient motion</label>
+  <button id="restart">Play from beginning</button><span id="status">Read each caption, then press Space or Enter to continue.</span>
+</header>
+<canvas id="game" width="1920" height="1080"></canvas>
+<script>
+var canvas = document.getElementById('game'), previewFrames = [];
+var Common = { Platform: { ctx: canvas.getContext('2d') }, ScreenResolution: { SCREEN_X: 1920, SCREEN_Y: 1080 } };
+var Core = { Game: { current: { infiltratorName: 'NOVA' } } }, Data = { Systems: {}, Keyboards: {} };
+var Graphic = {}, Model = {}, Main = {}, THREE = {};
+var Scene = { Base: class { constructor(init) { if (init) this.initialize?.(); } close() {} }, TitleScreen: class {} };
+var Manager = { Stack: { get top() { return previewFrames.at(-1); }, push: s => previewFrames.push(s),
+    replace(s) { previewFrames.pop()?.close?.(); previewFrames.push(s); }, requestPaintHUD: true } };
+var IP2Live = { Assets: { oxaniumMediumLoaded: true, nebulaLoaded: true,
+    loadPauseFonts: () => Promise.all([document.fonts.load('22px Oxanium-Medium'), document.fonts.load('32px Nebula-Regular')]) },
+    InputGuard: { reset() {} }, MusicManager: { play() {} } };
+</script>
+<script src="../../Plugins/IP2Live_Core/modules/story_lore.js"></script>
+<script src="../../Plugins/IP2Live_Core/modules/screens/story-prologue-art.js"></script>
+<script src="../../Plugins/IP2Live_Core/modules/screens/story-prologue.js"></script>
+<script src="../../Plugins/IP2Live_Core/modules/screens/main-menu.js"></script>
+<script>
+var prologuePreviewScene;
+function completed() { document.getElementById('status').textContent = 'Tutorial handoff reached. Use the preview controls to replay.'; return true; }
+async function preview(index = 0, animated = false) {
+    previewFrames.pop()?.close?.(); prologuePreviewScene = new IP2Live.StoryPrologueScreen(completed); previewFrames.push(prologuePreviewScene);
+    await prologuePreviewScene.load(); prologuePreviewScene.index = index; prologuePreviewScene.characters = Array.from(prologuePreviewScene.beats[index].text);
+    for (const [key, surface] of prologuePreviewScene._cache) if (key !== index) {
+        surface.width = surface.height = 0; prologuePreviewScene._cache.delete(key);
+    }
+    prologuePreviewScene._layout = null; prologuePreviewScene.phase = animated ? 'fadeIn' : 'reading'; prologuePreviewScene.elapsed = 0;
+    prologuePreviewScene.reducedMotion = !document.getElementById('motion').checked;
+    prologuePreviewScene.visibleChars = document.getElementById('full').checked && !animated ? prologuePreviewScene.characters.length : 0;
+    if (!animated && document.getElementById('full').checked) prologuePreviewScene.ambientTime = 6000;
+    if (index !== 0) prologuePreviewScene._releaseFleet();
+    Manager.Stack.requestPaintHUD = true;
+}
+document.getElementById('chapter').onchange = event => preview(event.target.selectedIndex);
+document.getElementById('full').onchange = () => preview(document.getElementById('chapter').selectedIndex);
+document.getElementById('motion').onchange = event => { prologuePreviewScene.reducedMotion = !event.target.checked; Manager.Stack.requestPaintHUD = true; };
+document.getElementById('restart').onclick = () => { document.getElementById('full').checked = false; preview(0, true); };
+document.addEventListener('keydown', event => { if (event.target.tagName === 'SELECT') return; event.preventDefault();
+    if (event.repeat) prologuePreviewScene?.onKeyPressedAndRepeat(event.key); else prologuePreviewScene?.onKeyPressed(event.key); });
+for (const [event, method] of [['mousemove', 'onMouseMove'], ['mousedown', 'onMouseDown'], ['mouseup', 'onMouseUp']]) canvas.addEventListener(event, e => {
+    const rect = canvas.getBoundingClientRect(); prologuePreviewScene?.[method]((e.clientX - rect.left) * canvas.width / rect.width, (e.clientY - rect.top) * canvas.height / rect.height);
+});
+function tick() { prologuePreviewScene?.update(); if (prologuePreviewScene && Manager.Stack.requestPaintHUD) { prologuePreviewScene.drawHUD(); Manager.Stack.requestPaintHUD = false; }
+    document.getElementById('chapter').selectedIndex = prologuePreviewScene?.index || 0; requestAnimationFrame(tick); }
+preview(); requestAnimationFrame(tick);
+</script>
+</html>

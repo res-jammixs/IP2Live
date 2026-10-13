@@ -30,9 +30,13 @@ class IP2LiveMenuTransitionScene extends Scene.Base {
             this.startedAt = Date.now();
             this.elapsed = 0;
         } else if (this.phase === 'hold') {
-            if (this.blackPainted && !this.actionStarted) this._startAction();
+            if (this.blackPainted && !this.actionStarted) {
+                try { this._startAction(); }
+                catch (error) { this.moving = false; this._recover(error); }
+            }
             if (!this.options.closeOnly && this.target && !this.target.loading && this.elapsed >= 90) {
-                this._revealTarget();
+                try { this._revealTarget(); }
+                catch (error) { this.moving = false; this._recover(error); }
             } else if (!this.options.closeOnly && this.elapsed > 15000) {
                 this._recover(new Error('Menu did not become ready in time.'));
             }
@@ -66,7 +70,10 @@ class IP2LiveMenuTransitionScene extends Scene.Base {
             if (!this.target) this._recover(new Error('No parent menu to return to.'));
             return;
         }
-        Promise.resolve().then(() => this.options.action()).then(target => {
+        Promise.resolve().then(() => {
+            if (IP2Live.MenuTransition.active !== this || this.phase !== 'hold') return null;
+            return this.options.action();
+        }).then(target => {
             if (IP2Live.MenuTransition.active !== this || this.phase !== 'hold') {
                 if (target && typeof target.close === 'function') target.close();
                 return;
@@ -105,12 +112,20 @@ class IP2LiveMenuTransitionScene extends Scene.Base {
     _recover(error) {
         if (IP2Live.MenuTransition.active !== this) return;
         console.error('[IP2Live] Menu transition failed:', error);
+        if (this.options.onFailure) {
+            const failed = this.options.onFailure; this.options.onFailure = null;
+            try { failed(error); } catch (callbackError) { console.error('[IP2Live] Transition recovery callback failed:', callbackError); }
+        }
+        // A failed stack mutation may already have removed this overlay. It
+        // cannot update or close later, so release its global input lock now.
+        if (Manager.Stack.top !== this) {
+            this.moving = false;
+            this.close();
+            return;
+        }
         if (!this.stackedTarget) {
             if (this.target && this.target !== this.source && typeof this.target.close === 'function') this.target.close();
             this.target = this.source;
-        }
-        if (this.options.onFailure) {
-            const failed = this.options.onFailure; this.options.onFailure = null; failed(error);
         }
         this.phase = 'in';
         this.startedAt = Date.now();
@@ -221,13 +236,18 @@ IP2Live.MenuTransition = {
         if (this.active || !Manager.Stack.top) return false;
         const transition = new IP2LiveMenuTransitionScene(options);
         this.active = transition;
-        Manager.Stack.push(transition);
+        try { Manager.Stack.push(transition); }
+        catch (error) {
+            transition.close();
+            console.error('[IP2Live] Unable to open menu transition:', error);
+            return false;
+        }
         Manager.Stack.requestPaintHUD = true;
         return true;
     },
     open(factory) { return this._start({ action: factory }); },
     // The action synchronously pushes a scene; its asynchronous load stays covered.
-    launch(action) { return this._start({ action, launch: true }); },
+    launch(action, options = {}) { return this._start({ ...options, action, launch: true }); },
     replace(factory, options = {}) { return this._start({ ...options, action: factory, replace: true, freezeTarget: true }); },
     back(options = {}) {
         if (!Manager.Stack.subTop) return false;

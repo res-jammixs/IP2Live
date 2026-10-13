@@ -121,11 +121,32 @@ async function main() {
         assert.equal(h.transition.active, null);
     }
     // Exercise the real title-button handlers for Load, Settings, Credits, and confirmed Quit.
+    {
+        const h = harness(); let calls = 0;
+        h.transition.open(() => { calls++; return h.root; });
+        h.step(520); h.step(1); h.stack.pop(); await settle();
+        assert.equal(calls, 0, 'a closed transition cannot run its deferred navigation action');
+        assert.equal(h.transition.active, null);
+    }
+    {
+        const h = harness(); h.context.console = { error() {} };
+        const push = h.stack.push;
+        h.stack.push = () => { throw new Error('stack push failed'); };
+        assert.equal(h.transition.open(() => h.root), false);
+        assert.equal(h.transition.active, null, 'failed opening cannot retain a global dialogue/input lock');
+        h.stack.push = push;
+        h.transition.open(() => ({ loading: false, update() {}, drawHUD() {}, close() {} }));
+        h.step(520); h.step(1); await settle();
+        h.stack.push = () => { throw new Error('destination push failed'); };
+        h.step(100);
+        assert.equal(h.transition.active, null, 'failed navigation after popping the overlay releases its lock');
+        assert.equal(h.stack.top, h.root);
+    }
     for (const index of [1, 2, 3, 4]) {
         const h = harness();
         const screen = () => ({ loading: false, update() {}, drawHUD() {}, close() {} });
         h.context.IP2LiveLoadGameMenu = function () { h.events.push('load'); return screen(); };
-        h.context.IP2LiveSettingsMenu = function () { h.events.push('settings'); return screen(); };
+        h.context.IP2LiveSettingsMenu = function (options) { h.events.push('settings'); return { ...screen(), options }; };
         h.context.IP2LiveCreditsScene = function () { h.events.push('credits'); return screen(); };
         let confirm;
         h.context.IP2Live.confirPopup = { show: options => { confirm = options.onConfirm; } };
@@ -140,6 +161,13 @@ async function main() {
             title.selectedIndex = index - 1;
         }
         title._confirmSelection();
+        if (index === 2) {
+            assert.equal(h.transition.active, null, 'Settings opens directly as a popup');
+            assert.equal(h.stack.top.options.popupTransition, true);
+            assert.equal(h.stack.subTop, title, 'the main menu remains beneath Settings');
+            assert.ok(h.events.includes('settings'));
+            continue;
+        }
         if (index === 4) {
             assert.equal(h.transition.active, null, 'opening Quit confirmation does not shut the TV off');
             confirm();
@@ -161,16 +189,23 @@ async function main() {
         title.initialize(); h.stack.content = [title];
         assert.deepEqual(Array.from(title.menuItems), ['PLAY GAME', 'SETTINGS', 'CREDITS', 'QUIT GAME']);
         title._confirmSelection();
-        assert.deepEqual(Array.from(title.menuItems), ['STORY MODE', 'ENDLESS MODE', 'PRACTICE MODE']);
+        assert.deepEqual(Array.from(title.menuItems), ['STORY MODE', 'ENDLESS MODE', 'PRACTICE MODE', 'PVP']);
         for (const index of [1, 2]) {
             title.selectedIndex = index; title._confirmSelection();
             assert.equal(title.menuPage, 'play');
             assert.equal(h.stack.top, title, 'unfinished modes stay on the mode menu');
         }
         title.selectedIndex = 0; title._confirmSelection();
-        assert.deepEqual(Array.from(title.menuItems), ['NEW STORY', 'AUTOSAVED', 'LOAD STORY']);
+        assert.deepEqual(Array.from(title.menuItems), ['NEW STORY', 'AUTOSAVED', 'LOAD STORY', 'STORY CERTIFICATES']);
         assert.equal(title.hoverIndex, -1);
-        assert.deepEqual(Array.from(title.btnProgress), [0, 0, 0]);
+        assert.deepEqual(Array.from(title.btnProgress), [0, 0, 0, 0]);
+        let archiveOptions;
+        h.context.IP2Live.StoryEndingScreen = class { constructor(record, options) { archiveOptions = options; } };
+        const openMenu = title._openMenu;
+        title._openMenu = factory => factory();
+        title.selectedIndex = 3; title._confirmSelection();
+        assert.equal(archiveOptions.archive, true, 'Story Certificates opens the earned-certificate archive');
+        title._openMenu = openMenu;
         title.selectedIndex = 1; title._confirmSelection();
         assert.equal(title.menuPage, 'story', 'Autosaved remains a placeholder');
         let loadingOptions;
@@ -191,8 +226,8 @@ async function main() {
         const layout = title._menuLayout();
         assert.equal(back.w, layout.btnW);
         assert.equal(back.h, layout.btnH);
-        assert.equal(back.y, layout.startY + 3 * (layout.btnH + layout.gap), 'Back follows the mode buttons');
-        assert.equal(layout.btnX + layout.btnW / 2, 296, 'the button stack sits slightly left of the menu area center');
+        assert.equal(back.y, layout.startY + 4 * (layout.btnH + layout.gap), 'Back follows all four mode buttons');
+        assert.equal(layout.btnX + layout.btnW / 2, 278, 'the button stack sits slightly left of the menu area center');
         title.onMouseUp(back.x + back.w / 2, back.y + back.h / 2);
         assert.equal(title.menuPage, 'main', 'mouse Back returns to the parent menu');
         title._confirmSelection(); title._confirmSelection();
@@ -202,6 +237,47 @@ async function main() {
         assert.equal(title.menuPage, 'main');
         title.onKeyPressed('escape');
         assert.equal(title.menuPage, 'main', 'Escape stays on the root menu');
+    }
+    {
+        const h = harness();
+        h.context.Common.ScreenResolution = { SCREEN_X: 1280, SCREEN_Y: 720, getScreenX: x => x, getScreenY: y => y };
+        h.context.Core = { Game: { current: null } };
+        h.context.IP2Live.Assets = { loadAll: async () => {} };
+        h.context.Data.Systems.soundCursor = { playSound() {} };
+        const record = { version: 1, mode: 'story', status: 'completed', id: 'earned-run', name: 'NOVA', completedAt: 1000, finalMapId: 18 };
+        let saved = [{ ...record, status: 'playing' }];
+        h.context.localStorage = { getItem: () => JSON.stringify(saved) };
+        vm.runInContext(fs.readFileSync(path.join(__dirname, '../Plugins/IP2Live_Core/modules/story_completion.js'), 'utf8'), h.context);
+        vm.runInContext(source('story-ending.js'), h.context);
+        vm.runInContext(source('main-menu.js'), h.context);
+        const title = new h.context.Scene.TitleScreen(); title.initialize(); h.stack.content = [title];
+        await title.load();
+        assert.ok(!title.menuItems.includes('CERTIFICATE'), 'unfinished story records do not unlock Certificate');
+        saved = [record];
+        title.selectedIndex = title.menuItems.indexOf('QUIT GAME');
+        await title._refreshCertificates();
+        assert.deepEqual(Array.from(title.menuItems), ['PLAY GAME', 'SETTINGS', 'CREDITS', 'CERTIFICATE', 'QUIT GAME']);
+        assert.equal(title.menuItems[title.selectedIndex], 'QUIT GAME', 'unlocking preserves the selected action');
+        const layout = title._menuLayout();
+        assert.ok(layout.startY >= 230 && layout.startY + 5 * layout.btnH + 4 * layout.gap <= 648, 'the five-button layout stays inside the menu area');
+        // A fresh runtime must unlock from persisted completion, without any current game.
+        vm.runInContext(fs.readFileSync(path.join(__dirname, '../Plugins/IP2Live_Core/modules/story_completion.js'), 'utf8'), h.context);
+        const fresh = new h.context.Scene.TitleScreen(); fresh.initialize(); h.stack.content = [fresh]; await fresh.load();
+        assert.ok(fresh.menuItems.includes('CERTIFICATE'));
+        fresh._showMenuPage('play'); fresh._showMenuPage('main');
+        assert.equal(fresh.menuItems[3], 'CERTIFICATE', 'returning from submenus retains the earned button');
+        // Run the actual mouse handler, screen factory and archive loading.
+        fresh._openMenu = factory => h.stack.push(factory());
+        const button = fresh._menuLayout();
+        fresh.onMouseUp(button.btnX + button.btnW / 2, button.startY + 3 * (button.btnH + button.gap) + button.btnH / 2);
+        const archive = h.stack.top; await archive.load();
+        assert.ok(archive instanceof h.context.IP2Live.StoryEndingScreen);
+        assert.equal(archive.phase, 'complete'); assert.equal(archive.record.name, record.name);
+        assert.ok(archive._actions().some(action => action.id === 'pdf' && action.label === 'DOWNLOAD CERTIFICATE'));
+        archive.readyAt = 0;
+        h.context.IP2Live.MenuTransition = null;
+        await archive._activate('menu');
+        assert.equal(h.stack.top, fresh, 'Back returns to the main menu');
     }
     console.log('menu TV transition lifecycle and navigation tests passed');
 }

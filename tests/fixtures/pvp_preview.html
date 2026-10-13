@@ -1,0 +1,67 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>IP2Live PVP Preview</title><style>
+@font-face { font-family: Nebula-Regular; src: url('../../Fonts/Nebula-Regular.otf'); }
+@font-face { font-family: Ethnocentric; src: url('../../Fonts/Ethnocentric-Regular.otf'); }
+@font-face { font-family: Oxanium-Medium; src: url('../../Fonts/Oxanium-Medium.ttf'); }
+html,body { margin:0; width:100%; height:100%; background:#050914; overflow:hidden; }
+canvas { display:block; width:100vw; height:100vh; }
+</style></head><body><canvas id="preview"></canvas><script>
+const params = new URLSearchParams(location.search), state = params.get('state') || 'intro';
+const canvas = document.getElementById('preview'); canvas.width = Number(params.get('w')) || innerWidth; canvas.height = Number(params.get('h')) || innerHeight;
+let now = 100000; Date.now = () => now;
+const Common = { Platform: { ctx:canvas.getContext('2d') }, ScreenResolution: { SCREEN_X:1280, SCREEN_Y:720, CANVAS_WIDTH:1280, CANVAS_HEIGHT:720, getScreenX:x=>x, getScreenY:y=>y } };
+const frames = [], Core = { Game:{ current:null } }, Data = { Systems:{}, Keyboards:{ checkCancelMenu:k=>k==='Escape', checkActionMenu:k=>k==='Enter' } };
+const Scene = { Base:class { constructor(initialize) { if(initialize && this.initialize) this.initialize(); } }, Map:{ current:{id:18} } };
+const Manager = { Stack:{ get top(){return frames.at(-1);}, push:s=>frames.push(s), pop:()=>frames.pop(), replace:s=>{frames.pop();frames.push(s);} } };
+const IP2Live = { Assets:{ loadAll:async()=>{}, oxaniumMediumLoaded:true, nebulaLoaded:true },
+    QuestManager:{completedObjectives:{}}, QuestMinimap:{destroy(){},create(){},update(){},isActive:()=>false},
+    MusicManager:{play(){},restoreContext(){},ZONE:{}}, NeuralLifeForce:{isRunOver:()=>false},
+    DialogueManager:{resetTransitionState(){},isActive:()=>false}, GameplayPause:{clearSession(){}} };
+(async()=>{
+    for(const file of ['modules/tutorial_replay.js','modules/game_manager.js','modules/pvp_rules.js','modules/pvp_mode.js','modules/screens/pvp.js',
+        'gameplay/common/ip_class_ranges.js','gameplay/common/ip_cidr_tools.js','gameplay/gameplay1/IPWires/ip_wires_core.js','gameplay/gameplay1/IPWires/ip_wires_gameplay.js']) {
+        const response = await fetch('../../Plugins/IP2Live_Core/'+file); if(!response.ok) throw new Error(file);
+        new Function('Common','Core','Data','Manager','Scene','IP2Live','window','Graphic','Model','Main','THREE',await response.text())(Common,Core,Data,Manager,Scene,IP2Live,window,{},{},{},{});
+    }
+    await Promise.all(['Nebula-Regular','Ethnocentric','Oxanium-Medium'].map(font=>document.fonts.load('18px '+font)));
+    // Headless Edge can resize its viewport after loading fonts; refresh DOM input bounds too.
+    addEventListener('resize',()=>{ if(frames.length) frames.at(-1).drawHUD(); });
+    const menu = new IP2Live.PVPMenu(); frames.push(menu); menu.openedAt = now-2000; menu.pilot = 'NOVA';
+    if(state==='menu' || state==='hover') {
+        if(state==='hover') {menu.cardMotion[1]=1;menu.hovered=1;}
+        menu.drawHUD();
+    } else {
+        const rules = IP2Live.PVPRules, mode = IP2Live.PVPMode;
+        const seed = Array.from({length:100},(_,i)=>i+1).find(seed=>rules.gameAt(seed,0).id==='ip_class_wires');
+        const match = rules.createMatch([{id:'local',name:'NOVA'},{id:'ai',name:'Circuit / AI'}],seed,now-(state==='intro'?1700:4000));
+        match.players[0].progress=380;match.players[0].attackCharge=2;match.players[1].progress=260;match.players[1].attackCharge=1;
+        mode.aiMatch=match; mode.aiRandom=()=>0.5;mode.nextAiAt=Infinity;
+        mode.start({match:rules.snapshot(match)},'local',menu,true); mode.tick();
+        if(state==='intro') mode.scene.drawHUD();
+        else {
+            frames.at(-1).drawHUD(); now+=500; frames.at(-1).drawHUD();
+            if(state==='transition') {
+                const replay=IP2Live.TutorialReplay.session;
+                IP2Live.TutorialReplay.finish(replay.gameplayId,replay.options,'completed',{totalDecisions:10,correctDecisions:10});
+                now+=110; mode.scene.drawHUD();
+            } else if(state==='victory') {
+                match.status='finished';match.winnerId='local';match.players[0].progress=1000;mode.tick();mode.scene.drawHUD();
+            } else if(['leave','leave-opening','leave-closing','exit','exit-menu'].includes(state)) {
+                const screen=frames.at(-1);screen.onKeyPressed('Escape');
+                now+=state==='leave-opening'?90:180;screen.drawHUD();
+                if(state==='leave-closing') {screen.onKeyPressed('Escape');now+=70;screen.drawHUD();}
+                if(state==='exit' || state==='exit-menu') {
+                    mode.requestLeave();const exit=mode.exitTransition;
+                    if(state==='exit-menu') {
+                        now+=320;exit.update();exit.drawHUD();now+=1;exit.update();
+                        for(let i=0;i<8;i++) await Promise.resolve();
+                    }
+                    now+=160;exit.drawHUD();
+                }
+            }
+        }
+    }
+    await new Promise(resolve=>setTimeout(resolve,200));frames.at(-1).drawHUD();
+    document.body.dataset.previewState='ready';
+})().catch(error=>{ document.body.dataset.previewState='error';document.body.dataset.previewError=error.stack; console.error(error); });
+</script></body></html>

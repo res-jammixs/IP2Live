@@ -10,6 +10,20 @@ class IP2LivePauseMenu extends Scene.Base {
     constructor(pauseBackdrop = null) {
         super(true);
         this.pauseBackdrop = pauseBackdrop;
+        this._pauseMusicManager = IP2Live.MusicManager;
+        if (this._pauseMusicManager && this._pauseMusicManager.setPaused) {
+            this._pauseMusicManager.setPaused(true, this);
+        }
+    }
+
+    close() {
+        this._closed = true;
+        this._cancelPendingAction();
+        if (this._pauseMusicManager && this._pauseMusicManager.setPaused) {
+            this._pauseMusicManager.setPaused(false, this);
+        }
+        this._pauseMusicManager = null;
+        if (super.close) super.close();
     }
 
     initialize() {
@@ -25,10 +39,6 @@ class IP2LivePauseMenu extends Scene.Base {
         this.popupProgress = 0;
         this.closing = false;
         this.scanlineOffset = 0;
-        this.bgFx = IP2Live.BgFx.create();
-        this.networkBackdrop = (window.IP2LiveBackgroundScreen)
-            ? new window.IP2LiveBackgroundScreen()
-            : null;
         this.scramble = IP2Live.TextScramble.create(this.menuItems.length);
         this.debugMode = false;
         this.debugIndex = 0;
@@ -53,7 +63,7 @@ class IP2LivePauseMenu extends Scene.Base {
 
     _getLayout(SW, SH) {
         const panelW = 440;
-        const panelH = 520;
+        const panelH = Math.max(360, 184 + this.menuItems.length * 56);
         const panelX = (SW - panelW) / 2;
         const panelY = (SH - panelH) / 2;
         const btnW = 320;
@@ -66,16 +76,16 @@ class IP2LivePauseMenu extends Scene.Base {
     }
 
     async load() {
-        if (!IP2Live.Assets.bgImage) await IP2Live.Assets.loadAll();
-        const cW = Common.Platform.ctx.canvas.width;
-        const cH = Common.Platform.ctx.canvas.height;
-        this.bgFx.seed(cW, cH);
         this.loading = false;
+        // Opening Pause must never wait for unrelated fonts or a background image.
+        if (IP2Live.Assets.loadPauseFonts) IP2Live.Assets.loadPauseFonts().then(() => {
+            Manager.Stack.requestPaintHUD = true;
+        });
         Manager.Stack.requestPaintHUD = true;
     }
 
     onKeyPressed(key) {
-        if (this.closing) return;
+        if (this.closing || this._closed || this._actionRunning) return;
         if (this.gameplayTestMode) {
             if (Data.Keyboards.checkActionMenu(key)) {
                 this._launchGameplayTest();
@@ -100,7 +110,7 @@ class IP2LivePauseMenu extends Scene.Base {
     }
 
     onKeyPressedAndRepeat(key) {
-        if (this.closing) return true;
+        if (this.closing || this._closed || this._actionRunning) return true;
         if (this.gameplayTestMode) {
             const prev = this.gameplayTestIndex;
             const count = Math.max(1, this.gameplayTests.length);
@@ -149,7 +159,7 @@ class IP2LivePauseMenu extends Scene.Base {
     }
 
     onMouseMove(x, y) {
-        if (this.closing || this.popupProgress < 1) return;
+        if (this.closing || this._closed || this._actionRunning || this.popupProgress < 1) return;
         if (this.gameplayTestMode) {
             const idx = this._getGameplayTestItemAt(x, y);
             if (idx >= 0 && idx !== this.gameplayTestIndex) {
@@ -197,7 +207,7 @@ class IP2LivePauseMenu extends Scene.Base {
     }
 
     onMouseUp(x, y) {
-        if (this.closing || this.popupProgress < 1) return;
+        if (this.closing || this._closed || this._actionRunning || this.popupProgress < 1) return;
         if (this.gameplayTestMode) {
             const nav = (this.gameplayTestNavRects || []).find(r => x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h);
             if (nav) {
@@ -249,12 +259,7 @@ class IP2LivePauseMenu extends Scene.Base {
     }
 
     _getButtonAt(x, y) {
-        const SW = Common.ScreenResolution.SCREEN_X;
-        const SH = Common.ScreenResolution.SCREEN_Y;
-        const cW = Common.Platform.ctx.canvas.width;
-        const cH = Common.Platform.ctx.canvas.height;
-        const scaleX = cW / SW;
-        const scaleY = cH / SH;
+        const { SW, SH, scaleX, scaleY } = IP2Live.PauseUI.viewport(Common.Platform.ctx.canvas);
         const layout = this._getLayout(SW, SH);
         for (let i = 0; i < this.menuItems.length; i++) {
             const by = layout.startY + i * (layout.btnH + layout.btnGap);
@@ -285,12 +290,7 @@ class IP2LivePauseMenu extends Scene.Base {
     }
 
     _isSettingsButtonAt(x, y) {
-        const SW = Common.ScreenResolution.SCREEN_X;
-        const SH = Common.ScreenResolution.SCREEN_Y;
-        const cW = Common.Platform.ctx.canvas.width;
-        const cH = Common.Platform.ctx.canvas.height;
-        const scaleX = cW / SW;
-        const scaleY = cH / SH;
+        const { SW, SH, scaleX, scaleY } = IP2Live.PauseUI.viewport(Common.Platform.ctx.canvas);
         const r = this._settingsButtonLayout(SW, SH);
         return x >= r.x * scaleX && x <= (r.x + r.w) * scaleX &&
             y >= r.y * scaleY && y <= (r.y + r.h) * scaleY;
@@ -299,12 +299,7 @@ class IP2LivePauseMenu extends Scene.Base {
     _isGameplayTestButtonAt(x, y) {
         const gameManager = IP2Live.GameManager;
         if (gameManager && gameManager.enableGameplayTestingButton === false) return false;
-        const SW = Common.ScreenResolution.SCREEN_X;
-        const SH = Common.ScreenResolution.SCREEN_Y;
-        const cW = Common.Platform.ctx.canvas.width;
-        const cH = Common.Platform.ctx.canvas.height;
-        const scaleX = cW / SW;
-        const scaleY = cH / SH;
+        const { SW, SH, scaleX, scaleY } = IP2Live.PauseUI.viewport(Common.Platform.ctx.canvas);
         const r = this._gameplayTestButtonLayout(SW, SH);
         return x >= r.x * scaleX && x <= (r.x + r.w) * scaleX &&
             y >= r.y * scaleY && y <= (r.y + r.h) * scaleY;
@@ -321,21 +316,34 @@ class IP2LivePauseMenu extends Scene.Base {
     }
 
     _confirmSelection() {
+        if (this.closing || this._closed || this._actionTimer || this._actionRunning) return;
         Data.Systems.soundConfirmation.playSound();
         this.glitchActive = true;
         this.glitchTimer = 6;
         this.pendingAction = this.selectedIndex;
         Manager.Stack.requestPaintHUD = true;
-        const self = this;
-        setTimeout(() => {
-            Promise.resolve(self._executeAction(self.pendingAction)).catch((e) => {
+        const selectedIndex = this.selectedIndex;
+        this._actionTimer = setTimeout(() => {
+            this._actionTimer = null;
+            if (this._closed || this.closing || Manager.Stack.top !== this) { this.pendingAction = null; return; }
+            this._actionRunning = true;
+            Promise.resolve().then(() => this._executeAction(selectedIndex)).catch((e) => {
                 console.warn('[IP2Live] PauseMenu action failed:', e);
-            });
+            }).finally(() => { this._actionRunning = false; this.pendingAction = null; });
         }, 100);
     }
 
+    _cancelPendingAction() {
+        if (this._actionTimer) clearTimeout(this._actionTimer);
+        this._actionTimer = null;
+        this.pendingAction = null;
+    }
+
     _resume() {
-        if (this.closing) return;
+        // Input handlers reject competing actions. The selected Resume action
+        // must be allowed to close the menu while its own dispatch is running.
+        if (this.closing || this._closed) return;
+        this._cancelPendingAction();
         Data.Systems.soundCancel.playSound();
         this.closing = true;
         Manager.Stack.requestPaintHUD = true;
@@ -386,7 +394,7 @@ class IP2LivePauseMenu extends Scene.Base {
                     Manager.Stack.push(new IP2LiveExportReportMenu());
                 } else if (IP2Live.GameManager && typeof IP2Live.GameManager.exportProgressReport === 'function') {
                     await IP2Live.GameManager.exportProgressReport({ scopeDays: 30, format: 'both' });
-                    Manager.Stack.pop();
+                    if (!this._closed && Manager.Stack.top === this) Manager.Stack.pop();
                 } else {
                     Data.Systems.soundImpossible.playSound();
                 }
@@ -935,7 +943,6 @@ class IP2LivePauseMenu extends Scene.Base {
             this.glitchTimer--;
             this.glitchActive = this.glitchTimer > 0;
         }
-        this.bgFx.update(this.animTick);
         this.scramble.update(this.selectedIndex, this.hoverIndex);
         if (this.animTick % 2 === 0) Manager.Stack.requestPaintHUD = true;
     }
@@ -944,132 +951,9 @@ class IP2LivePauseMenu extends Scene.Base {
 
     drawHUD() {
         const ctx = Common.Platform.ctx;
-        const SW = Common.ScreenResolution.SCREEN_X;
-        const SH = Common.ScreenResolution.SCREEN_Y;
-        const cW = ctx.canvas.width;
-        const cH = ctx.canvas.height;
-        const scaleX = cW / SW;
-        const scaleY = cH / SH;
-
-        ctx.save();
-
-        this.bgFx.drawBg(ctx, IP2Live.Assets.bgImage, cW, cH);
-        this.bgFx.drawParticles(ctx, scaleX);
-        if (this.networkBackdrop && typeof this.networkBackdrop.draw === 'function') {
-            ctx.save();
-            ctx.globalAlpha = 0.66;
-            this.networkBackdrop.draw(ctx, cW, cH, this.animTick, 0, 0);
-            ctx.restore();
-        }
-        this._drawPauseTwistBackground(ctx, cW, cH, scaleX, scaleY);
-
-        const veil = ctx.createLinearGradient(0, 0, cW, cH);
-        veil.addColorStop(0, 'rgba(0,0,10,0.74)');
-        veil.addColorStop(0.55, 'rgba(4,0,14,0.66)');
-        veil.addColorStop(1, 'rgba(0,0,14,0.78)');
-        ctx.fillStyle = veil;
-        ctx.fillRect(0, 0, cW, cH);
-
-        ctx.globalAlpha = 0.05;
-        ctx.fillStyle = '#000';
-        for (let ly = this.scanlineOffset * scaleY; ly < cH; ly += 4 * scaleY) {
-            ctx.fillRect(0, ly, cW, 1.5 * scaleY);
-        }
-        ctx.globalAlpha = 1;
-
-        // Blend the frozen map into the pause backdrop while the panel pops
-        // in, then reveal it again as Resume closes the panel.
-        if (this.pauseBackdrop) {
-            ctx.globalAlpha = 1 - this.popupProgress;
-            ctx.drawImage(this.pauseBackdrop, 0, 0, cW, cH);
-            ctx.globalAlpha = 1;
-        }
-
-        const layout = this._getLayout(SW, SH);
-        const px = layout.panelX * scaleX;
-        const py = layout.panelY * scaleY;
-        const pw = layout.panelW * scaleX;
-        const ph = layout.panelH * scaleY;
-
-        ctx.save();
-        if (IP2Live.PopupChrome && typeof IP2Live.PopupChrome.animate === 'function') {
-            IP2Live.PopupChrome.animate(ctx, { x: px, y: py, w: pw, h: ph }, this.popupProgress);
-        }
-        this._drawPauseContainer(ctx, px, py, pw, ph, scaleX, scaleY);
-
-        this._drawPausedTitle(ctx, scaleX, scaleY, SW, SH, layout.panelX, layout.panelY, layout.panelW);
-        this._drawGameplayTestButton(ctx, scaleX, scaleY, SW, SH);
-        this._drawPauseSettingsIcon(ctx, scaleX, scaleY, SW, SH);
-
-        const divY = (layout.panelY + 68) * scaleY;
-        ctx.strokeStyle = 'rgba(0,255,255,0.25)';
-        ctx.lineWidth = 1 * scaleX;
-        ctx.beginPath();
-        ctx.moveTo((layout.panelX + 20) * scaleX, divY);
-        ctx.lineTo((layout.panelX + layout.panelW - 20) * scaleX, divY);
-        ctx.stroke();
-
-        for (let i = 0; i < this.menuItems.length; i++) {
-            const by = layout.startY + i * (layout.btnH + layout.btnGap);
-            this._drawButton(ctx, scaleX, scaleY, layout.bx, by, layout.btnW, layout.btnH, this.menuItems[i],
-                i === this.selectedIndex, i === this.hoverIndex, i);
-        }
-
-        ctx.font = (8 * scaleX) + 'px monospace';
-        ctx.fillStyle = 'rgba(0,255,255,0.35)';
-        ctx.textAlign = 'center';
-        ctx.fillText('[ GAME PAUSED - SYS::STANDBY ]', (SW / 2) * scaleX, (layout.panelY + layout.panelH - 14) * scaleY);
-        ctx.textAlign = 'left';
-
-        ctx.restore();
-        ctx.restore();
-
-        if (this.debugMode) {
-            this._drawDebugJumpOverlay(ctx, cW, cH);
-        } else if (this.gameplayTestMode) {
-            this._drawGameplayTestOverlay(ctx, cW, cH);
-        }
-    }
-
-    _drawPauseTwistBackground(ctx, cW, cH, scaleX, scaleY) {
-        const t = this.animTick || 0;
-        const cx = cW * 0.52;
-        const cy = cH * 0.52;
-
-        ctx.save();
-        ctx.translate(cx, cy);
-        ctx.rotate(-0.16);
-
-        // Pause-specific twist: containment rings + command rails.
-        ctx.strokeStyle = 'rgba(255,0,60,0.18)';
-        ctx.lineWidth = 1.2 * scaleX;
-        ctx.beginPath();
-        ctx.ellipse(0, 0, cW * 0.23, cH * 0.17, 0, 0, Math.PI * 2);
-        ctx.stroke();
-
-        ctx.strokeStyle = 'rgba(0,240,255,0.16)';
-        ctx.beginPath();
-        ctx.ellipse(0, 0, cW * 0.18, cH * 0.12, 0, 0, Math.PI * 2);
-        ctx.stroke();
-
-        for (let i = -5; i <= 5; i++) {
-            const y = i * (20 * scaleY);
-            const pulse = 0.10 + 0.10 * (0.5 + 0.5 * Math.sin(t * 0.03 + i));
-            ctx.strokeStyle = i % 2 === 0
-                ? 'rgba(0,240,255,' + pulse.toFixed(3) + ')'
-                : 'rgba(255,0,60,' + (pulse * 0.9).toFixed(3) + ')';
-            ctx.lineWidth = 1 * scaleX;
-            ctx.beginPath();
-            ctx.moveTo(-cW * 0.36, y);
-            ctx.lineTo(cW * 0.36, y - 24 * scaleY);
-            ctx.stroke();
-
-            const travel = ((t * (0.9 + i * 0.02)) + i * 57) % (cW * 0.72);
-            ctx.fillStyle = 'rgba(255,230,0,0.70)';
-            ctx.fillRect(-cW * 0.36 + travel, y - 2 * scaleY, 12 * scaleX, 3 * scaleY);
-        }
-
-        ctx.restore();
+        this.buttonRects = IP2Live.PauseUI.draw(this, ctx, this.popupProgress, true);
+        if (this.debugMode) this._drawDebugJumpOverlay(ctx, ctx.canvas.width, ctx.canvas.height);
+        else if (this.gameplayTestMode) this._drawGameplayTestOverlay(ctx, ctx.canvas.width, ctx.canvas.height);
     }
 
     _drawPauseContainer(ctx, x, y, w, h, scaleX, scaleY) {
@@ -1360,11 +1244,22 @@ class IP2LivePauseMenu extends Scene.Base {
         ctx.restore();
     }
 
-    _drawButton(ctx, scaleX, scaleY, bx, by, bw, bh, label, isSelected, isHover, index) {
+    _drawButton(ctx, scaleX, scaleY, bx, by, bw, bh, label, isSelected, isHover, index, danger = false) {
         const isActive = isSelected || isHover;
-        const isDanger = (label === 'QUIT GAME');
+        const isDanger = danger || label === 'QUIT GAME';
+        const fontName = IP2Live.Assets.nebulaLoaded ? 'Nebula-Regular' : 'monospace';
+        const baseSize = isActive ? 19 : 17;
+        const metricKey = scaleX + ':' + fontName;
+        if (this._pauseMetricKey !== metricKey) { this._pauseMetricKey = metricKey; this._pauseLabelMetrics = new Map(); }
+        const labelKey = baseSize + ':' + bw + ':' + label;
+        let labelFontSize = this._pauseLabelMetrics.get(labelKey);
+        if (labelFontSize === undefined) {
+            ctx.font = 'bold ' + (baseSize * scaleX) + 'px ' + fontName;
+            labelFontSize = Math.min(baseSize, baseSize * (bw - 62) * scaleX / Math.max(1, ctx.measureText(label).width));
+            this._pauseLabelMetrics.set(labelKey, labelFontSize);
+        }
         
-        IP2Live.UI.drawCyberButton({
+        IP2Live.PauseUI.drawButton({
             ctx,
             x: bx * scaleX,
             y: by * scaleY,
@@ -1375,12 +1270,261 @@ class IP2LivePauseMenu extends Scene.Base {
             numberLabel: '0' + (index + 1),
             isActive,
             isDanger,
-            scrambleText: isActive ? this.scramble.getText(index, label) : undefined,
+            labelFontSize,
+            scrambleText: isActive && this.scramble && typeof this.scramble.getText === 'function' ? this.scramble.getText(index, label) : undefined,
             animTick: this.animTick
         });
     }
 }
 window.IP2LivePauseMenu = IP2LivePauseMenu;
+
+/** One pause skin for the world, puzzles and standalone guided lessons. */
+IP2Live.PauseUI = {
+    _frameCache: new Map(),
+    _buttonCache: new Map(),
+
+    viewport(canvas) {
+        const scale = Math.min(canvas.width / 1280, canvas.height / 720);
+        return { SW: canvas.width / scale, SH: canvas.height / scale, scaleX: scale, scaleY: scale };
+    },
+
+    _surface(width, height) {
+        try {
+            const canvas = document.createElement('canvas');
+            canvas.width = Math.max(1, Math.ceil(width)); canvas.height = Math.max(1, Math.ceil(height));
+            const ctx = canvas.getContext('2d');
+            return ctx && ctx.canvas === canvas ? { canvas, ctx } : null;
+        } catch (error) { return null; }
+    },
+
+    _backdropFor(width, height) {
+        // One bounded texture, shared by both pause screens, even on a 4K display.
+        const ratio = Math.min(1, 1280 / width, 720 / height);
+        const w = Math.round(width * ratio), h = Math.round(height * ratio);
+        if (this._backdrop && this._backdrop.canvas.width === w && this._backdrop.canvas.height === h) return this._backdrop;
+        const surface = this._surface(w, h);
+        if (surface) this._drawBackdropArt(surface.ctx, w, h);
+        this._backdrop = surface;
+        return surface;
+    },
+
+    _drawBackdropArt(ctx, width, height) {
+        const s = Math.min(width / 1280, height / 720);
+        const sample = (index, salt) => { const n = Math.sin(index * 127.1 + salt * 311.7) * 43758.5453; return n - Math.floor(n); };
+        ctx.save();
+        const base = ctx.createLinearGradient(0, 0, width, height);
+        base.addColorStop(0, '#02050a'); base.addColorStop(0.5, '#08121b'); base.addColorStop(1, '#03060d');
+        ctx.fillStyle = base; ctx.fillRect(0, 0, width, height);
+        for (const [x, y, color] of [[0.17, 0.43, 'rgba(30,113,127,0.14)'], [0.83, 0.38, 'rgba(96,58,145,0.13)']]) {
+            const light = ctx.createRadialGradient(width * x, height * y, 0, width * x, height * y, width * 0.45);
+            light.addColorStop(0, color); light.addColorStop(1, 'rgba(2,5,10,0)');
+            ctx.fillStyle = light; ctx.fillRect(0, 0, width, height);
+        }
+        // Recessed, lightly brushed side plates give depth without a busy map.
+        for (let side = 0; side < 2; side++) {
+            ctx.save();
+            if (side) { ctx.translate(width, 0); ctx.scale(-1, 1); }
+            ctx.beginPath(); ctx.moveTo(0, height * 0.12); ctx.lineTo(width * 0.20, height * 0.06);
+            ctx.lineTo(width * 0.30, height * 0.25); ctx.lineTo(width * 0.23, height * 0.80);
+            ctx.lineTo(0, height * 0.95); ctx.closePath();
+            const metal = ctx.createLinearGradient(0, 0, width * 0.31, height);
+            metal.addColorStop(0, 'rgba(32,49,63,0.20)'); metal.addColorStop(0.45, 'rgba(8,15,24,0.30)');
+            metal.addColorStop(1, 'rgba(29,46,60,0.09)');
+            ctx.fillStyle = metal; ctx.fill(); ctx.strokeStyle = 'rgba(97,143,164,0.09)'; ctx.lineWidth = s; ctx.stroke();
+            ctx.clip();
+            for (let y = 0; y < height; y += 6 * s) {
+                ctx.fillStyle = 'rgba(137,173,190,0.018)'; ctx.fillRect(0, y, width * 0.32, s * 0.5);
+            }
+            for (let i = 0; i < 110; i++) {
+                ctx.fillStyle = 'rgba(125,170,186,0.055)';
+                ctx.fillRect(sample(i, 1) * width * 0.31, sample(i, 2) * height, s, s);
+            }
+            ctx.restore();
+        }
+        // Sparse fixed texture; no new randomness or allocations per particle.
+        ctx.fillStyle = 'rgba(135,167,187,0.028)';
+        for (let i = 0; i < 260; i++) ctx.fillRect(sample(i, 3) * width, sample(i, 4) * height, s, s);
+        const vignette = ctx.createRadialGradient(width * 0.5, height * 0.48, height * 0.2, width * 0.5, height * 0.48, Math.max(width, height) * 0.65);
+        vignette.addColorStop(0, 'rgba(0,0,0,0)'); vignette.addColorStop(1, 'rgba(0,2,7,0.72)');
+        ctx.fillStyle = vignette; ctx.fillRect(0, 0, width, height);
+        ctx.restore();
+    },
+
+    _prepareParticles() {
+        if (this._particles) return;
+        const sample = (index, salt) => { const n = Math.sin(index * 127.1 + salt * 311.7) * 43758.5453; return n - Math.floor(n); };
+        this._particles = Array.from({ length: 90 }, (_, index) => {
+            const layer = Math.floor(index / 30), depth = 0.45 + layer * 0.4;
+            return { x: sample(index, 5), y: sample(index, 6), depth,
+                speed: (0.10 + sample(index, 7) * 0.22) * depth,
+                size: (0.65 + sample(index, 8) * 1.25) * depth,
+                alpha: 0.12 + layer * 0.08, chip: index % 30 % 7 === 0, purple: index % 30 % 5 === 0 };
+        });
+        // Soft sprites replace Canvas filter blur, which can create a screen-sized
+        // intermediate bitmap for every particle on some desktop GPUs.
+        this._particleAtlas = this._surface(128, 32);
+        if (!this._particleAtlas) return;
+        const ctx = this._particleAtlas.ctx;
+        for (let i = 0; i < 4; i++) {
+            const x = i * 32 + 16, color = i % 2 ? '178,143,216' : '111,207,213';
+            const glow = ctx.createRadialGradient(x, 16, 0, x, 16, 12);
+            glow.addColorStop(0, 'rgba(' + color + ',1)'); glow.addColorStop(0.3, 'rgba(' + color + ',0.65)');
+            glow.addColorStop(1, 'rgba(' + color + ',0)'); ctx.fillStyle = glow;
+            ctx.fillRect(i * 32, 0, 32, 32);
+            if (i >= 2) { ctx.fillStyle = 'rgb(' + color + ')'; ctx.fillRect(x - 6, 15, 12, 2); }
+        }
+    },
+
+    drawBackdrop(ctx, width, height, tick) {
+        const backdrop = this._backdropFor(width, height);
+        if (backdrop) ctx.drawImage(backdrop.canvas, 0, 0, width, height);
+        else this._drawBackdropArt(ctx, width, height);
+        this._prepareParticles();
+        const s = Math.min(width / 1280, height / 720);
+        ctx.save();
+        for (let i = 0; i < this._particles.length; i++) {
+            const p = this._particles[i];
+            const x = p.x * width + Math.sin(tick * 0.004 + i) * 10 * s * p.depth;
+            const y = ((p.y * height - tick * p.speed * s) % height + height) % height;
+            const size = p.size * s;
+            ctx.globalAlpha = p.alpha * (0.65 + 0.35 * Math.sin(tick * 0.012 + i));
+            if (this._particleAtlas) {
+                const sprite = (p.chip ? 2 : 0) + (p.purple ? 1 : 0);
+                ctx.drawImage(this._particleAtlas.canvas, sprite * 32, 0, 32, 32, x - size * 3, y - size * 3, size * 6, size * 6);
+            } else {
+                ctx.fillStyle = p.purple ? '#b28fd8' : '#6fcfd5';
+                if (p.chip) ctx.fillRect(x, y, size * 2.8, Math.max(s * 0.6, size * 0.6));
+                else { ctx.beginPath(); ctx.arc(x, y, size, 0, Math.PI * 2); ctx.fill(); }
+            }
+        }
+        ctx.restore();
+    },
+
+    _drawFrame(skin, ctx, panel, scale) {
+        const unit = Math.min(scale, 1.5), padding = 24 * unit;
+        const w = panel.w / scale * unit, h = panel.h / scale * unit;
+        const key = w + ':' + h + ':' + unit;
+        let frame = this._frameCache.get(key);
+        if (!frame) {
+            frame = this._surface(w + padding * 2, h + padding * 2);
+            if (!frame) { skin._drawPauseContainer(ctx, panel.x, panel.y, panel.w, panel.h, scale, scale); return; }
+            const tick = skin.animTick; skin.animTick = 0;
+            skin._drawPauseContainer(frame.ctx, padding, padding, w, h, unit, unit);
+            skin.animTick = tick;
+            // World/gameplay panels are reused. Resize never grows an unbounded cache.
+            if (this._frameCache.size >= 2) this._frameCache.delete(this._frameCache.keys().next().value);
+            this._frameCache.set(key, frame);
+        }
+        ctx.drawImage(frame.canvas, panel.x - padding * scale / unit, panel.y - padding * scale / unit,
+            frame.canvas.width * scale / unit, frame.canvas.height * scale / unit);
+    },
+
+    drawButton(options) {
+        const { ctx, x, y, w, h, scaleX, scaleY, isActive, isDanger } = options;
+        const unit = Math.min(scaleX, 1.5), ratio = unit / scaleX, padding = 32 * unit;
+        const key = w * ratio + ':' + h * ratio + ':' + unit + ':' + !!isActive + ':' + !!isDanger;
+        let chrome = this._buttonCache.get(key);
+        if (!chrome) {
+            chrome = this._surface(w * ratio + padding * 2, h * ratio + padding * 2);
+            if (!chrome) { IP2Live.UI.drawCyberButton(options); return; }
+            IP2Live.UI.drawCyberButton({ ...options, ctx: chrome.ctx, x: padding, y: padding,
+                w: w * ratio, h: h * ratio, scaleX: unit, scaleY: scaleY * ratio,
+                paintLabel: false, animTick: undefined });
+            if (this._buttonCache.size >= 12) this._buttonCache.delete(this._buttonCache.keys().next().value);
+            this._buttonCache.set(key, chrome);
+        }
+        ctx.drawImage(chrome.canvas, x - padding / ratio, y - padding / ratio,
+            chrome.canvas.width / ratio, chrome.canvas.height / ratio);
+        // Only the small moving scan and label are live; the expensive shadow,
+        // border, fill and gradient are all in the reusable button texture.
+        IP2Live.UI.drawCyberButton({ ...options, paintChrome: false });
+    },
+
+    captureBackdrop(includeWorld = false) {
+        const source = Common.Platform.ctx.canvas;
+        const ratio = Math.min(1, 1280 / source.width, 720 / source.height);
+        const surface = this._surface(source.width * ratio, source.height * ratio);
+        if (!surface) return null;
+        const renderer = Manager.GL && Manager.GL.renderer;
+        if (includeWorld && renderer && renderer.domElement) surface.ctx.drawImage(renderer.domElement, 0, 0, surface.canvas.width, surface.canvas.height);
+        surface.ctx.drawImage(source, 0, 0, surface.canvas.width, surface.canvas.height);
+        return surface.canvas;
+    },
+
+    scheduleWarmup() {
+        if (this._warmupScheduled || typeof document === 'undefined') return;
+        this._warmupScheduled = true;
+        const warm = () => {
+            const canvas = Common.Platform.ctx && Common.Platform.ctx.canvas;
+            if (!canvas) return;
+            this._backdropFor(canvas.width, canvas.height); this._prepareParticles();
+            const skin = Object.create(IP2LivePauseMenu.prototype);
+            const { SW, SH, scaleX } = this.viewport(canvas);
+            for (const count of [3, 6]) {
+                skin.menuItems = Array(count).fill('');
+                const layout = skin._getLayout(SW, SH);
+                // Populate the frame cache offscreen before the first pause click.
+                const target = this._surface(1, 1);
+                if (target) this._drawFrame(skin, target.ctx, { x: 0, y: 0, w: layout.panelW * scaleX, h: layout.panelH * scaleX }, scaleX);
+            }
+            const buttons = this._surface(1, 1);
+            if (buttons) for (const isActive of [false, true]) for (const isDanger of [false, true]) {
+                this.drawButton({ ctx: buttons.ctx, x: 0, y: 0, w: 320 * scaleX, h: 46 * scaleX,
+                    scaleX, scaleY: scaleX, isActive, isDanger, paintLabel: false });
+            }
+            if (IP2Live.Assets.loadPauseFonts) IP2Live.Assets.loadPauseFonts().then(() => {
+                const text = this._surface(512, 96);
+                if (!text) return;
+                text.ctx.font = 'bold 42px Abnes'; text.ctx.fillText('PAUSED', 0, 42);
+                text.ctx.font = 'bold 28px Nebula-Regular'; text.ctx.fillText('RESUME SETTINGS EXIT QUEST', 0, 80);
+            });
+        };
+        if (window.requestIdleCallback) window.requestIdleCallback(warm, { timeout: 2000 });
+        else if (typeof setTimeout === 'function') setTimeout(warm, 250);
+    },
+
+    draw(scene, ctx, progress, headerActions = false) {
+        const { width, height } = ctx.canvas;
+        const { SW, SH, scaleX, scaleY } = this.viewport(ctx.canvas);
+        const skin = scene instanceof IP2LivePauseMenu ? scene
+            : (scene._pauseSkin || (scene._pauseSkin = Object.create(IP2LivePauseMenu.prototype)));
+        skin.menuItems = scene.menuItems.map(item => typeof item === 'string' ? item : item.title);
+        skin.animTick = scene.animTick; skin.selectedIndex = scene.selectedIndex; skin.hoverIndex = scene.hoverIndex;
+        const layout = skin._getLayout(SW, SH);
+        if (scene._pauseReducedMotion === undefined) scene._pauseReducedMotion = !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
+        ctx.save();
+        this.drawBackdrop(ctx, width, height, scene._pauseReducedMotion ? 0 : scene.animTick || 0);
+        // The frozen source is only blended during entrance/exit; no live
+        // gameplay update or screen-sized blur runs behind the pause panel.
+        if (scene.pauseBackdrop && progress < 1) {
+            ctx.globalAlpha = 1 - progress; ctx.drawImage(scene.pauseBackdrop, 0, 0, width, height); ctx.globalAlpha = 1;
+        }
+        const panel = { x: layout.panelX * scaleX, y: layout.panelY * scaleY, w: layout.panelW * scaleX, h: layout.panelH * scaleY };
+        ctx.save();
+        if (IP2Live.PopupChrome && typeof IP2Live.PopupChrome.animate === 'function') IP2Live.PopupChrome.animate(ctx, panel, progress);
+        else ctx.globalAlpha = progress;
+        this._drawFrame(skin, ctx, panel, scaleX);
+        skin._drawPausedTitle(ctx, scaleX, scaleY, SW, SH, layout.panelX, layout.panelY, layout.panelW);
+        if (headerActions) {
+            skin._drawGameplayTestButton(ctx, scaleX, scaleY, SW, SH);
+            skin._drawPauseSettingsIcon(ctx, scaleX, scaleY, SW, SH);
+        }
+        const rects = [];
+        for (let i = 0; i < skin.menuItems.length; i++) {
+            const y = layout.startY + i * (layout.btnH + layout.btnGap);
+            const item = scene.menuItems[i];
+            skin._drawButton(ctx, scaleX, scaleY, layout.bx, y, layout.btnW, layout.btnH, skin.menuItems[i],
+                i === scene.selectedIndex && !scene.pending, i === scene.hoverIndex, i, !!item.danger);
+            rects.push({ x: layout.bx * scaleX, y: y * scaleY, w: layout.btnW * scaleX, h: layout.btnH * scaleY });
+        }
+        ctx.font = (8 * scaleX) + 'px monospace'; ctx.fillStyle = 'rgba(100,202,204,0.44)';
+        ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
+        ctx.fillText('[ GAME PAUSED - SYS::STANDBY ]', width / 2, (layout.panelY + layout.panelH - 14) * scaleY);
+        ctx.restore(); ctx.restore();
+        return rects;
+    },
+};
+IP2Live.PauseUI.scheduleWarmup();
 
 // Intercept ESC in Scene.Map to open the pause menu
 inject(Scene.Map, 'onKeyPressed', function (key) {
@@ -1389,11 +1533,15 @@ inject(Scene.Map, 'onKeyPressed', function (key) {
         Data.Systems.soundConfirmation.playSound();
         let pauseBackdrop = null;
         try {
-            if (IP2Live.PopupChrome && typeof IP2Live.PopupChrome.capture === 'function') {
-                pauseBackdrop = IP2Live.PopupChrome.capture();
-            }
+            pauseBackdrop = IP2Live.PauseUI.captureBackdrop(true);
         } catch (error) {}
-        Manager.Stack.push(new IP2LivePauseMenu(pauseBackdrop));
+        const menu = new IP2LivePauseMenu(pauseBackdrop);
+        try {
+            Manager.Stack.push(menu);
+        } catch (error) {
+            menu.close();
+            throw error;
+        }
         Manager.Stack.requestPaintHUD = true;
     } else {
         this.super(key);

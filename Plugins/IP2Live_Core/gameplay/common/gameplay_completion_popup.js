@@ -15,13 +15,15 @@
         begin(screen, options) {
             if (!screen || screen[STATE_KEY]) return false;
             const config = Object.assign({}, options || {});
-            const durationMs = Math.max(650, Math.min(5000, Number(config.durationMs) || this.DEFAULT_DURATION_MS));
+            const silent = !!(screen.options && screen.options.tutorialCourse);
+            const durationMs = silent ? 0 : Math.max(650, Math.min(5000, Number(config.durationMs) || this.DEFAULT_DURATION_MS));
             const startedAt = Number(config.startedAt) || Date.now();
             screen[STATE_KEY] = {
                 startedAt,
                 durationMs,
                 config,
                 completed: false,
+                silent,
                 dialoguePausedAt: this._dialogueIsActive() ? startedAt : null,
             };
             if (Manager && Manager.Stack) Manager.Stack.requestPaintHUD = true;
@@ -69,7 +71,7 @@
 
         drawFor(screen, ctx, overrides) {
             const state = screen && screen[STATE_KEY];
-            if (!state || state.completed) return false;
+            if (!state || state.completed || state.silent) return false;
             if (this._syncDialoguePause(state, Date.now())) return false;
             return this.draw(ctx, Object.assign({}, state.config || {}, overrides || {}, {
                 progress: this.progressFor(screen),
@@ -78,6 +80,7 @@
 
         draw(ctx, options) {
             if (!ctx || !ctx.canvas || this._dialogueIsActive()) return false;
+            if (IP2Live.PracticeMode && IP2Live.PracticeMode.active && IP2Live.PracticeMode.course) return false;
             const config = options || {};
             const cW = Number(ctx.canvas.width) || 1280;
             const cH = Number(ctx.canvas.height) || 720;

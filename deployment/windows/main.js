@@ -8,10 +8,12 @@ import { readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { IP2LiveStorageService } from './storage-service.js';
+import { IP2LivePVPService } from './pvp-service.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const APPLICATION_NAME = 'IP2Live';
+const pvp = new IP2LivePVPService();
 const isDevelopment = process.argv.includes('--dev');
 
 function resolveLocalAppData() {
@@ -269,6 +271,9 @@ if (hasSingleInstanceLock) {
     });
 
     registerStorageIPC();
+    for (const operation of ['create', 'discover', 'join', 'poll', 'ready', 'start', 'result', 'leave']) {
+        ipcMain.handle('ip2live-pvp:' + operation, trustedHandler(payload => pvp[operation](payload)));
+    }
     registerEngineIPC();
 
     app.whenReady().then(async () => {
@@ -297,7 +302,7 @@ if (hasSingleInstanceLock) {
         if (quittingAfterFlush) return;
         event.preventDefault();
         quittingAfterFlush = true;
-        storage.flush().finally(() => app.quit());
+        Promise.allSettled([storage.flush(), pvp.leave()]).finally(() => app.quit());
     });
 
     app.on('window-all-closed', () => app.quit());

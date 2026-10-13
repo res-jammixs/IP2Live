@@ -8,9 +8,10 @@
  */
 
 class IP2LiveVLSMAllocatorGameplayScreen extends Scene.Base {
-    constructor(options) {
+    constructor(options, timeSeconds) {
         super(true);
         this.options = options || {};
+        this._constructorTimeSeconds = timeSeconds;
         this._configure();
     }
 
@@ -47,6 +48,7 @@ class IP2LiveVLSMAllocatorGameplayScreen extends Scene.Base {
         this.selectedPrefix = allocation ? Number(allocation.prefix) : Math.min(30, optimal + 1);
         this.selectedBlockIndex = allocation ? this._blockIndexFor(allocation.start, this.selectedPrefix) : 0;
         this._clampSelection();
+        if (IP2Live.GameplayTimer) IP2Live.GameplayTimer.reset(this);
     }
 
     async load() {
@@ -55,6 +57,7 @@ class IP2LiveVLSMAllocatorGameplayScreen extends Scene.Base {
     }
 
     update() {
+        if (IP2Live.GameplayTimer && IP2Live.GameplayTimer.update(this)) return;
         this.animTick++;
         if (IP2Live.GameplayCompletionPopup && typeof IP2Live.GameplayCompletionPopup.update === 'function') {
             IP2Live.GameplayCompletionPopup.update(this);
@@ -119,6 +122,7 @@ class IP2LiveVLSMAllocatorGameplayScreen extends Scene.Base {
     }
 
     onMouseDown(x, y) {
+        if (this.finished) return true;
         if (IP2Live.DialogueManager && IP2Live.DialogueManager.isActive()) {
             IP2Live.DialogueManager.advance();
             return true;
@@ -159,6 +163,7 @@ class IP2LiveVLSMAllocatorGameplayScreen extends Scene.Base {
         this._drawFooter(ctx, m);
         this._drawTutorialFocus(ctx, m);
         ctx.restore();
+        if (IP2Live.GameplayTimer) IP2Live.GameplayTimer.draw(this, ctx);
         if (IP2Live.DialogueManager && typeof IP2Live.DialogueManager.drawOverlay === 'function') IP2Live.DialogueManager.drawOverlay(ctx);
         if (IP2Live.GameplayCompletionPopup && typeof IP2Live.GameplayCompletionPopup.drawFor === 'function') {
             IP2Live.GameplayCompletionPopup.drawFor(this, ctx, { tick: this.animTick || 0 });
@@ -769,21 +774,25 @@ class IP2LiveVLSMAllocatorGameplayScreen extends Scene.Base {
 
     _assessmentResult() {
         const history = this.decisionHistory || [], correct = history.filter(row => row.correct).length;
-        return { telemetrySchemaVersion: 2, totalDecisions: history.length, correctDecisions: correct,
+        return { ...(IP2Live.GameplayTimer ? IP2Live.GameplayTimer.result(this) : {}),
+            telemetrySchemaVersion: 2, totalDecisions: history.length, correctDecisions: correct,
             incorrectDecisions: history.length - correct, decisionHistory: this._clone(history),
             attemptsUsed: history.length, maxAttempts: this.tutorialMode ? 0 : this.maxAttempts };
     }
 
-    _finishFailure(mistake) {
+    _onTimerExpired() { this._finishFailure({ issueType: 'timeout' }, 'time_expired'); }
+
+    _finishFailure(mistake, reason = 'attempts_exhausted') {
         if (this.finished) return;
         this.finished = true;
-        this.errorText = 'VALIDATION BUDGET EXHAUSTED. APEX HAS RECLAIMED THIS TERMINAL.';
+        this.errorText = reason === 'time_expired' ? 'TIME EXPIRED. TERMINAL LINK LOST.'
+            : 'VALIDATION BUDGET EXHAUSTED. APEX HAS RECLAIMED THIS TERMINAL.';
         this.errorTimer = 90;
         const result = {
             ...this._assessmentResult(),
             gameplayId: 'ip_vlsm_allocator',
             passed: false,
-            reason: 'attempts_exhausted',
+            reason,
             attemptsUsed: this.validationFailures,
             maxAttempts: this.maxAttempts,
             retries: this.validationFailures,
@@ -1120,6 +1129,7 @@ const VLSMAllocatorGameplayManager = {
         const self = this;
         const open = function () {
             const screen = new IP2LiveVLSMAllocatorGameplayScreen({
+                ...(IP2Live.GameplayTimer ? IP2Live.GameplayTimer.launchOptions(opts) : {}),
                 spec: spec,
                 scenario: self.scenario(),
                 state: self.state(),
@@ -1309,7 +1319,9 @@ const VLSMAllocatorGameplayManager = {
     _playMusicZone(zoneName) {
         const music = IP2Live.MusicManager;
         if (!music || !music.ZONE || !music.ZONE[zoneName] || typeof music.play !== 'function') return false;
-        music.play(music.ZONE[zoneName]);
+        if (zoneName.indexOf('GAMEPLAY_') === 0 && typeof music.playGameplay === 'function') music.playGameplay('ip_vlsm_allocator');
+        else if (zoneName.indexOf('STAGE_') === 0 && typeof music.restoreContext === 'function') music.restoreContext();
+        else music.play(music.ZONE[zoneName]);
         return true;
     },
 
@@ -1335,8 +1347,10 @@ IP2Live.VLSMAllocatorGameplayManager = VLSMAllocatorGameplayManager;
 IP2Live.VLSMAllocatorGameplayScreen = IP2LiveVLSMAllocatorGameplayScreen;
 window.IP2LiveVLSMAllocatorGameplayManager = VLSMAllocatorGameplayManager;
 window.IP2LiveVLSMAllocatorGameplayScreen = IP2LiveVLSMAllocatorGameplayScreen;
-window.startVLSMAllocatorGameplay = function (options) {
-    return VLSMAllocatorGameplayManager.launchVLSMAllocatorGameplay(options || {});
+window.startVLSMAllocatorGameplay = function (options, timeSeconds) {
+    const opts = Object.assign({}, options || {});
+    if (Number.isFinite(Number(timeSeconds)) && Number(timeSeconds) > 0) opts.timeLimitSeconds = Number(timeSeconds);
+    return VLSMAllocatorGameplayManager.launchVLSMAllocatorGameplay(opts);
 };
 
 console.log('[IP2Live] ip_vlsm_allocator_gameplay.js module loaded.');

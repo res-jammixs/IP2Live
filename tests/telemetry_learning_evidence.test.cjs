@@ -190,6 +190,39 @@ async function main() {
         assert.ok(events.every(row => row.payload.tutorialReplayId === 'replay-1'));
         assert.ok(events.every(row => row.payload.tutorialOfferId === 'offer-1'));
     }
+    {
+        const h = harness();
+        h.load('modules/screens/gameplay-pause.js');
+        h.context.Core.Game.current = null;
+        const pause = h.context.IP2Live.GameplayPause, screen = new h.Screen();
+        screen.options = { gameplayId: 'ip_class_wires', questId: 'practice-round', tutorialReplay: true, practiceMode: true };
+        h.context.IP2Live.TutorialReplay = { session: { screen, pvp: false, practice: true, options: screen.options } };
+        h.frames.push(screen);
+        screen.initialize(); screen.update(); h.advance(200); screen.update();
+        pause.menuOpen = true; h.advance(300); screen.update();
+        pause.menuOpen = false; screen.helpOpen = true; h.advance(100); screen.update();
+        screen.helpOpen = false; h.advance(200); screen.update();
+        const timing = pause.getReportTiming('ip_class_wires', screen.options);
+        assert.equal(timing.activeElapsedMs, 400, 'isolated practice needs an active clock even with no campaign Game');
+        assert.equal(timing.helpElapsedMs, 100);
+        h.context.IP2Live.TutorialReplay.session = null;
+        h.advance(100); screen.update();
+        assert.equal(pause.getReportTiming('ip_class_wires', screen.options), null, 'stale practice screens must not contribute timing');
+        assert.equal(screen.learningTelemetryClock.activeElapsedMs, 400);
+    }
+    {
+        const h = harness(); h.load('modules/screens/gameplay-pause.js');
+        h.context.Core.Game.current = null;
+        const pause = h.context.IP2Live.GameplayPause, screen = new h.Screen();
+        screen.options = { gameplayId: 'ip_class_wires', questId: 'pvp-round', tutorialReplay: true, pvpMode: true };
+        const featureSession = { ended: false };
+        h.context.IP2Live.TutorialReplay = { session: { screen, pvp: true, practice: true, options: screen.options, featureSession } };
+        h.frames.push(screen); screen.initialize(); screen.update();
+        h.advance(300); screen.update();
+        assert.equal(pause.getReportTiming('ip_class_wires', screen.options).activeElapsedMs, 300, 'human PVP rounds also use the shared active clock');
+        featureSession.ended = true; h.advance(100); screen.update();
+        assert.equal(pause.getReportTiming('ip_class_wires', screen.options), null, 'finished PVP sessions cannot keep recording active time');
+    }
     console.log('telemetry_learning_evidence.test.cjs: PASS');
 }
 main().catch(error => { console.error(error); process.exitCode = 1; });

@@ -1,7 +1,7 @@
 /**
  * IP2Live - Darklights Game State
  *
- * Stage 1 ambience pressure: dark room, soft player vision, and sequential
+ * Floor ambience pressure: dark room, soft player vision, and sequential
  * light restoration after IPWires-family objectives.
  * Loaded by code.js via fetch() + new Function(). Do not use import/export.
  */
@@ -34,8 +34,11 @@
                 ? store.brightnessStep
                 : (maxStep - Number(store.dimLevel || 0));
             const step = Math.max(0, Math.min(maxStep, Number(rawStep) || 0));
-            const visibility = step / maxStep;
-            const darkness = 1 - visibility;
+            const config = options?.config || gsm._darklightsConfigForMap(mapId) || {};
+            const baseline = Number(config.baselineBrightnessStep) || 0;
+            const progress = Math.max(0, Math.min(1, (step - baseline) / Math.max(1, maxStep - baseline)));
+            const visibility = 0.1 + progress * 0.9;
+            const darkness = 1 - progress;
             const scene = (options && options.scene) || (Scene && Scene.Map && Scene.Map.current) || null;
             const lighting = IP2Live.LightingManager;
             if (!lighting || typeof lighting.setPreset !== 'function') return false;
@@ -46,7 +49,9 @@
                 return true;
             }
 
-            const overlayAlpha = 0.2 + darkness * 0.72;
+            const startingDim = Math.max(0, Math.min(0.95, Number(config.startingDimOverlay ?? 0.88)));
+            const minimumLight = Math.max(0, Math.min(1, Number(config.minimumSceneLightMultiplier ?? 0.2)));
+            const overlayAlpha = darkness * startingDim;
             const radius = 110 + visibility * 70;
             const feather = 24 + visibility * 22;
 
@@ -55,7 +60,7 @@
                 enabled: true,
                 dimOverlay: overlayAlpha,
                 overlayColor: '2, 7, 12',
-                sceneLightMultiplier: 0.2 + visibility * 0.64,
+                sceneLightMultiplier: minimumLight + progress * (1 - minimumLight),
                 clearColor: 0x02070c,
                 clearAlpha: 1,
                 fog: {

@@ -39,55 +39,33 @@ class IP2LiveDialogueManager {
     }
 
     _createDialogueRegistry() {
-        return {
+        const registry = {
             'tutorial.intro': {
-                title: 'MISSION BRIEF',
-                speaker: 'SYSTEM',
+                title: 'THE SERVICE ACCESS',
+                speaker: 'NEURAL LINK',
                 slides: [
                     [
-                        'SYSTEM BOOT... NEURAL DECK ONLINE.',
-                        'Welcome, Infiltrator.',
+                        'Neural link established. We are beneath the facility that hoards our world\'s resources.',
+                        'APEX guards every route inside. Your subnetting knowledge is our way through.',
                     ],
                     [
-                        'The world you knew is gone.',
-                        'Neo-Gaia is a fractured civilisation where megacorporations',
-                        'known as the APEX ELITES seized control of every critical ',
-                        'facility left standing after the collapse.',
+                        'First, calibrate your movement and camera. Follow the route beacon to the service entrance.',
+                        'Then climb toward the command core and break its control over the planet\'s supplies.',
                     ],
                     [
-                        'Power grids. Water treatment. Medical networks. All locked,',
-                        'behind encrypted subnets accessible only to those with the',
-                        'proper clearance codes. They have the access. We have nothing.',
-                    ],
-                    [
-                        'You were an engineer before the walls went up. You still know ',
-                        'the systems. You still know the protocols. And you are the',
-                        'only one left who can break through.',
-                    ],
-                    [
-                        'Your mission:',
-                        'Infiltrate the APEX facilities. Crack their subnet protocols.',
-                        'Dismantle their infrastructure stage by stage until the world ',
-                        'belongs to the people once more.',
-                    ],
-                    [
-                        'This is not just survival.',
-                        'This is reclamation.',
-                        'The facility is waiting, Infiltrator.',
-                        "Let's get you combat-ready.",
+                        'Keep the infrastructure working. End the system that denies it to everyone else.',
+                        'The water, power and essential supplies belong to the people of Neo-Gaia.',
                     ],
                 ],
             },
 
             'tutorial.outro': {
-                title: 'MISSION BRIEF',
-                speaker: 'SYSTEM',
+                title: 'THE FIRST BREACH',
+                speaker: 'NEURAL LINK',
                 slides: [
                     [
-                        'DESTINATION REACHED.',
-                        '',
-                        'You are now ready to navigate your way through the world.',
-                        'Initiating phase shift to the next world...',
+                        'Movement calibrated. You have reached the service entrance.',
+                        'Repair the wire relays ahead, restore this darkened floor and begin the climb toward APEX.',
                     ],
                 ],
             },
@@ -121,6 +99,7 @@ class IP2LiveDialogueManager {
                 ],
             },
         };
+        return Object.assign(registry, IP2Live.StoryLore?.dialogues || {});
     }
 
     _createTutorialSteps() {
@@ -128,28 +107,28 @@ class IP2LiveDialogueManager {
             {
                 phase: 1,
                 header: 'STEP 01  //  NAVIGATION',
-                body: 'Press {{key:W|KeyW}} or {{key:S|KeyS}} to move forward or backward — try it now.',
+                body: 'Calibrate your movement for the infiltration: press {{key:W|KeyW}} and {{key:S|KeyS}} to move forward and backward.',
                 hint: '',
                 keys: ['KeyW', 'KeyS'],
             },
             {
                 phase: 2,
                 header: 'STEP 02  //  NAVIGATION',
-                body: 'Press {{key:A|KeyA}} or {{key:D|KeyD}} to strafe left or right — try it now.',
+                body: 'Move around the service obstacles: press {{key:A|KeyA}} and {{key:D|KeyD}} to strafe left and right.',
                 hint: '',
                 keys: ['KeyA', 'KeyD'],
             },
             {
                 phase: 3,
                 header: 'STEP 03  //  CAMERA CONTROL',
-                body: 'Press {{key:LEFT|ArrowLeft}} or {{key:RIGHT|ArrowRight}} to rotate the camera left or right — try it now.',
+                body: 'Check the approach to APEX: press {{key:LEFT|ArrowLeft}} and {{key:RIGHT|ArrowRight}} to rotate the camera in both directions.',
                 hint: '',
                 keys: ['ArrowLeft', 'ArrowRight'],
             },
             {
                 phase: 4,
                 header: 'STEP 04  //  QUEST AREA',
-                body: 'The upper-left panel is your QUEST AREA. These objectives are necessary to unlock the next stage.',
+                body: 'Your QUEST AREA tracks each breach. Follow its beacon and complete the objectives to open the next floor of the APEX facility.',
                 hint: '[ PRESS ENTER TO ACKNOWLEDGE ]',
                 keys: ['Enter', 'Space', 'KeyZ'],
             },
@@ -230,8 +209,11 @@ class IP2LiveDialogueManager {
     }
 
     loadDialogueLibrary(library) {
-        const entries = Array.isArray(library) ? library : (library && library.dialogues) || [];
+        let entries = Array.isArray(library) ? library : (library && library.dialogues) || [];
         if (!Array.isArray(entries)) return false;
+        const merged = new Map(entries.map(entry => [entry.id, entry]));
+        for (const entry of Object.values(IP2Live.StoryLore?.dialogues || {})) merged.set(entry.id, entry);
+        entries = Array.from(merged.values());
 
         this.dialogueLibrary = [];
         for (let i = 0; i < entries.length; i++) {
@@ -395,6 +377,10 @@ class IP2LiveDialogueManager {
         return this.interactItem(itemId, context);
     }
 
+    _currentGame() {
+        return typeof Core !== 'undefined' && Core.Game ? Core.Game.current : null;
+    }
+
     start(dialogueId, context) {
         const ctx = context || {};
         const isTitleActive = this._worldTitleBlocksDialogue();
@@ -418,9 +404,12 @@ class IP2LiveDialogueManager {
 
         this._active = {
             id: dialogueId,
+            ownerGame: this._currentGame(),
+            ownerMapScene: ctx.scene || (Scene.Map && Scene.Map.current) || null,
             title: dialogue.title || 'TRANSMISSION',
             speaker: dialogue.speaker || 'SYSTEM',
-            slides: this._cloneSlides(dialogue.slides),
+            slides: IP2Live.StoryLore ? IP2Live.StoryLore.contextualizeGameplay(dialogueId, dialogue,
+                this._cloneSlides(dialogue.slides), ctx) : this._cloneSlides(dialogue.slides),
             slideIndex: 0,
             lockMovement: dialogue.lockMovement !== false,
             allowMovementDuringDialogue: !!(dialogue.allowMovementDuringDialogue || ctx.allowMovementDuringDialogue),
@@ -490,7 +479,7 @@ class IP2LiveDialogueManager {
     }
 
     advance() {
-        if (!this._active) return false;
+        if (!this._active || this._teachingSuspended()) return false;
 
         const fullText = this._activeFullText();
         if (this._active.typeChars < fullText.length) {
@@ -559,7 +548,7 @@ class IP2LiveDialogueManager {
     }
 
     drawOverlay(ctx) {
-        if (!this._active || !ctx) return;
+        if (!this._active || !ctx || this._teachingSuspended()) return;
 
         const active = this._active;
         active.animTick++;
@@ -766,7 +755,7 @@ class IP2LiveDialogueManager {
     }
 
     drawHudFocusOverlay(ctx) {
-        if (!ctx || !this.isHudFocusActive()) return false;
+        if (!ctx || !this.isHudFocusActive() || this._teachingSuspended()) return false;
         const active = this._active;
         const slide = active.slides[active.slideIndex] || [];
         this._drawHudFocusSlide(ctx, slide, active);
@@ -1334,6 +1323,11 @@ class IP2LiveDialogueManager {
         const manager = this;
         const originalUpdate = Scene.Map.prototype.update;
         Scene.Map.prototype.update = function () {
+            // Loaded saves replace the game and map. Never retain an invisible
+            // dialogue lock (or its quest suppression) from the previous run.
+            const active = manager._active;
+            if (active && ((active.ownerGame && active.ownerGame !== manager._currentGame()) ||
+                (active.ownerMapScene && active.ownerMapScene !== this))) manager.discardActive();
             const isTitleActive = typeof IP2Live !== 'undefined' && IP2Live.WorldTitleOverlay && IP2Live.WorldTitleOverlay.isActive();
             if (manager.locksMovement() || isTitleActive) manager._stripMovementInputs();
             
@@ -1391,7 +1385,8 @@ class IP2LiveDialogueManager {
             if (this._queuedStarts[i].key === key) return false;
         }
 
-        this._queuedStarts.push({ key, dialogueId, context: ctx });
+        this._queuedStarts.push({ key, dialogueId, context: ctx, game: this._currentGame(),
+            scene: ctx.scene || (Scene.Map && Scene.Map.current) || null });
         return true;
     }
 
@@ -1399,12 +1394,15 @@ class IP2LiveDialogueManager {
         const isTitleActive = this._worldTitleBlocksDialogue();
         if (isTitleActive || this._active || !this._queuedStarts || this._queuedStarts.length === 0) return false;
 
+        this._queuedStarts = this._queuedStarts.filter(q => (!q.game || q.game === this._currentGame()) &&
+            (!q.scene || q.scene === Scene.Map.current));
         const q = this._queuedStarts.shift();
         if (!q) return false;
         return this.start(q.dialogueId, q.context);
     }
 
     _worldTitleBlocksDialogue() {
+        if (IP2Live.PracticeMode && IP2Live.PracticeMode.active && IP2Live.PracticeMode.course) return false;
         if (!(IP2Live.WorldTitleOverlay && IP2Live.WorldTitleOverlay.isActive())) return false;
         const replay = IP2Live.TutorialReplay && IP2Live.TutorialReplay.session;
         // The floor title is suspended beneath standalone tutorial scenes. Its
@@ -1421,8 +1419,22 @@ class IP2LiveDialogueManager {
         return [dialogueId, mapId, trigger, timing].join(':');
     }
 
+    _teachingSuspended() {
+        const practice = IP2Live.PracticeMode;
+        const top = Manager && Manager.Stack && Manager.Stack.top;
+        const PauseMenu = typeof window !== 'undefined' && window.IP2LivePauseMenu;
+        // World pause and its child screens suspend map dialogue input too.
+        const mapDialogue = typeof PauseMenu === 'function' && this._active && this._active.ownerMapScene &&
+            top && top !== this._active.ownerMapScene && (top instanceof PauseMenu ||
+                (Array.isArray(Manager.Stack.content) && Manager.Stack.content.some(scene => scene instanceof PauseMenu)));
+        return !!((IP2Live.GameplayPause && IP2Live.GameplayPause.menuOpen) ||
+            (IP2Live.MenuTransition && IP2Live.MenuTransition.active) ||
+            mapDialogue ||
+            (practice && practice.active && practice.course && practice.course.busy));
+    }
+
     _onKey(e) {
-        if (!this._active) return;
+        if (!this._active || this._teachingSuspended()) return;
 
         const code = e.code || e.key;
         if (this.locksMovement() && this._isMovementCode(code)) {
@@ -1440,7 +1452,9 @@ class IP2LiveDialogueManager {
     }
 
     _onClick(e) {
-        if (!this._active) return;
+        if (!this._active || this._teachingSuspended()) return;
+        const pause = IP2Live.GameplayPause;
+        if (pause && pause.isPausePointerEvent && pause.isPausePointerEvent(e)) return;
         if (this._active.manualAdvance) return;
         e.preventDefault();
         e.stopPropagation();
@@ -1460,8 +1474,10 @@ class IP2LiveDialogueManager {
         if (trigger.once && this._seenTriggers[key]) return false;
         if (this._pendingTriggers[key]) return true;
 
+        const ownerGame = this._currentGame(), ownerScene = context.scene || (Scene.Map && Scene.Map.current);
         const run = () => {
             delete this._pendingTriggers[key];
+            if ((ownerGame && ownerGame !== this._currentGame()) || (ownerScene && ownerScene !== Scene.Map.current)) return false;
             if (trigger.once) this._seenTriggers[key] = true;
 
             if (trigger.action) return this._runAction(trigger.action, context);
@@ -1973,6 +1989,9 @@ class IP2LiveDialogueManager {
     }
 
     _stripMovementInputs() {
+        // InputGuard gates the actual map dispatch on current and legacy engines.
+        // Keep the held-key ledger intact so releasing one direction cannot jam another.
+        if (IP2Live.InputGuard) return;
         if (!Manager || !Manager.Events || !Manager.Events.keysPressed) return;
         for (let i = Manager.Events.keysPressed.length - 1; i >= 0; i--) {
             if (this._isMovementKey(Manager.Events.keysPressed[i])) {

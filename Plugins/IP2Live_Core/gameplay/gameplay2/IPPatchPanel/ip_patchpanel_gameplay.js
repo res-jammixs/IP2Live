@@ -11,9 +11,10 @@
  */
 
 class IP2LivePatchPanelGameplayScreen extends Scene.Base {
-    constructor(options) {
+    constructor(options, timeSeconds) {
         super(true);
         this.options = options || {};
+        this._constructorTimeSeconds = timeSeconds;
         this._ensureCoreState();
         this._buildPacketPools();
         this._configure();
@@ -71,10 +72,12 @@ class IP2LivePatchPanelGameplayScreen extends Scene.Base {
         this.keyFlash = {};
         this._lastMetrics = null;
         this._resetRound();
+        if (IP2Live.GameplayTimer) IP2Live.GameplayTimer.reset(this);
     }
 
     _resetRound() {
         this.roundNumber++;
+        this.problemRandom = IP2Live.PVPRules ? IP2Live.PVPRules.problemRandom(this.options) : Math.random;
         this.animTick = 0;
         this.scanTick = 0;
         this.selectedClassIndex = 0;
@@ -189,7 +192,7 @@ class IP2LivePatchPanelGameplayScreen extends Scene.Base {
         }
 
         while (packets.length < count) {
-            const fallback = source[Math.floor(Math.random() * source.length)];
+            const fallback = source[Math.floor(this.problemRandom() * source.length)];
             packets.push(Object.assign({}, fallback));
         }
 
@@ -297,6 +300,7 @@ class IP2LivePatchPanelGameplayScreen extends Scene.Base {
     }
 
     update() {
+        if (IP2Live.GameplayTimer && IP2Live.GameplayTimer.update(this, ['active'])) return;
         this._ensureCoreState();
         this.animTick++;
         this.scanTick = (this.scanTick + 1.2) % 24;
@@ -819,12 +823,16 @@ class IP2LivePatchPanelGameplayScreen extends Scene.Base {
         if (Manager && Manager.Stack) Manager.Stack.pop();
     }
 
-    _finishFailure() {
+    _onTimerExpired() { this._finishFailure('time_expired'); }
+
+    _finishFailure(reason = 'attempts_exhausted') {
         if (this.finished) return;
         this.finished = true;
+        this.phase = 'failure';
         const result = Object.assign({}, this.endResult || {}, {
+            ...this._assessmentResult(),
             gameplayId: 'ip_patch_panel_classes',
-            reason: 'attempts_exhausted',
+            reason,
             passed: false,
             attemptsUsed: this.roundNumber,
             maxAttempts: this.maxAttempts,
@@ -840,7 +848,8 @@ class IP2LivePatchPanelGameplayScreen extends Scene.Base {
     _assessmentResult() {
         const history = this.decisionHistory || [];
         const correct = history.filter(row => row.correct).length;
-        return { telemetrySchemaVersion: 2, totalDecisions: history.length, correctDecisions: correct,
+        return { ...(IP2Live.GameplayTimer ? IP2Live.GameplayTimer.result(this) : {}),
+            telemetrySchemaVersion: 2, totalDecisions: history.length, correctDecisions: correct,
             incorrectDecisions: history.length - correct, decisionHistory: history.map(row => ({ ...row })),
             roundHistory: (this.roundHistory || []).map(row => ({ ...row })) };
     }
@@ -1127,6 +1136,7 @@ class IP2LivePatchPanelGameplayScreen extends Scene.Base {
         this._drawPhaseOverlay(ctx, m);
         this._drawTutorialHighlight(ctx, m);
         ctx.restore();
+        if (IP2Live.GameplayTimer) IP2Live.GameplayTimer.draw(this, ctx);
 
         if (IP2Live.DialogueManager && typeof IP2Live.DialogueManager.drawOverlay === 'function') {
             IP2Live.DialogueManager.drawOverlay(ctx);
@@ -2460,7 +2470,7 @@ class IP2LivePatchPanelGameplayScreen extends Scene.Base {
     _shuffle(input) {
         const array = input.slice();
         for (let i = array.length - 1; i > 0; i--) {
-            const j = Math.floor(Math.random() * (i + 1));
+            const j = Math.floor(this.problemRandom() * (i + 1));
             const tmp = array[i];
             array[i] = array[j];
             array[j] = tmp;
@@ -2634,7 +2644,9 @@ const PatchPanelGameplayManager = {
     _playMusicZone(zoneName) {
         const music = IP2Live.MusicManager;
         if (!music || !music.ZONE || !music.ZONE[zoneName] || typeof music.play !== 'function') return false;
-        music.play(music.ZONE[zoneName]);
+        if (zoneName.indexOf('GAMEPLAY_') === 0 && typeof music.playGameplay === 'function') music.playGameplay('ip_patch_panel_classes');
+        else if (zoneName.indexOf('STAGE_') === 0 && typeof music.restoreContext === 'function') music.restoreContext();
+        else music.play(music.ZONE[zoneName]);
         return true;
     },
 
@@ -2671,6 +2683,8 @@ const PatchPanelGameplayManager = {
 
         const open = () => {
             const screen = new IP2LivePatchPanelGameplayScreen({
+                ...(IP2Live.GameplayTimer ? IP2Live.GameplayTimer.launchOptions(opts) : {}),
+                pvpMode: opts.pvpMode, pvpProblemSeed: opts.pvpProblemSeed,
                 totalPackets: opts.totalPackets,
                 targetScore: opts.targetScore,
                 maxAttempts: opts.maxAttempts || 2,
@@ -2920,8 +2934,10 @@ IP2Live.PatchPanelGameplayManager = PatchPanelGameplayManager;
 IP2Live.PatchPanelGameplayScreen = IP2LivePatchPanelGameplayScreen;
 window.IP2LivePatchPanelGameplayManager = PatchPanelGameplayManager;
 window.IP2LivePatchPanelGameplayScreen = IP2LivePatchPanelGameplayScreen;
-window.startPatchPanelGameplayTwo = function (options) {
-    return PatchPanelGameplayManager.launchPatchPanelGameplay(options || {});
+window.startPatchPanelGameplayTwo = function (options, timeSeconds) {
+    const opts = Object.assign({}, options || {});
+    if (Number.isFinite(Number(timeSeconds)) && Number(timeSeconds) > 0) opts.timeLimitSeconds = Number(timeSeconds);
+    return PatchPanelGameplayManager.launchPatchPanelGameplay(opts);
 };
 
 console.log('[IP2Live] ip_patchpanel_gameplay.js module loaded.');

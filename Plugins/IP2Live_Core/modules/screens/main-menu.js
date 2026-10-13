@@ -14,8 +14,9 @@ class IP2LiveTitleScreenImplementation extends Scene.Base {
 
         this.selectedIndex = 0;
         this.menuPage = 'main';
-        this.menuItems = ['PLAY GAME', 'SETTINGS', 'CREDITS', 'QUIT GAME'];
-        this._practiceHintUntil = 0;
+        this._hasStoryCertificate = false;
+        this.menuItems = this._mainMenuItems();
+        this._lockedModeAlert = null;
         this._autosaveSummary = null;
         this._autosaveReadError = false;
 
@@ -50,7 +51,10 @@ class IP2LiveTitleScreenImplementation extends Scene.Base {
 
     async load() {
         if (IP2Live.PracticeMode) IP2Live.PracticeMode.syncFromCampaign();
-        if (Core && Core.Game) Core.Game.current = null;
+        if (Core && Core.Game) {
+            if (IP2Live.FeatureTelemetry) IP2Live.FeatureTelemetry.rememberProfile(Core.Game.current);
+            Core.Game.current = null;
+        }
         if (Manager.Videos && typeof Manager.Videos.stop === 'function') {
             Manager.Videos.stop();
         }
@@ -64,7 +68,7 @@ class IP2LiveTitleScreenImplementation extends Scene.Base {
         Manager.Stack.displayedPictures = [];
 
         await IP2Live.Assets.loadAll();
-        await this._refreshAutosave();
+        await Promise.all([this._refreshAutosave(), this._refreshCertificates()]);
 
         this._seedParticles(48);
         this._seedDust(430);
@@ -267,24 +271,17 @@ class IP2LiveTitleScreenImplementation extends Scene.Base {
     }
 
     _showMenuPage(page) {
+        this._lockedModeAlert = null;
         const pages = {
-            main: [
-                'PLAY GAME',
-                'SETTINGS',
-                'CREDITS',
-                'QUIT GAME'
-            ],
+            main: this._mainMenuItems(),
 
-            play: [
-                'STORY MODE',
-                'ENDLESS MODE',
-                'PRACTICE MODE'
-            ],
+            play: this._playMenuItems(),
 
             story: [
                 'NEW STORY',
                 'AUTOSAVED',
-                'LOAD STORY'
+                'LOAD STORY',
+                'STORY CERTIFICATES'
             ],
             practice: ['TUTORIAL', 'GAMEPLAY']
         };
@@ -310,9 +307,56 @@ class IP2LiveTitleScreenImplementation extends Scene.Base {
         this._buttonEntranceStartedAt =
             Date.now();
 
+        if (page === 'main') this._refreshCertificates();
+
         Manager.Stack
             .requestPaintHUD =
             true;
+    }
+
+    _mainMenuItems() {
+        return ['PLAY GAME', 'SETTINGS', 'CREDITS']
+            .concat(this._hasStoryCertificate ? ['CERTIFICATE'] : [], ['QUIT GAME']);
+    }
+
+    async _refreshCertificates() {
+        const completion = IP2Live.StoryCompletion;
+        if (!completion || typeof completion.list !== 'function') return;
+        try {
+            const records = await completion.list();
+            this._hasStoryCertificate = records.some(record => completion.isRecord(record));
+        } catch (error) {
+            console.warn('[IP2Live] Main-menu certificates could not be read:', error);
+            return;
+        }
+        if (this.menuPage !== 'main') return;
+        const items = this._mainMenuItems();
+        if (items.join('|') === this.menuItems.join('|')) return;
+        const oldItems = this.menuItems, selected = oldItems[this.selectedIndex], progress = this.btnProgress || [];
+        this.menuItems = items;
+        this.btnProgress = items.map(label => progress[oldItems.indexOf(label)] || 0);
+        this.selectedIndex = Math.max(0, items.indexOf(selected));
+        this.hoverIndex = -1;
+        Manager.Stack.requestPaintHUD = true;
+    }
+
+    _pvpButtonEnabled() {
+        const gm = IP2Live.GameManager;
+        return !gm || (typeof gm.isPVPButtonEnabled === 'function' ? gm.isPVPButtonEnabled() : gm.enablePVPButton !== false);
+    }
+
+    _playMenuItems() {
+        return ['STORY MODE', 'ENDLESS MODE', 'PRACTICE MODE'].concat(this._pvpButtonEnabled() ? ['PVP'] : []);
+    }
+
+    _syncPVPButton() {
+        if (this.menuPage !== 'play' || this.menuItems.includes('PVP') === this._pvpButtonEnabled()) return;
+        const oldItems = this.menuItems, selected = oldItems[this.selectedIndex], progress = this.btnProgress || [];
+        this.menuItems = this._playMenuItems();
+        this.btnProgress = this.menuItems.map(label => progress[oldItems.indexOf(label)] || 0);
+        this.selectedIndex = Math.max(0, this.menuItems.indexOf(selected));
+        this.hoverIndex = -1;
+        Manager.Stack.requestPaintHUD = true;
     }
 
     _backMenuPage() {
@@ -641,12 +685,14 @@ class IP2LiveTitleScreenImplementation extends Scene.Base {
         const index =
             this.selectedIndex;
 
-        if (this._lockedModeMessage(this.menuItems[index])) {
-            this._practiceHintUntil = Date.now() + 5500;
+        const lockedMessage = this._lockedModeMessage(this.menuItems[index]);
+        if (lockedMessage) {
+            this._lockedModeAlert = { title: this.menuItems[index], message: lockedMessage, startedAt: Date.now() };
             if (Data.Systems.soundImpossible) Data.Systems.soundImpossible.playSound();
             Manager.Stack.requestPaintHUD = true;
             return;
         }
+        this._lockedModeAlert = null;
 
         Data.Systems
             .soundConfirmation
@@ -696,6 +742,10 @@ class IP2LiveTitleScreenImplementation extends Scene.Base {
         }
 
         switch (action) {
+            case 'PVP':
+                if (!this._pvpButtonEnabled()) { this._syncPVPButton(); break; }
+                if (IP2Live.PVPMenu) this._openMenu(() => new IP2Live.PVPMenu());
+                break;
             case 'PRACTICE MODE':
                 this._showMenuPage('practice');
                 break;
@@ -706,6 +756,7 @@ class IP2LiveTitleScreenImplementation extends Scene.Base {
                 }
                 break;
             case 'ENDLESS MODE':
+                if (IP2Live.EndlessScreen) this._openMenu(() => new IP2Live.EndlessScreen());
                 break;
             case 'AUTOSAVED':
                 if (IP2Live.StoryAutosave) IP2Live.StoryAutosave.confirmResume();
@@ -715,11 +766,14 @@ class IP2LiveTitleScreenImplementation extends Scene.Base {
                 this._openLoadGame();
                 break;
 
+            case 'CERTIFICATE':
+            case 'STORY CERTIFICATES':
+                if (IP2Live.StoryEndingScreen) this._openMenu(() => new IP2Live.StoryEndingScreen(null, { archive: true }));
+                break;
+
             case 'SETTINGS':
-                this._openMenu(
-                    () =>
-                        new IP2LiveSettingsMenu()
-                );
+                Manager.Stack.push(new IP2LiveSettingsMenu({ popupTransition: true }));
+                Manager.Stack.requestPaintHUD = true;
                 break;
 
             case 'CREDITS':
@@ -928,6 +982,7 @@ class IP2LiveTitleScreenImplementation extends Scene.Base {
     // ============================================================
 
     update() {
+        this._syncPVPButton();
         this.animTick++;
         const heroNow = Date.now();
         if (this._heroLastUpdateAt !== null) {
@@ -1230,8 +1285,6 @@ class IP2LiveTitleScreenImplementation extends Scene.Base {
             );
         }
 
-        this._drawPracticeHint(ctx, scaleX, scaleY);
-
         if (
             this.fadeOut >
             0
@@ -1265,6 +1318,7 @@ class IP2LiveTitleScreenImplementation extends Scene.Base {
             scaleX,
             scaleY
         );
+        this._drawLockedModeAlert(ctx, scaleX, scaleY);
     }
 
     // ============================================================
@@ -1328,34 +1382,116 @@ class IP2LiveTitleScreenImplementation extends Scene.Base {
     _lockedModeMessage(label) {
         if (label === 'AUTOSAVED' && !this._autosaveSummary) return this._autosaveReadError
             ? 'Could not read the autosave. Reopen Story Mode to retry.' : 'No autosaved story yet. A checkpoint is created when your story begins.';
-        // Endless remains a locked placeholder until the story-ending unlock is implemented.
-        if (label === 'ENDLESS MODE') return 'Endless Mode will be unlocked once you finish Story Mode.';
+        // The lobby revalidates earned access or the developer override at launch.
+        if (label === 'ENDLESS MODE' && !this._hasStoryCertificate && IP2Live.GameManager?.unlockPracticeAndEndlessForTesting !== true) return 'Endless Mode will be unlocked once you finish Story Mode.';
         if (label === 'PRACTICE MODE' && this._practiceLocked()) {
             return IP2Live.PracticeMode ? IP2Live.PracticeMode.lockedMessage
-                : 'Practice Mode will be unlocked once you encounter your first Networking Gameplay';
+                : 'Complete your first networking tutorial in Story Mode to unlock Practice Mode.';
         }
         return '';
     }
 
-    _drawPracticeHint(ctx, scaleX, scaleY) {
-        if (this.menuPage !== 'play' && this.menuPage !== 'story') return;
-        const index = this.hoverIndex >= 0 ? this.hoverIndex : this.selectedIndex;
-        const message = this._lockedModeMessage(this.menuItems[index]);
-        if (!message) return;
-        const layout = this._menuLayout();
-        const y = layout.startY + 4 * (layout.btnH + layout.gap) + 7;
-        ctx.save(); ctx.scale(scaleX, scaleY);
-        ctx.fillStyle = '#aeb5c1'; ctx.textAlign = 'left';
-        ctx.font = '12px ' + (IP2Live.Assets.oxaniumMediumLoaded ? 'Oxanium-Medium' : 'sans-serif');
-        let line = '', row = 0;
-        for (const word of message.split(' ')) {
-            const next = line ? line + ' ' + word : word;
-            if (line && ctx.measureText(next).width > layout.btnW) {
-                ctx.fillText(line, layout.btnX, y + row++ * 18);
-                line = word;
-            } else line = next;
+    _lockedModeAlertState(now = Date.now()) {
+        if (!this._lockedModeAlert) return null;
+        // Slide in, remain fully visible for five seconds, then slide out.
+        const elapsed = Math.max(0, now - this._lockedModeAlert.startedAt);
+        if (elapsed >= 5580) { this._lockedModeAlert = null; return null; }
+        const enter = Math.min(1, elapsed / 320), exit = Math.max(0, (elapsed - 5320) / 260);
+        return { alert: this._lockedModeAlert, slide: Math.pow(1 - enter, 3) + Math.pow(exit, 3),
+            alpha: Math.min(1, enter * 3) * (1 - exit), remaining: 1 - Math.max(0, Math.min(1, (elapsed - 320) / 5000)) };
+    }
+
+    _drawLockedModeAlert(ctx, scaleX, scaleY) {
+        const state = this._lockedModeAlertState();
+        if (!state) return;
+        const w = 360, margin = 24, font = IP2Live.Assets.oxaniumMediumLoaded ? 'Oxanium-Medium' : '"Segoe UI", sans-serif';
+        ctx.save(); ctx.setTransform(scaleX, 0, 0, scaleY, 0, 0); ctx.font = '14px ' + font;
+        const lines = []; let current = '';
+        for (const word of state.alert.message.split(/\s+/)) {
+            const next = current ? current + ' ' + word : word;
+            if (current && ctx.measureText(next).width > w - 44) { lines.push(current); current = word; }
+            else current = next;
         }
-        ctx.fillText(line, layout.btnX, y + row * 18);
+        if (current) lines.push(current);
+        const h = 78 + lines.length * 18;
+        const x = Common.ScreenResolution.SCREEN_X - margin - w + (w + margin) * state.slide;
+        const y = Common.ScreenResolution.SCREEN_Y - margin - h;
+        ctx.translate(x, y); ctx.globalAlpha = state.alpha;
+        // Machined casing around a recessed display, with fixed grain rather than flickering noise.
+        const metal = ctx.createLinearGradient(0, 0, 0, h);
+        metal.addColorStop(0, '#6c8891'); metal.addColorStop(0.08, '#2d424e');
+        metal.addColorStop(0.5, '#14232e'); metal.addColorStop(0.94, '#364b55'); metal.addColorStop(1, '#78919a');
+        ctx.fillStyle = metal; ctx.shadowColor = '#00070d'; ctx.shadowBlur = 20; ctx.shadowOffsetY = 5;
+        ctx.fillRect(0, 0, w, h); ctx.shadowBlur = 0; ctx.shadowOffsetY = 0;
+        ctx.lineWidth = 1; ctx.strokeStyle = '#071019'; ctx.strokeRect(0.5, 0.5, w - 1, h - 1);
+        ctx.strokeStyle = '#c7f4f332'; ctx.strokeRect(2.5, 2.5, w - 5, h - 5);
+        // Short milling marks and inset vents give the narrow frame its material.
+        ctx.fillStyle = '#09151d9e';
+        for (let column = 44; column < w - 38; column += 7) {
+            ctx.fillRect(column, 3, 3, 2); ctx.fillRect(column, h - 5, 3, 2);
+        }
+        for (let row = 36; row < h - 28; row += 7) {
+            ctx.fillRect(3, row, 2, 3); ctx.fillRect(w - 5, row, 2, 3);
+        }
+        ctx.fillStyle = '#030a10'; ctx.fillRect(8, 8, w - 16, h - 16);
+        const surface = ctx.createLinearGradient(0, 10, w, h - 10);
+        surface.addColorStop(0, '#162632'); surface.addColorStop(0.55, '#0e1a26'); surface.addColorStop(1, '#090f19');
+        ctx.fillStyle = surface; ctx.fillRect(10, 10, w - 20, h - 20);
+        ctx.save(); ctx.beginPath(); ctx.rect(10, 10, w - 20, h - 20); ctx.clip();
+        ctx.lineWidth = 1; ctx.strokeStyle = '#c0ecf905';
+        for (let row = 13; row < h - 10; row += 4) { ctx.beginPath(); ctx.moveTo(10, row); ctx.lineTo(w - 10, row); ctx.stroke(); }
+        // A faint woven texture and brushed patches stay behind the text.
+        ctx.strokeStyle = '#b9f8ff04';
+        for (let column = -h; column < w; column += 24) {
+            ctx.beginPath(); ctx.moveTo(column, 10); ctx.lineTo(column + h, h - 10); ctx.stroke();
+        }
+        for (let grain = 0; grain < 110; grain++) {
+            const gx = 12 + (grain * 97 % (w - 26)), gy = 12 + (grain * 43 % (h - 24));
+            ctx.fillStyle = grain % 3 ? '#badbe707' : '#00070d24';
+            ctx.fillRect(gx, gy, 2 + grain % 8, 0.7);
+        }
+        const header = ctx.createLinearGradient(0, 12, 0, 44);
+        header.addColorStop(0, '#a6d8e510'); header.addColorStop(1, '#a6d8e500');
+        ctx.fillStyle = header; ctx.fillRect(12, 12, w - 24, 32);
+        ctx.restore();
+        ctx.fillStyle = '#00060d75'; ctx.fillRect(10, 10, w - 20, 2); ctx.fillRect(10, 10, 2, h - 20);
+        ctx.fillStyle = '#a9e7e41a'; ctx.fillRect(12, h - 11, w - 24, 1);
+        const seam = ctx.createLinearGradient(18, 0, w - 18, 0);
+        seam.addColorStop(0, '#71dacf00'); seam.addColorStop(0.3, '#71dacf38'); seam.addColorStop(1, '#71dacf00');
+        ctx.fillStyle = seam; ctx.fillRect(18, 43, w - 36, 1);
+        // Beveled corner armor and recessed screw heads replace a flat outline.
+        const armor = ctx.createLinearGradient(0, 0, 0, 26);
+        armor.addColorStop(0, '#7c959d'); armor.addColorStop(0.3, '#3d5663'); armor.addColorStop(1, '#192c39');
+        for (const [cx, cy, dx, dy] of [[1, 1, 1, 1], [w - 1, 1, -1, 1], [1, h - 1, 1, -1], [w - 1, h - 1, -1, -1]]) {
+            ctx.save(); ctx.translate(cx, cy); ctx.scale(dx, dy);
+            ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(33, 0); ctx.lineTo(25, 6);
+            ctx.lineTo(12, 6); ctx.lineTo(6, 12); ctx.lineTo(6, 23); ctx.lineTo(0, 29); ctx.closePath();
+            ctx.fillStyle = armor; ctx.fill(); ctx.strokeStyle = '#bdd8df32'; ctx.stroke();
+            ctx.fillStyle = '#06121a'; ctx.beginPath(); ctx.arc(5, 5, 2.4, 0, Math.PI * 2); ctx.fill();
+            ctx.fillStyle = '#78929a'; ctx.fillRect(3.7, 4.5, 2.6, 0.8);
+            ctx.restore();
+        }
+        // Embedded light strips: glow is drawn once, away from the texture passes.
+        ctx.fillStyle = '#68e9d5'; ctx.shadowColor = '#45e6d0'; ctx.shadowBlur = 6;
+        ctx.fillRect(13, 3, 16, 1.5); ctx.fillRect(w - 29, h - 4.5, 16, 1.5); ctx.shadowBlur = 0;
+        ctx.fillStyle = '#151b19'; ctx.fillRect(1, 33, 5, h - 66);
+        const warning = ctx.createLinearGradient(1, 0, 6, 0);
+        warning.addColorStop(0, '#9a8131'); warning.addColorStop(0.5, '#f4d45a'); warning.addColorStop(1, '#b59b42');
+        ctx.fillStyle = warning; ctx.fillRect(2, 34, 3, h - 68);
+        // Small inset lock plate; the body remains only the unlock instruction.
+        const badge = ctx.createLinearGradient(18, 16, 40, 39);
+        badge.addColorStop(0, '#4b4932'); badge.addColorStop(1, '#17212a');
+        ctx.fillStyle = badge; ctx.fillRect(18, 16, 23, 24);
+        ctx.strokeStyle = '#f4d45a38'; ctx.strokeRect(18.5, 16.5, 22, 23);
+        ctx.strokeStyle = '#f4d45a'; ctx.lineWidth = 1.4; ctx.strokeRect(22, 24, 14, 11);
+        ctx.beginPath(); ctx.arc(29, 24, 5, Math.PI, 0); ctx.stroke();
+        ctx.fillStyle = '#f4d45a'; ctx.fillRect(28, 28, 2, 4);
+        ctx.textAlign = 'left'; ctx.textBaseline = 'middle'; ctx.font = '13px ' + font; ctx.fillStyle = '#e8f7fa';
+        ctx.fillText(state.alert.title + (state.alert.title === 'AUTOSAVED' ? ' UNAVAILABLE' : ' LOCKED'), 49, 29, w - 71);
+        ctx.font = '14px ' + font; ctx.fillStyle = '#bcced8';
+        lines.forEach((line, i) => ctx.fillText(line, 22, 58 + i * 18));
+        ctx.fillStyle = '#32434b'; ctx.fillRect(22, h - 19, w - 44, 2);
+        ctx.fillStyle = '#67f5e0'; ctx.fillRect(22, h - 19, (w - 44) * state.remaining, 2);
         ctx.restore();
     }
 
@@ -2827,6 +2963,18 @@ class IP2LiveTitleScreenImplementation extends Scene.Base {
 /**
  * Install directly into Paper Maker's engine-owned title screen.
  */
+// Reuse the exact title-screen character, cloak facets and brushed texture in
+// the static story illustrations without constructing another menu scene.
+IP2Live.MainMenuArt = {
+    _painter: null,
+    drawInfiltrator(ctx, x, y, scale = 1) {
+        const painter = this._painter || (this._painter = Object.create(IP2LiveTitleScreenImplementation.prototype));
+        ctx.save(); ctx.translate(x + 31 * scale, y - 127 * scale); ctx.scale(scale, scale);
+        painter._drawInfiltrator(ctx, .5, { time: .6, figureLight: 1, gateLight: 1, coreLight: 1 });
+        ctx.restore();
+    },
+};
+
 function installIP2LiveTitleScreen() {
     const target =
         Scene.TitleScreen &&

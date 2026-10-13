@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { promises as fs } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { createHash } from 'node:crypto';
 import { spawn } from 'node:child_process';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
@@ -67,8 +68,36 @@ test('prepares a clean release and exactly replaces the exported project plugin'
     await write(project, 'songs.json', JSON.stringify(projectSongs));
     await write(project, 'Plugins/IP2Live_Core/code.js', "const DesktopStorageReady = 'desktop_storage.js';\n");
     await write(project, 'Plugins/IP2Live_Core/modules/desktop_storage.js', '// current bridge\n');
+    const certificateModule = await fs.readFile(path.join(repositoryRoot, 'Plugins/IP2Live_Core/modules/pvp_certificate.js'), 'utf8');
+    await write(project, 'Plugins/IP2Live_Core/modules/pvp_certificate.js', certificateModule);
+    const endingModules = ['certificate_pdf.js', 'story_certificate.js', 'story_completion.js', 'screens/story-ending.js'];
+    for (const module of endingModules) {
+        await write(project, 'Plugins/IP2Live_Core/modules/' + module, await fs.readFile(path.join(repositoryRoot, 'Plugins/IP2Live_Core/modules', module), 'utf8'));
+    }
     await write(project, 'Plugins/IP2Live_Core/current.js', '// current project plugin\n');
     await write(project, 'Plugins/IP2Live_Core/.git/config', 'must not ship');
+    // Simulate an export whose engine database predates both audio additions.
+    // The synchronized plugin carries verified native WAVs for runtime recovery.
+    const audioBundlePath = 'Plugins/IP2Live_Core/assets/audio/story-prologue';
+    const audioBundle = JSON.parse(await fs.readFile(path.join(repositoryRoot, audioBundlePath, 'manifest.json'), 'utf8'));
+    projectSongs.list.push({ k: 4, v: [] });
+    for (const entry of audioBundle.entries) {
+        projectSongs.list.find(group => group.k === entry.kind).v.push({ id: entry.id, name: entry.name, br: false });
+        await write(project, audioBundlePath + '/' + entry.file, await fs.readFile(path.join(repositoryRoot, audioBundlePath, entry.file)));
+    }
+    await write(project, audioBundlePath + '/manifest.json', JSON.stringify(audioBundle));
+    const gameplayBundlePath = 'Plugins/IP2Live_Core/assets/audio/gameplay';
+    const gameplayBundle = JSON.parse(await fs.readFile(path.join(repositoryRoot, gameplayBundlePath, 'manifest.json'), 'utf8'));
+    // Small deterministic fixture bytes exercise the release checksums and
+    // copy without adding seven full PCM files to this release test.
+    for (const entry of gameplayBundle.entries) {
+        const bytes = Buffer.from('fixture audio for ' + entry.file);
+        entry.sha256 = createHash('sha256').update(bytes).digest('hex');
+        projectSongs.list.find(group => group.k === entry.kind).v.push({ id: entry.id, name: entry.name, br: false });
+        await write(project, gameplayBundlePath + '/' + entry.file, bytes);
+    }
+    await write(project, gameplayBundlePath + '/manifest.json', JSON.stringify(gameplayBundle));
+    await write(project, 'songs.json', JSON.stringify(projectSongs));
     await write(source, 'resources/app/build/songs.json', JSON.stringify({
         list: [{ k: 1, v: [{ id: 1, name: 'Custom Track.mp3', data: 'ZmFrZQ==' }] }],
     }));
@@ -85,10 +114,15 @@ test('prepares a clean release and exactly replaces the exported project plugin'
     await fs.access(path.join(appRoot, 'main.js'));
     await fs.access(path.join(appRoot, 'preload.cjs'));
     await fs.access(path.join(appRoot, 'storage-service.js'));
+    await fs.access(path.join(appRoot, 'pvp-service.js'));
+    const pvpRules = await fs.readFile(path.join(appRoot, 'pvp-rules.cjs'), 'utf8');
+    assert.equal(pvpRules, await fs.readFile(path.join(repositoryRoot, 'Plugins/IP2Live_Core/modules/pvp_rules.js'), 'utf8'));
     const preparedPreload = await fs.readFile(path.join(appRoot, 'preload.cjs'), 'utf8');
     const preparedMain = await fs.readFile(path.join(appRoot, 'main.js'), 'utf8');
     assert.match(preparedPreload, /readEngineSettings/);
     assert.match(preparedPreload, /writeEngineSettings/);
+    assert.match(preparedPreload, /ip2livePVP/);
+    assert.match(preparedMain, /IP2LivePVPService/);
     assert.match(preparedMain, /ip2live-storage:read-engine-settings/);
     assert.match(preparedMain, /ip2live-storage:write-engine-settings/);
     assert.match(preparedMain, /requestSingleInstanceLock\(\)/);
@@ -108,6 +142,10 @@ test('prepares a clean release and exactly replaces the exported project plugin'
     const pluginRoot = path.join(appRoot, 'build', 'Plugins', 'IP2Live_Core');
     await fs.access(path.join(pluginRoot, 'current.js'));
     await fs.access(path.join(pluginRoot, 'modules', 'desktop_storage.js'));
+    assert.equal(await fs.readFile(path.join(pluginRoot, 'modules', 'pvp_certificate.js'), 'utf8'), certificateModule, 'desktop exports include the current victory certificate renderer');
+    for (const module of endingModules) {
+        assert.equal(await fs.readFile(path.join(pluginRoot, 'modules', module), 'utf8'), await fs.readFile(path.join(repositoryRoot, 'Plugins/IP2Live_Core/modules', module), 'utf8'), 'desktop exports include story ending and certificate module ' + module);
+    }
     await assert.rejects(fs.access(path.join(pluginRoot, 'stale.js')));
     await assert.rejects(fs.access(path.join(pluginRoot, '.git')));
 
@@ -118,7 +156,32 @@ test('prepares a clean release and exactly replaces the exported project plugin'
 
     const manifest = JSON.parse(await fs.readFile(path.join(appRoot, 'ip2live-runtime-manifest.json'), 'utf8'));
     assert.equal(manifest.projectPluginSynced, true);
-    assert.deepEqual(manifest.verifiedCustomSongs, ['Custom Track.mp3']);
+    assert.deepEqual(new Set(manifest.verifiedCustomSongs), new Set(['Custom Track.mp3', ...audioBundle.entries.map(entry => entry.name), ...gameplayBundle.entries.map(entry => entry.name)]));
+    assert.deepEqual(new Set(manifest.verifiedBundledSongs), new Set([...audioBundle.entries.map(entry => entry.name), ...gameplayBundle.entries.map(entry => entry.name)]));
+    for (const entry of audioBundle.entries) {
+        assert.deepEqual(await fs.readFile(path.join(pluginRoot, 'assets/audio/story-prologue', entry.file)),
+            await fs.readFile(path.join(repositoryRoot, audioBundlePath, entry.file)));
+    }
+    for (const entry of gameplayBundle.entries) {
+        assert.deepEqual(await fs.readFile(path.join(pluginRoot, 'assets/audio/gameplay', entry.file)),
+            await fs.readFile(path.join(project, gameplayBundlePath, entry.file)));
+    }
+    const missingAsset = path.join(project, audioBundlePath, audioBundle.entries[0].file);
+    await fs.unlink(missingAsset);
+    const missingResult = await runPowerShell(['-SourceExportPath', source, '-DestinationPath', destination + '-missing', '-ProjectRoot', project]);
+    assert.notEqual(missingResult.code, 0); assert.match(missingResult.stdout + missingResult.stderr, /Missing bundled prologue audio/);
+    await assert.rejects(fs.access(destination + '-missing'));
+    await fs.writeFile(missingAsset, 'tampered audio');
+    const corruptResult = await runPowerShell(['-SourceExportPath', source, '-DestinationPath', destination + '-corrupt', '-ProjectRoot', project]);
+    assert.notEqual(corruptResult.code, 0); assert.match(corruptResult.stdout + corruptResult.stderr, /SHA256 mismatch/);
+    await assert.rejects(fs.access(destination + '-corrupt'));
+    await fs.writeFile(missingAsset, await fs.readFile(path.join(repositoryRoot, audioBundlePath, audioBundle.entries[0].file)));
+    const missingGameplay = path.join(project, gameplayBundlePath, gameplayBundle.entries[0].file);
+    await fs.unlink(missingGameplay);
+    const missingGameplayResult = await runPowerShell(['-SourceExportPath', source, '-DestinationPath', destination + '-missing-gameplay', '-ProjectRoot', project]);
+    assert.notEqual(missingGameplayResult.code, 0);
+    assert.match(missingGameplayResult.stdout + missingGameplayResult.stderr, /Missing bundled gameplay audio/);
+    await assert.rejects(fs.access(destination + '-missing-gameplay'));
 });
 
 test('stops with re-export guidance when a registered custom song is absent', async (t) => {

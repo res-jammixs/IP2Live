@@ -39,14 +39,14 @@ class IP2LiveLoadGameMenu extends Scene.Base {
     }
 
     _getLayout(SW, SH) {
-        const panelW = this.saveMode ? Math.min(920, SW - 56) : SW - 80;
-        const panelH = this.saveMode ? Math.min(552, SH - 48) : SH - 64;
+        const panelW = this.saveMode ? Math.min(920, SW - 56) : Math.min(1160, SW - 64);
+        const panelH = this.saveMode ? Math.min(552, SH - 48) : Math.min(636, SH - 56);
         const panelX = (SW - panelW) / 2, panelY = (SH - panelH) / 2;
-        const rightW = Math.min(252, panelW * 0.3);
+        const rightW = Math.min(300, panelW * 0.31);
         const listX = panelX + 28, listW = panelW - rightW - 80;
-        const listStartY = panelY + 112, itemGap = 12;
-        this.maxVisible = Math.max(1, Math.min(4, Math.floor((panelH - 196) / 84)));
-        const itemH = (panelH - 208 - itemGap * (this.maxVisible - 1)) / this.maxVisible;
+        const listStartY = panelY + 132, itemGap = 12;
+        this.maxVisible = Math.max(1, Math.min(4, Math.floor((panelH - 208) / 84)));
+        const itemH = Math.floor((panelH - 220 - itemGap * (this.maxVisible - 1)) / this.maxVisible);
         const rightX = listX + listW + 24;
         return { panelW, panelH, panelX, panelY, listX, listW, listStartY, itemH, itemGap, rightX, rightW };
     }
@@ -600,7 +600,7 @@ class IP2LiveLoadGameMenu extends Scene.Base {
             while (label.length && ctx.measureText(label + '\u2026').width > maxWidth) label = label.slice(0, -1);
             label += '\u2026';
         }
-        ctx.fillText(label, x, y);
+        ctx.fillText(label, Math.round(x), Math.round(y));
     }
 
     _bevelPath(ctx, x, y, w, h, cut) {
@@ -611,15 +611,19 @@ class IP2LiveLoadGameMenu extends Scene.Base {
     }
 
     _drawArchiveFrame(ctx, l) {
-        IP2Live.PopupChrome.panel(ctx,l.panelX,l.panelY,l.panelW,l.panelH,1,1,false,this.animTick);
         const {panelX:x, panelY:y, panelW:w, panelH:h} = l;
         ctx.save();
+        // A single opaque surface keeps background texture away from the type.
+        this._bevelPath(ctx, x, y, w, h, 12);
+        const surface = ctx.createLinearGradient(x, y, x + w, y + h);
+        surface.addColorStop(0, '#10212c'); surface.addColorStop(0.5, '#0b1721'); surface.addColorStop(1, '#09111b');
+        ctx.fillStyle = surface; ctx.fill();
         // A narrow metal chassis keeps the existing rectangular silhouette.
         const metal = ctx.createLinearGradient(x, y, x + w, y + h);
         metal.addColorStop(0, '#42616c'); metal.addColorStop(0.28, '#172b38');
         metal.addColorStop(0.7, '#101e29'); metal.addColorStop(1, '#35505c');
         this._bevelPath(ctx,x+3,y+3,w-6,h-6,10);
-        ctx.strokeStyle=metal;ctx.lineWidth=5;ctx.stroke();
+        ctx.strokeStyle=metal;ctx.lineWidth=2;ctx.stroke();
         this._bevelPath(ctx,x+7,y+7,w-14,h-14,8);
         ctx.strokeStyle='rgba(155,211,219,0.22)';ctx.lineWidth=1;ctx.stroke();
         this._bevelPath(ctx,x+10,y+10,w-20,h-20,6);
@@ -656,39 +660,22 @@ class IP2LiveLoadGameMenu extends Scene.Base {
 
     _holoPanel(ctx,x,y,w,h,selected) {
         ctx.save();
-        IP2Live.PopupChrome.row(ctx,x,y,w,h,selected);
-        ctx.save();ctx.beginPath();ctx.rect(x+3,y+3,w-6,h-6);ctx.clip();
         const surface=ctx.createLinearGradient(x,y,x,y+h);
-        surface.addColorStop(0,'rgba(172,217,226,0.055)');
-        surface.addColorStop(0.4,'rgba(172,217,226,0.008)');
-        surface.addColorStop(1,'rgba(0,0,0,0.18)');
-        ctx.fillStyle=surface;ctx.fillRect(x+3,y+3,w-6,h-6);
-        // Fine, stable stippling and angled grooves collect at the right edge.
-        const textureX=x+w-Math.min(108,w*0.28);
-        ctx.fillStyle=selected?'rgba(157,221,225,0.065)':'rgba(157,221,225,0.035)';
-        for (let yy=y+12;yy<y+h-8;yy+=16) {
-            for (let xx=textureX;xx<x+w-8;xx+=16) ctx.fillRect(xx,yy,1,1);
+        surface.addColorStop(0, selected ? '#203c49' : '#101f2a');
+        surface.addColorStop(1, selected ? '#142b37' : '#0c1721');
+        ctx.fillStyle=surface;ctx.fillRect(x,y,w,h);
+        ctx.strokeStyle=selected?'#8bcbd3':'#2a414e';ctx.lineWidth=1;
+        ctx.strokeRect(x+0.5,y+0.5,w-1,h-1);
+        if (selected) {
+            ctx.fillStyle='#e8cd8b';ctx.fillRect(x,y+12,3,h-24);
+            ctx.fillStyle='#8bcbd3';ctx.fillRect(x+12,y,32,1);
         }
-        ctx.strokeStyle='rgba(130,185,199,0.045)';ctx.lineWidth=1;
-        for (let xx=x+w-45;xx<x+w+60;xx+=13) {
-            ctx.beginPath();ctx.moveTo(xx,y+3);ctx.lineTo(xx-38,y+Math.min(h-3,67));ctx.stroke();
-        }
-        ctx.restore();
-        ctx.strokeStyle=selected?'rgba(169,225,229,0.24)':'rgba(128,180,190,0.10)';
-        ctx.strokeRect(x+3.5,y+3.5,w-7,h-7);
-        ctx.fillStyle=selected?'rgba(229,215,121,0.8)':'rgba(116,171,184,0.3)';
-        ctx.fillRect(x+12,y+1,selected?28:14,1);
-        for (let i=0;i<3;i++) {
-            ctx.fillStyle='rgba(128,180,190,'+(selected?0.35-i*0.07:0.16-i*0.03)+')';
-            ctx.fillRect(x+w-14-i*6,y+h-6,3,2);
-        }
-        ctx.fillStyle='rgba(0,0,0,0.4)';ctx.fillRect(x+5,y+h-3,w-10,1);
         ctx.restore();
     }
 
     _archiveIcon(ctx, x, y, size, empty) {
         ctx.save();
-        ctx.strokeStyle = empty ? '#655661' : '#EF8297'; ctx.lineWidth = 1.4;
+        ctx.strokeStyle = empty ? '#7296a6' : '#9bdce0'; ctx.lineWidth = 1.5;
         ctx.beginPath(); ctx.moveTo(x, y + size * 0.16); ctx.lineTo(x + size * 0.72, y + size * 0.16);
         ctx.lineTo(x + size, y + size * 0.42); ctx.lineTo(x + size, y + size);
         ctx.lineTo(x, y + size); ctx.closePath();
@@ -745,9 +732,15 @@ class IP2LiveLoadGameMenu extends Scene.Base {
             this._drawArchiveFrame(ctx, layout);
         }
         const x = layout.panelX + 28;
-        IP2Live.PopupChrome.heading(ctx,this.titleText,layout.panelX,layout.panelY+12,layout.panelW);
-        ctx.font='12px '+this._font();ctx.fillStyle='#96b2ba';
-        IP2Live.PopupChrome.text(ctx,this.saveMode?'Choose a slot to save your progress.':'Choose a save to resume.',layout.panelX+layout.panelW/2,layout.panelY+88,.4);
+        this._text(ctx, this.saveMode ? 'STORY / SAVE ARCHIVE' : 'STORY / SESSION ARCHIVE', x, layout.panelY + 29, 10, '#8bcbd3');
+        this._text(ctx, this.titleText, x, layout.panelY + 62, 28, '#f0f6fa');
+        this._text(ctx, this.saveMode ? 'Choose a slot to save your progress.' : 'Your next chapter starts where you left off.', x, layout.panelY + 84, 12, '#a1b7c4', layout.panelW - 56);
+        ctx.fillStyle = '#29404e'; ctx.fillRect(x, layout.panelY + 100, layout.panelW - 56, 1);
+        this._text(ctx, 'SAVE SLOTS', x, layout.listStartY - 11, 10, '#a1b7c4');
+        const savedCount = this.gamesData.reduce((count, game) => count + (game && !game.isEmpty && !game._ip2liveLoadError ? 1 : 0), 0);
+        ctx.textAlign = 'right';
+        this._text(ctx, savedCount + ' SAVED / ' + this.gamesData.length + ' SLOTS', layout.listX + layout.listW, layout.listStartY - 11, 10, '#8bcbd3');
+        ctx.textAlign = 'left';
         for (let i = 0; i < this.maxVisible; i++) {
             const index = this.scrollY + i;
             if (index >= this.gamesData.length) break;
@@ -757,8 +750,8 @@ class IP2LiveLoadGameMenu extends Scene.Base {
         const footerY = layout.panelY + layout.panelH - 60;
         ctx.fillStyle='rgba(117,200,208,0.11)';ctx.fillRect(x,footerY-13,layout.panelW-56,1);
         ctx.fillStyle='rgba(229,215,121,0.45)';ctx.fillRect(x,footerY-13,22,1);
-        this._text(ctx, 'SLOTS ' + (this.scrollY + 1) + ' - ' + Math.min(this.scrollY + this.maxVisible, this.gamesData.length) + ' / ' + this.gamesData.length, x, footerY + 12, 10, '#C099A8');
-        this._text(ctx, 'Select a session to view its saved details.', x, footerY + 33, 10, '#8F7C89', layout.listW);
+        this._text(ctx, this.gamesData.length ? 'SLOTS ' + (this.scrollY + 1) + ' - ' + Math.min(this.scrollY + this.maxVisible, this.gamesData.length) + ' / ' + this.gamesData.length : 'NO SAVE SLOTS', x, footerY + 12, 10, '#b8cbd5');
+        this._text(ctx, this.saveMode ? 'Select a slot to store your checkpoint.' : savedCount ? 'Select a save to view its details. Enter to continue.' : 'Start a new story to create your first save.', x, footerY + 33, 11, '#91a8b7', layout.listW);
         this._drawButton(ctx, 1, 1, layout.panelX + layout.panelW - 190, footerY, 160, 40, 'BACK', this.selectedIndex === this.gamesData.length, this.gamesData.length);
         if (this.saveNameDialog) this._drawSaveNameDialog(ctx, 1, 1);
         ctx.restore();
@@ -857,41 +850,63 @@ class IP2LiveLoadGameMenu extends Scene.Base {
     _drawRightInfoDeck(ctx, scaleX, scaleY, layout) {
         const x = layout.rightX, y = layout.listStartY, w = layout.rightW;
         const h = this.maxVisible * layout.itemH + (this.maxVisible - 1) * layout.itemGap;
-        const unit = Math.min(1, h / 350);
+        const compact = h < 360;
         this._holoPanel(ctx, x, y, w, h, false);
         ctx.save(); ctx.beginPath(); ctx.rect(x + 12, y + 12, w - 24, h - 24); ctx.clip();
         const index = this.selectedIndex < this.gamesData.length ? this.selectedIndex : -1;
         const data = this._slotDetails(index);
-        this._text(ctx, 'SESSION DOSSIER', x + 20, y + 25 * unit, 9, '#D17A90');
-        this._text(ctx, index < 0 ? 'Archive overview' : 'SLOT ' + String(index + 1).padStart(2, '0'), x + 20, y + 54 * unit, 22 * unit, '#FAE8EF', w - 70);
-        this._archiveIcon(ctx, x + w - 44, y + 29 * unit, 21 * unit, data.empty);
+        this._text(ctx, 'SESSION DETAILS', x + 20, y + 27, 10, '#8bcbd3');
+        this._text(ctx, index < 0 ? 'Archive overview' : 'SLOT ' + String(index + 1).padStart(2, '0'), x + 20, y + 54, 21, '#f0f6fa', w - 70);
+        this._archiveIcon(ctx, x + w - 40, y + 27, 19, data.empty);
+        ctx.fillStyle = '#29404e'; ctx.fillRect(x + 20, y + 69, w - 40, 1);
         if (data.empty) {
-            this._archiveIcon(ctx, x + w / 2 - 23, y + 120 * unit, 46, true);
+            const centerY = y + 70 + (h - 70) / 2;
+            if (!compact) {
+                this._bevelPath(ctx, x + w / 2 - 48, centerY - 88, 96, 96, 12);
+                ctx.fillStyle = '#142733'; ctx.fill();
+                ctx.strokeStyle = '#2e4d5c'; ctx.stroke();
+                this._archiveIcon(ctx, x + w / 2 - 22, centerY - 66, 44, true);
+            }
             ctx.textAlign = 'center';
-            this._text(ctx, data.unavailable ? 'Save unavailable' : index < 0 ? 'Select a save slot' : 'Empty archive', x + w / 2, y + 222 * unit, 15, '#C4A6B3', w - 40);
-            this._text(ctx, data.unavailable ? 'Stored data has been kept.' : this.saveMode ? 'Ready for your next checkpoint.' : 'No session is stored in this slot.', x + w / 2, y + 249 * unit, 10, '#917B8A', w - 40);
+            this._text(ctx, data.unavailable ? 'Save unavailable' : index < 0 ? 'Select a save slot' : 'No checkpoint yet', x + w / 2, centerY + (compact ? -4 : 35), 16, '#d7e5ec', w - 32);
+            this._text(ctx, data.unavailable ? 'Stored data has been kept.' : this.saveMode ? 'Ready for your next checkpoint.' : 'This slot is ready for a new story.', x + w / 2, centerY + (compact ? 19 : 60), 11, '#91a8b7', w - 32);
+            if (!compact && !this.saveMode && !data.unavailable && index >= 0) {
+                this._text(ctx, 'Choose New Story to begin.', x + w / 2, centerY + 80, 11, '#91a8b7', w - 32);
+            }
         } else {
-            const clockY = y + 72 * unit;
-            this._holoPanel(ctx, x + 16, clockY, w - 32, 64 * unit, true);
-            this._text(ctx, 'TIME PLAYED', x + 28, clockY + 18 * unit, 9, '#D58B9C');
-            this._text(ctx, this._getPlayTimeStr(data.playTimeMs), x + 28, clockY + 47 * unit, 25 * unit, '#FFE3EB', w - 56);
+            const clockY = y + 82;
+            ctx.fillStyle = '#152d39'; ctx.fillRect(x + 16, clockY, w - 32, compact ? 48 : 70);
+            this._text(ctx, 'TIME PLAYED', x + 28, clockY + 17, 10, '#8bcbd3');
+            this._text(ctx, this._getPlayTimeStr(data.playTimeMs), x + 28, clockY + (compact ? 39 : 51), compact ? 20 : 28, '#eef7fa', w - 56);
             const rows = [['OPERATIVE', data.operative || 'Not recorded'], ['LOCATION', data.location], ['LAST SAVED', data.saved]];
             rows.forEach(([label, value], i) => {
-                const rowY = y + (158 + i * 49) * unit;
-                this._text(ctx, label, x + 20, rowY, 9, '#927887');
-                this._text(ctx, value, x + 20, rowY + 18 * unit, Math.max(10, 13 * unit), '#DDCCD6', w - 40);
-                ctx.fillStyle = 'rgba(167,109,130,0.12)';
-                ctx.fillRect(x + 20, rowY + 28 * unit, w - 40, 1);
+                if (h < 250) {
+                    const rowY = y + 149 + i * 26;
+                    if (rowY > y + h - 16) return;
+                    this._text(ctx, label, x + 20, rowY, 10, '#91a8b7');
+                    ctx.textAlign = 'right';
+                    this._text(ctx, value, x + w - 20, rowY, 11, '#d7e5ec', w - 110);
+                    ctx.textAlign = 'left';
+                    return;
+                }
+                const rowY = y + (compact ? 149 : 179) + i * (compact ? 40 : 55);
+                if (rowY + 20 > y + h - 12) return;
+                this._text(ctx, label, x + 20, rowY, 10, '#91a8b7');
+                this._text(ctx, value, x + 20, rowY + 18, 12, '#d7e5ec', w - 40);
+                ctx.fillStyle = '#223844';
+                if (h >= 250) ctx.fillRect(x + 20, rowY + 28, w - 40, 1);
             });
-            const meterY = y + 309 * unit;
-            this._text(ctx, 'LIFE FORCE', x + 20, meterY, 9, '#927887');
-            ctx.textAlign = 'right';
-            this._text(ctx, data.lifeForce === null ? 'Not recorded' : String(data.lifeForce) + (data.lifeForceMax ? ' / ' + data.lifeForceMax : ''), x + w - 20, meterY, 10, '#E1A4B5');
-            ctx.textAlign = 'left';
-            if (data.lifeForce !== null && data.lifeForceMax) {
-                const ratio = Math.min(1, data.lifeForce / data.lifeForceMax);
-                ctx.fillStyle = '#27161E'; ctx.fillRect(x + 20, meterY + 12 * unit, w - 40, 4);
-                ctx.fillStyle = '#E34E72'; ctx.fillRect(x + 20, meterY + 12 * unit, (w - 40) * ratio, 4);
+            const meterY = y + h - 41;
+            if (h >= 312) {
+                this._text(ctx, 'LIFE FORCE', x + 20, meterY, 10, '#91a8b7');
+                ctx.textAlign = 'right';
+                this._text(ctx, data.lifeForce === null ? 'Not recorded' : String(data.lifeForce) + (data.lifeForceMax ? ' / ' + data.lifeForceMax : ''), x + w - 20, meterY, 11, '#e8cd8b');
+                ctx.textAlign = 'left';
+                if (data.lifeForce !== null && data.lifeForceMax) {
+                    const ratio = Math.min(1, data.lifeForce / data.lifeForceMax);
+                    ctx.fillStyle = '#263c48'; ctx.fillRect(x + 20, meterY + 12, w - 40, 5);
+                    ctx.fillStyle = '#8bcbd3'; ctx.fillRect(x + 20, meterY + 12, (w - 40) * ratio, 5);
+                }
             }
         }
         ctx.restore();
@@ -910,10 +925,10 @@ class IP2LiveLoadGameMenu extends Scene.Base {
         const data = this._slotDetails(slotNumber - 1);
         this._holoPanel(ctx, x, y, w, h, selected);
         ctx.save(); ctx.beginPath(); ctx.rect(x + 8, y + 6, w - 16, h - 12); ctx.clip();
-        const badgeY = y + (h - 46) / 2;
-        ctx.fillStyle = selected ? 'rgba(233,173,67,0.12)' : 'rgba(123,80,101,0.08)';
+        const badgeY = Math.round(y + (h - 46) / 2);
+        ctx.fillStyle = selected ? '#2a4147' : '#142632';
         ctx.fillRect(x + 14, badgeY, 40, 46);
-        ctx.strokeStyle = selected ? 'rgba(243,202,126,0.40)' : 'rgba(164,112,136,0.18)';
+        ctx.strokeStyle = selected ? '#b6a979' : '#35515f';
         ctx.strokeRect(x + 14, badgeY, 40, 46);
         ctx.fillStyle='rgba(1,7,13,0.55)';ctx.fillRect(x+17,badgeY+3,34,40);
         ctx.fillStyle=selected?'rgba(243,202,126,0.25)':'rgba(142,181,194,0.18)';
@@ -921,24 +936,32 @@ class IP2LiveLoadGameMenu extends Scene.Base {
         ctx.textAlign = 'center';
         this._text(ctx, String(slotNumber).padStart(2, '0'), x + 34, badgeY + 30, 21, selected ? '#F7D898' : '#9295AC');
         ctx.textAlign = 'left';
-        const textX = x + 70, textW = w - 92;
-        const statusW = w > 440 ? 68 : 0;
-        this._text(ctx, data.unavailable ? 'Unavailable save' : data.empty ? 'Empty slot' : data.name, textX, y + 26, 17, data.empty ? '#9C8997' : '#F8E9F0', textW - statusW);
+        const textX = x + 72, textW = w - 94;
+        const statusW = w > 440 ? 90 : 0;
+        const contentY = y + (h - (data.empty ? 40 : 60)) / 2;
+        this._text(ctx, data.unavailable ? 'Unavailable save' : data.empty ? 'Empty slot' : data.name, textX, contentY + 16, 18, data.empty ? '#bed0da' : '#f0f6fa', textW - statusW);
         if (statusW) {
             ctx.textAlign = 'right';
-            this._text(ctx, data.unavailable ? 'UNAVAILABLE' : data.empty ? 'EMPTY' : 'SAVED', x + w - 20, y + 24, 8, data.empty ? '#786270' : '#E78DA5');
+            ctx.fillStyle = selected ? '#294650' : '#172e3a'; ctx.fillRect(x + w - 96, y + 16, 76, 23);
+            this._text(ctx, data.unavailable ? 'UNAVAILABLE' : data.empty ? 'EMPTY' : 'SAVED', x + w - 28, y + 31, 10, data.unavailable ? '#e8b09e' : data.empty ? '#96afbd' : '#9bdce0');
             ctx.textAlign = 'left';
         }
-        this._text(ctx, data.unavailable ? 'Stored data kept / retry or choose another save' : data.empty ? (this.saveMode ? 'Create a new checkpoint' : 'No saved progress') : data.location + '    /    ' + this._getPlayTimeStr(data.playTimeMs), textX, y + 47, 11, data.empty ? '#84717F' : '#C799AA', textW);
-        if (!data.empty) this._text(ctx, data.saved === 'Not recorded' ? 'Save date not recorded' : 'Saved ' + data.saved, textX, y + 65, 10, '#9A8190', textW);
-        else {
-            ctx.strokeStyle = 'rgba(138,83,108,0.20)'; ctx.lineWidth = 1;
-            ctx.beginPath(); ctx.moveTo(textX, y + 61); ctx.lineTo(x + w - 28, y + 61); ctx.stroke();
-        }
+        this._text(ctx, data.unavailable ? 'Stored data kept / try another save' : data.empty ? (this.saveMode ? 'Create a new checkpoint' : 'No saved progress') : data.location + '    /    ' + this._getPlayTimeStr(data.playTimeMs), textX, contentY + 38, 12, '#9fb7c6', textW);
+        if (!data.empty) this._text(ctx, data.saved === 'Not recorded' ? 'Save date not recorded' : 'Saved ' + data.saved, textX, contentY + 57, 11, '#91a8b7', textW);
         ctx.restore();
     }
 
     _drawButton(ctx,scaleX,scaleY,bx,by,bw,bh,label,isSelected,index) {
+        if (label === 'BACK') {
+            const active = isSelected || this.hoverIndex === index;
+            ctx.save();
+            ctx.fillStyle = active ? '#294653' : '#152b37';ctx.fillRect(bx, by, bw, bh);
+            ctx.strokeStyle = active ? '#a2dde1' : '#4d707f'; ctx.lineWidth = 1;
+            ctx.strokeRect(bx + 0.5, by + 0.5, bw - 1, bh - 1);
+            ctx.textAlign = 'center';
+            this._text(ctx, label, bx + bw / 2, by + bh / 2 + 5, 13, '#edf5f8');
+            ctx.restore();return;
+        }
         IP2Live.PopupChrome.button(ctx,{x:bx,y:by,w:bw,h:bh},scaleX,scaleY,label,this._font(),isSelected||this.hoverIndex===index?1:0,this.animTick,label==='BACK'||label==='CANCEL');
     }
 

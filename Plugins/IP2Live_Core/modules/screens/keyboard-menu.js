@@ -15,6 +15,10 @@ class IP2LiveKeyboardMenu extends Scene.Base {
         this.animTick = 0;
         this.scanlineOffset = 0;
         this.listeningMode = false;
+        this.busy = false;
+        this.closed = false;
+        this.statusLine = 'Select a control, then press a key. Esc cancels assignment.';
+        this.justBoundKey = null;
 
         const kbGraphics = Data.Keyboards.getCommandsGraphics();
         this.kbItems = kbGraphics.map(g => g.kb);
@@ -27,6 +31,7 @@ class IP2LiveKeyboardMenu extends Scene.Base {
 
     async load() {
         if (!IP2Live.Assets.bgImage) await IP2Live.Assets.loadAll();
+        if (this.closed) return;
         const cW = Common.Platform.ctx.canvas.width;
         const cH = Common.Platform.ctx.canvas.height;
         this.bgFx.seed(cW, cH);
@@ -37,31 +42,45 @@ class IP2LiveKeyboardMenu extends Scene.Base {
     }
 
     onKeyPressed(key) {
+        if (this.closed) return true;
+        const value = String(key?.key ?? key);
+        if (!this.listeningMode) this.justBoundKey = null;
         if (this.listeningMode) {
-            const kb = this.kbItems[this.selectedIndex];
-            const newSC = [[key]];
-            kb.sc = newSC;
-
-            if (Data.Settings && Data.Settings.updateKeyboard) {
-                Data.Settings.updateKeyboard(kb.id, newSC).catch(console.error);
+            if (value.toUpperCase() === 'ESCAPE') {
+                this.listeningMode = false;
+                this.statusLine = 'Assignment cancelled.';
+                IP2Live.InputGuard?.reset();
+                Data.Systems.soundCancel.playSound();
+                Manager.Stack.requestPaintHUD = true;
+                return true;
             }
-
+            const kb = this.kbItems[this.selectedIndex];
+            const conflict = this._bindingConflict(kb, value);
+            if (conflict) {
+                this.statusLine = conflict;
+                Data.Systems.soundImpossible.playSound();
+                Manager.Stack.requestPaintHUD = true;
+                return true;
+            }
             this.listeningMode = false;
+            this.justBoundKey = value.toUpperCase();
+            this._applyBindings([{ kb, sc: [[value]] }], 'Binding updated.');
             Data.Systems.soundConfirmation.playSound();
             Manager.Stack.requestPaintHUD = true;
-            return;
+            return true;
         }
 
-        if (Data.Keyboards.checkActionMenu(key)) {
+        // Escape always provides a way out, even if a saved binding conflicts.
+        if (value.toUpperCase() === 'ESCAPE' || Data.Keyboards.checkCancelMenu(key)) {
+            this._goBack();
+        } else if (!this.busy && Data.Keyboards.checkActionMenu(key)) {
             this._confirmSelection();
-        } else if (Data.Keyboards.checkCancelMenu(key)) {
-            Data.Systems.soundCancel.playSound();
-            Manager.Stack.pop();
         }
+        return true;
     }
 
     onKeyPressedAndRepeat(key) {
-        if (this.listeningMode) return true;
+        if (this.closed || this.busy || this.listeningMode || String(key).toUpperCase() === this.justBoundKey) return true;
 
         const totalItems = this.kbItems.length + 2;
         const prev = this.selectedIndex;
@@ -92,8 +111,12 @@ class IP2LiveKeyboardMenu extends Scene.Base {
         return true;
     }
 
+    onKeyReleased(key) {
+        if (String(key).toUpperCase() === this.justBoundKey) this.justBoundKey = null;
+    }
+
     onMouseMove(x, y) {
-        if (this.listeningMode) return;
+        if (this.closed || this.listeningMode || this.busy) return;
         const newHover = this._getButtonAt(x, y);
         if (newHover !== this.hoverIndex) {
             this.hoverIndex = newHover;
@@ -106,8 +129,10 @@ class IP2LiveKeyboardMenu extends Scene.Base {
     }
 
     onMouseUp(x, y) {
-        if (this.listeningMode) return;
+        if (this.closed) return;
         const idx = this._getButtonAt(x, y);
+        if (idx === this.kbItems.length + 1) { this._goBack(); return; }
+        if (this.listeningMode || this.busy) return;
         if (idx >= 0) {
             if (idx !== this.selectedIndex) {
                 this.selectedIndex = idx;
@@ -131,38 +156,115 @@ class IP2LiveKeyboardMenu extends Scene.Base {
     }
 
     _confirmSelection() {
+        if (this.closed) return;
+        if (this.selectedIndex === this.kbItems.length + 1) { this._goBack(); return; }
+        if (this.busy || this.listeningMode) return;
         if (this.selectedIndex < this.kbItems.length) {
             Data.Systems.soundConfirmation.playSound();
             this.listeningMode = true;
+            this.statusLine = 'Press a new key. Esc cancels assignment.';
             Manager.Stack.requestPaintHUD = true;
         } else if (this.selectedIndex === this.kbItems.length) {
             this._resetToDefault();
-        } else if (this.selectedIndex === this.kbItems.length + 1) {
-            Data.Systems.soundCancel.playSound();
-            Manager.Stack.pop();
         }
     }
 
-    _resetToDefault() {
+    _bindingConflict(kb, key) {
+        const value = key.toUpperCase(), name = item => typeof item.name === 'function' ? item.name() : item.name;
+        if (value === 'F4') return 'F4 is reserved for fullscreen. Choose another key.';
+        const families = [[1, 2, 3, 4], [5, 6, 7, 8], [9, 10]];
+        const menus = [11, 12, 13];
+        for (const other of this.kbItems) {
+            if (other.id === kb.id || !other.sc?.some(group => group.length === 1 && String(group[0]).toUpperCase() === value)) continue;
+            const sharedCancel = [12, 13].includes(kb.id) && [12, 13].includes(other.id);
+            if (!sharedCancel && (menus.includes(kb.id) || menus.includes(other.id) || families.some(ids => ids.includes(kb.id) && ids.includes(other.id)))) {
+                return 'Already used by ' + name(other) + '. Choose another key.';
+            }
+        }
+        return '';
+    }
+
+    async _applyBindings(changes, success) {
+        this.busy = true;
+        // Keep the engine's keyboard models in place: movement/menu controls
+        // hold references to these same models.
+        for (const { kb, sc } of changes) kb.sc = sc.map(group => group.slice());
+        IP2Live.InputGuard?.bindingsChanged?.();
+        this.statusLine = 'Saving controls...';
+        Manager.Stack.requestPaintHUD = true;
+        const settings = Data.Settings;
+        const persist = async () => {
+            if (settings?.kb && typeof settings.kb.set === 'function' && typeof settings.save === 'function') {
+                for (const { kb, sc } of changes) settings.kb.set(kb.id, sc.map(group => group.slice()));
+                await settings.save();
+            } else if (settings?.updateKeyboard) {
+                // Older engines expose only single-binding writes. Serialize
+                // them so an earlier settings snapshot cannot overwrite a later one.
+                for (const { kb, sc } of changes) await settings.updateKeyboard(kb.id, sc.map(group => group.slice()));
+            }
+        };
+        const task = (IP2LiveKeyboardMenu._writeQueue || Promise.resolve()).catch(() => {}).then(persist);
+        IP2LiveKeyboardMenu._writeQueue = task;
+        try {
+            await task;
+            if (!this.closed) this.statusLine = success;
+        } catch (error) {
+            console.warn('[IP2Live] Could not save controls:', error);
+            if (!this.closed) this.statusLine = 'Controls work for this session. Could not save settings; try again.';
+        } finally {
+            if (IP2LiveKeyboardMenu._writeQueue === task) IP2LiveKeyboardMenu._writeQueue = null;
+            this.busy = false;
+            if (!this.closed) Manager.Stack.requestPaintHUD = true;
+        }
+    }
+
+    async _resetToDefault() {
+        if (this.closed || this.busy || this.listeningMode) return false;
+        this.busy = true;
+        this.statusLine = 'Restoring default controls...';
+        Manager.Stack.requestPaintHUD = true;
         Data.Systems.soundConfirmation.playSound();
-        const root = Common.Platform.ROOT_DIRECTORY;
-        fetch(root + 'keyboard.json')
-            .then(res => res.json())
-            .then(data => {
-                if (data && data.list) {
-                    for (const def of data.list) {
-                        const kb = this.kbItems.find(k => k.id === def.id);
-                        if (kb) {
-                            kb.sc = def.sc;
-                            if (Data.Settings && Data.Settings.updateKeyboard) {
-                                Data.Settings.updateKeyboard(kb.id, def.sc).catch(console.error);
-                            }
-                        }
-                    }
-                    Manager.Stack.requestPaintHUD = true;
-                }
-            })
-            .catch(e => console.error('Failed to reset keyboards', e));
+        try {
+            const path = Common.Paths?.FILE_KEYBOARD || Common.Platform.ROOT_DIRECTORY + 'keyboard.json';
+            let data;
+            if (Common.Platform.parseFileJSON) data = await Common.Platform.parseFileJSON(path);
+            else {
+                const response = await fetch(path, { cache: 'no-store' });
+                if (!response.ok) throw new Error('Keyboard defaults unavailable');
+                data = await response.json();
+            }
+            if (this.closed) return false;
+            const defaults = new Map((data?.list || []).map(def => [def.id, def.sc]));
+            const changes = this.kbItems.map(kb => ({ kb, sc: defaults.get(kb.id) }));
+            if (!changes.length || changes.some(({ sc }) => !Array.isArray(sc) || !sc.length || sc.some(group =>
+                !Array.isArray(group) || !group.length || group.some(key => typeof key !== 'string' || !key.length)))) {
+                throw new Error('Incomplete keyboard defaults');
+            }
+            await this._applyBindings(changes, 'Default controls restored.');
+            return true;
+        } catch (error) {
+            console.warn('[IP2Live] Failed to reset controls:', error);
+            if (!this.closed) this.statusLine = 'Could not restore defaults. Your controls are unchanged; try again.';
+            return false;
+        } finally {
+            this.busy = false;
+            if (!this.closed) Manager.Stack.requestPaintHUD = true;
+        }
+    }
+
+    _goBack() {
+        if (this.closed || (Manager.Stack.top && Manager.Stack.top !== this)) return;
+        Data.Systems.soundCancel.playSound();
+        Manager.Stack.pop();
+    }
+
+    close() {
+        this.closed = true;
+        this.listeningMode = false;
+        this.justBoundKey = null;
+        IP2Live.InputGuard?.reset();
+        this.backdrop = null;
+        if (super.close) super.close();
     }
 
     update() {
@@ -190,6 +292,8 @@ class IP2LiveKeyboardMenu extends Scene.Base {
             const value=this.listeningMode && active ? 'Press a key...' : [...new Set((kb.sc||[]).map(group=>group.map(k=>keys[k]||String(k).toUpperCase()).join(' + ')))].join(' / ');
             ctx.textAlign='right'; ctx.fillStyle=active?'#e5d779':'#80b8c1'; ctx.fillText(value||'None',r.x+r.w-14,r.y+24,125);
         });
+        ctx.font='11px Oxanium-Medium, sans-serif'; ctx.textAlign='center'; ctx.fillStyle='#a9bdc5';
+        ctx.fillText(this.statusLine,l.x+l.w/2,l.y+l.h-64,l.w-56);
         ['RESET DEFAULTS','BACK'].forEach((label,i)=>chrome.button(ctx,l.cells[this.kbItems.length+i],1,1,label,'Oxanium-Medium',this.selectedIndex===this.kbItems.length+i?1:0,this.animTick,i===1));
         ctx.restore();
     }

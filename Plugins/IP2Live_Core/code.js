@@ -259,63 +259,8 @@ window.IP2Live = IP2Live;
 //  § 1.6 DISABLE DIAGONAL MOVEMENT
 //  Filters out multiple directional keys to force 4-way movement.
 // ================================================================
-(function() {
-    let activeDirKey = null;
-    let cachedDirShortcuts = null;
-
-    inject(Scene.Map, 'update', function() {
-        if (Manager.Events.keysPressed && Data.Keyboards.getCommandsGraphics) {
-            
-            // 1. Cache the movement shortcuts once so we don't kill performance
-            if (!cachedDirShortcuts) {
-                cachedDirShortcuts = [];
-                const commands = Data.Keyboards.getCommandsGraphics();
-                for (let i = 0; i < commands.length; i++) {
-                    // IDs 1, 2, 3, 4 are the Hero Movement actions in RPG Paper Maker
-                    if (commands[i].id >= 1 && commands[i].id <= 4 && commands[i].sc) {
-                        for (let j = 0; j < commands[i].sc.length; j++) {
-                            cachedDirShortcuts.push(commands[i].sc[j]);
-                        }
-                    }
-                }
-            }
-
-            let pressedDirs = [];
-            
-            // 2. Identify which keys currently pressed are movement keys
-            for (let i = 0; i < Manager.Events.keysPressed.length; i++) {
-                const k = Manager.Events.keysPressed[i];
-                let isDir = false;
-                for (let s = 0; s < cachedDirShortcuts.length; s++) {
-                    if (Data.Keyboards.isKeyEqual(k, cachedDirShortcuts[s])) {
-                        isDir = true;
-                        break;
-                    }
-                }
-                if (isDir) pressedDirs.push(k);
-            }
-
-            // 3. Maintain the active priority key
-            if (activeDirKey !== null && !pressedDirs.includes(activeDirKey)) {
-                activeDirKey = null;
-            }
-            if (activeDirKey === null && pressedDirs.length > 0) {
-                activeDirKey = pressedDirs[0];
-            }
-
-            // 4. Strip any secondary direction inputs from the global array
-            if (activeDirKey !== null) {
-                for (let i = Manager.Events.keysPressed.length - 1; i >= 0; i--) {
-                    const k = Manager.Events.keysPressed[i];
-                    if (pressedDirs.includes(k) && k !== activeDirKey) {
-                        Manager.Events.keysPressed.splice(i, 1);
-                    }
-                }
-            }
-        }
-        this.super();
-    }, true, true);
-})();
+// Installed by modules/input_guard.js before the title screen becomes ready.
+// Direction selection filters dispatch without deleting other held keys.
 
 // ================================================================
 //  § 1.5  GLOBAL CSS OVERRIDES (Font Anti-Aliasing)
@@ -374,6 +319,25 @@ IP2Live.Assets = {
         await this.loadBackground(root);
     },
 
+    loadPauseFonts(root = Common.Platform.ROOT_DIRECTORY) {
+        if (this.abnesLoaded && this.nebulaLoaded) return Promise.resolve();
+        if (this._pauseFontsPromise) return this._pauseFontsPromise;
+        this._pauseFontsPromise = Promise.all([
+            ['Abnes', 'abnes.ttf', 'abnesLoaded'],
+            ['Nebula-Regular', 'Nebula-Regular.otf', 'nebulaLoaded'],
+        ].map(async ([name, file, flag]) => {
+            if (this[flag]) return;
+            try {
+                const face = new FontFace(name, 'url("' + root + 'Fonts/' + file + '")');
+                document.fonts.add(await face.load());
+                this[flag] = true;
+            } catch (error) {
+                console.warn('[IP2Live] ' + name + ' font load failed, falling back.', error);
+            }
+        })).finally(() => { this._pauseFontsPromise = null; });
+        return this._pauseFontsPromise;
+    },
+
     async loadFonts(root) {
         if (!this.reliduxLoaded) {
             try {
@@ -384,25 +348,7 @@ IP2Live.Assets = {
                 console.warn('[IP2Live] Relidux font load failed, falling back.', e);
             }
         }
-        try {
-            const abnesFace = new FontFace('Abnes', 'url("' + root + 'Fonts/abnes.ttf")');
-            const loadedAbnes = await abnesFace.load();
-            document.fonts.add(loadedAbnes);
-            this.abnesLoaded = true;
-            console.log('[IP2Live] Abnes font loaded.');
-        } catch (e) {
-            console.warn('[IP2Live] Abnes font load failed, falling back.', e);
-        }
-
-        try {
-            const nebulaFace = new FontFace('Nebula-Regular', 'url("' + root + 'Fonts/Nebula-Regular.otf")');
-            const loadedNebula = await nebulaFace.load();
-            document.fonts.add(loadedNebula);
-            this.nebulaLoaded = true;
-            console.log('[IP2Live] Nebula-Regular font loaded.');
-        } catch (e) {
-            console.warn('[IP2Live] Nebula-Regular font load failed, falling back.', e);
-        }
+        await this.loadPauseFonts(root);
 
         try {
             const oxaniumMediumFace = new FontFace('Oxanium-Medium', 'url("' + root + 'Fonts/Oxanium-Medium.ttf")');
@@ -720,6 +666,8 @@ IP2Live.UI = {
             label, numberLabel,
             isActive, isDanger,
             scrambleText, animTick,
+            labelFontSize,
+            paintChrome = true, paintLabel = true,
             showChevron = true
         } = options;
 
@@ -732,44 +680,46 @@ IP2Live.UI = {
         ctx.save();
 
         ctx.translate(isActive ? 8 * scaleX : 0, 0);
-        ctx.beginPath();
-        ctx.moveTo(x + slant, y);
-        ctx.lineTo(x + w - slant * 0.4, y);
-        ctx.lineTo(x + w, y + h * 0.23);
-        ctx.lineTo(x + w - slant, y + h);
-        ctx.lineTo(x + slant * 0.7, y + h);
-        ctx.lineTo(x, y + h * 0.75);
-        ctx.closePath();
+        if (paintChrome) {
+            ctx.beginPath();
+            ctx.moveTo(x + slant, y);
+            ctx.lineTo(x + w - slant * 0.4, y);
+            ctx.lineTo(x + w, y + h * 0.23);
+            ctx.lineTo(x + w - slant, y + h);
+            ctx.lineTo(x + slant * 0.7, y + h);
+            ctx.lineTo(x, y + h * 0.75);
+            ctx.closePath();
 
-        const grad = ctx.createLinearGradient(x, y, x + w, y);
-        if (isActive) {
-            ctx.shadowColor = activeColor;
-            ctx.shadowBlur = 15 * scaleX;
-            grad.addColorStop(0, isDanger ? 'rgba(255,0,60,0.58)' : 'rgba(255,230,0,0.66)');
-            grad.addColorStop(0.46, isDanger ? 'rgba(80,0,25,0.72)' : 'rgba(72,66,0,0.72)');
-            grad.addColorStop(1, 'rgba(3,7,20,0.78)');
-        } else {
-            grad.addColorStop(0, 'rgba(3,7,20,0.88)');
-            grad.addColorStop(1, 'rgba(3,7,20,0.42)');
+            const grad = ctx.createLinearGradient(x, y, x + w, y);
+            if (isActive) {
+                ctx.shadowColor = activeColor;
+                ctx.shadowBlur = 15 * scaleX;
+                grad.addColorStop(0, isDanger ? 'rgba(255,0,60,0.58)' : 'rgba(255,230,0,0.66)');
+                grad.addColorStop(0.46, isDanger ? 'rgba(80,0,25,0.72)' : 'rgba(72,66,0,0.72)');
+                grad.addColorStop(1, 'rgba(3,7,20,0.78)');
+            } else {
+                grad.addColorStop(0, 'rgba(3,7,20,0.88)');
+                grad.addColorStop(1, 'rgba(3,7,20,0.42)');
+            }
+            ctx.fillStyle = grad;
+            ctx.fill();
+            ctx.shadowBlur = 0;
+
+            ctx.lineWidth = (isActive ? 2.2 : 1.1) * scaleX;
+            ctx.strokeStyle = activeColor;
+            ctx.globalAlpha = isActive ? 1 : 0.62;
+            ctx.stroke();
+            ctx.globalAlpha = 1;
+
+            ctx.beginPath();
+            ctx.moveTo(x, y);
+            ctx.lineTo(x + 42 * scaleX, y);
+            ctx.lineTo(x + 30 * scaleX, y + 22 * scaleY);
+            ctx.lineTo(x, y + 28 * scaleY);
+            ctx.closePath();
+            ctx.fillStyle = isActive ? '#FF003C' : '#00F0FF';
+            ctx.fill();
         }
-        ctx.fillStyle = grad;
-        ctx.fill();
-        ctx.shadowBlur = 0;
-
-        ctx.lineWidth = (isActive ? 2.2 : 1.1) * scaleX;
-        ctx.strokeStyle = activeColor;
-        ctx.globalAlpha = isActive ? 1 : 0.62;
-        ctx.stroke();
-        ctx.globalAlpha = 1;
-
-        ctx.beginPath();
-        ctx.moveTo(x, y);
-        ctx.lineTo(x + 42 * scaleX, y);
-        ctx.lineTo(x + 30 * scaleX, y + 22 * scaleY);
-        ctx.lineTo(x, y + 28 * scaleY);
-        ctx.closePath();
-        ctx.fillStyle = isActive ? '#FF003C' : '#00F0FF';
-        ctx.fill();
 
         if (isActive && animTick !== undefined) {
             ctx.save();
@@ -794,29 +744,31 @@ IP2Live.UI = {
             ctx.restore();
         }
 
-        if (numberLabel) {
+        if (paintLabel && numberLabel) {
             ctx.font = Math.round(8 * scaleX) + 'px monospace';
             ctx.fillStyle = isActive ? '#080808' : '#00141A';
             ctx.textAlign = 'left';
             ctx.fillText(numberLabel, x + 10 * scaleX, y + 15 * scaleY);
         }
 
-        let displayLabel = label;
-        if (isActive && scrambleText !== undefined) displayLabel = scrambleText;
+        if (paintLabel) {
+            let displayLabel = label;
+            if (isActive && scrambleText !== undefined) displayLabel = scrambleText;
 
-        ctx.font = 'bold ' + Math.round((isActive ? 19 : 17) * scaleX) + 'px ' + fontName;
-        ctx.fillStyle = isActive ? (isDanger ? '#FFFFFF' : '#111111') : '#FFFFFF';
-        ctx.shadowColor = isActive ? `rgba(255,255,255,${0.28 + pulse * 0.22})` : 'transparent';
-        ctx.shadowBlur = isActive ? 3 * scaleX : 0;
-        ctx.textAlign = 'left';
-        ctx.fillText(displayLabel, x + 24 * scaleX, y + h * 0.62);
+            ctx.font = 'bold ' + Math.round((labelFontSize || (isActive ? 19 : 17)) * scaleX) + 'px ' + fontName;
+            ctx.fillStyle = isActive ? (isDanger ? '#FFFFFF' : '#111111') : '#FFFFFF';
+            ctx.shadowColor = isActive ? `rgba(255,255,255,${0.28 + pulse * 0.22})` : 'transparent';
+            ctx.shadowBlur = isActive ? 3 * scaleX : 0;
+            ctx.textAlign = 'left';
+            ctx.fillText(displayLabel, x + 24 * scaleX, y + h * 0.62);
 
-        if (isActive && showChevron) {
-            ctx.shadowBlur = 0;
-            ctx.font = 'bold ' + Math.round(13 * scaleX) + 'px monospace';
-            ctx.textAlign = 'right';
-            ctx.fillStyle = isDanger ? '#FFFFFF' : '#111111';
-            ctx.fillText('>>', x + w - 16 * scaleX, y + h * 0.62);
+            if (isActive && showChevron) {
+                ctx.shadowBlur = 0;
+                ctx.font = 'bold ' + Math.round(13 * scaleX) + 'px monospace';
+                ctx.textAlign = 'right';
+                ctx.fillStyle = isDanger ? '#FFFFFF' : '#111111';
+                ctx.fillText('>>', x + w - 16 * scaleX, y + h * 0.62);
+            }
         }
 
         ctx.restore();
@@ -832,6 +784,10 @@ IP2Live.DialogueManagerReady = (async function () {
     const root = Common.Platform.ROOT_DIRECTORY;
     const src  = root + 'Plugins/IP2Live_Core/modules/dialogue_manager.js';
     try {
+        const loreResponse = await fetch(root + 'Plugins/IP2Live_Core/modules/story_lore.js?v=' + Date.now(), { cache: 'no-store' });
+        if (!loreResponse.ok) throw new Error('Story lore HTTP ' + loreResponse.status);
+        new Function('Common', 'Core', 'Data', 'Graphic', 'Manager', 'Scene', 'Model', 'Main', 'THREE', 'IP2Live', 'inject',
+            await loreResponse.text())(Common, Core, Data, Graphic, Manager, Scene, Model, Main, THREE, IP2Live, inject);
         const versionedSrc = src + '?v=20260918_dialogue_manager_12_' + Date.now();
         let resp = await fetch(versionedSrc, { cache: 'no-store' });
         if (!resp.ok) {
@@ -888,6 +844,7 @@ IP2Live.GameStateManagerReady = (async function () {
     const root = Common.Platform.ROOT_DIRECTORY;
     const baseDir = root + 'Plugins/IP2Live_Core/modules/game-state/';
     const files = [
+        'floor_state_config.js',
         'game_state_manager.js',
         'darklights_state.js',
         'security_light_state.js',
@@ -983,9 +940,10 @@ IP2Live.GameplayManagerReady = (async function () {
     const bundles = [
         {
             baseDir: root + 'Plugins/IP2Live_Core/gameplay/common/',
-            version: '20260918_gameplay_common_03_',
+            version: '20261013_gameplay_common_04_',
             files: [
                 'ip_class_ranges.js',
+                'gameplay_timer.js',
                 'gameplay_completion_popup.js',
             ],
         },
@@ -1310,7 +1268,7 @@ IP2Live.MusicManagerReady = (async function () {
         // Do not let Electron's persistent Chromium profile reuse an older
         // music manager after a game update. Audio bugs otherwise survive a
         // reinstall even when the packaged module was replaced correctly.
-        const versionedSrc = src + '?v=20260821_native_bgm_03_' + Date.now();
+        const versionedSrc = src + '?v=20261014_managed_bgm_07_' + Date.now();
         let resp = await fetch(versionedSrc, { cache: 'no-store' });
         if (!resp.ok) resp = await fetch(src, { cache: 'no-store' });
         if (!resp.ok) throw new Error('HTTP ' + resp.status);
@@ -1412,7 +1370,7 @@ IP2Live.GameManagerReady = (async function () {
             code
         )(Common, Core, Data, Graphic, Manager, Scene, Model, Main, THREE, IP2Live, inject);
         if (IP2Live.GameManager && typeof IP2Live.GameManager.boot === 'function') {
-            for (const module of ['achievements.js', 'practice_mode.js']) {
+            for (const module of ['input_guard.js', 'achievements.js', 'feature_telemetry.js', 'practice_mode.js', 'pvp_rules.js', 'certificate_pdf.js', 'pvp_certificate.js', 'pvp_mode.js', 'endless_rules.js', 'endless_mode.js']) {
                 const response = await fetch(root + 'Plugins/IP2Live_Core/modules/' + module + '?v=' + Date.now(), { cache: 'no-store' });
                 if (!response.ok) throw new Error(module + ' HTTP ' + response.status);
                 new Function('Common', 'Core', 'Data', 'Graphic', 'Manager', 'Scene', 'Model', 'Main', 'THREE', 'IP2Live', 'inject',
@@ -1483,6 +1441,8 @@ IP2Live.ScreenModulesReady = (async function () {
     const screens = [
         '../story_persistence.js',
         '../story_autosave.js',
+        '../story_completion.js',
+        '../story_certificate.js',
         'menu-transition.js',
         'loading-screen.js',
         'loading-screen-2.js',
@@ -1492,6 +1452,10 @@ IP2Live.ScreenModulesReady = (async function () {
         'background-screen.js',
         'confir-popup.js',
         'credits.js',
+        'story-ending.js',
+        'story-prologue-art.js',
+        'story-prologue.js',
+        'endless.js',
         'keyboard-menu.js',
         'load-game.js',
         'export-report.js',
@@ -1500,6 +1464,7 @@ IP2Live.ScreenModulesReady = (async function () {
         'gameplay-pause.js',
         'pause-menu.js',
         'practice-grid.js',
+        'pvp.js',
         'main-menu.js',
     ];
 

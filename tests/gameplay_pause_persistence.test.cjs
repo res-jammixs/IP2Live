@@ -248,18 +248,38 @@ function testVLSMRestoresSharedCampaignAllocations() {
     assert.equal(h.IP2Live.VLSMAllocatorGameplayManager._state.allocations.eugene.cidr,'172.30.34.0/24');
 }
 
-function testPauseCheckpointsStoryWithoutNumberedSlot() {
+async function testPauseCheckpointsStoryWithoutNumberedSlot() {
     const h = harness();
     const reasons = [];
     h.IP2Live.StoryAutosave = { checkpoint(reason) { reasons.push(reason); return Promise.resolve({ saved: true }); } };
     const screen = new WireScreen({ mapId: 3, questId: 'story.unslotted', objectiveId: 'wire.one' });
     assert.equal(h.system.open(screen, screen.gameplayId), true);
-    assert.deepEqual(reasons, ['gameplay_paused']);
+    assert.deepEqual(reasons, [], 'durable serialization must not block the opening animation');
     assert.ok(h.system.findSession(screen.gameplayId, screen.options));
+    const menu = h.stack.pushed.at(-1); menu.initialize();
+    for (let i = 0; i < 11; i++) menu.update();
+    assert.deepEqual(reasons, [], 'the opening frames do not serialize saves');
+    menu.update();
+    assert.deepEqual(reasons, [], 'the fully open frame can paint before the save task');
+    await new Promise(resolve => setTimeout(resolve, 0));
+    assert.deepEqual(reasons, ['gameplay_paused']);
+    assert.equal(h.IP2Live.GameManager.saveCalls.length, 1);
+    menu.close();
+    assert.equal(h.IP2Live.GameManager.saveCalls.length, 1, 'closing does not duplicate an already completed pause checkpoint');
     h.system.closeMenu();
     const developer = new WireScreen({ mapId: 3, developerTest: true, questId: 'developer.test', objectiveId: 'wire.test' });
     h.system.open(developer, developer.gameplayId);
+    h.stack.pushed.at(-1).close();
     assert.deepEqual(reasons, ['gameplay_paused'], 'developer pauses never checkpoint the story');
+
+    const quick = harness(), quickScreen = new WireScreen({ mapId: 3, questId: 'story.quick', objectiveId: 'wire.quick' });
+    quick.system.open(quickScreen, quickScreen.gameplayId);
+    quick.stack.pushed.at(-1).close();
+    assert.equal(quick.IP2Live.GameManager.saveCalls.length, 1, 'quick resume still checkpoints before removing the pause');
+    quick.system.closeMenu(); quick.system.open(quickScreen, quickScreen.gameplayId);
+    quick.Core.Game.current = { currentMapID: 5, ip2liveGameStates: {} };
+    quick.stack.pushed.at(-1).close();
+    assert.equal(quick.IP2Live.GameManager.saveCalls.length, 1, 'a deferred pause never writes into a replacement story');
 }
 
 function testGameplayPausePopupResume() {
@@ -402,7 +422,7 @@ async function main() {
     await testPauseInputAndDurableRestore();
     testSubnetBlasterDurableRestoreAndStoryOwnership();
     testVLSMRestoresSharedCampaignAllocations();
-    testPauseCheckpointsStoryWithoutNumberedSlot();
+    await testPauseCheckpointsStoryWithoutNumberedSlot();
     testGameplayPausePopupResume();
     await testExitQuestCheckpointsBeforeCancel();
     await testDeveloperExitDiscardsSession();

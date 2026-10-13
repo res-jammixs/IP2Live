@@ -39,6 +39,17 @@ class IP2LiveQuestArrowGuide {
         if (this._guideGroup && this._guideGroup.parent) {
             this._guideGroup.parent.remove(this._guideGroup);
         }
+        // These resources belong exclusively to this guide. Dots share geometry
+        // and materials, so dispose each resource once when rebuilding a guide.
+        if (this._guideGroup && this._guideGroup.traverse) {
+            const geometries = new Set(), materials = new Set();
+            this._guideGroup.traverse(node => {
+                if (node.geometry) geometries.add(node.geometry);
+                if (node.material) for (const material of [].concat(node.material)) materials.add(material);
+            });
+            for (const geometry of geometries) if (geometry.dispose) geometry.dispose();
+            for (const material of materials) if (material.dispose) material.dispose();
+        }
         this._guideGroup = null;
         this._pathGroup = null;
         this._arrowMesh = null;
@@ -207,7 +218,13 @@ class IP2LiveQuestArrowGuide {
         if (!scene) return;
 
         if (this._guideGroup && this._scene !== scene) this.clear();
-        if (this._guideGroup) return;
+        if (this._guideGroup) {
+            // The renderer can clear a map's children while retaining the same
+            // scene object. Reattach the live guide instead of trusting our cache.
+            if (this._guideGroup.parent !== scene) scene.add(this._guideGroup);
+            this._guideGroup.visible = true;
+            return;
+        }
 
         const ctx = context || {};
         const hero = ctx.hero || null;

@@ -6,7 +6,7 @@
  */
 
 const IP2LiveReportManager = {
-    VERSION: 'report-manager-20261011-07',
+    VERSION: 'report-manager-20261013-01',
     // This is the required recipient password for every report package.  Keeping
     // it in one place makes a future credential rotation deliberate and auditable.
     EXPORT_PASSWORD: '2627-IT228-G0102',
@@ -91,12 +91,16 @@ const IP2LiveReportManager = {
         await this.flush();
         const now = Date.now();
         const since = scopeDays === 0 ? 0 : now - scopeDays * 24 * 60 * 60 * 1000;
-        const telemetry = await this._queryTelemetry(profileName, since, profileId);
+        // The dashboard keeps its chosen window. Longitudinal learning needs
+        // the earliest retained evidence, even when it predates that window.
+        const progressTelemetry = await this._queryTelemetry(profileName, 0, profileId);
+        const telemetry = progressTelemetry.filter(row => Number(row.timestamp) >= since);
         const dto = this._buildReportDTO({
             infiltratorName: profileName,
             scopeDays: scopeDays,
             generatedAt: now,
             telemetry: telemetry,
+            progressTelemetry: progressTelemetry,
             gameplayCatalog: catalog,
         });
 
@@ -470,7 +474,12 @@ const IP2LiveReportManager = {
         const learning = IP2Live.ReportLearningAnalytics && IP2Live.ReportLearningAnalytics.analyze
             ? IP2Live.ReportLearningAnalytics.analyze({ attempts: attempts, events: telemetry, gameplayCatalog: catalog })
             : this._unavailableLearningAnalytics();
-        const performanceSummary = learning.feedback.summary;
+        const progressEvents = Array.isArray(input.progressTelemetry) ? input.progressTelemetry : telemetry;
+        const progressAttempts = progressEvents === telemetry ? attempts : this._enrichAttemptRows(this._attemptRows(progressEvents), catalogByGameplay);
+        const learningProgress = IP2Live.ReportLearningAnalytics && IP2Live.ReportLearningAnalytics.learningProgress
+            ? IP2Live.ReportLearningAnalytics.learningProgress({ events: progressEvents, attempts: progressAttempts, gameplayCatalog: catalog, allHistory: Array.isArray(input.progressTelemetry) || input.scopeDays === 0 })
+            : this._unavailableLearningProgress();
+        const performanceSummary = learning.feedback.summary + (learning.feedback.featureAnalysis ? ' ' + learning.feedback.featureAnalysis : '') + ' ' + learningProgress.summary;
         stats.progressionTrend = {
             direction: learning.improvement.status === 'insufficient_data' ? 'insufficient data' :
                 learning.improvement.accuracyChangePp < -5 || learning.improvement.passRateChangePp < -5 ? 'declining' :
@@ -480,7 +489,7 @@ const IP2LiveReportManager = {
         };
 
         return {
-            version: 'report-dto-20261011-04',
+            version: 'report-dto-20261013-01',
             summary: {
                 infiltratorName: input.infiltratorName,
                 generatedAt: Number(input.generatedAt) || Date.now(),
@@ -526,6 +535,8 @@ const IP2LiveReportManager = {
             stats: stats,
             performanceSummary: performanceSummary,
             learning: learning,
+            learningProgress,
+            progressEventAudit: { scope: learningProgress.allHistory ? 'all_recorded_history' : 'report_window', eventCount: progressEvents.length, records: this._clonePlain(progressEvents) },
             gameplayCatalog: this._clonePlain(catalog),
             attemptsRaw: attempts,
             attemptMistakes: attemptMistakes,
@@ -1123,7 +1134,8 @@ const IP2LiveReportManager = {
             activeDurationKnown: active !== null && active >= 0,
             durationMethod: row.durationMethod || payload.durationMethod || result.durationMethod || 'wall_clock_only',
             gameplayVersion: row.gameplayVersion || payload.gameplayVersion || result.gameplayVersion || ((result.telemetrySchemaVersion || payload.telemetrySchemaVersion) ? 'decision_schema_' + (result.telemetrySchemaVersion || payload.telemetrySchemaVersion) : 'legacy_unversioned'),
-            practiceMode: !!(row.practiceMode || payload.practiceMode || result.practiceMode),
+            practiceMode: !!(row.featureMode === 'practice' || payload.featureMode === 'practice' || row.practiceMode || payload.practiceMode || result.practiceMode || spec.practiceMode || context.practiceMode || row.practiceGameplay || spec.practiceGameplay),
+            endlessMode: !!(row.featureMode === 'endless' || payload.featureMode === 'endless' || row.endlessMode || payload.endlessMode || result.endlessMode || spec.endlessMode || context.endlessMode),
             developerTesting: !!(row.developerTesting || row.developerTest || payload.developerTesting || payload.developerTest || result.developerTesting || result.developerTest || result.developerSkip || result.developerFail || context.developerTest || spec.developerTest || row.simulated || payload.simulated),
         };
     },
@@ -1187,8 +1199,8 @@ const IP2LiveReportManager = {
                 : stage.name;
             row.gameplayLabel = gameplay.label || row.gameplayLabel || row.gameplayId;
             row.questLabel = row.questLabel || row.questId || 'Unassigned quest';
-            row.mode = row.developerTesting ? 'Developer testing' : (row.practiceMode ? 'Practice' : (row.tutorial ? 'Guided tutorial' : 'Regular gameplay'));
-            row.assessed = !row.cancelled && !row.developerTesting && !row.practiceMode && !row.tutorial && ['passed', 'failed'].indexOf(row.outcome) !== -1;
+            row.mode = row.developerTesting ? 'Developer testing' : row.endlessMode ? 'Endless' : (row.practiceMode ? 'Practice' : (row.tutorial ? 'Guided tutorial' : 'Regular gameplay'));
+            row.assessed = !row.cancelled && !row.developerTesting && !row.practiceMode && !row.endlessMode && !row.tutorial && ['passed', 'failed'].indexOf(row.outcome) !== -1;
             row.assessmentExcludedReason = row.assessed ? '' : row.mode === 'Regular gameplay' ? row.outcome : row.mode;
             const result = row.payload && row.payload.result || {};
             const recordedRounds = Array.isArray(result.roundHistory) ? result.roundHistory.length : Number(result.roundsUsed || row.attemptsUsed || 0);
@@ -2029,8 +2041,14 @@ const IP2LiveReportManager = {
         this._pdfStartPage(ctx, { title: 'Executive Summary' });
         this._pdfRenderExecutiveSummaryPage(ctx);
 
+        this._pdfStartPage(ctx, { title: 'Learning Improvement: First to Latest' });
+        this._pdfRenderLearningProgress(ctx);
+
         this._pdfStartPage(ctx, { title: 'Improvement During System Use' });
         this._pdfRenderLearningSection(ctx);
+
+        this._pdfStartPage(ctx, { title: 'Practice and Endless Mode' });
+        this._pdfRenderFeatureActivity(ctx);
 
         this._pdfStartPage(ctx, { title: 'Learning Curves' });
         this._pdfRenderLearningCurves(ctx);
@@ -2171,6 +2189,217 @@ const IP2LiveReportManager = {
             columns: [{ key: 'timestamp', label: 'Date / time', width: .20, formatter: value => this._formatLocalDateTime(value) }, { key: 'gameplayId', label: 'Gameplay', width: .25 }, { key: 'counter', label: 'Event', width: .22 }, { key: 'triggerReason', label: 'Trigger', width: .23 }, { key: 'failureCount', label: 'Failures', width: .10 }], rows: recovery.evidence || [], rowHeight: 26, maxCellLines: 3 });
     },
 
+    _unavailableLearningProgress() {
+        return { allHistory: false, overall: { metricCounts: {}, learningImprovementPercent: null, windowLearningImprovementPercent: null,
+            validatedSpeedImprovementPercent: null, windowValidatedSpeedImprovementPercent: null, accuracyChangePp: null, eligibleCount: 0, repetitions: 0,
+            gameplayCount: 0, matchedGameplayCount: 0, windowGameplayCount: 0, recordedAttempts: 0 },
+            perGameplay: [], perMode: [], cohorts: [], methodology: { availability: 'Reload to enable learning-progress analysis.' }, summary: 'Learning-progress analysis is unavailable.' };
+    },
+
+    _learningProgressSheet(report) {
+        const progress = report.learningProgress || this._unavailableLearningProgress(), total = progress.overall;
+        const row = (cells, meta) => Object.assign(cells, meta || {});
+        const merged = (text, style = 'Definition', height = 40) => row([text], { __style: style, __mergeAcross: 11, __height: height });
+        const fraction = value => value == null ? 'N/A' : value / 100;
+        const na = value => value == null ? 'N/A' : value;
+        const rows = [merged('LEARNING IMPROVEMENT // FIRST TO LATEST', 'DashboardTitle', 36),
+            merged(progress.allHistory ? 'All recorded profile history through export time. This tab is independent of the Teacher Dashboard date filter.' : 'Report-window evidence only. The learner\'s earlier history was not supplied.', 'DashboardSubtitle', 32),
+            merged('Learning improvement = percentage reduction in wrong-answer rate on comparable tasks. Percentages describe observed performance; they are not a validated test of learning or proof of causation.', 'TeacherNote', 45),
+            row(['Total learning improvement', fraction(total.learningImprovementPercent), 'Windowed improvement', fraction(total.windowLearningImprovementPercent), 'Accuracy change (pp)', na(total.accuracyChangePp),
+                'Quality-maintained speed', fraction(total.validatedSpeedImprovementPercent), 'Eligible attempts', total.eligibleCount, 'Matched repetitions', total.repetitions],
+                { __cellStyles: ['KpiLabel', total.learningImprovementPercent < 0 ? 'KpiPctRed' : 'KpiPctGreen', 'KpiLabel', total.windowLearningImprovementPercent < 0 ? 'KpiPctRed' : 'KpiPctBlue', 'KpiLabel', 'KpiValuePurple', 'KpiLabel', 'KpiPctBlue', 'KpiLabel', 'KpiValueBlue', 'KpiLabel', 'KpiValueAmber'], __height: 48 }),
+            merged('Metric coverage: ' + (total.metricCounts.learningImprovementPercent || 0) + ' / ' + total.gameplayCount + ' gameplays contribute to total learning improvement; ' + (total.metricCounts.windowLearningImprovementPercent || 0) +
+                ' contribute to windowed improvement. ' + total.matchedGameplayCount + ' have first/latest task pairs; ' + total.windowGameplayCount + ' have at least four matched attempts. Missing and error-free baselines are not zero-filled.', 'Definition', 46),
+            merged('PER GAMEPLAY // MODES AND TASKS MATCHED BEFORE AGGREGATION', 'DashboardSection', 25)];
+        const headers = ['Gameplay / Mode', 'Learning improvement (%)', 'Windowed improvement (%)', 'Accuracy change (pp)', 'Active-time change (%)', 'Quality speed change (%)',
+            'First matched accuracy', 'Latest matched accuracy', 'Eligible attempts', 'Matched repetitions', 'Matched task groups', 'Evidence'];
+        const styles = ['Label', 'Pct', 'Pct', 'Body', 'Pct', 'Pct', 'Pct', 'Pct', 'Integer', 'Integer', 'Integer', 'Body'];
+        const values = item => [item.gameplayLabel || item.label, fraction(item.learningImprovementPercent), fraction(item.windowLearningImprovementPercent), na(item.accuracyChangePp),
+            fraction(item.speedImprovementPercent), fraction(item.validatedSpeedImprovementPercent), na(item.firstAccuracy), na(item.latestAccuracy), item.eligibleCount, item.repetitions == null ? 'See gameplay rows' : item.repetitions,
+            item.matchedCohortCount == null ? 'See task evidence' : item.matchedCohortCount, item.evidence || (item.metricCounts.learningImprovementPercent ? 'Descriptive observed change' : 'Insufficient / ceiling baseline')];
+        rows.push(row(headers, { __style: 'Header', __height: 42 }));
+        for (const game of progress.perGameplay) rows.push(row(values(game), { __cellStyles: styles, __height: 40 }));
+        rows.push([], merged('PER MODE // HUMAN PLAYER RESULTS ONLY', 'DashboardSection', 25), row(headers, { __style: 'Header', __height: 42 }));
+        for (const mode of progress.perMode) rows.push(row(values(mode), { __cellStyles: styles, __height: 40 }));
+        rows.push(merged('Guided tutorials and assisted attempts remain in use counts but do not establish independent improvement. AI-opponent results never count as learner evidence. Endless unlocks after Story completion; comparisons match gameplay and timer budgets. New PVP evidence begins with this version.', 'Definition', 44));
+        rows.push([], merged('FORMULAS AND INTERPRETATION', 'DashboardSection', 25));
+        for (const [key, value] of Object.entries(progress.methodology)) rows.push(merged(key.toUpperCase() + ': ' + value, 'Definition', key === 'aggregate' ? 62 : 48));
+        rows.push(merged('See Progress Task Evidence for exact first/latest attempt IDs, raw error counts and denominators, times, sample windows and comparison definitions. Progress Timeline retains each eligible observation and repetition number. Full lifetime events are retained in the encrypted evidence JSON.', 'TeacherNote', 48));
+        return { name: 'Learning Improvement', rows, frozenRows: 7, widths: [170, 110, 110, 100, 110, 110, 100, 100, 90, 90, 100, 210] };
+    },
+
+    _learningProgressEvidenceSheets(report) {
+        const progress = report.learningProgress || this._unavailableLearningProgress(), na = value => value == null ? 'N/A' : value;
+        const tasks = [['Gameplay', 'Gameplay ID', 'Mode', 'First Attempt ID', 'Latest Attempt ID', 'First Recorded', 'Latest Recorded', 'Eligible Attempts', 'Matched Repetitions',
+            'First Mistakes', 'First Decisions', 'Latest Mistakes', 'Latest Decisions', 'First Accuracy', 'Latest Accuracy', 'First Error Rate', 'Latest Error Rate',
+            'Learning Improvement (%)', 'Accuracy Change (pp)', 'First Active Time', 'Latest Active Time', 'Time Change (%)', 'Quality Speed Change (%)',
+            'Windowed Improvement (%)', 'Window Accuracy Change (pp)', 'Window Quality Speed Change (%)', 'Window Pass Rate Change (pp)', 'Baseline Samples', 'Recent Samples',
+            'Baseline Correct', 'Baseline Decisions', 'Recent Correct', 'Recent Decisions', 'Baseline Median Active Time', 'Recent Median Active Time', 'Evidence', 'Caution', 'Cohort Definition']];
+        const timeline = [['Gameplay', 'Gameplay ID', 'Mode', 'Attempt ID', 'Date / Time', 'Comparable Attempt #', 'Passed?', 'Wrong Decisions', 'Total Decisions', 'Accuracy',
+            'Active Time', 'Error Reduction From First (%)', 'Time Change From Previous (%)', 'Previous Timed Attempt ID', 'Cohort Definition']];
+        const coverage = [['Gameplay', 'Gameplay ID', 'Recorded Attempts', 'Eligible Attempts', 'Matched Repetitions', 'Metric', 'Contributing Modes', 'First / Latest Range', 'Evidence']];
+        for (const game of progress.perGameplay) {
+            for (const [metric, count] of Object.entries(game.metricCounts)) coverage.push([game.gameplayLabel, game.gameplayId, game.recordedAttempts, game.eligibleCount, game.repetitions,
+                metric, count, game.firstAt ? this._formatLocalDateTime(game.firstAt) + ' / ' + this._formatLocalDateTime(game.latestAt) : 'N/A', game.evidence]);
+        }
+        for (const cohort of progress.cohorts) {
+            const game = progress.perGameplay.find(row => row.gameplayId === cohort.gameplayId), label = game && game.gameplayLabel || cohort.gameplayId;
+            tasks.push([label, cohort.gameplayId, cohort.mode, cohort.firstAttemptId, cohort.latestAttemptId, this._formatLocalDateTime(cohort.firstAt), this._formatLocalDateTime(cohort.latestAt),
+                cohort.eligibleCount, cohort.repetitions, na(cohort.firstMistakes), na(cohort.firstDecisions), na(cohort.latestMistakes), na(cohort.latestDecisions), na(cohort.firstAccuracy), na(cohort.latestAccuracy),
+                na(cohort.firstErrorRate), na(cohort.latestErrorRate), na(cohort.learningImprovementPercent), na(cohort.accuracyChangePp), this._ms(cohort.firstActiveMs), this._ms(cohort.latestActiveMs),
+                na(cohort.speedImprovementPercent), na(cohort.validatedSpeedImprovementPercent), na(cohort.windowLearningImprovementPercent), na(cohort.windowAccuracyChangePp),
+                na(cohort.windowValidatedSpeedImprovementPercent), na(cohort.windowPassRateChangePp), cohort.baselineCount, cohort.recentCount, na(cohort.baselineCorrectDecisions), na(cohort.baselineTotalDecisions),
+                na(cohort.recentCorrectDecisions), na(cohort.recentTotalDecisions), this._ms(cohort.baselineMedianActiveMs), this._ms(cohort.recentMedianActiveMs), cohort.evidence, cohort.caution || '', this._stringifyCell(cohort.descriptor)]);
+            for (const point of cohort.curve) timeline.push([label, cohort.gameplayId, cohort.mode, point.attemptId, this._formatLocalDateTime(point.timestamp), point.comparableAttemptNumber,
+                point.passed ? 'YES' : 'NO', na(point.mistakes), na(point.totalDecisions), na(point.accuracy), this._ms(point.activeDurationMs), na(point.learningImprovementPercent),
+                na(point.changeFromPreviousPercent), point.previousTimedAttemptId || '', this._stringifyCell(cohort.descriptor)]);
+        }
+        // These evidence columns contain percentage numbers (50 means 50%),
+        // while accuracy columns contain fractions (.8 means 80%). Do not let
+        // generic header inference multiply percentage-point changes by 100.
+        for (const row of tasks.slice(1)) row.__cellStyles = tasks[0].map((_, index) => [13, 14, 15, 16].includes(index) ? 'Pct' : 'Body');
+        for (const row of timeline.slice(1)) row.__cellStyles = timeline[0].map((_, index) => index === 9 ? 'Pct' : 'Body');
+        return [{ name: 'Progress Task Evidence', rows: tasks, frozenRows: 1 }, { name: 'Progress Timeline', rows: timeline, frozenRows: 1 }, { name: 'Progress Metric Coverage', rows: coverage, frozenRows: 1 }];
+    },
+
+    _pdfRenderLearningProgress(ctx) {
+        const progress = ctx.report.learningProgress || this._unavailableLearningProgress(), total = progress.overall;
+        this._pdfRenderSectionHeader(ctx.writer, ctx.margin, ctx.contentTop, 520, 'Learning Improvement', progress.allHistory ? 'First to latest comparable results across all recorded profile history' : 'First to latest comparable results within supplied report evidence');
+        const intro = progress.summary + ' Quality-maintained speed change: ' + this._signedMeasure(total.validatedSpeedImprovementPercent, '%') +
+            '. Accuracy change: ' + this._signedMeasure(total.accuracyChangePp, ' pp') + '. Repetition measures exposure and does not award learning points.';
+        const bottom = this._pdfRenderParagraph(ctx.writer, ctx.margin, ctx.contentTop - 48, 520, 9, intro, { font: 'F1' });
+        this._pdfRenderTable(ctx.writer, { ctx, x: ctx.margin, y: bottom - 18, width: 520, title: 'Per-gameplay observed change',
+            columns: [{ key: 'gameplayLabel', label: 'Gameplay', width: .24 }, { key: 'learningImprovementPercent', label: 'Gain %', width: .1, formatter: v => this._signedMeasure(v, '%') },
+                { key: 'windowLearningImprovementPercent', label: 'Window %', width: .1, formatter: v => this._signedMeasure(v, '%') },
+                { key: 'accuracyChangePp', label: 'Acc. pp', width: .1, formatter: v => this._signedMeasure(v, '') },
+                { key: 'validatedSpeedImprovementPercent', label: 'Speed %', width: .1, formatter: v => this._signedMeasure(v, '%') },
+                { key: 'eligibleCount', label: 'Runs', width: .07 }, { key: 'repetitions', label: 'Repeats', width: .09 }, { key: 'evidence', label: 'Evidence', width: .2 }],
+            rows: progress.perGameplay, rowHeight: 36, maxCellLines: 4, fontSize: 7.5 });
+        this._pdfStartPage(ctx, { title: 'Learning Improvement Methods and Modes' });
+        const rows = progress.perMode.map(mode => ({ key: mode.label, value: 'Learning improvement (error-rate reduction): ' + this._signedMeasure(mode.learningImprovementPercent, '%') +
+            '; windowed: ' + this._signedMeasure(mode.windowLearningImprovementPercent, '%') + '; eligible human attempts: ' + mode.eligibleCount + '.' }));
+        rows.push(...Object.entries(progress.methodology).map(([key, value]) => ({ key, value })));
+        this._pdfRenderTable(ctx.writer, { ctx, x: ctx.margin, y: ctx.contentTop, width: 520,
+            columns: [{ key: 'key', label: 'Mode / rule', width: .22 }, { key: 'value', label: 'Evidence / definition', width: .78, maxLines: 8 }], rows, rowHeight: 36, maxCellLines: 8, fontSize: 8 });
+    },
+
+    _pdfOverviewSummary(report) {
+        const features = this._featureReportData(report);
+        return (report.learning && report.learning.feedback.summary || report.performanceSummary || '') +
+            ' Practice: ' + features.practice.sessionCount + ' recorded sessions; ' + features.practice.trend.toLowerCase() +
+            '. Endless: ' + features.endless.participation.toLowerCase() + '. See optional mode analysis for details.';
+    },
+
+    _featureDashboardRows(report, makeRow) {
+        const features = this._featureReportData(report);
+        const na = value => value === null || value === undefined ? 'N/A' : value;
+        const rows = [[], makeRow(['PRACTICE AND ENDLESS // PARTICIPATION AND IMPROVEMENT'], { __style: 'DashboardSection', __mergeAcross: 7, __height: 25 })];
+        for (const mode of features.modes) {
+            const change = mode.improvement;
+            rows.push(makeRow([mode.label, mode.participation, 'Sessions / days', mode.sessionCount + ' / ' + mode.activeDays,
+                'Scored / guided rounds', mode.scoredRounds + ' / ' + mode.guidedRounds, 'Active time', this._ms(mode.activeDurationMs)], { __height: 38 }));
+            rows.push(makeRow(['Trend', mode.trend, 'Accuracy change (pp)', na(change.accuracyChangePp), 'Pass-rate change (pp)', na(change.passRateChangePp),
+                'Validated speed change', change.validatedSpeedImprovementPercent == null ? 'N/A' : change.validatedSpeedImprovementPercent / 100],
+                { __cellStyles: ['MetaLabel', 'MetaValue', 'MetaLabel', 'Body', 'MetaLabel', 'Body', 'MetaLabel', 'Pct'], __height: 36 }));
+            rows.push(makeRow([mode.availability + '. ' + mode.summary], { __style: 'Definition', __mergeAcross: 7, __height: 42 }));
+            if (mode.mode === 'endless') rows.push(makeRow(['Finished runs', (mode.runs || []).length, 'Best score', na(mode.bestScore),
+                'Longest active run', this._ms(mode.longestRunMs), 'Score interpretation', 'Play performance; see matched learning evidence'], { __height: 38 }));
+        }
+        const transfer = features.transfer.improvement;
+        rows.push(makeRow(['Story before / after practice', features.transfer.cohorts.length + ' matched groups', 'Accuracy change (pp)', na(transfer.accuracyChangePp),
+            'Pass-rate change (pp)', na(transfer.passRateChangePp), 'Validated speed change', transfer.validatedSpeedImprovementPercent == null ? 'N/A' : transfer.validatedSpeedImprovementPercent / 100], { __height: 38 }));
+        rows.push(makeRow([features.limitation + ' See Feature Participation, Practice Improvement and Story After Practice for evidence.'], { __style: 'Definition', __mergeAcross: 7, __height: 64 }));
+        return rows;
+    },
+
+    _progressDashboardRows(report, makeRow) {
+        const progress = report.learningProgress || this._unavailableLearningProgress(), total = progress.overall;
+        const fraction = value => value == null ? 'N/A' : value / 100;
+        return [[], makeRow(['LIFETIME LEARNING IMPROVEMENT // SEE NEXT TAB'], { __style: 'DashboardSection', __mergeAcross: 7, __height: 25 }),
+            makeRow(['First-to-latest learning improvement', fraction(total.learningImprovementPercent), 'Windowed improvement', fraction(total.windowLearningImprovementPercent),
+                'Eligible attempts', total.eligibleCount, 'Matched repetitions', total.repetitions],
+                { __cellStyles: ['KpiLabel', total.learningImprovementPercent < 0 ? 'KpiPctRed' : 'KpiPctGreen', 'KpiLabel', total.windowLearningImprovementPercent < 0 ? 'KpiPctRed' : 'KpiPctBlue', 'KpiLabel', 'KpiValueBlue', 'KpiLabel', 'KpiValueAmber'], __height: 44 }),
+            makeRow([progress.summary + ' Learning improvement means observed error-rate reduction. Open Learning Improvement beside this dashboard for all modes, per-gameplay values, coverage and formulas.'], { __style: 'TeacherNote', __mergeAcross: 7, __height: 68 })];
+    },
+
+    _featureWorkbookSheets(report) {
+        const features = this._featureReportData(report), na = value => value === null || value === undefined ? 'N/A' : value;
+        const participation = [['Mode', 'Participation in Report Window', 'Availability in Current Build', 'Sessions', 'Active Days', 'Rounds Started', 'Scored Rounds', 'Guided Rounds', 'Completed Rounds',
+            'Passed', 'Failed', 'Cancelled', 'Interrupted / Open', 'Unavailable', 'Pass Rate', 'Decision Accuracy', 'Accuracy Evidence Rounds', 'Recorded Active Time', 'Active Timed Rounds', 'Eligible Comparable Rounds',
+            'First Recorded Activity', 'Last Recorded Activity', 'Improvement Trend', 'Analysis']];
+        const rounds = [['Mode', 'Session ID', 'Round ID', 'Gameplay', 'Gameplay ID', 'Kind', 'Started', 'Ended / Last Seen', 'Outcome', 'Decision Accuracy',
+            'Correct Decisions', 'Total Decisions', 'Active Time', 'Timing Method', 'Gameplay Version', 'Spec and Result Evidence',
+            'Endless Round Points', 'Endless Total Score', 'Round Limit Seconds', 'Pressure Level', 'Countdown Active Time']];
+        const decisions = [['Mode', 'Session ID', 'Round ID', 'Gameplay ID', 'Decision #', 'Concept / Step', 'Correct?', 'Submitted', 'Expected', 'Full Decision Evidence']];
+        const sheets = [];
+        for (const mode of features.modes) {
+            participation.push([mode.label, mode.participation, mode.availability, mode.sessionCount, mode.activeDays, mode.roundCount, mode.scoredRounds, mode.guidedRounds,
+                mode.completedRounds || 0, mode.passedRounds || 0, mode.failedRounds || 0, mode.cancelledRounds || 0, mode.interruptedRounds || 0, mode.unavailableRounds || 0,
+                na(mode.passRate), na(mode.accuracy), mode.accuracyEvidenceRounds || 0, this._ms(mode.activeDurationMs), mode.activeTimedRounds || 0, mode.eligibleRounds || 0,
+                mode.firstActivityAt ? this._formatLocalDateTime(mode.firstActivityAt) : 'N/A', mode.lastActivityAt ? this._formatLocalDateTime(mode.lastActivityAt) : 'N/A', mode.trend, mode.summary]);
+            const cohortSheets = this._cohortWorkbookRows(mode.perGameplay, 'whole_launch');
+            const prefix = mode.mode === 'practice' ? 'Practice' : 'Endless';
+            sheets.push({ name: prefix + ' Improvement', frozenRows: 1, rows: cohortSheets.improvementRows },
+                { name: prefix + ' Learning Curve', frozenRows: 1, rows: cohortSheets.curveRows });
+            for (const row of mode.rounds) {
+                const payload = row.payload || {}, result = payload.result || row.result || {};
+                const accuracy = IP2Live.ReportLearningAnalytics ? IP2Live.ReportLearningAnalytics._accuracy(row) : { value: null, correct: null, total: null };
+                const timing = IP2Live.ReportLearningAnalytics ? IP2Live.ReportLearningAnalytics._activeTime(row) : { value: null, method: 'unobserved' };
+                rounds.push([mode.label, payload.featureSessionId || row.sessionId || '', row.attemptId, row.gameplayLabel || row.gameplayId, row.gameplayId,
+                    payload.activityKind || (row.tutorial ? 'tutorial' : 'gameplay'), this._formatLocalDateTime(row.startedAt || row.timestamp), this._formatLocalDateTime(row.endedAt || row.timestamp),
+                    row.outcome, na(accuracy.value), na(accuracy.correct), na(accuracy.total), this._ms(timing.value), timing.method, row.gameplayVersion || result.gameplayVersion || 'unobserved', this._stringifyCell(payload),
+                    na(result.endlessPoints), na(result.endlessScore), na(result.timeLimitSeconds), na(result.pressureLevel), this._ms(result.timerElapsedMs)]);
+                (result.decisionHistory || payload.decisionHistory || []).forEach((decision, index) => decisions.push([mode.label, payload.featureSessionId || row.sessionId || '', row.attemptId,
+                    row.gameplayId, index + 1, decision.stepKey || decision.concept || '', typeof decision.correct === 'boolean' ? decision.correct ? 'YES' : 'NO' : 'N/A',
+                    this._stringifyCell(decision.submitted), this._stringifyCell(decision.expected), this._stringifyCell(decision)]));
+            }
+        }
+        participation.push([], ['Interpretation', features.limitation]);
+        const transfer = this._cohortWorkbookRows(features.transfer.cohorts.map(cohort => ({ gameplayId: cohort.gameplayId, gameplayLabel: cohort.gameplayLabel, cohorts: [cohort] })), 'whole_launch');
+        transfer.improvementRows.push([], ['Interpretation', 'Two matched independent story attempts before and two after the first recorded completed/failed practice round for the same gameplay. Observational only; no causal effect is established. Only evidence within the report window is compared.']);
+        return [{ name: 'Feature Participation', frozenRows: 1, rows: participation }, ...sheets,
+            { name: 'Endless Runs', frozenRows: 1, rows: [['Run ID', 'Session ID', 'Started', 'Ended', 'Score', 'Solved Gameplays', 'Mistakes', 'Active Survival Time', 'End Reason', 'Rules Version'],
+                ...(features.endless.runs || []).map(run => [run.runId, run.sessionId, this._formatLocalDateTime(run.startedAt), this._formatLocalDateTime(run.endedAt),
+                    run.score, run.completedRounds, run.mistakes, this._ms(run.activeElapsedMs), run.reason, run.rulesVersion])] },
+            { name: 'Feature Rounds', frozenRows: 1, rows: rounds }, { name: 'Feature Decisions', frozenRows: 1, rows: decisions },
+            { name: 'Story After Practice', frozenRows: 1, rows: transfer.improvementRows }];
+    },
+
+    _featureReportData(report) {
+        if (report.learning && report.learning.features) return report.learning.features;
+        const modes = ['practice', 'endless'].map(mode => ({ mode, label: mode === 'practice' ? 'Practice Mode' : 'Endless Mode',
+            participation: 'Analytics unavailable', availability: 'Unobserved', sessionCount: 0, roundCount: 0, scoredRounds: 0,
+            guidedRounds: 0, activeDays: 0, activeDurationMs: null, passRate: null, accuracy: null, trend: 'Insufficient comparable data',
+            improvement: {}, perGameplay: [], rounds: [], summary: 'Reload the application to enable activity analysis.' }));
+        return { modes, practice: modes[0], endless: modes[1], transfer: { cohorts: [], improvement: {} },
+            analysis: 'Optional activity analytics is unavailable.', limitation: 'Missing history is not proof of non-participation.' };
+    },
+
+    _pdfRenderFeatureActivity(ctx) {
+        const features = this._featureReportData(ctx.report);
+        this._pdfRenderSectionHeader(ctx.writer, ctx.margin, ctx.contentTop, 520, 'Practice and Endless Participation', 'Recorded activity within the selected report window');
+        const participationBottom = this._pdfRenderTable(ctx.writer, { ctx, x: ctx.margin, y: ctx.contentTop - 48, width: 520,
+            columns: [{ key: 'label', label: 'Mode', width: .16 }, { key: 'participation', label: 'Participation', width: .24 },
+                { key: 'sessionCount', label: 'Sessions', width: .1 }, { key: 'completedRounds', label: 'Completed', width: .1 },
+                { key: 'guidedRounds', label: 'Guided rounds', width: .1 }, { key: 'activeDays', label: 'Days', width: .08 },
+                { key: 'activeDurationMs', label: 'Active time', width: .12, formatter: value => this._ms(value) },
+                { key: 'accuracy', label: 'Accuracy', width: .1, formatter: value => this._pct(value) }],
+            rows: features.modes, rowHeight: 38, maxCellLines: 4, fontSize: 8 });
+        const rows = features.modes.map(mode => ({ key: mode.label, value: mode.summary + ' Availability: ' + mode.availability }));
+        rows.push({ key: 'Interpretation', value: features.limitation });
+        for (const mode of features.modes) for (const game of mode.perGameplay) rows.push({ key: mode.label + ' / ' + game.gameplayLabel,
+            value: 'Matched cohorts: ' + game.comparableCohortCount + '; baseline / recent samples: ' + game.baselineCount + ' / ' + game.recentCount + '; accuracy change: ' + this._signedMeasure(game.accuracyChangePp, ' pp') +
+                '; pass-rate change: ' + this._signedMeasure(game.passRateChangePp, ' pp') + '; quality-maintained speed change: ' + this._signedMeasure(game.validatedSpeedImprovementPercent, '%') +
+                '. See workbook learning curves for baseline/recent sample counts and task definitions.' });
+        rows.push({ key: 'Story after practice', value: features.transfer.cohorts.length ? features.transfer.cohorts.length + ' matched story cohorts with two independent attempts before and two after recorded practice.' : 'Insufficient matched story attempts before and after recorded practice.' });
+        for (const cohort of features.transfer.cohorts) rows.push({ key: cohort.gameplayLabel + ' / story',
+            value: 'Accuracy change: ' + this._signedMeasure(cohort.accuracyChangePp, ' pp') + '; pass-rate change: ' + this._signedMeasure(cohort.passRateChangePp, ' pp') +
+                '; quality-maintained speed change: ' + this._signedMeasure(cohort.validatedSpeedImprovementPercent, '%') + '. Observational comparison only.' });
+        this._pdfRenderTable(ctx.writer, { ctx, x: ctx.margin, y: participationBottom - 26, width: 520, title: 'Optional Mode Improvement and Analysis',
+            columns: [{ key: 'key', label: 'Activity / evidence', width: .25 }, { key: 'value', label: 'Analysis', width: .75, maxLines: 8 }],
+            rows, rowHeight: 46, maxCellLines: 8, fontSize: 8.5 });
+    },
+
     _pdfRenderTeachingFeedback(ctx) {
         const learning = ctx.report.learning || this._unavailableLearningAnalytics();
         this._pdfRenderSectionHeader(ctx.writer, ctx.margin, ctx.contentTop, 520, 'Teaching Feedback', 'Observed concepts, evidence strength and focused next practice');
@@ -2226,9 +2455,9 @@ const IP2LiveReportManager = {
             writer.text(bx + 12, badgeY + 33, 17, String(badges[i].value), { font: 'F2', color: badges[i].color });
         }
 
-        this._pdfRenderParagraph(writer, left, top - 282, 510, 10.5, report.performanceSummary, { font: 'F1', color: [0.16, 0.18, 0.21] });
+        const summaryBottom = this._pdfRenderParagraph(writer, left, top - 282, 510, 10.5, this._pdfOverviewSummary(report), { font: 'F1', color: [0.16, 0.18, 0.21] });
 
-        const chartRect = { x: left, y: top - 470, w: 520, h: 130 };
+        const chartRect = { x: left, y: Math.min(top - 470, summaryBottom - 148), w: 520, h: 130 };
         writer.rect(chartRect.x, chartRect.y, chartRect.w, chartRect.h, { fill: [0.98, 0.99, 1], stroke: [0.79, 0.84, 0.90], lineWidth: 0.9 });
         this._pdfRenderLineChart(writer, chartRect, (report.stats && report.stats.bySession) || [], {
             title: 'Progression Trend Across Sessions',
@@ -2253,12 +2482,12 @@ const IP2LiveReportManager = {
 
         const summaryY = top - 126;
         writer.text(left, summaryY, 11, 'Interpretive Summary', { font: 'F2', color: [0.08, 0.16, 0.28] });
-        this._pdfRenderParagraph(writer, left, summaryY - 18, 520, 10.3, report.performanceSummary, { font: 'F1', color: [0.16, 0.18, 0.21] });
+        const summaryBottom = this._pdfRenderParagraph(writer, left, summaryY - 18, 520, 10.3, this._pdfOverviewSummary(report), { font: 'F1', color: [0.16, 0.18, 0.21] });
 
         const strongest = report.stats && report.stats.strongestGameplay ? report.stats.strongestGameplay : null;
         const weakest = report.stats && report.stats.weakestGameplay ? report.stats.weakestGameplay : null;
         const trend = report.stats && report.stats.progressionTrend ? report.stats.progressionTrend : null;
-        const notesY = top - 260;
+        const notesY = Math.min(top - 260, summaryBottom - 78);
         const noteWidth = 160;
         const notes = [
             { title: 'Strongest', value: strongest ? strongest.gameplayLabel : 'Insufficient evidence', detail: strongest ? this._pct(strongest.accuracyRate) : 'n/a', color: [0.16, 0.63, 0.37] },
@@ -2274,7 +2503,7 @@ const IP2LiveReportManager = {
             writer.text(boxX + 10, notesY + 49, 10, this._sanitizePdfText(notes[i].detail), { font: 'F1', color: [0.28, 0.30, 0.33] });
         }
 
-        const trendRect = { x: left, y: top - 360, w: 520, h: 108 };
+        const trendRect = { x: left, y: notesY - 124, w: 520, h: 108 };
         writer.rect(trendRect.x, trendRect.y, trendRect.w, trendRect.h, { fill: [0.98, 0.99, 1], stroke: [0.79, 0.84, 0.90], lineWidth: 0.8 });
         this._pdfRenderLineChart(writer, trendRect, report.daily || [], {
             title: 'Daily Accuracy Trend',
@@ -3796,6 +4025,8 @@ const IP2LiveReportManager = {
             makeRow(['Tutorial offers', recovery.tutorialOffers, 'Matched timing change', percentFraction(improvement.speedImprovementPercent), 'Speed evidence', (improvement.speedBaselineCount || 0) + ' / ' + (improvement.speedRecentCount || 0), 'Comparison status', improvement.status], { __cellStyles: ['MetaLabel', 'Integer', 'MetaLabel', 'Pct', 'MetaLabel', 'MetaValue', 'MetaLabel', 'MetaValue'], __height: 28 }),
             makeRow(['Repeated-mistake offers', recovery.repeatedMistakeTutorialOffers, 'Shown after mistakes', recovery.repeatedMistakeTutorialShown || 0, 'Tutorials started', recovery.tutorialStarted, 'Active-time samples', report.summary.activeTimeEvidenceCount], { __cellStyles: ['MetaLabel', 'Integer', 'MetaLabel', 'Integer', 'MetaLabel', 'Integer', 'MetaLabel', 'Integer'], __height: 28 }),
             makeRow(['Historical recovery events and active timing may be unavailable. Counts reflect recorded events; an offered tutorial is not counted as shown.'], { __style: 'Definition', __mergeAcross: 7, __height: 34 }),
+            ...this._progressDashboardRows(report, makeRow),
+            ...this._featureDashboardRows(report, makeRow),
             [],
             makeRow(['ALL STAGES AND LEVELS // PERFORMANCE EVIDENCE'], { __style: 'DashboardSection', __mergeAcross: 7, __height: 25 }),
             makeRow(['Stage / level', 'Instances', 'Repetitions', 'Rounds', 'Pass rate', 'Accuracy', 'Rollbacks', 'Strikes / alerts'], { __style: 'Header', __height: 28 }),
@@ -3819,13 +4050,17 @@ const IP2LiveReportManager = {
             }));
         }
         dashboardRows.push([], makeRow(['TEACHER INTERPRETATION'], { __style: 'DashboardSection', __mergeAcross: 7, __height: 25 }));
-        dashboardRows.push(makeRow([report.performanceSummary || 'No assessed gameplay is available in this report window.'], { __style: 'TeacherNote', __mergeAcross: 7, __height: 58 }));
+        dashboardRows.push(makeRow([learning.feedback.summary || 'No assessed gameplay is available in this report window.'], { __style: 'TeacherNote', __mergeAcross: 7, __height: 58 }));
+        dashboardRows.push(makeRow([learning.feedback.featureAnalysis || 'Optional activity analytics is unavailable.'], { __style: 'TeacherNote', __mergeAcross: 7, __height: 64 }));
         for (const priority of learning.feedback.priorities || []) dashboardRows.push(makeRow([this._feedbackText(priority)], { __style: 'TeacherNote', __mergeAcross: 7, __height: 42 }));
         for (const strength of learning.feedback.strengths || []) dashboardRows.push(makeRow([this._feedbackText(strength)], { __style: 'TeacherNote', __mergeAcross: 7, __height: 34 }));
         for (const caution of learning.feedback.cautions || []) dashboardRows.push(makeRow([this._feedbackText(caution)], { __style: 'Definition', __mergeAcross: 7, __height: 36 }));
         dashboardRows.push(makeRow(['Assessed performance excludes cancelled/interrupted, guided tutorial, practice and developer runs. Learning indicator = 70% recorded accuracy + 30% pass rate; it is descriptive, not a validated mastery test. Improvement percentages use comparable independent runs only.'], { __style: 'Definition', __mergeAcross: 7, __height: 48 }));
         sheets.push({ name: 'Teacher Dashboard', rows: dashboardRows, widths: [126, 86, 126, 86, 126, 86, 145, 115], frozenRows: 4 });
+        sheets.push(this._learningProgressSheet(report));
         sheets.push(...this._learningWorkbookSheets(report));
+        sheets.push(...this._featureWorkbookSheets(report));
+        sheets.push(...this._learningProgressEvidenceSheets(report));
 
         sheets.push({
             name: 'Daily Progress',

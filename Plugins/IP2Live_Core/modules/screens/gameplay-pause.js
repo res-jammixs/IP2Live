@@ -248,6 +248,29 @@
             return !!game;
         },
 
+        _isStandaloneTutorialScreen(screen) {
+            if (!screen || !screen.options || !screen.options.tutorialReplay || screen.options.pvpMode) return false;
+            const replay = IP2Live.TutorialReplay && IP2Live.TutorialReplay.session;
+            if (!replay || replay.pvp) return false;
+            return replay.screen === screen;
+        },
+
+        _isStandaloneTelemetryScreen(screen) {
+            const replay = IP2Live.TutorialReplay && IP2Live.TutorialReplay.session;
+            return !!(replay && replay.screen === screen && !replay.developerTest && replay.featureSession && !replay.featureSession.ended);
+        },
+
+        isPausePointerEvent(event) {
+            const screen = Manager && Manager.Stack && Manager.Stack.top;
+            const canvas = Common && Common.Platform && Common.Platform.ctx && Common.Platform.ctx.canvas;
+            if (!screen || !canvas || !canvas.getBoundingClientRect) return false;
+            const rect = canvas.getBoundingClientRect();
+            if (!rect.width || !rect.height) return false;
+            return this._isPauseButtonAt(screen,
+                (event.clientX - rect.left) * canvas.width / rect.width,
+                (event.clientY - rect.top) * canvas.height / rect.height);
+        },
+
         _registerScreen(
             screen,
             fallbackGameplayId
@@ -255,7 +278,7 @@
             if (
                 !screen ||
                 screen._ip2liveGameplayExited ||
-                !this._ownsCurrentGame(screen, true)
+                (!this._ownsCurrentGame(screen, true) && !this._isStandaloneTutorialScreen(screen) && !this._isStandaloneTelemetryScreen(screen))
             ) {
                 return false;
             }
@@ -279,7 +302,7 @@
         // Count only rendered, interactive intervals. This clock survives a
         // durable session save; gaps over one second are treated as suspension.
         _tickReportClock(screen, fallbackGameplayId) {
-            if (!screen || !this._ownsCurrentGame(screen, true)) return;
+            if (!screen || (!this._ownsCurrentGame(screen, true) && !this._isStandaloneTutorialScreen(screen) && !this._isStandaloneTelemetryScreen(screen))) return;
             const now = Date.now();
             const clock = screen.learningTelemetryClock || (screen.learningTelemetryClock = {
                 version: 1, activeElapsedMs: 0, preparationMs: 0, assistanceElapsedMs: 0,
@@ -312,7 +335,7 @@
 
         getReportTiming(gameplayId, payload) {
             const screen = this.activeScreen;
-            if (!screen || !this._ownsCurrentGame(screen, false) || !screen.learningTelemetryClock) return null;
+            if (!screen || (!this._ownsCurrentGame(screen, false) && !this._isStandaloneTutorialScreen(screen) && !this._isStandaloneTelemetryScreen(screen)) || !screen.learningTelemetryClock) return null;
             const actual = this._descriptorFromScreen(screen, this._screenFallbackIds.get(screen) || '');
             const expected = this._descriptorFromPayload(gameplayId, payload);
             if (actual.gameplayId !== gameplayId || (expected.questId && actual.questId !== expected.questId) ||
@@ -404,6 +427,8 @@
             const spec = data.spec || {};
             return !(data.developerTest || spec.developerTest || data.tutorialReplay || spec.tutorialReplay
                 || data.practiceMode || spec.practiceMode
+                || data.endlessMode || spec.endlessMode || data.unlimitedMode || spec.unlimitedMode
+                || data.featureMode === 'endless' || spec.featureMode === 'endless'
                 || String(data.questId || spec.id || '').startsWith('developer.'));
         },
 
@@ -1038,6 +1063,7 @@
 
             screen.options =
                 liveOptions;
+            if (IP2Live.GameplayTimer) IP2Live.GameplayTimer.forget(screen);
 
             // VLSM terminals share their branch allocations with the campaign
             // manager. Reconnect that reference after the JSON session clone.
@@ -1097,6 +1123,9 @@
         },
 
         _normalizeRestoredOverlays(state) {
+            if (Number.isFinite(state.durationMs) && Number.isFinite(state.endsAt) && !Number.isFinite(state.roundRemainingMs)) {
+                state.roundRemainingMs = Math.max(0, state.endsAt - Date.now());
+            }
             // Helpers are separate scenes whose callbacks cannot be serialized.
             // Resume the puzzle with its inputs intact and reopen helpers on demand.
             for (const key of ['calculatorOpen', '_calculatorOpen', 'hostPowerToolOpen', 'helpOpen', '_helpOpen', 'helpVisible']) {
@@ -1406,6 +1435,7 @@
 
         _capturePauseBackdrop() {
             try {
+                if (IP2Live.PauseUI) return IP2Live.PauseUI.captureBackdrop();
                 const ctx =
                     Common &&
                     Common.Platform
@@ -1469,7 +1499,8 @@
         ) {
             if (
                 this.menuOpen ||
-                !this._ownsCurrentGame(screen, true) ||
+                (screen && screen.options && screen.options.pvpMode) ||
+                (!this._ownsCurrentGame(screen, true) && !this._isStandaloneTutorialScreen(screen)) ||
                 !this._canPauseScreen(
                     screen
                 )
@@ -1520,38 +1551,30 @@
 
             // A pause is an overlay on the current gameplay frame. The menu
             // animates itself in, so opening it must not power off the screen.
+            let menu;
             try {
-                Manager.Stack.push(new IP2LiveGameplayPauseMenu(screen, pauseBackdrop));
+                menu = new IP2LiveGameplayPauseMenu(screen, pauseBackdrop);
+                menu._pauseCheckpointPending = this._canRetainSession(screen.options);
+                Manager.Stack.push(menu);
             } catch (error) {
+                if (menu) menu.close();
                 this.menuOpen = false;
                 console.error('[IP2Live] Unable to open gameplay pause menu:', error);
                 return false;
             }
 
-            const gameManager =
-                IP2Live.GameManager;
-
-            if (
-                gameManager &&
-                this._canRetainSession(screen.options) &&
-                typeof gameManager.saveProgressToActiveSlot === 'function'
-            ) {
-                Promise.resolve(
-                    gameManager.saveProgressToActiveSlot(
-                        null,
-                        null,
-                        {
-                            checkpointReason:
-                                'gameplay_paused',
-                        }
-                    )
-                ).catch(
-                    function () {}
-                );
-            }
-
-            this._checkpointStory('gameplay_paused', screen);
+            // The in-memory state is already captured. Serialize durable saves
+            // once the opening animation has finished, rather than in its frames.
             return true;
+        },
+
+        _savePauseCheckpoint(screen) {
+            if (!this._ownsCurrentGame(screen, false) || !this._canRetainSession(screen && screen.options) || screen._ip2liveGameplayExited) return;
+            const gameManager = IP2Live.GameManager;
+            if (gameManager && typeof gameManager.saveProgressToActiveSlot === 'function') {
+                Promise.resolve(gameManager.saveProgressToActiveSlot(null, null, { checkpointReason: 'gameplay_paused' })).catch(function () {});
+            }
+            this._checkpointStory('gameplay_paused', screen);
         },
 
         _checkpointStory(reason, screen) {
@@ -1565,6 +1588,7 @@
         },
 
         closeMenu() {
+            if (IP2Live.GameplayTimer) IP2Live.GameplayTimer.forget(this.activeScreen);
             if (this.menuOpen && this.activeScreen && typeof this.activeScreen.onGameplayResume === 'function') {
                 this.activeScreen.onGameplayResume();
             }
@@ -1582,10 +1606,14 @@
         },
 
         async exitQuest(screen) {
+            const practice = IP2Live.PracticeMode;
+            if (practice && practice.course && screen && screen.options && screen.options.tutorialCourse && this._isStandaloneTutorialScreen(screen)) {
+                return { saved: false, reason: 'tutorial-next', finished: practice.nextCourseLesson() };
+            }
             if (screen && screen.options && screen.options.tutorialReplay && IP2Live.TutorialReplay) {
                 const replay = IP2Live.TutorialReplay.session;
                 if (!replay || replay.screen !== screen) return { saved: false, reason: 'no-active-tutorial' };
-                if (screen.options.practiceMode && IP2Live.PracticeMode && IP2Live.MenuTransition &&
+                if (screen.options.practiceMode && !screen.options.tutorialCourse && IP2Live.PracticeMode && IP2Live.MenuTransition &&
                     typeof IP2Live.MenuTransition.launch === 'function') {
                     return { saved: false, reason: 'practice-finishing', finished: IP2Live.PracticeMode.finishFromPause(screen) };
                 }
@@ -1709,6 +1737,7 @@
         },
 
         drawPauseButton(screen) {
+            if (screen && screen.options && screen.options.pvpMode) return false;
             const ctx =
                 Common &&
                 Common.Platform
@@ -1935,6 +1964,7 @@
             x,
             y
         ) {
+            if (screen && screen.options && screen.options.pvpMode) return false;
             const r =
                 screen &&
                 screen._ip2livePauseButtonRect;
@@ -1967,6 +1997,10 @@
             this.pauseBackdrop =
                 pauseBackdrop ||
                 null;
+            this._pauseMusicManager = IP2Live.MusicManager;
+            if (this._pauseMusicManager && this._pauseMusicManager.setPaused) {
+                this._pauseMusicManager.setPaused(true, this);
+            }
         }
 
         initialize() {
@@ -1977,6 +2011,7 @@
             const replay = !!(this.sourceScreen && this.sourceScreen.options && this.sourceScreen.options.tutorialReplay);
             const practice = !!(this.sourceScreen && this.sourceScreen.options && this.sourceScreen.options.practiceMode);
             const practiceGameplay = practice && !!this.sourceScreen.options.practiceGameplay;
+            const endless = !!(this.sourceScreen && this.sourceScreen.options && this.sourceScreen.options.endlessMode);
 
             this.menuItems = [
                 {
@@ -1984,7 +2019,7 @@
                         'RESUME',
 
                     subtitle:
-                        practiceGameplay ? 'RETURN TO PRACTICE' : replay ? 'RETURN TO TUTORIAL' : 'RETURN TO ACTIVE QUEST',
+                        endless ? 'RETURN TO ENDLESS RUN' : practiceGameplay ? 'RETURN TO PRACTICE' : replay ? 'RETURN TO TUTORIAL' : 'RETURN TO ACTIVE QUEST',
 
                     danger:
                         false,
@@ -2001,15 +2036,27 @@
                 },
                 {
                     title:
-                        practiceGameplay ? 'FINISH PRACTICE' : replay ? 'FINISH TUTORIAL' : 'EXIT QUEST',
+                        endless ? 'FINISH RUN' : practiceGameplay ? 'FINISH PRACTICE' : replay ? 'FINISH TUTORIAL' : 'EXIT QUEST',
 
                     subtitle:
-                        practice ? 'RETURN TO PRACTICE GRID' : replay ? 'RETURN TO CURRENT QUEST' : 'SAVE STATE & LEAVE QUEST',
+                        endless ? 'VIEW SCORE & PARTICIPATION CERTIFICATE' : practice ? 'RETURN TO PRACTICE GRID' : replay ? 'RETURN TO CURRENT QUEST' : 'SAVE STATE & LEAVE QUEST',
 
                     danger:
                         true,
                 },
             ];
+            this.menuItems.forEach((item, index) => { item.action = ['resume', 'settings', 'finish'][index]; });
+            const course = this.sourceScreen && this.sourceScreen.options && this.sourceScreen.options.tutorialCourse &&
+                IP2Live.PracticeMode && IP2Live.PracticeMode.course;
+            if (course) {
+                this.menuItems[2].title = course.index + 1 < course.entries.length ? 'NEXT TUTORIAL' : 'FINISH WALKTHROUGH';
+                this.menuItems[2].subtitle = course.index + 1 < course.entries.length ? 'CONTINUE TO THE NEXT GUIDED LESSON' : 'RETURN TO PVP';
+                this.menuItems[2].danger = false;
+                const lessons = [{ title: 'REPLAY TUTORIAL', subtitle: 'RESTART THIS GUIDED LESSON', action: 'replay', danger: false }];
+                if (course.index > 0) lessons.unshift({ title: 'PREVIOUS TUTORIAL', subtitle: 'REVISIT THE PREVIOUS LESSON', action: 'previous', danger: false });
+                this.menuItems.splice(2, 0, ...lessons);
+                this.menuItems.push({ title: 'BACK TO PVP', subtitle: 'LEAVE THE TUTORIAL WALKTHROUGH', action: 'course-exit', danger: true });
+            }
 
             this.selectedIndex =
                 0;
@@ -2029,11 +2076,7 @@
             this.buttonRects =
                 [];
 
-            this.selectionMix = [
-                1,
-                0,
-                0,
-            ];
+            this.selectionMix = this.menuItems.map((item, index) => index === 0 ? 1 : 0);
         }
 
         async load() {
@@ -2055,6 +2098,11 @@
             this.fadeIn = this.closing
                 ? Math.max(0, this.fadeIn - 0.12)
                 : Math.min(1, this.fadeIn + 0.085);
+
+            if (this.fadeIn === 1 && this._pauseCheckpointPending && !this._pauseCheckpointTask) {
+                // A separate task gives the fully open panel a chance to paint.
+                this._pauseCheckpointTask = setTimeout(() => this._flushPauseCheckpoint(), 0);
+            }
 
             if (this.closing && this.fadeIn === 0) {
                 GameplayPause.closeMenu();
@@ -2105,6 +2153,26 @@
         }
 
         draw3D() {}
+
+        _flushPauseCheckpoint() {
+            if (this._pauseCheckpointTask) clearTimeout(this._pauseCheckpointTask);
+            this._pauseCheckpointTask = null;
+            if (!this._pauseCheckpointPending) return;
+            this._pauseCheckpointPending = false;
+            GameplayPause._savePauseCheckpoint(this.sourceScreen);
+        }
+
+        close() {
+            if (this._pauseMusicManager && this._pauseMusicManager.setPaused) {
+                this._pauseMusicManager.setPaused(false, this);
+            }
+            this._pauseMusicManager = null;
+            // Fast resume must still checkpoint; never let a deferred task save
+            // into a different story after the pause scene has been removed.
+            this._flushPauseCheckpoint();
+            this.pauseBackdrop = null;
+            if (super.close) super.close();
+        }
 
         onKeyPressed(key) {
             if (
@@ -2296,20 +2364,20 @@
                 }
             } catch (error) {}
 
-            if (
-                this.selectedIndex ===
-                0
-            ) {
+            const action = this.menuItems[this.selectedIndex] && this.menuItems[this.selectedIndex].action;
+            if (action === 'previous' || action === 'replay' || action === 'course-exit') {
+                const practice = IP2Live.PracticeMode;
+                if (!practice || !practice.course || this.pending) return false;
+                this.pending = true;
+                const changed = action === 'course-exit' ? practice.exitCourse() : practice.playCourseLesson(practice.course.index + (action === 'previous' ? -1 : 0));
+                if (!changed) this.pending = false;
+                return changed;
+            }
+            if (action === 'resume') {
                 this._resume();
-            } else if (
-                this.selectedIndex ===
-                1
-            ) {
+            } else if (action === 'settings') {
                 this._settings();
-            } else if (
-                this.selectedIndex ===
-                2
-            ) {
+            } else if (action === 'finish') {
                 this._exitQuest();
             }
         }
@@ -4139,6 +4207,11 @@
         }
 
         drawHUD() {
+            if (IP2Live.PauseUI) {
+                const ctx = Common && Common.Platform && Common.Platform.ctx;
+                if (ctx && ctx.canvas) this.buttonRects = IP2Live.PauseUI.draw(this, ctx, this.fadeIn);
+                return;
+            }
             const ctx =
                 Common &&
                 Common.Platform
@@ -4181,7 +4254,7 @@
                 s;
 
             const panelH =
-                352 *
+                (this.menuItems.length > 3 ? 116 + this.menuItems.length * 56 + (this.menuItems.length - 1) * 9 : 352) *
                 s;
 
             const x =
@@ -4448,7 +4521,7 @@
                 s;
 
             const buttonH =
-                68 *
+                (this.menuItems.length > 3 ? 56 : 68) *
                 s;
 
             const startY =
@@ -4457,7 +4530,7 @@
                 s;
 
             const gap =
-                13 *
+                (this.menuItems.length > 3 ? 9 : 13) *
                 s;
 
             for (

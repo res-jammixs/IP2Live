@@ -12,6 +12,7 @@ class IP2LivePracticeGrid extends Scene.Base {
         this.pointerMode = false;
         this.hoveredIndex = -1;
         this._animationTime = Date.now();
+        this.reportProfile = IP2Live.FeatureTelemetry ? IP2Live.FeatureTelemetry.profile() : null;
     }
     async load() {
         await IP2Live.Assets.loadAll();
@@ -285,6 +286,15 @@ class IP2LivePracticeGrid extends Scene.Base {
         ctx.fillStyle = '#83e6b035'; ctx.fillRect(80, 28, 64, 2);
         ctx.font = '12px ' + font; ctx.fillStyle = '#8395a7';
         ctx.fillText(this.kind === 'tutorial' ? 'Revisit the lesson. Start fresh every time.' : 'Unlimited attempts. Keep learning at your own pace.', 42, 86);
+        ctx.font = '10px ' + font;
+        ctx.fillStyle = this.reportProfile ? '#83bdb2' : '#cab481';
+        let tracking = this.reportProfile ? 'Progress recorded for ' + this.reportProfile.infiltratorName
+            : 'Start or load a story profile to record practice progress in your report.';
+        const trackingWidth = Math.max(160, l.sw - 340);
+        while (ctx.measureText(tracking).width > trackingWidth && tracking.length > 4) tracking = tracking.slice(0, -2);
+        if (this.reportProfile && !tracking.endsWith(this.reportProfile.infiltratorName)) tracking += '...';
+        ctx.fillText(tracking, 42, 100);
+        ctx.font = '12px ' + font;
         const unlockedCount = practice.entries.filter(e => practice.isUnlocked(e.id)).length;
         ctx.textAlign = 'right'; ctx.fillStyle = '#b9d1dc';
         ctx.fillText(unlockedCount + ' / ' + practice.entries.length + ' UNLOCKED', l.sw - 42, 60);

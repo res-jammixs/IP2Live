@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Load Game preview</title>
+<style>
+@font-face{font-family:Oxanium-Medium;src:url('../../Fonts/Oxanium-Medium.ttf')}
+html,body{margin:0;background:#030205;overflow:hidden}canvas{display:block;width:100vw;height:100vh}
+</style>
+</head>
+<body><canvas aria-label="Load Game preview"></canvas>
+<script>
+const params = new URLSearchParams(location.search);
+const canvas = document.querySelector('canvas');
+canvas.width = Number(params.get('width')) || 1920;
+canvas.height = Number(params.get('height')) || 1080;
+const Common = { Platform: { ctx: canvas.getContext('2d') }, ScreenResolution: {
+    SCREEN_X: Number(params.get('sw')) || 1280, SCREEN_Y: Number(params.get('sh')) || 720
+} };
+const sound = { playSound() {} };
+const Data = { Systems: { saveSlots: 4, soundCursor: sound, soundConfirmation: sound, soundCancel: sound, soundImpossible: sound },
+    Keyboards: { menuControls: { Up: 'ArrowUp', Down: 'ArrowDown' }, isKeyEqual: (a,b) => a === b,
+        checkActionMenu: key => key === 'Enter', checkCancelMenu: key => key === 'Escape' } };
+const Core = { Game: {} }, Manager = { Stack: { pop() {}, requestPaintHUD: true } };
+const Scene = { Base: class { constructor() { this.initialize(); } } };
+const IP2Live = { Assets: { oxaniumMediumLoaded: true }, NeuralLifeForce: { SETTINGS: { maxLifeForce: 100 } },
+    MapManager: { stageFor: () => ({ stage: 1, level: 2 }) } };
+(async () => {
+    for (const file of ['confir-popup.js', 'load-game.js']) {
+        const response = await fetch('../../Plugins/IP2Live_Core/modules/screens/' + file);
+        if (!response.ok) throw new Error('Preview source could not be loaded');
+        new Function('Common','Core','Data','Manager','Scene','IP2Live','window','Main',await response.text())(
+            Common,Core,Data,Manager,Scene,IP2Live,window,{});
+    }
+    await document.fonts.load('18px Oxanium-Medium');
+    const menu = new window.IP2LiveLoadGameMenu({ saveMode: params.get('mode') === 'save' });
+    menu.animTick = 120;
+    menu.gamesData = Array.from({ length: 4 }, () => ({ isEmpty: true }));
+    if (params.get('state') === 'saved' || params.get('state') === 'long') {
+        menu.gamesData[0] = { isEmpty: false, currentMapID: 4, playTime: { time: 3723000 }, infiltratorName: 'NOVA' };
+        menu.slotMetaByIndex[0] = { saveName: params.get('state') === 'long' ? 'A very long checkpoint name that should fit without colliding with its status' : 'Checkpoint Alpha',
+            profileName: 'NOVA', savedAt: 1780000000000, gameStates: { neuralLifeForce: { lifeForce: 78 } } };
+    }
+    if (params.get('state') === 'unavailable') menu.gamesData[0]._ip2liveLoadError = 'Unreadable save';
+    if (params.get('state') === 'back') menu.selectedIndex = menu.gamesData.length;
+    function paint() { menu.drawHUD(); }
+    paint();
+    await document.fonts.ready;
+    paint();
+    document.body.dataset.previewState = 'ready';
+    canvas.onpointermove = event => { menu.onMouseMove(event.clientX * canvas.width / innerWidth, event.clientY * canvas.height / innerHeight); paint(); };
+    addEventListener('keydown', event => { if (['ArrowUp','ArrowDown'].includes(event.key)) { menu.onKeyPressedAndRepeat(event.key); paint(); event.preventDefault(); } });
+})().catch(error => { document.body.dataset.previewState = 'error'; document.body.dataset.previewError = error.message; console.error(error); });
+</script>
+</body>
+</html>

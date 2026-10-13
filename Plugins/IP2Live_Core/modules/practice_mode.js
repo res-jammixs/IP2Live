@@ -16,8 +16,8 @@
     ].map(([id, number, name, description, icon, harder]) => ({ id, number, name, description, icon, harder: !!harder }));
 
     const PracticeMode = {
-        entries, unlocks: {}, _loaded: false, active: false, returning: false,
-        lockedMessage: 'Practice Mode will be unlocked once you encounter your first Networking Gameplay',
+        entries, unlocks: {}, _loaded: false, active: false, returning: false, course: null,
+        lockedMessage: 'Complete your first networking tutorial in Story Mode to unlock Practice Mode.',
 
         _load() {
             if (this._loaded) return;
@@ -29,6 +29,9 @@
         },
         isUnlocked(id) {
             this._load();
+            if (IP2Live.GameManager?.unlockPracticeAndEndlessForTesting === true) {
+                return !id || entries.some(entry => entry.id === id);
+            }
             return id ? this.unlocks[id] === true : entries.some(entry => this.unlocks[entry.id]);
         },
         unlock(gameplayId, announce = true) {
@@ -68,6 +71,19 @@
         },
         launch(gameplayId, kind, grid) {
             if (this.active || this.returning || !this.isUnlocked(gameplayId)) return false;
+            this.course = null;
+            return this._start(gameplayId, kind, grid);
+        },
+        launchCourse(menu) {
+            if (this.active || this.returning || (IP2Live.PVPMode && IP2Live.PVPMode.active) ||
+                IP2Live.TutorialReplay.session || IP2Live.GameManager._activeGameplayNode) return false;
+            this.course = { entries: entries.slice(), index: 0, busy: false };
+            const dialogue = IP2Live.DialogueManager;
+            if (dialogue && dialogue.resetTransitionState) dialogue.resetTransitionState({ stopActive: true, discardActive: true });
+            this._start(entries[0].id, 'tutorial', menu, true);
+            return this.playCourseLesson(0);
+        },
+        _start(gameplayId, kind, grid, deferLaunch = false) {
             this.active = true;
             this.grid = grid;
             this.kind = kind === 'tutorial' ? 'tutorial' : 'gameplay';
@@ -75,21 +91,82 @@
             this.round = 0;
             this.savedGame = Core.Game.current;
             this.savedManagerState = IP2Live.GameManager.state;
+            this.telemetrySession = IP2Live.FeatureTelemetry ? IP2Live.FeatureTelemetry.startSession('practice', this.kind) : null;
             // Practice is a menu scene, not an engine campaign. Leaving the engine
             // game unset prevents saves and avoids a partially initialized Game.
             // TutorialReplay owns and restores each manager's temporary puzzle data.
             Core.Game.current = null;
             if (IP2Live.QuestMinimap) IP2Live.QuestMinimap.destroy();
-            return this._launchRound();
+            return deferLaunch || this._launchRound();
         },
         _launchRound() {
             if (!this.active || this.returning) return false;
             this.round++;
             const opened = IP2Live.TutorialReplay.launch(this.gameplayId, {
-                practiceMode: true, practiceGameplay: this.kind === 'gameplay', round: this.round,
+                practiceMode: true, practiceGameplay: this.kind === 'gameplay', round: this.round, tutorialCourse: !!this.course,
             });
-            if (!opened) this.returnToGrid('This gameplay could not be opened. Please try again.');
+            if (!opened) {
+                if (!this.course) this.returnToGrid('This gameplay could not be opened. Please try again.');
+            }
             return opened;
+        },
+        playCourseLesson(index) {
+            const course = this.course;
+            if (!this.active || this.returning || !course || course.busy || !Number.isInteger(index) || index < 0 || index >= course.entries.length) return false;
+            course.busy = true;
+            return this._transitionCourse(() => {
+                this._finishCourseLesson();
+                course.index = index;
+                this.gameplayId = course.entries[index].id; this.round = 0;
+                this._launchRound();
+                const replay = IP2Live.TutorialReplay.session;
+                if (!replay || !replay.screen) this._leaveCourseNow('This tutorial could not be opened. Please try again.');
+            });
+        },
+        _transitionCourse(action) {
+            const course = this.course;
+            // Finish callbacks can still be unwinding when they request the next lesson.
+            Promise.resolve().then(() => {
+                if (!this.active || this.returning || this.course !== course) return;
+                const done = () => { course.busy = false; Manager.Stack.requestPaintHUD = true; };
+                const run = () => {
+                    try { action(); }
+                    catch (error) {
+                        console.warn('[IP2Live] Tutorial navigation failed:', error);
+                        this._leaveCourseNow('This tutorial could not be opened. Please try again.');
+                    }
+                    return true;
+                };
+                const transition = IP2Live.MenuTransition;
+                if (transition && typeof transition.launch === 'function') {
+                    const opened = transition.launch(run, { freezeTarget: true, onClosed: done });
+                    if (opened) return;
+                }
+                // Also support menu-only previews where the transition service is absent.
+                run(); done();
+            });
+            return true;
+        },
+        _finishCourseLesson() {
+            const replay = IP2Live.TutorialReplay.session, course = this.course;
+            if (!course || !replay || !replay.options.tutorialCourse) return;
+            let count = 0;
+            while (Manager.Stack.top && Manager.Stack.top !== this.grid && Manager.Stack.top !== replay.screen && ++count < 32) Manager.Stack.pop();
+            if (IP2Live.GameplayPause) IP2Live.GameplayPause.closeMenu();
+            IP2Live.TutorialReplay.finish(replay.gameplayId, replay.options, 'finished');
+        },
+        exitCourse(message = '') {
+            if (!this.active || this.returning || !this.course || this.course.busy) return false;
+            this.course.busy = true;
+            return this._transitionCourse(() => this._leaveCourseNow(message));
+        },
+        _leaveCourseNow(message) {
+            this._finishCourseLesson();
+            let count = 0;
+            while (Manager.Stack.top && Manager.Stack.top !== this.grid && ++count < 32) Manager.Stack.pop();
+            this._returnWithTV = true;
+            try { return this.returnToGrid(message || ''); }
+            finally { this._returnWithTV = false; }
         },
         configureScreen(screen) {
             if (!screen || !screen.options || !screen.options.practiceMode) return;
@@ -103,6 +180,13 @@
         },
         onReplayFinished(outcome) {
             if (!this.active) return;
+            if (this.course) {
+                if (this.course.busy) return;
+                if (outcome === 'completed' || outcome === 'finished') this.nextCourseLesson();
+                else if (outcome === 'failed') this.playCourseLesson(this.course.index);
+                else this.exitCourse(outcome === 'unavailable' ? 'This tutorial could not be opened. Please try again.' : '');
+                return;
+            }
             if ((this.kind === 'gameplay' && outcome === 'completed') || outcome === 'failed') {
                 // Defer until the previous completion callback has fully unwound.
                 const grid = this.grid;
@@ -112,6 +196,11 @@
                 return;
             }
             this.returnToGrid(outcome === 'unavailable' ? 'This gameplay is unavailable. Please try again.' : '');
+        },
+        nextCourseLesson() {
+            if (!this.course) return false;
+            return this.course.index + 1 < this.course.entries.length
+                ? this.playCourseLesson(this.course.index + 1) : this.exitCourse();
         },
         finishFromPause(screen) {
             const replay = IP2Live.TutorialReplay, transition = IP2Live.MenuTransition;
@@ -129,23 +218,30 @@
         },
         returnToGrid(message) {
             if (!this.active || this.returning) return false;
+            const course = this.course;
             this.returning = true;
+            if (IP2Live.FeatureTelemetry) IP2Live.FeatureTelemetry.endSession(this.telemetrySession);
+            this.telemetrySession = null;
             Core.Game.current = this.savedGame;
             IP2Live.GameManager.state = this.savedManagerState;
             this.savedGame = null;
             if (IP2Live.QuestMinimap) IP2Live.QuestMinimap.destroy();
             const music = IP2Live.MusicManager;
-            if (music && music.ZONE) music.play(music.ZONE.MAIN_MENU);
+            if (this.grid && typeof this.grid.restoreMusic === 'function') this.grid.restoreMusic();
+            else if (music && music.ZONE) music.play(music.ZONE.MAIN_MENU);
             if (this.grid) this.grid.notice = message || '';
+            if (course && this.grid) this.grid.openedAt = Date.now();
             const done = (loading) => {
                 if (loading && Manager.Stack.top === loading) Manager.Stack.pop();
                 this.active = false;
                 this.returning = false;
+                this.course = null;
                 Manager.Stack.requestPaintHUD = true;
             };
             if (this._returnWithTV) done();
             else if (IP2Live.LoadingScreen) IP2Live.LoadingScreen.show({
-                mode: 'push', status: 'Returning to Practice', detail: 'Choose your next exercise', onComplete: done,
+                mode: 'push', status: course ? 'Returning to PVP' : 'Returning to Practice',
+                detail: course ? 'Choose a lobby or race against AI' : 'Choose your next exercise', onComplete: done,
             });
             else done();
             return true;

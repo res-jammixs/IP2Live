@@ -1,0 +1,39 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>IP2Live Endless Preview</title>
+<style>
+@font-face { font-family: Oxanium-Medium; src: url('../../Fonts/Oxanium-Medium.ttf'); }
+@font-face { font-family: Nebula-Regular; src: url('../../Fonts/Nebula-Regular.otf'); }
+html, body { margin: 0; width: 100%; height: 100%; background: #03080d; overflow: hidden; }
+canvas { width: 100vw; height: 100vh; display: block; }
+</style></head><body><canvas id="preview"></canvas><script>
+const params = new URLSearchParams(location.search), canvas = document.getElementById('preview');
+canvas.width = Number(params.get('w')) || innerWidth; canvas.height = Number(params.get('h')) || innerHeight;
+const Common = { Platform: { ctx: canvas.getContext('2d') } }, Core = { Game: { current: null } };
+const Scene = { Base: class { constructor() { this.initialize?.(); } close() {} } };
+const Data = { Systems: {}, Keyboards: { checkActionMenu: k => k === 'Enter', checkCancelMenu: k => k === 'Escape' } };
+const Manager = { Stack: { requestPaintHUD: true, pop() {} } };
+const IP2Live = { Assets: { loadPauseFonts: () => Promise.all([document.fonts.load('18px Oxanium-Medium'), document.fonts.load('28px Nebula-Regular')]) },
+    FeatureTelemetry: { profile: () => ({ infiltratorName: 'NOVA', profileId: 'nova' }) } };
+const player = { name: 'NOVA', profileId: 'nova', id: 'earned-story' };
+const state = params.get('state') || 'lobby';
+const record = { version: 1, id: 'endless-2026-nova', mode: 'endless', status: 'finished',
+    name: state === 'long' ? 'Alexandria Montgomery Wellington 王' : 'NOVA', profileId: 'nova', score: 8240,
+    completedRounds: 24, activeElapsedMs: 912000, mistakes: 7, reason: 'time_expired', completedAt: Date.UTC(2026, 9, 13),
+    rounds: [{ number: '1', name: 'IP Class Wires', outcome: 'completed', points: 184 },
+        { number: '3', name: 'CIDR Binary Panel', outcome: 'completed', points: 260 },
+        { number: '4', name: 'Subnet Simulator', outcome: 'completed', points: 375 }] };
+(async () => {
+    for (const file of ['certificate_pdf.js', 'story_certificate.js', 'screens/story-ending.js', 'screens/endless.js']) {
+        const response = await fetch('../../Plugins/IP2Live_Core/modules/' + file);
+        if (!response.ok) throw new Error('Preview source could not be loaded: ' + file);
+        new Function('Common', 'Core', 'Data', 'Manager', 'Scene', 'IP2Live', 'window', await response.text())(Common, Core, Data, Manager, Scene, IP2Live, window);
+    }
+    IP2Live.EndlessMode = { active: false, players: async () => state === 'locked' ? [] : [player], lastResult: () => state === 'archive' ? record : null };
+    const scene = new IP2Live.EndlessScreen(); await scene.load(); await document.fonts.ready;
+    if (['result', 'long', 'certificate'].includes(state)) scene.showResult(record);
+    if (state === 'certificate') IP2Live.EndlessCertificate.draw(Common.Platform.ctx, record); else scene.drawHUD();
+    document.body.dataset.previewState = 'ready';
+    window.previewScene = scene; window.previewCertificate = () => IP2Live.EndlessCertificate.create(record);
+    canvas.onpointermove = event => { scene.onMouseMove(event.clientX * canvas.width / innerWidth, event.clientY * canvas.height / innerHeight); scene.drawHUD(); };
+})().catch(error => { document.body.dataset.previewState = 'error'; document.body.dataset.previewError = error.message; console.error(error); });
+</script></body></html>

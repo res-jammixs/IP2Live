@@ -127,7 +127,9 @@ class IP2LiveLightingManager {
         this._restoreSceneLights();
         this._restoreFog();
         this._restoreRendererClear();
-        this._appliedThreeScene = null;
+        // An unmodified, fully lit floor is also an applied scene. Remember it
+        // so update() does not restore/reapply an empty preset every frame.
+        this._appliedThreeScene = threeScene || null;
 
         this.activeMapId = key || null;
         this.activePreset = preset;

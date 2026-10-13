@@ -84,6 +84,8 @@ function loadPersistentStateHarness() {
         { Platform: { ctx: null } }, Core, {}, {}, { Stack: {} }, Scene, {}, {}, {}, IP2Live, windowObject
     );
 
+    load(moduleSource('Plugins/IP2Live_Core/modules/game_manager.js'));
+    load(moduleSource('Plugins/IP2Live_Core/modules/game-state/floor_state_config.js'));
     load(moduleSource('Plugins/IP2Live_Core/modules/game-state/game_state_manager.js'));
     load(moduleSource('Plugins/IP2Live_Core/modules/game-state/darklights_state.js'));
     return { Core, Scene, IP2Live, savedDarklights, applied, refreshed, presets, load };

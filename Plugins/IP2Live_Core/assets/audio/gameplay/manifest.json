@@ -1,0 +1,54 @@
+{
+  "version": 1,
+  "entries": [
+    {
+      "kind": 1,
+      "id": 22,
+      "name": "Gameplay/03-bitstream-decoder.wav",
+      "file": "03-bitstream-decoder.wav",
+      "sha256": "876e5c35f088ca889acfdae42c8bfc16c5cc6a4e4fedf8aa52df0758dad5839b"
+    },
+    {
+      "kind": 1,
+      "id": 23,
+      "name": "Gameplay/04-subnet-relay.wav",
+      "file": "04-subnet-relay.wav",
+      "sha256": "170da654baee6d961f23303e24bae3cc8b20d51a1509235a2e648f2240835b35"
+    },
+    {
+      "kind": 1,
+      "id": 24,
+      "name": "Gameplay/04_5-reactor-lattice.wav",
+      "file": "04_5-reactor-lattice.wav",
+      "sha256": "6a23cff2c490c6320bb18cdfb1f01a3a8091e718c3d7799ca03a4c1c13ec7cb6"
+    },
+    {
+      "kind": 1,
+      "id": 25,
+      "name": "Gameplay/05-quarantine-breach.wav",
+      "file": "05-quarantine-breach.wav",
+      "sha256": "2bbc8eae69863c6a8c1ac0487dfc6e737e7290fbb4e266b8347f1c8f607780dd"
+    },
+    {
+      "kind": 1,
+      "id": 26,
+      "name": "Gameplay/06-matrix-lockdown.wav",
+      "file": "06-matrix-lockdown.wav",
+      "sha256": "1df1cc743305f10c65971fc2ba9d287922619720faecc33a39c92aa27ddfbc1c"
+    },
+    {
+      "kind": 1,
+      "id": 27,
+      "name": "Gameplay/07-repair-uplink.wav",
+      "file": "07-repair-uplink.wav",
+      "sha256": "fd9db4f4018677414d1d67cd94bc45082178018abad5572eeb4fd1a846b66091"
+    },
+    {
+      "kind": 1,
+      "id": 28,
+      "name": "Gameplay/08-allocation-protocol.wav",
+      "file": "08-allocation-protocol.wav",
+      "sha256": "57164e969bc1b772746d14cee71b00041a27b0961b6d3bf59ea2e363f17a7f94"
+    }
+  ]
+}

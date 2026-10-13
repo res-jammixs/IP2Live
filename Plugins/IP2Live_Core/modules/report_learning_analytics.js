@@ -4,7 +4,7 @@
  * 0..100. Missing observations remain null, including legacy default accuracy.
  */
 const IP2LiveReportLearningAnalytics = {
-    VERSION: 'learning-analytics-20261011-01',
+    VERSION: 'learning-analytics-20261013-01',
 
     analyze(input) {
         const data = input || {};
@@ -72,6 +72,9 @@ const IP2LiveReportLearningAnalytics = {
         const encounterImprovement = Object.assign(this._aggregateComparisons(perGameplay.reduce((all, row) => all.concat(row.encounterCohorts), [])), { unit: 'encounter',
             limitation: 'Subnet Blaster encounter comparisons use the same class, prefix, host bits, requested address and given-bit type. They are separate from whole-launch progress; timestamps identify the parent attempt end.' });
         const weaknesses = this._weaknesses(attempts, events, catalog);
+        const features = this._featureActivity(events, catalog, attempts);
+        const feedback = this._feedback(perGameplay, weaknesses, recovery, improvement);
+        feedback.featureAnalysis = features.analysis;
         return {
             version: this.VERSION,
             methodology: {
@@ -102,9 +105,264 @@ const IP2LiveReportLearningAnalytics = {
                 excludedFromImprovement: attempts.filter(row => !row.eligible).length,
                 eventCount: events.length,
             },
-            improvement, encounterImprovement, perGameplay, weaknesses, recovery,
-            feedback: this._feedback(perGameplay, weaknesses, recovery, improvement),
+            improvement, encounterImprovement, perGameplay, weaknesses, recovery, features,
+            feedback,
         };
+    },
+
+    /** Lifetime evidence, balanced across tasks, modes and gameplays. No causal score. */
+    learningProgress(input) {
+        const data = input || {}, events = this._dedupeEvents(data.events || []), catalog = {};
+        (data.gameplayCatalog || []).forEach(game => { if (game && (game.gameplayId || game.id)) catalog[game.gameplayId || game.id] = game; });
+        const story = this._normalizeAttempts(data.attempts || [], events, catalog);
+        const optional = this._featureActivity(events, catalog, story, ['practice', 'endless', 'pvp_ai', 'pvp_lan']);
+        const storyGroups = {};
+        const dated = row => Number.isFinite(row.timestamp) && row.timestamp > 0 && row.timestamp <= 8640000000000000;
+        story.filter(row => row.eligible && dated(row)).forEach(row => {
+            const key = this._stableStringify(row.cohort);
+            if (!storyGroups[key]) storyGroups[key] = [];
+            storyGroups[key].push(row);
+        });
+        const sources = Object.keys(storyGroups).map(key => ({ mode: 'story', cohort: this._cohort(storyGroups[key], key) }));
+        optional.modes.forEach(mode => mode.perGameplay.forEach(game => game.cohorts.forEach(cohort => {
+            const rows = cohort.curve.filter(dated).map(point => Object.assign({}, point, { cohort: cohort.descriptor }));
+            if (rows.length) sources.push({ mode: mode.mode, cohort: this._cohort(rows, cohort.cohortKey) });
+        })));
+        const cohorts = sources.map(({ mode, cohort }) => {
+            const curve = cohort.curve, first = curve[0], latest = curve[curve.length - 1], paired = curve.length >= 2;
+            const firstError = first.accuracy === null ? null : 1 - first.accuracy;
+            const latestError = latest.accuracy === null ? null : 1 - latest.accuracy;
+            const errorReduction = (early, recent) => early !== null && recent !== null && early > 0 ? (early - recent) / early * 100 : null;
+            const speed = paired && first.passed && latest.passed && first.activeDurationMs > 0 && latest.activeDurationMs > 0
+                ? (first.activeDurationMs - latest.activeDurationMs) / first.activeDurationMs * 100 : null;
+            const qualityMaintained = first.accuracy !== null && latest.accuracy !== null && latest.accuracy >= first.accuracy;
+            const early = cohort.accuracyComparison.baseline, recent = cohort.accuracyComparison.recent;
+            const windowErrorReduction = cohort.accuracyChangePp !== null ? errorReduction(early.rate === null ? null : 1 - early.rate, recent.rate === null ? null : 1 - recent.rate) : null;
+            return { mode, gameplayId: cohort.descriptor.gameplayId, descriptor: cohort.descriptor, cohortKey: cohort.cohortKey,
+                eligibleCount: curve.length, repetitions: Math.max(0, curve.length - 1), firstAt: first.timestamp, latestAt: latest.timestamp,
+                firstAttemptId: first.attemptId, latestAttemptId: latest.attemptId,
+                firstAccuracy: first.accuracy, latestAccuracy: latest.accuracy, firstErrorRate: firstError, latestErrorRate: latestError,
+                firstMistakes: first.totalDecisions === null ? null : first.totalDecisions - first.correctDecisions,
+                latestMistakes: latest.totalDecisions === null ? null : latest.totalDecisions - latest.correctDecisions,
+                firstDecisions: first.totalDecisions, latestDecisions: latest.totalDecisions,
+                firstActiveMs: first.activeDurationMs, latestActiveMs: latest.activeDurationMs,
+                learningImprovementPercent: paired ? errorReduction(firstError, latestError) : null,
+                accuracyChangePp: paired && first.accuracy !== null && latest.accuracy !== null ? (latest.accuracy - first.accuracy) * 100 : null,
+                speedImprovementPercent: speed, validatedSpeedImprovementPercent: qualityMaintained ? speed : null,
+                windowLearningImprovementPercent: windowErrorReduction, windowAccuracyChangePp: cohort.accuracyChangePp,
+                windowValidatedSpeedImprovementPercent: cohort.validatedSpeedImprovementPercent, windowPassRateChangePp: cohort.passRateChangePp,
+                baselineCount: cohort.baselineCount, recentCount: cohort.recentCount,
+                baselineAccuracy: early.rate, recentAccuracy: recent.rate,
+                baselineCorrectDecisions: early.correctDecisions, baselineTotalDecisions: early.totalDecisions,
+                recentCorrectDecisions: recent.correctDecisions, recentTotalDecisions: recent.totalDecisions,
+                baselineMedianActiveMs: cohort.speedComparison.baselineMedianActiveMs, recentMedianActiveMs: cohort.speedComparison.recentMedianActiveMs,
+                evidence: curve.length < 2 ? 'Insufficient comparable attempts' : cohort.status === 'insufficient_data' ? 'Descriptive first/latest pair only' : 'Preliminary matched windows; observational',
+                caution: firstError === 0 ? 'First attempt already error-free: relative error reduction is undefined; inspect accuracy change.' :
+                    speed !== null && speed > 0 && !qualityMaintained ? 'Faster play has lower or unobserved accuracy; speed gain is not quality-maintained.' : null,
+                curve: curve.map(point => Object.assign({}, point, {
+                    learningImprovementPercent: errorReduction(firstError, point.accuracy === null ? null : 1 - point.accuracy),
+                    mistakes: point.totalDecisions === null ? null : point.totalDecisions - point.correctDecisions,
+                })),
+            };
+        });
+        const ids = Array.from(new Set([...Object.keys(catalog), ...story.filter(row => !row.nonLearning).map(row => row.gameplayId),
+            ...optional.modes.flatMap(mode => mode.rounds.map(row => row.gameplayId))])).sort();
+        const modeLabels = { story: 'Story', practice: 'Practice', endless: 'Endless', pvp_ai: 'PVP vs AI', pvp_lan: 'PVP LAN' };
+        const activityFor = (id, mode) => mode === 'story' ? story.filter(row => row.gameplayId === id && !row.nonLearning).length
+            : optional.modes.find(item => item.mode === mode).rounds.filter(row => row.gameplayId === id).length;
+        const perGameplay = ids.map(id => {
+            const games = cohorts.filter(row => row.gameplayId === id);
+            const perMode = Object.keys(modeLabels).map(mode => {
+                const rows = games.filter(row => row.mode === mode);
+                return Object.assign(this._progressAggregate(rows), { mode, label: modeLabels[mode], recordedAttempts: activityFor(id, mode),
+                    eligibleCount: rows.reduce((n, row) => n + row.eligibleCount, 0), repetitions: rows.reduce((n, row) => n + row.repetitions, 0),
+                    matchedCohortCount: rows.filter(row => row.eligibleCount >= 2).length, windowCohortCount: rows.filter(row => row.baselineCount >= 2).length });
+            });
+            return Object.assign(this._progressAggregate(perMode), { gameplayId: id, gameplayLabel: catalog[id] && (catalog[id].label || catalog[id].name) || id,
+                perMode, recordedAttempts: perMode.reduce((n, row) => n + row.recordedAttempts, 0),
+                eligibleCount: perMode.reduce((n, row) => n + row.eligibleCount, 0), repetitions: perMode.reduce((n, row) => n + row.repetitions, 0),
+                matchedCohortCount: perMode.reduce((n, row) => n + row.matchedCohortCount, 0), windowCohortCount: perMode.reduce((n, row) => n + row.windowCohortCount, 0),
+                firstAt: games.length ? Math.min(...games.map(row => row.firstAt)) : null,
+                latestAt: games.length ? Math.max(...games.map(row => row.latestAt)) : null,
+                evidence: !games.some(row => row.eligibleCount >= 2) ? 'Insufficient comparable attempts' : games.some(row => row.baselineCount >= 2) ? 'Matched windows available' : 'Descriptive first/latest pairs only',
+            });
+        });
+        const overall = Object.assign(this._progressAggregate(perGameplay), {
+            gameplayCount: perGameplay.length, recordedAttempts: perGameplay.reduce((n, row) => n + row.recordedAttempts, 0),
+            eligibleCount: perGameplay.reduce((n, row) => n + row.eligibleCount, 0), repetitions: perGameplay.reduce((n, row) => n + row.repetitions, 0),
+            matchedGameplayCount: perGameplay.filter(row => row.matchedCohortCount > 0).length,
+            windowGameplayCount: perGameplay.filter(row => row.windowCohortCount > 0).length,
+        });
+        const perMode = Object.keys(modeLabels).map(mode => Object.assign(this._progressAggregate(perGameplay.map(game => game.perMode.find(row => row.mode === mode))), {
+            mode, label: modeLabels[mode], eligibleCount: cohorts.filter(row => row.mode === mode).reduce((n, row) => n + row.eligibleCount, 0),
+            recordedAttempts: perGameplay.reduce((n, game) => n + game.perMode.find(row => row.mode === mode).recordedAttempts, 0),
+        }));
+        const methodology = {
+            meaning: 'Learning improvement (%) is observed wrong-answer-rate reduction, a descriptive performance proxy, not a validated measure of skill or proof of system effectiveness.',
+            formula: '(first wrong-answer rate - latest wrong-answer rate) / first wrong-answer rate * 100. Wrong-answer rate = incorrect graded decisions / all graded decisions.',
+            windows: 'Windowed improvement applies the same formula to first and last non-overlapping groups of 2-5 matched attempts; at least four eligible attempts are required.',
+            ceiling: 'An error-free baseline has no remaining errors to reduce. Relative improvement is N/A; accuracy change still shows stability or deterioration. Missing values are never zero-filled.',
+            matching: 'First and latest are within the same mode, gameplay version, task, stage/level, difficulty, recorded workload and timing method. Different modes are summarized separately before aggregation.',
+            aggregate: 'Equal-weight arithmetic mean of observed cohort percentages within each mode/gameplay, then equal-weight mean of observed modes within each gameplay, then equal-weight mean of observed gameplays. Each metric reports its own contributing count. Missing/ceiling cases are excluded, not zero-filled.',
+            repetitions: 'Eligible repetitions = sum of (matched cohort attempts - 1). Exposure is reported alongside change and never awards automatic learning points.',
+            speed: 'Time change compares successful active-time observations; pause, dialogue and wall time are excluded. Quality-maintained speed change also requires observed accuracy not to fall. Failure is never rewarded as a quick solve.',
+            guidance: 'Guided tutorials, help-assisted, developer, simulated AI-opponent, cancelled, interrupted and undated attempts are excluded from independent improvement, but real guided/assisted activity remains in recorded-use counts.',
+            scope: data.allHistory ? 'All recorded profile history, independent of the dashboard date filter. Earliest recorded attempt is not necessarily the learner\'s first-ever attempt.' : 'Provided report-window evidence only; all-time history was not supplied.',
+            study: 'For evidence that the system caused skill gains, use independent equivalent pre/post subnetting tests, a suitable comparison group, and uncertainty/effect-size analysis. These game logs alone establish observed within-player change only.',
+        };
+        const percent = value => value === null ? 'N/A' : value.toFixed(1) + '%';
+        return { version: 'learning-progress-v1', allHistory: !!data.allHistory, overall, perGameplay, perMode, cohorts, methodology,
+            summary: 'First-to-latest observed learning improvement (error-rate reduction): ' + percent(overall.learningImprovementPercent) +
+                ' across ' + overall.metricCounts.learningImprovementPercent + ' contributing gameplays. Windowed improvement: ' + percent(overall.windowLearningImprovementPercent) +
+                '. Eligible attempts: ' + overall.eligibleCount + '; matched repetitions: ' + overall.repetitions + '. Observational performance evidence only.' };
+    },
+    _progressAggregate(rows) {
+        const fields = ['learningImprovementPercent', 'windowLearningImprovementPercent', 'accuracyChangePp', 'windowAccuracyChangePp',
+            'speedImprovementPercent', 'validatedSpeedImprovementPercent', 'windowValidatedSpeedImprovementPercent', 'windowPassRateChangePp', 'firstAccuracy', 'latestAccuracy'];
+        const out = { metricCounts: {} };
+        fields.forEach(field => {
+            const values = rows.map(row => row[field]).filter(value => typeof value === 'number' && Number.isFinite(value));
+            out[field] = values.length ? values.reduce((n, value) => n + value, 0) / values.length : null;
+            out.metricCounts[field] = values.length;
+        });
+        return out;
+    },
+
+    _featureMode(row) {
+        const p = row.payload || {}, r = this._result(row), c = p.context || p.launchContext || {}, s = row.spec || p.spec || c.spec || {};
+        const mode = row.featureMode || p.featureMode;
+        if (['practice', 'endless', 'pvp_ai', 'pvp_lan'].includes(mode)) return mode;
+        if ([row, p, r, c, s].some(v => v.endlessMode === true)) return 'endless';
+        if ([row, p, r, c, s].some(v => v.practiceMode === true || v.practiceGameplay === true)) return 'practice';
+        return null;
+    },
+    _featureActivity(events, catalog, storyAttempts, modeNames = ['practice', 'endless']) {
+        const modes = modeNames.map(mode => {
+            const activity = events.filter(row => {
+                if (this._featureMode(row) !== mode) return false;
+                const p = row.payload || {}, r = this._result(row), s = p.spec || {}, c = p.context || p.launchContext || {};
+                return ![row, p, r, s, c, c.spec || {}].some(v => v.developerTest || v.developerTesting || v.developerSkip || v.developerFail || v.simulated || (!mode.startsWith('pvp_') && v.pvpMode));
+            });
+            const starts = new Map(), ends = new Map();
+            activity.forEach(row => {
+                if (!row.attemptId) return;
+                if (['feature_round_start', 'attempt_start'].includes(row.eventType)) starts.set(row.attemptId, row);
+                if (['feature_round_end', 'attempt_end'].includes(row.eventType) && !ends.has(row.attemptId)) ends.set(row.attemptId, row);
+            });
+            const raw = Array.from(new Set([...starts.keys(), ...ends.keys()])).map(id => {
+                const start = starts.get(id) || {}, end = ends.get(id);
+                const row = Object.assign({}, start, end || {}, { attemptId: id });
+                if (!end) Object.assign(row, { outcome: 'interrupted', passed: null, activeDurationMs: null, activeDurationKnown: false });
+                return row;
+            }).sort((a, b) => (Number(a.timestamp) || 0) - (Number(b.timestamp) || 0));
+            // Reuse the same evidence and matching rules, within this mode only.
+            // Synthetic replay identity is not guidance; tutorial activityKind is.
+            const clean = value => {
+                const out = Object.assign({}, value);
+                for (const key of ['practiceMode', 'practiceGameplay', 'endlessMode', 'featureMode', 'tutorialReplay', 'pvpMode']) delete out[key];
+                return out;
+            };
+            const normalized = this._normalizeAttempts(raw.map(source => {
+                const row = clean(source), p = clean(source.payload || {}), result = clean(this._result(source));
+                const guided = p.activityKind === 'tutorial' || source.tutorial === true || result.tutorial === true;
+                p.spec = clean(p.spec || {}); p.context = clean(p.context || p.launchContext || {});
+                if (p.context.spec) p.context.spec = clean(p.context.spec);
+                delete p.launchContext;
+                row.tutorial = guided; row.mode = guided ? 'Guided tutorial' : 'Optional gameplay';
+                row.assessed = ['passed', 'failed'].includes(row.outcome);
+                row.spec = clean(row.spec || p.spec); p.result = result; row.payload = p;
+                return row;
+            }), [], catalog);
+            const groups = {};
+            normalized.filter(row => row.eligible).forEach(row => {
+                const key = this._stableStringify(row.cohort);
+                if (!groups[key]) groups[key] = [];
+                groups[key].push(row);
+            });
+            const cohorts = Object.keys(groups).map(key => this._cohort(groups[key], key));
+            const byGame = {};
+            cohorts.forEach(cohort => {
+                const id = cohort.descriptor.gameplayId;
+                if (!byGame[id]) byGame[id] = { gameplayId: id, gameplayLabel: catalog[id] && (catalog[id].label || catalog[id].name) || id, cohorts: [] };
+                byGame[id].cohorts.push(cohort);
+            });
+            const perGameplay = Object.values(byGame).map(game => Object.assign(game, this._aggregateComparisons(game.cohorts)));
+            const improvement = this._aggregateComparisons(cohorts);
+            const scored = normalized.filter(row => row.assessed && !row.tutorial);
+            const accuracy = this._windowAccuracy(scored);
+            const times = normalized.filter(row => row.activeDurationMs !== null);
+            const days = new Set(activity.map(row => Number(row.timestamp)).filter(v => v > 0).map(v => {
+                const date = new Date(v);
+                return [date.getFullYear(), date.getMonth() + 1, date.getDate()].join('-');
+            }));
+            const sessions = new Set(activity.map(row => row.payload && row.payload.featureSessionId || row.sessionId || row.attemptId).filter(Boolean));
+            const observed = activity.length > 0;
+            const lower = [improvement.accuracyChangePp, improvement.passRateChangePp].some(v => v !== null && v < -5);
+            const better = [improvement.accuracyChangePp, improvement.passRateChangePp, improvement.validatedSpeedImprovementPercent].some(v => v !== null && v > 5);
+            const trend = improvement.status === 'insufficient_data' ? 'Insufficient comparable data' : lower ? 'Needs review' : better ? 'Improving' : 'Stable / mixed';
+            const label = { practice: 'Practice Mode', endless: 'Endless Mode', pvp_ai: 'PVP vs AI', pvp_lan: 'PVP LAN' }[mode] || mode;
+            const runEnds = new Map();
+            if (mode === 'endless') activity.filter(row => row.eventType === 'feature_session_end').forEach(row => {
+                const p = row.payload || {}, key = p.featureSessionId || row.sessionId;
+                if (key && !runEnds.has(key) && Number.isSafeInteger(p.score) && p.score >= 0) runEnds.set(key, {
+                    sessionId: key, runId: p.endlessRunId || '', startedAt: row.startedAt, endedAt: row.endedAt || row.timestamp,
+                    score: p.score, completedRounds: p.completedRounds, mistakes: p.mistakes, activeElapsedMs: p.activeElapsedMs,
+                    reason: p.reason, rulesVersion: p.rulesVersion,
+                });
+            });
+            const runs = Array.from(runEnds.values()), bestScore = runs.length ? Math.max(...runs.map(r => r.score)) : null;
+            const longestRunMs = runs.length ? Math.max(...runs.map(r => Number(r.activeElapsedMs) || 0)) : null;
+            const summary = !observed ? label + ': no recorded participation in this report window.' :
+                label + ': ' + sessions.size + ' sessions, ' + scored.length + ' scored rounds, ' + normalized.filter(row => row.tutorial).length + ' guided rounds, ' + raw.filter(row => ['passed', 'completed'].includes(row.outcome)).length + ' completed rounds. ' + trend +
+                (improvement.accuracyChangePp === null ? '.' : '; accuracy change ' + improvement.accuracyChangePp.toFixed(1) + ' pp.') +
+                (improvement.validatedSpeedImprovementPercent === null ? '' : ' Quality-maintained speed change ' + improvement.validatedSpeedImprovementPercent.toFixed(1) + '%.') +
+                (runs.length ? ' Finished Endless runs: ' + runs.length + '; best score: ' + bestScore + '. Scores describe play performance; learning comparisons match task and timer budgets.' : '');
+            return { mode, label, participation: observed ? 'Recorded participation' : 'No recorded participation', observed,
+                availability: mode === 'endless' ? 'Available after Story completion' : 'Available after tutorial unlock',
+                runs, bestScore, longestRunMs,
+                sessionCount: sessions.size, activeDays: days.size, roundCount: raw.length,
+                scoredRounds: scored.length, guidedRounds: normalized.filter(row => row.tutorial).length,
+                completedRounds: raw.filter(row => ['passed', 'completed'].includes(row.outcome)).length,
+                passedRounds: scored.filter(row => row.passed).length, failedRounds: scored.filter(row => !row.passed).length,
+                cancelledRounds: raw.filter(row => row.outcome === 'cancelled').length,
+                interruptedRounds: raw.filter(row => row.outcome === 'interrupted').length,
+                unavailableRounds: raw.filter(row => row.outcome === 'unavailable').length,
+                passRate: scored.length ? scored.filter(row => row.passed).length / scored.length : null,
+                accuracy: accuracy.rate, accuracyEvidenceRounds: accuracy.attemptCount,
+                activeDurationMs: times.length ? times.reduce((sum, row) => sum + row.activeDurationMs, 0) : null,
+                activeTimedRounds: times.length, eligibleRounds: normalized.filter(row => row.eligible).length,
+                firstActivityAt: observed ? Number(activity[0].timestamp) || null : null,
+                lastActivityAt: observed ? Number(activity[activity.length - 1].timestamp) || null : null,
+                trend, summary, improvement, perGameplay, rounds: raw,
+            };
+        });
+        const practice = modes[0], endless = modes[1];
+        // Compare independent story performance on both sides of recorded practice.
+        // Require two observations on each side of the same matched story task.
+        const transfer = [];
+        const exposure = new Map();
+        practice.rounds.filter(row => ['passed', 'failed', 'completed'].includes(row.outcome)).forEach(row => {
+            const time = Number(row.endedAt || row.timestamp) || 0;
+            if (time > 0 && (!exposure.has(row.gameplayId) || time < exposure.get(row.gameplayId))) exposure.set(row.gameplayId, time);
+        });
+        const storyGroups = {};
+        storyAttempts.filter(row => row.eligible && exposure.has(row.gameplayId)).forEach(row => {
+            const key = this._stableStringify(row.cohort);
+            if (!storyGroups[key]) storyGroups[key] = [];
+            storyGroups[key].push(row);
+        });
+        Object.keys(storyGroups).forEach(key => {
+            const rows = storyGroups[key], time = exposure.get(rows[0].gameplayId);
+            const before = rows.filter(row => row.timestamp < time).slice(-2), after = rows.filter(row => row.timestamp > time && Number(row.source.startedAt) > time).slice(0, 2);
+            if (before.length < 2 || after.length < 2) return;
+            transfer.push(Object.assign(this._cohort(before.concat(after), key), { practiceAt: time, gameplayId: rows[0].gameplayId, gameplayLabel: rows[0].gameplayLabel }));
+        });
+        const transferChange = this._aggregateComparisons(transfer);
+        const limitation = 'Practice and endless results are separate from assessed story mastery. Changes require at least four comparable unassisted scored rounds; guided lessons and help-assisted rounds count as activity only. Missing history means unobserved, not never played. Before/after practice comparisons are observational and do not prove causation.';
+        return { practice, endless, modes, transfer: { cohorts: transfer, improvement: transferChange }, limitation,
+            analysis: modes.map(mode => mode.summary).join(' ') + (transfer.length ? ' Matched independent story attempts before and after practice: ' + transfer.length + ' comparable task groups' +
+                (transferChange.accuracyChangePp === null ? '.' : '; accuracy change ' + transferChange.accuracyChangePp.toFixed(1) + ' pp.') + ' Observational evidence only.'
+                : ' More matched independent story attempts before and after practice are needed to assess transfer.') };
     },
 
     _number(value) { return value !== null && value !== undefined && value !== '' && Number.isFinite(Number(value)) ? Number(value) : null; },
@@ -144,6 +402,9 @@ const IP2LiveReportLearningAnalytics = {
                 if (!round || typeof round.passed !== 'boolean') return;
                 const active = this._number(round.activeElapsedMs);
                 const shape = this._scenarioShape(round);
+                for (const key of ['timeLimitSeconds', 'preparationTimeSeconds']) {
+                    if (parent.cohort.workload[key] !== undefined) shape[key] = parent.cohort.workload[key];
+                }
                 // All fields are needed to compare genuinely equivalent tasks;
                 // incomplete legacy encounter contexts are not guessed.
                 if (!['ipClass', 'prefix', 'hostBits', 'asked', 'givenBits'].every(key => shape[key] !== undefined)) return;
@@ -194,7 +455,7 @@ const IP2LiveReportLearningAnalytics = {
         const result = this._result(row || {});
         const context = payload.context || payload.launchContext || {};
         const spec = row && row.spec || context.spec || payload.spec || {};
-        return !!(row && (row.developerTest || row.developerTesting || row.developerSkip || row.developerFail || row.developerQuestFail || row.developerQuestSkip || row.practiceMode || row.practiceGameplay) || payload.developerTest || payload.developerTesting || payload.practiceMode ||
+        return !!(this._featureMode(row || {}) || [row || {}, payload, result, context, spec].some(value => value.pvpMode || value.simulated) || row && (row.developerTest || row.developerTesting || row.developerSkip || row.developerFail || row.developerQuestFail || row.developerQuestSkip || row.practiceMode || row.practiceGameplay) || payload.developerTest || payload.developerTesting || payload.practiceMode ||
             result.developerSkip || result.developerFail || /^(developerQuestFail|developerQuestSkip)$/.test(String(result.source || row && row.source || '')) ||
             result.developerTest || result.developerTesting || result.practiceMode || context.developerTest || context.developerTesting || context.practiceMode || spec.developerTest || spec.practiceMode || payload.simulated);
     },
@@ -291,7 +552,8 @@ const IP2LiveReportLearningAnalytics = {
         const difficulty = this._firstRecorded(row.difficultyKey, result.difficultyKey, payload.difficultyKey, spec.difficultyKey, spec.difficulty, result.difficulty, payload.difficulty, profile.index);
         const task = row.taskType || result.taskType || payload.taskType || spec.taskType || result.terminalType || payload.terminalType || spec.terminalType || 'standard';
         const workload = {};
-        ['requiredHosts', 'requiredSubnets', 'targetScore', 'targetCount', 'wireCount', 'zoneCount', 'branchId', 'roundLimit', 'originalCIDR'].forEach(key => {
+        ['requiredHosts', 'requiredSubnets', 'targetScore', 'targetCount', 'wireCount', 'zoneCount', 'branchId', 'roundLimit', 'originalCIDR',
+            'timeLimitSeconds', 'preparationTimeSeconds'].forEach(key => {
             const value = result[key] !== undefined ? result[key] : payload[key] !== undefined ? payload[key] : spec[key];
             if (value !== undefined && value !== null) workload[key] = value;
         });

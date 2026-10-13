@@ -1,0 +1,90 @@
+{
+  "format": "PCM WAV, stereo, 44100 Hz, 16 bit",
+  "synthesis": "Original procedural composition; no external samples or AI audio.",
+  "files": [
+    {
+      "file": "Songs/Musics/Gameplay/03-bitstream-decoder.wav",
+      "seconds": 30.476190476190474,
+      "loop": true,
+      "rmsDb": -18.56,
+      "peakDb": -3.11,
+      "gameplay": "3",
+      "title": "Bitstream Decoder",
+      "bpm": 126,
+      "idea": "Precise binary clicks and two alternating data tones for the CIDR panel.",
+      "sha256": "876e5c35f088ca889acfdae42c8bfc16c5cc6a4e4fedf8aa52df0758dad5839b"
+    },
+    {
+      "file": "Songs/Musics/Gameplay/04-subnet-relay.wav",
+      "seconds": 34.285714285714285,
+      "loop": true,
+      "rmsDb": -18.56,
+      "peakDb": -3.8,
+      "gameplay": "4",
+      "title": "Subnet Relay",
+      "bpm": 112,
+      "idea": "A left-to-right signal relay and measured packet pulses for the subnet simulator.",
+      "sha256": "170da654baee6d961f23303e24bae3cc8b20d51a1509235a2e648f2240835b35"
+    },
+    {
+      "file": "Songs/Musics/Gameplay/04_5-reactor-lattice.wav",
+      "seconds": 40,
+      "loop": true,
+      "rmsDb": -18.56,
+      "peakDb": -3.71,
+      "gameplay": "4.5",
+      "title": "Reactor Lattice",
+      "bpm": 96,
+      "idea": "Slow turbine rhythm and a rising charge sequence for the host-power reactor.",
+      "sha256": "6a23cff2c490c6320bb18cdfb1f01a3a8091e718c3d7799ca03a4c1c13ec7cb6"
+    },
+    {
+      "file": "Songs/Musics/Gameplay/05-quarantine-breach.wav",
+      "seconds": 31.475409836065573,
+      "loop": true,
+      "rmsDb": -19.82,
+      "peakDb": -3.1,
+      "gameplay": "5",
+      "title": "Quarantine Breach",
+      "bpm": 122,
+      "idea": "Dark, gated bass and scanning alarm fragments for the quarantine route.",
+      "sha256": "2bbc8eae69863c6a8c1ac0487dfc6e737e7290fbb4e266b8347f1c8f607780dd"
+    },
+    {
+      "file": "Songs/Musics/Gameplay/06-matrix-lockdown.wav",
+      "seconds": 28.235294117647058,
+      "loop": true,
+      "rmsDb": -18.56,
+      "peakDb": -4.31,
+      "gameplay": "6",
+      "title": "Matrix Lockdown",
+      "bpm": 136,
+      "idea": "Crossing two rhythmic grids and sharper machine accents for the quarantine matrix.",
+      "sha256": "1df1cc743305f10c65971fc2ba9d287922619720faecc33a39c92aa27ddfbc1c"
+    },
+    {
+      "file": "Songs/Musics/Gameplay/07-repair-uplink.wav",
+      "seconds": 35.55555555555556,
+      "loop": true,
+      "rmsDb": -18.56,
+      "peakDb": -3.44,
+      "gameplay": "7",
+      "title": "Repair Uplink",
+      "bpm": 108,
+      "idea": "Broken clockwork that resolves into a brighter connection motif for network repair.",
+      "sha256": "fd9db4f4018677414d1d67cd94bc45082178018abad5572eeb4fd1a846b66091"
+    },
+    {
+      "file": "Songs/Musics/Gameplay/08-allocation-protocol.wav",
+      "seconds": 33.10344827586207,
+      "loop": true,
+      "rmsDb": -19.25,
+      "peakDb": -3.1,
+      "gameplay": "8",
+      "title": "Allocation Protocol",
+      "bpm": 116,
+      "idea": "Ordered block-allocation arpeggios, confirmation chimes, and a deliberate pulse for VLSM.",
+      "sha256": "57164e969bc1b772746d14cee71b00041a27b0961b6d3bf59ea2e363f17a7f94"
+    }
+  ]
+}
