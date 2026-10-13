@@ -15,7 +15,7 @@ class IP2LiveSubnetSimulatorGameplayScreen extends Scene.Base {
         super(true);
         this.options = options || {};
         this._constructorTimeSeconds =
-            Number.isFinite(Number(timeSeconds)) && Number(timeSeconds) > 0
+            typeof timeSeconds !== 'boolean' && Number.isFinite(Number(timeSeconds)) && Number(timeSeconds) > 0
                 ? Number(timeSeconds)
                 : null;
         this._configure();
@@ -27,6 +27,8 @@ class IP2LiveSubnetSimulatorGameplayScreen extends Scene.Base {
     }
 
     _configure() {
+        this.problemRandom = IP2Live.PVPRules ? IP2Live.PVPRules.problemRandom(this.options, 'supply') : Math.random;
+        this.positionRandom = IP2Live.PVPRules ? IP2Live.PVPRules.problemRandom(this.options, 'positions') : Math.random;
         this.animTick = 0;
         this.phase = 'build';
         this.phaseTimer = 0;
@@ -87,13 +89,18 @@ class IP2LiveSubnetSimulatorGameplayScreen extends Scene.Base {
                 ? this.options.timeSeconds
                 : this.options.time
         );
-        const requestedTime = this._constructorTimeSeconds !== null
+        const requestedTime = IP2Live.GameplayTimer
+            ? IP2Live.GameplayTimer.resolve(this.options, this._constructorTimeSeconds, 180, ['time', 'solveTimeSeconds'])
+            : this._constructorTimeSeconds != null
             ? this._constructorTimeSeconds
             : optionTime;
         this.solveTimeSeconds =
             Number.isFinite(requestedTime) && requestedTime > 0
-                ? Math.max(10, Math.floor(requestedTime))
+                ? Math.max(1, requestedTime)
                 : 180;
+        this.timeLimitSeconds = this.solveTimeSeconds;
+        this.timerEnabled = true;
+        if (IP2Live.GameplayTimer) IP2Live.GameplayTimer.forget(this);
         this.solveTimerMaxTicks = this.solveTimeSeconds * 60;
         this.solveTimerTicks = this.solveTimerMaxTicks;
         this.timerExpired = false;
@@ -271,11 +278,11 @@ class IP2LiveSubnetSimulatorGameplayScreen extends Scene.Base {
         // - 50% chance to add a 4
         // - 30% chance to add an 8
         // This means one wave can contain 2 only, 2+4, 2+8, or 2+4+8.
-        if (Math.random() < this.randomSupplyFourChance) {
+        if (this.problemRandom() < this.randomSupplyFourChance) {
             if (this._spawnNormalBall(4, !!seedMode)) spawned++;
         }
 
-        if (Math.random() < this.randomSupplyEightChance) {
+        if (this.problemRandom() < this.randomSupplyEightChance) {
             if (this._spawnNormalBall(8, !!seedMode)) spawned++;
         }
 
@@ -340,8 +347,8 @@ class IP2LiveSubnetSimulatorGameplayScreen extends Scene.Base {
     _randomArenaPoint() {
         const m = this._metrics();
         return {
-            x: m.arenaX + 58 * m.sX + Math.random() * (m.arenaW - 150 * m.sX),
-            y: m.arenaY + 58 * m.sY + Math.random() * (m.arenaH - 145 * m.sY),
+            x: m.arenaX + 58 * m.sX + this.positionRandom() * (m.arenaW - 150 * m.sX),
+            y: m.arenaY + 58 * m.sY + this.positionRandom() * (m.arenaH - 145 * m.sY),
         };
     }
 
@@ -444,9 +451,11 @@ class IP2LiveSubnetSimulatorGameplayScreen extends Scene.Base {
     }
 
     _updateSolveTimer() {
-        if (!this._shouldRunSolveTimer()) return;
+        const running = this._shouldRunSolveTimer();
+        const ticks = IP2Live.GameplayTimer ? IP2Live.GameplayTimer.deltaMs(this, running) * 0.06 : 1;
+        if (!running) return;
 
-        this.solveTimerTicks = Math.max(0, this.solveTimerTicks - 1);
+        this.solveTimerTicks = Math.max(0, this.solveTimerTicks - ticks);
 
         if (this.solveTimerTicks <= 0) {
             this._beginTimeoutSequence();
@@ -1314,9 +1323,9 @@ class IP2LiveSubnetSimulatorGameplayScreen extends Scene.Base {
     }
 
     _mergeBalls(a, b) {
-        const x = (a.x + b.x) * 0.5;
-        const y = (a.y + b.y) * 0.5;
         const next = Math.min(128, a.value * 2);
+        const radius = this._radiusForValue(next) * 1.12;
+        const { x, y } = this._clampPointToArena((a.x + b.x) * 0.5, (a.y + b.y) * 0.5, radius);
 
         this._removeBall(a.id);
         this._removeBall(b.id);
@@ -1328,7 +1337,7 @@ class IP2LiveSubnetSimulatorGameplayScreen extends Scene.Base {
             y,
             homeX: x,
             homeY: y,
-            r: this._radiusForValue(next) * 1.12,
+            r: radius,
             minus: false,
             duplicate: false,
             pulse: 18,
@@ -1348,7 +1357,8 @@ class IP2LiveSubnetSimulatorGameplayScreen extends Scene.Base {
             this._playCancel();
             return;
         }
-        const pos = this._findNearbyArenaPoint(target.x, target.y, target.r + 26);
+        const radius = this._radiusForValue(target.value);
+        const pos = this._findNearbyArenaPoint(target.x, target.y, target.r + 26, radius);
         this.balls.push({
             id: this.nextBallId++,
             value: target.value,
@@ -1356,7 +1366,7 @@ class IP2LiveSubnetSimulatorGameplayScreen extends Scene.Base {
             y: pos.y,
             homeX: pos.x,
             homeY: pos.y,
-            r: this._radiusForValue(target.value),
+            r: radius,
             minus: false,
             duplicate: false,
             pulse: 10,
@@ -1479,7 +1489,8 @@ class IP2LiveSubnetSimulatorGameplayScreen extends Scene.Base {
 
     _clampPointToArena(x, y, r) {
         const m = this._metrics();
-        const pad = Math.max(6 * m.sX, r + 2 * m.sX);
+        // Leave room for the largest pulsing outline, as well as the core disc.
+        const pad = Math.max(6 * m.sX, r * 1.25 + 2 * m.sX);
         const minX = m.arenaX + pad;
         const maxX = m.arenaX + m.arenaW - pad;
         const minY = m.arenaY + pad;
@@ -1490,17 +1501,17 @@ class IP2LiveSubnetSimulatorGameplayScreen extends Scene.Base {
         };
     }
 
-    _findNearbyArenaPoint(cx, cy, distance) {
-        const base = this._clampPointToArena(cx + distance, cy, 20);
+    _findNearbyArenaPoint(cx, cy, distance, radius = 20) {
+        const base = this._clampPointToArena(cx + distance, cy, radius);
         for (let i = 0; i < 16; i++) {
             const a = Math.random() * Math.PI * 2;
             const rr = distance + Math.random() * 24;
-            const p = this._clampPointToArena(cx + Math.cos(a) * rr, cy + Math.sin(a) * rr, 20);
+            const p = this._clampPointToArena(cx + Math.cos(a) * rr, cy + Math.sin(a) * rr, radius);
             let overlapped = false;
             for (let j = 0; j < this.balls.length; j++) {
                 const b = this.balls[j];
                 if (b.minus || b.duplicate) continue;
-                if (Math.hypot(p.x - b.x, p.y - b.y) < (b.r + 18)) {
+                if (Math.hypot(p.x - b.x, p.y - b.y) < (b.r + radius)) {
                     overlapped = true;
                     break;
                 }
@@ -1736,7 +1747,9 @@ class IP2LiveSubnetSimulatorGameplayScreen extends Scene.Base {
 
     _assessmentResult() {
         const history = this.decisionHistory || [], correct = history.filter(row => row.correct).length;
-        return { telemetrySchemaVersion: 2, totalDecisions: history.length, correctDecisions: correct,
+        return { timerEnabled: true, timeLimitSeconds: this.solveTimeSeconds,
+            timeRemainingMs: Math.max(0, this.solveTimerTicks / 60 * 1000),
+            telemetrySchemaVersion: 2, totalDecisions: history.length, correctDecisions: correct,
             incorrectDecisions: history.length - correct, decisionHistory: history.map(row => ({ ...row })) };
     }
 
@@ -4240,7 +4253,9 @@ const SubnetSimulatorGameplayManager = {
     _playMusicZone(zoneName) {
         const music = IP2Live.MusicManager;
         if (!music || !music.ZONE || !music.ZONE[zoneName] || typeof music.play !== 'function') return false;
-        music.play(music.ZONE[zoneName]);
+        if (zoneName.indexOf('GAMEPLAY_') === 0 && typeof music.playGameplay === 'function') music.playGameplay('ip_subnet_simulator');
+        else if (zoneName.indexOf('STAGE_') === 0 && typeof music.restoreContext === 'function') music.restoreContext();
+        else music.play(music.ZONE[zoneName]);
         return true;
     },
 
@@ -4327,7 +4342,9 @@ const SubnetSimulatorGameplayManager = {
         if (shouldShowIntro) this._introShown = true;
 
         const open = () => {
-            const configuredTimeSeconds =
+            const configuredTimeSeconds = IP2Live.GameplayTimer
+                ? IP2Live.GameplayTimer.resolve(opts, undefined, 180, ['time', 'solveTimeSeconds'])
+                :
                 Number.isFinite(Number(opts.timeSeconds)) && Number(opts.timeSeconds) > 0
                     ? Number(opts.timeSeconds)
                     : (
@@ -4339,6 +4356,8 @@ const SubnetSimulatorGameplayManager = {
                     );
 
             const screen = new IP2LiveSubnetSimulatorGameplayScreen({
+                ...(IP2Live.GameplayTimer ? IP2Live.GameplayTimer.launchOptions(opts) : {}),
+                pvpMode: opts.pvpMode, pvpProblemSeed: opts.pvpProblemSeed,
                 targetMask: opts.targetMask,
                 handoffKey: opts.handoffKey,
                 mapId: opts.mapId,
@@ -4534,8 +4553,10 @@ IP2Live.SubnetSimulatorGameplayManager = SubnetSimulatorGameplayManager;
 IP2Live.SubnetSimulatorGameplayScreen = IP2LiveSubnetSimulatorGameplayScreen;
 window.IP2LiveSubnetSimulatorGameplayManager = SubnetSimulatorGameplayManager;
 window.IP2LiveSubnetSimulatorGameplayScreen = IP2LiveSubnetSimulatorGameplayScreen;
-window.startSubnetSimulatorGameplayFour = function (options) {
-    return SubnetSimulatorGameplayManager.launchSubnetSimulatorGameplay(options || {});
+window.startSubnetSimulatorGameplayFour = function (options, timeSeconds) {
+    const opts = Object.assign({}, options || {});
+    if (Number.isFinite(Number(timeSeconds)) && Number(timeSeconds) > 0) opts.timeLimitSeconds = Number(timeSeconds);
+    return SubnetSimulatorGameplayManager.launchSubnetSimulatorGameplay(opts);
 };
 
 console.log('[IP2Live] ip_subnetsim_gameplay.js module loaded.');

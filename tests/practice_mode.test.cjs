@@ -17,7 +17,7 @@ const files = {
     ip_vlsm_allocator: 'gameplay8/VLSMAllocator/ip_vlsm_allocator_gameplay.js',
 };
 
-function harness(storage = new Map()) {
+function harness(storage = new Map(), developerUnlock = false) {
     const frames = [{ id: 'grid' }], calls = { lessons: 0, loaders: [], transitions: [] };
     const context = vm.createContext({
         console: { log() {}, warn: console.warn, error: console.error }, window: {}, inject() {}, setTimeout(fn) { fn(); return 1; }, clearTimeout() {},
@@ -49,6 +49,7 @@ function harness(storage = new Map()) {
     load('modules/tutorial_replay.js'); load('modules/game_manager.js');
     load('modules/achievements.js'); load('modules/practice_mode.js');
     const gm = context.IP2Live.GameManager, practice = context.IP2Live.PracticeMode;
+    gm.unlockPracticeAndEndlessForTesting = developerUnlock;
     gm._logTelemetryEvent = () => assert.fail('practice wrote campaign telemetry');
     gm._ensureQuestMinimap = () => assert.fail('practice restored campaign HUD');
     gm._openReportAttempt = () => assert.fail('practice opened an assessed attempt');
@@ -68,11 +69,18 @@ function harness(storage = new Map()) {
         const owner = context.IP2Live[gm.flowConfig.gameplayNodes[id].manager];
         if (!real && owner._freshProblem) owner._freshProblem = () => ({});
         for (const helper of ['IPWiresTutorial', 'IPWiresHarderTutorial', 'IPNetworkRepairTutorial', 'IPVLSMAllocatorTutorial']) {
-            const lesson = () => { assert.equal(kind, 'tutorial', id + ' opened tutorial prompts during free practice'); calls.lessons++; };
+            const lesson = (...args) => {
+                assert.equal(kind, 'tutorial', id + ' opened tutorial prompts during free practice'); calls.lessons++;
+                if (practice.course) { const done = args.find(arg => typeof arg === 'function'); if (done) done(); }
+                return true;
+            };
             context.IP2Live[helper] = { showIntro: lesson, activateGuidedSession: lesson };
         }
         for (const helper of ['IPPatchPanelTutorial', 'IPHostPowerReactorTutorial', 'IPCIDRPanelHarderTutorial']) {
-            context.IP2Live[helper] = { showIntro() { assert.fail('practice opened a pre-game intro'); } };
+            context.IP2Live[helper] = { showIntro(...args) {
+                assert.ok(practice.course, 'ordinary practice must not open a pre-game intro'); calls.lessons++;
+                const done = args.find(arg => typeof arg === 'function'); if (done) done(); return true;
+            } };
         }
         return owner;
     }
@@ -85,7 +93,58 @@ function harness(storage = new Map()) {
 }
 const settle = async () => { for (let i = 0; i < 5; i++) await Promise.resolve(); };
 
+function dialogueInputHarness(h) {
+    const listeners = {};
+    const canvas = { width: 1280, height: 720,
+        getBoundingClientRect: () => ({ left: 80, top: 40, width: 960, height: 540 }) };
+    const ctx = new Proxy({ canvas }, { get(target, key) {
+        if (key in target) return target[key];
+        if (key === 'createLinearGradient' || key === 'createRadialGradient') return () => ({ addColorStop() {} });
+        if (key === 'measureText') return value => ({ width: String(value).length * 8 });
+        return () => {};
+    } });
+    h.context.Common.Platform.ctx = ctx;
+    h.context.document = {
+        addEventListener: (type, listener) => { listeners[type] = listener; },
+        createElement: () => ({ width: 1280, height: 720, getContext: () => ctx }),
+    };
+    h.load('modules/dialogue_manager.js');
+    const dm = h.context.IP2Live.DialogueManager;
+    function dispatch(type, properties, deliver) {
+        const event = { ...properties, prevented: false, stopped: false,
+            preventDefault() { this.prevented = true; }, stopPropagation() { this.stopped = true; } };
+        listeners[type](event);
+        if (!event.stopped && deliver) deliver();
+        return event;
+    }
+    return { dm, dispatch, click: (x, y, deliver) => dispatch('mousedown', { clientX: 80 + x * .75, clientY: 40 + y * .75 }, deliver) };
+}
+
 async function main() {
+    // The developer override unlocks every exercise without persisting Story rewards.
+    {
+        const h = harness(new Map(), true);
+        assert.equal(h.practice.isUnlocked(), true);
+        assert.equal(h.practice.isUnlocked('not-a-gameplay'), false);
+        for (const entry of h.practice.entries) {
+            assert.equal(h.practice.isUnlocked(entry.id), true);
+            h.loadGameplay(entry.id, 'gameplay');
+            assert.equal(h.practice.launch(entry.id, 'gameplay', h.frames[0]), true);
+            assert.equal(h.context.IP2Live.TutorialReplay.session.gameplayId, entry.id);
+            h.context.IP2Live.TutorialReplay.finishScreen(h.frames.at(-1));
+            h.finishLoading();
+            assert.equal(h.practice.active, false);
+        }
+        assert.deepEqual(Object.keys(h.practice.unlocks), []);
+        assert.equal(h.storage.has('ip2live.practice.unlocks.v1'), false);
+        h.gm.unlockPracticeAndEndlessForTesting = false;
+        assert.equal(h.practice.isUnlocked(), false);
+        assert.equal(h.practice.launch('ip_class_wires', 'gameplay', h.frames[0]), false);
+        h.practice.unlock('ip_class_wires', false);
+        h.gm.unlockPracticeAndEndlessForTesting = true;
+        h.gm.unlockPracticeAndEndlessForTesting = false;
+        assert.equal(h.practice.isUnlocked('ip_class_wires'), true, 'earned unlocks survive disabling the override');
+    }
     // Unlocks require completion of that exact tutorial variant, persist across
     // application instances, and never cascade from standard to harder versions.
     {
@@ -263,10 +322,23 @@ async function main() {
     // Main menu gating, TV navigation, five-column layout, keyboard and pointer.
     {
         const h = harness(); h.load('modules/screens/practice-grid.js'); h.load('modules/screens/main-menu.js');
+        let now = 100000; h.context.Date = { now: () => now };
         const menu = new h.context.Scene.TitleScreen(); menu.initialize(); menu._showMenuPage('play');
+        menu.hoverIndex = 2; assert.equal(menu._lockedModeAlertState(), null, 'hover alone does not show a locked-mode alert');
         menu.selectedIndex = 2; menu._confirmSelection(); assert.equal(menu.menuPage, 'play');
-        assert.ok(menu._practiceHintUntil > Date.now());
+        assert.match(menu._lockedModeAlert.message, /Complete your first networking tutorial in Story Mode/);
+        assert.equal(menu._lockedModeAlertState().slide, 1, 'alert starts offscreen on the right');
+        now += 160; assert.ok(menu._lockedModeAlertState().slide > 0 && menu._lockedModeAlertState().slide < 1);
+        now += 160; assert.equal(menu._lockedModeAlertState().slide, 0);
+        now += 4999; assert.equal(menu._lockedModeAlertState().alpha, 1, 'the alert stays fully visible for five seconds');
+        now += 131; assert.ok(menu._lockedModeAlertState().slide > 0, 'alert slides back out after its hold');
+        now += 130; assert.equal(menu._lockedModeAlertState(), null);
+        menu.selectedIndex = 1; menu._confirmSelection(); assert.match(menu._lockedModeAlert.message, /finish Story Mode/);
+        now += 2000; menu.selectedIndex = 2; menu._confirmSelection();
+        assert.equal(menu._lockedModeAlert.title, 'PRACTICE MODE'); assert.equal(menu._lockedModeAlert.startedAt, now, 'a new locked choice replaces the alert and restarts its timer');
+        menu.hoverIndex = 1; assert.equal(menu._lockedModeAlertState().alert.title, 'PRACTICE MODE', 'moving the pointer cannot change an active alert');
         h.practice.unlock('ip_class_wires', false); menu._confirmSelection(); assert.equal(menu.menuPage, 'practice');
+        assert.equal(menu._lockedModeAlertState(), null, 'successful navigation clears the alert');
         assert.deepEqual(Array.from(menu.menuItems), ['TUTORIAL', 'GAMEPLAY']);
         menu.selectedIndex = 0; menu._confirmSelection(); assert.equal(h.calls.transitions.length, 1);
         const grid = h.calls.transitions[0](); grid.initialize();
@@ -347,6 +419,194 @@ async function main() {
         assert.equal(failed.phase, 'in'); now += 520; failed.update();
         assert.deepEqual(h.frames, [grid]); assert.equal(h.context.IP2Live.MenuTransition.active, null);
     }
-    console.log('practice_mode.test.cjs: PASS (22 launch paths, unlocks, queue, looping, isolation, folders and TV navigation)');
+    // The walkthrough advances through all lessons without a hub or completion screen.
+    {
+        const h = harness(), originalGame = h.context.Core.Game.current, originalJson = JSON.stringify(originalGame);
+        const originalQuest = JSON.stringify(h.context.IP2Live.QuestManager), originalState = h.gm.state;
+        for (const entry of h.practice.entries) h.loadGameplay(entry.id, 'tutorial');
+        h.context.IP2Live.PVPMode = { active: false, bridge: () => null };
+        h.load('modules/pvp_rules.js'); h.load('modules/screens/pvp.js');
+        assert.equal(h.practice.isUnlocked(), false);
+        const menu = new h.context.IP2Live.PVPMenu(); menu.initialize(); h.frames[0] = menu;
+        menu._activate('tutorials'); assert.equal(h.practice.active, true);
+        const course = h.practice.course; assert.equal(course.entries.length, 11);
+        assert.equal(h.practice.launchCourse(menu), false);
+        await settle();
+        for (let index = 0; index < course.entries.length; index++) {
+            const replay = h.context.IP2Live.TutorialReplay.session;
+            assert.equal(course.index, index); assert.equal(replay.gameplayId, course.entries[index].id);
+            assert.equal(replay.options.tutorialCourse, true); assert.equal(replay.options.showIntro, false);
+            assert.equal(replay.options.guidedTutorial, true); assert.equal(replay.options.practiceGameplay, false);
+            assert.deepEqual(h.frames, [menu, replay.screen], 'only the menu and interactive gameplay are stacked');
+            replay.screen.options.onComplete({ passed: true });
+            assert.equal(course.busy, true, 'automatic progression immediately locks duplicate navigation');
+            assert.equal(h.practice.playCourseLesson(index), false);
+            await settle();
+            h.gm.finishTutorialReplay(replay.gameplayId, replay.options, 'completed');
+            if (index + 1 < course.entries.length) {
+                assert.equal(h.context.IP2Live.TutorialReplay.session.gameplayId, course.entries[index + 1].id, 'stale callbacks cannot complete the next tutorial');
+                assert.equal(h.context.Core.Game.current, null);
+            }
+        }
+        assert.ok(h.calls.lessons >= 3, 'authored in-game guidance remains included');
+        assert.equal(h.frames.length, 1); assert.equal(h.practice.active, false); assert.equal(h.practice.course, null);
+        assert.equal(h.calls.loaders.length, 0, 'no loading or lesson-choice screen interrupts progression');
+        assert.equal(h.context.Core.Game.current, originalGame); assert.equal(JSON.stringify(originalGame), originalJson);
+        assert.equal(JSON.stringify(h.context.IP2Live.QuestManager), originalQuest); assert.equal(h.gm.state, originalState);
+        assert.equal(h.practice.isUnlocked(), false);
+    }
+    {
+        const h = harness();
+        for (const entry of h.practice.entries.slice(0, 3)) h.loadGameplay(entry.id, 'tutorial');
+        h.context.IP2Live.PVPMode = { active: false, bridge: () => null };
+        h.load('modules/pvp_rules.js'); h.load('modules/screens/pvp.js'); h.load('modules/screens/gameplay-pause.js');
+        const originalGame = h.context.Core.Game.current;
+        h.practice.launchCourse(h.frames[0]); await settle();
+        assert.equal(h.practice.playCourseLesson(-1), false);
+        h.practice.playCourseLesson(1); await settle();
+        let replay = h.context.IP2Live.TutorialReplay.session;
+        let pause = new h.context.window.IP2LiveGameplayPauseMenu(replay.screen); pause.initialize(); h.frames.push(pause);
+        pause.selectedIndex = pause.menuItems.findIndex(item => item.action === 'previous'); assert.ok(pause.selectedIndex >= 0);
+        assert.equal(pause.selectionMix.length, pause.menuItems.length);
+        pause._activate(); await settle(); assert.equal(h.practice.course.index, 0); assert.equal(h.frames.length, 2);
+        assert.equal(replay.screen._ip2liveGameplayExited, true);
+        replay = h.context.IP2Live.TutorialReplay.session;
+        pause = new h.context.window.IP2LiveGameplayPauseMenu(replay.screen); pause.initialize(); h.frames.push(pause);
+        assert.ok(!pause.menuItems.some(item => item.action === 'previous'));
+        pause.selectedIndex = pause.menuItems.findIndex(item => item.action === 'replay'); pause._activate(); await settle();
+        assert.notEqual(h.context.IP2Live.TutorialReplay.session.options.questId, replay.options.questId);
+        replay = h.context.IP2Live.TutorialReplay.session;
+        pause = new h.context.window.IP2LiveGameplayPauseMenu(replay.screen); pause.initialize(); h.frames.push(pause);
+        assert.equal(pause.menuItems.find(item => item.action === 'finish').title, 'NEXT TUTORIAL');
+        const system = h.context.IP2Live.GameplayPause;
+        assert.equal((await system.exitQuest(replay.screen)).finished, true);
+        await settle(); assert.equal(h.practice.course.index, 1); assert.equal(h.frames.length, 2);
+        replay = h.context.IP2Live.TutorialReplay.session;
+        replay.screen.options.onFailed({}); await settle();
+        assert.equal(h.practice.course.index, 1, 'a failed tutorial retries the same gameplay');
+        assert.notEqual(h.context.IP2Live.TutorialReplay.session.options.questId, replay.options.questId);
+        replay = h.context.IP2Live.TutorialReplay.session;
+        pause = new h.context.window.IP2LiveGameplayPauseMenu(replay.screen); pause.initialize(); h.frames.push(pause);
+        pause.selectedIndex = pause.menuItems.findIndex(item => item.action === 'course-exit'); pause._activate(); await settle();
+        assert.equal(h.context.Core.Game.current, originalGame); assert.equal(h.frames.length, 1);
+        assert.equal(h.context.IP2Live.TutorialReplay.session, null); assert.equal(h.practice.course, null);
+    }
+    for (const id of Object.keys(files)) {
+        const h = harness(), index = h.practice.entries.findIndex(entry => entry.id === id);
+        h.loadGameplay('ip_class_wires', 'tutorial'); h.loadGameplay(id, 'tutorial', true);
+        h.context.IP2Live.PVPMode = { active: false, bridge: () => null };
+        h.load('modules/pvp_rules.js'); h.load('modules/screens/pvp.js'); h.load('modules/screens/gameplay-pause.js');
+        dialogueInputHarness(h);
+        h.practice.launchCourse(h.frames[0]); await settle();
+        if (index !== 0) { h.practice.playCourseLesson(index); await settle(); }
+        const replay = h.context.IP2Live.TutorialReplay.session;
+        assert.ok(replay && replay.screen, id + ' constructs its real guided screen');
+        assert.equal(replay.options.guidedTutorial, true); assert.equal(replay.screen.options.tutorialCourse, true);
+        assert.equal(replay.screen.maxAttempts, Infinity);
+        const pause = h.context.IP2Live.GameplayPause, screen = replay.screen;
+        screen.onKeyPressed('escape');
+        let menu = h.frames.at(-1);
+        assert.ok(menu instanceof h.context.window.IP2LiveGameplayPauseMenu, id + ' pauses from Escape');
+        menu.initialize(); menu._resume(); menu.update(); assert.equal(h.frames.at(-1), screen);
+        pause.drawPauseButton(screen); screen.onMouseDown(640, 17);
+        menu = h.frames.at(-1);
+        assert.ok(menu instanceof h.context.window.IP2LiveGameplayPauseMenu, id + ' pauses from its button');
+        menu.initialize(); menu._resume(); menu.update(); assert.equal(h.frames.at(-1), screen);
+        assert.equal(pause.captureScreen(screen, 'pause'), null);
+        h.practice.exitCourse(); await settle(); assert.equal(h.frames.length, 1);
+    }
+    // Real gameplay dialogue remains inside the puzzle and yields to Pause/Settings.
+    {
+        const h = harness();
+        h.loadGameplay('ip_class_wires', 'tutorial'); h.loadGameplay('ip_cidr_binary_panel', 'tutorial');
+        h.loadGameplay('ip_patch_panel_classes', 'tutorial', true);
+        const input = dialogueInputHarness(h), dm = input.dm;
+        h.load('gameplay/gameplay2/IPPatchPanel/ip_patchpanel_tutorial.js');
+        h.context.IP2Live.PVPMode = { active: false, bridge: () => null };
+        h.load('modules/pvp_rules.js'); h.load('modules/screens/pvp.js'); h.load('modules/screens/gameplay-pause.js');
+        const originalGame = h.context.Core.Game.current, originalJson = JSON.stringify(originalGame);
+        h.practice.launchCourse(h.frames[0]); await settle(); h.practice.playCourseLesson(1); await settle();
+        const screen = h.context.IP2Live.TutorialReplay.session.screen, pause = h.context.IP2Live.GameplayPause;
+        assert.equal(h.frames.at(-1), screen); assert.equal(dm.isActive(), false, 'standalone briefing is omitted');
+        screen._showGuidedPacketDialogue(screen.roundPackets[0]);
+        assert.match(dm._active.id, /guided\.packet\./, 'authored packet teaching still runs in the gameplay');
+        dm._active.typeChars = 3; const active = dm._active;
+        pause.drawPauseButton(screen);
+        assert.equal(input.click(640, 17, () => screen.onMouseDown(640, 17)).prevented, false);
+        let menu = h.frames.at(-1); menu.initialize();
+        assert.ok(menu instanceof h.context.window.IP2LiveGameplayPauseMenu); assert.equal(pause.activeScreen, screen);
+        assert.equal(input.dispatch('keydown', { code: 'ArrowDown' }).prevented, false);
+        input.dispatch('keydown', { code: 'Enter' }); input.click(100, 100);
+        assert.equal(dm.advance(), false); dm.drawOverlay(h.context.Common.Platform.ctx);
+        assert.equal(active.animTick, 0); assert.equal(active.typeChars, 3); assert.equal(active.slideIndex, 0);
+        const slide = active.slides[0]; active.slides[0] = { focusOnly: true, focus: { x: 0, y: 0, w: 100, h: 100 } };
+        assert.equal(dm.drawHudFocusOverlay(h.context.Common.Platform.ctx), false); active.slides[0] = slide;
+        h.context.IP2LiveSettingsMenu = h.context.window.IP2LiveSettingsMenu = class { constructor(options) { this.options = options; } };
+        menu._settings(); assert.equal(h.frames.at(-1).options.popupTransition, true);
+        assert.equal(input.dispatch('keydown', { code: 'Enter' }).prevented, false); h.frames.pop();
+        input.dispatch('keydown', { code: 'Enter' }, () => menu.onKeyPressed('enter')); menu.update();
+        assert.equal(h.frames.at(-1), screen); assert.equal(pause.menuOpen, false); assert.equal(dm._active, active);
+        assert.equal(active.typeChars, 3); screen.onMouseUp(640, 17);
+        input.click(100, 100); assert.ok(active.typeChars > 3);
+        input.dispatch('keydown', { code: 'Escape' }, () => screen.onKeyPressed('escape'));
+        menu = h.frames.at(-1); menu.initialize();
+        menu.selectedIndex = menu.menuItems.findIndex(item => item.action === 'previous'); menu._activate(); await settle();
+        assert.equal(h.practice.course.index, 0); assert.equal(pause.menuOpen, false); assert.equal(dm.isActive(), false);
+        assert.equal(pause.open(screen), false);
+        const replacement = h.context.IP2Live.TutorialReplay.session.screen; replacement.options.pvpMode = true;
+        assert.equal(pause.open(replacement), false); replacement.options.pvpMode = false;
+        h.practice.exitCourse(); await settle();
+        assert.equal(h.frames.length, 1); assert.equal(h.context.Core.Game.current, originalGame);
+        assert.equal(JSON.stringify(originalGame), originalJson);
+    }
+    // Run the actual transition: old puzzle survives until black, new puzzle stays
+    // covered until ready, and no teaching input/timers run during the reveal.
+    {
+        const h = harness(); let now = 0;
+        h.context.Date = class extends Date { static now() { return now; } };
+        h.context.Manager.Stack.pop = () => { const scene = h.frames.pop(); if (scene && scene.close) scene.close(); return scene; };
+        h.loadGameplay('ip_class_wires', 'tutorial'); h.loadGameplay('ip_patch_panel_classes', 'tutorial');
+        const input = dialogueInputHarness(h), dm = input.dm;
+        h.load('modules/screens/menu-transition.js'); h.load('modules/screens/gameplay-pause.js');
+        const originalGame = h.context.Core.Game.current;
+        const finishTransition = () => {
+            const overlay = h.frames.at(-1); assert.equal(h.context.IP2Live.MenuTransition.active, overlay);
+            assert.equal(overlay.phase, 'out'); now += 520; overlay.update(); overlay.drawHUD(); now++; overlay.update();
+            const target = overlay.target; target.loading = true; now += 100; overlay.update();
+            assert.equal(overlay.phase, 'hold'); target.loading = false; overlay.update(); assert.equal(overlay.phase, 'in');
+            let updates = 0; const originalUpdate = target.update; target.update = () => updates++;
+            now += 230; overlay.update(); assert.equal(updates, 0, 'transition freezes the new puzzle');
+            target.update = originalUpdate;
+            dm.registerDialogue('transition.lesson', { slides: [['Read the packet.']] }); dm.start('transition.lesson');
+            const active = dm._active; active.typeChars = 2;
+            input.dispatch('keydown', { code: 'Enter' }); assert.equal(active.typeChars, 2, 'hidden teaching cannot be skipped');
+            now += 230; overlay.update(); assert.equal(h.context.IP2Live.MenuTransition.active, null);
+            assert.equal(h.frames.at(-1), target); if (h.practice.course) assert.equal(h.practice.course.busy, false);
+            dm.discardActive(); return target;
+        };
+        h.practice.launchCourse(h.frames[0]); await settle();
+        let screen = finishTransition(); assert.equal(h.frames.length, 2);
+        h.practice.playCourseLesson(1); assert.equal(h.frames.at(-1), screen, 'navigation waits for callbacks to unwind'); await settle();
+        assert.equal(screen._ip2liveGameplayExited, undefined, 'old tutorial remains alive until fade-out ends');
+        finishTransition(); assert.equal(screen._ip2liveGameplayExited, true); assert.equal(h.practice.course.index, 1);
+        h.practice.playCourseLesson(0); await settle(); finishTransition(); assert.equal(h.practice.course.index, 0);
+        screen = h.context.IP2Live.TutorialReplay.session.screen; screen.options.onComplete({}); await settle();
+        finishTransition(); assert.equal(h.practice.course.index, 1, 'completion automatically transitions to the next lesson');
+        h.practice.exitCourse(); await settle(); finishTransition();
+        assert.equal(h.frames.length, 1); assert.equal(h.practice.active, false); assert.equal(h.context.Core.Game.current, originalGame);
+        const node = h.gm.flowConfig.gameplayNodes.ip_class_wires;
+        h.context.IP2Live[node.manager][node.method] = () => false;
+        h.practice.launchCourse(h.frames[0]); await settle(); finishTransition();
+        assert.equal(h.frames.length, 1); assert.equal(h.practice.active, false);
+        assert.match(h.frames[0].notice, /could not be opened/, 'a failed launcher reveals the menu instead of leaving a black frame');
+    }
+    {
+        const h = harness(), originalGame = h.context.Core.Game.current;
+        assert.equal(h.practice.launchCourse(h.frames[0]), true); await settle();
+        assert.equal(h.practice.active, false); assert.equal(h.practice.course, null);
+        assert.equal(h.frames.length, 1); assert.match(h.frames[0].notice, /could not be opened/);
+        assert.equal(h.context.Core.Game.current, originalGame, 'unavailable tutorials recover to the menu');
+    }
+    console.log('practice_mode.test.cjs: PASS (22 practice paths, 11 automatic tutorials, in-game teaching, pause controls, transitions, isolation and recovery)');
 }
 main().catch(error => { console.error(error); process.exitCode = 1; });

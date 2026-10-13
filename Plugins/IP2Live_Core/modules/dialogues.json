@@ -1,11 +1,11 @@
 {
-  "version": "dialogues-20260918-02",
+  "version": "dialogues-20261013-apex-reclamation",
   "dialogues": [
     {
       "id": "tutorial.intro",
       "name": "Tutorial Intro",
-      "title": "MISSION BRIEF",
-      "speaker": "SYSTEM",
+      "title": "THE SERVICE ACCESS",
+      "speaker": "NEURAL LINK",
       "timing": "after",
       "bindings": {
         "mapId": 1,
@@ -13,44 +13,24 @@
       },
       "slides": [
         [
-          "SYSTEM BOOT... NEURAL DECK ONLINE.",
-          "Welcome, Infiltrator."
+          "Neural link established. I will guide you through this maintenance access beneath the APEX facility.",
+          "The occupiers trust locked networks to keep our world's resources to themselves. Your subnetting knowledge is our way inside."
         ],
         [
-          "The world you knew is gone.",
-          "Neo-Gaia is a fractured civilisation where megacorporations",
-          "known as the APEX ELITES seized control of every critical",
-          "facility left standing after the collapse."
+          "First, calibrate your movement and camera. Then follow the route beacon to the service entrance.",
+          "We will climb floor by floor, open the supply network and disable the APEX core's control over it."
         ],
         [
-          "Power grids. Water treatment. Medical networks. All locked,",
-          "behind encrypted subnets accessible only to those with the",
-          "proper clearance codes. They have the access. We have nothing."
-        ],
-        [
-          "You were an engineer before the walls went up. You still know",
-          "the systems. You still know the protocols. And you are the",
-          "only one left who can break through."
-        ],
-        [
-          "Your mission:",
-          "Infiltrate the APEX facilities. Crack their subnet protocols.",
-          "Dismantle their infrastructure stage by stage until the world",
-          "belongs to the people once more."
-        ],
-        [
-          "This is not just survival.",
-          "This is reclamation.",
-          "The facility is waiting, Infiltrator.",
-          "Let's get you combat-ready."
+          "We are reclaiming working infrastructure, not destroying the services people need.",
+          "When the monopoly ends, water, power and essential supplies can reach everyone again."
         ]
       ]
     },
     {
       "id": "tutorial.outro",
       "name": "Tutorial Outro",
-      "title": "MISSION BRIEF",
-      "speaker": "SYSTEM",
+      "title": "THE FIRST BREACH",
+      "speaker": "NEURAL LINK",
       "timing": "after",
       "bindings": {
         "mapId": 1,
@@ -58,33 +38,28 @@
       },
       "slides": [
         [
-          "DESTINATION REACHED.",
-          "",
-          "You are now ready to navigate your way through the world.",
-          "Initiating phase shift to the next world..."
+          "Movement calibrated. You have reached the service entrance.",
+          "The first floor's wire relays are ahead. Restore their connections, bring light back to the room and begin the climb toward APEX."
         ]
       ]
     },
     {
       "id": "stage.3.intro",
       "name": "Stage 1 Level 1 Intro",
-      "title": "WORLD BRIEF",
-      "speaker": "SYSTEM",
+      "title": "THE SERVICE ENTRANCE",
+      "speaker": "NEURAL LINK",
       "timing": "after",
       "bindings": {
         "mapId": 3,
-        "stage": 1,
-        "level": 1,
         "trigger": "worldTitle.finished"
       },
       "slides": [
         [
-          "Welcome to Stage 1 Level 1.",
-          "",
-          "This floor has four power-control levers tied to the local lights and critical equipment.",
-          "Each lever is unstable and must be repaired through IP wire routing.",
-          "Restore all four levers to fully reactivate this sector.",
-          "When all four are stable, the next-level door will unlock."
+          "We are inside the lowest service floor of the APEX facility. Beyond these walls, families wait for power while the occupiers keep their reserves lit.",
+          "Four IP wire relays feed this sector. Classify each address and repair its connection; every restored relay brings light back to the room."
+        ],
+        [
+          "Open the next-floor route. We are taking back access, one connection at a time."
         ]
       ]
     },
@@ -141,13 +116,12 @@
       },
       "slides": [
         [
-          "Welcome to your first live wire patch.",
-          "",
-          "This is Lever 01 of 04 for Stage 1 Level 1.",
-          "Repairing each lever restores lights and equipment in this facility.",
-          "All four levers must be fixed to open the next-level door.",
-          "",
-          "Match each full IP address on the left to the correct Class connector on the right.",
+          "This is Lever 01 of 04 in the service entrance.",
+          "Match each full IP address on the left to its correct Class connector on the right.",
+          "Repair all four wire relays to restore this floor and open the next-level door."
+        ],
+        [
+          "Read the first octet to identify the IP class.",
           "{{highlight:Class A}}: IP ranges from {{highlight:[IP_CLASS_A_FULL]}}",
           "{{highlight:Class B}}: IP ranges from {{highlight:[IP_CLASS_B_FULL]}}",
           "{{highlight:Class C}}: IP ranges from {{highlight:[IP_CLASS_C_FULL]}}",
@@ -395,21 +369,20 @@
     {
       "id": "stage.15.intro",
       "name": "Stage 4 Level 1 Intro",
-      "title": "WORLD BRIEF",
-      "speaker": "SYSTEM",
+      "title": "THE SILENCED OFFICES",
+      "speaker": "NEURAL LINK",
       "timing": "after",
       "bindings": {
         "mapId": 15,
-        "stage": 4,
-        "level": 1,
         "trigger": "worldTitle.finished"
       },
       "slides": [
         [
-          "Stage 4 Level 1 is a damaged office subnet.",
-          "",
-          "Five PCs are broadcasting corrupted address formulas across this map.",
-          "Follow the route beacon, catch the falling formula variables at each PC, and solve the missing IP addresses."
+          "These offices once coordinated public services. APEX corrupted their address tables so the city's requests could never reach the reserves upstairs.",
+          "Repair the five PCs. Catch the required formula variables and recover network addresses, broadcast addresses and usable host ranges."
+        ],
+        [
+          "Every repaired table is a service route we can return to the people when the core's monopoly ends."
         ]
       ]
     },
@@ -511,6 +484,272 @@
           "",
           "Every corrupted IP address has been solved from captured formula variables.",
           "Network address, broadcast address, and usable range traces are restored across the subnet."
+        ]
+      ]
+    },
+    {
+      "id": "stage.4.intro",
+      "title": "THE DISTRIBUTION LOCK",
+      "speaker": "NEURAL LINK",
+      "timing": "after",
+      "bindings": {
+        "mapId": 4,
+        "trigger": "worldTitle.finished"
+      },
+      "slides": [
+        [
+          "APEX diverts the city's supply traffic through this distribution floor. The network still serves the occupiers while the public conduits stand empty.",
+          "Repair the wire relays, then learn the Patch Panel classifier. Read each packet's type before choosing its IP class or default mask."
+        ],
+        [
+          "A clean route lets us climb toward the controls that decide who receives the planet's resources."
+        ]
+      ]
+    },
+    {
+      "id": "stage.5.intro",
+      "title": "THE ADAPTIVE GRID",
+      "speaker": "NEURAL LINK",
+      "timing": "after",
+      "bindings": {
+        "mapId": 5,
+        "trigger": "worldTitle.finished"
+      },
+      "slides": [
+        [
+          "The occupiers reinforced this grid after the first shortages sparked resistance. APEX now changes its locks when it detects a bad connection.",
+          "Ordinary and harder wire relays share this floor's power supply. Finish both kinds to restore full lighting; Patch Panels guard the links between them."
+        ],
+        [
+          "If a failed breach reopens a repaired wire quest, that part of the room loses power again. Rebuild the route and keep moving upward."
+        ]
+      ]
+    },
+    {
+      "id": "stage.6.intro",
+      "title": "THE INNER POWER RING",
+      "speaker": "NEURAL LINK",
+      "timing": "after",
+      "bindings": {
+        "mapId": 6,
+        "trigger": "worldTitle.finished"
+      },
+      "slides": [
+        [
+          "This is the last power ring before the subnet-control wing. APEX keeps it dark so intruders cannot read the machinery carrying our stolen energy.",
+          "Use everything you have learned about ordinary wires, adaptive wires and packet classification. Every wire relay contributes to the same lighting recovery."
+        ],
+        [
+          "Restore the ring and reach the next wing. The command core is above us; the people who need this power are below."
+        ]
+      ]
+    },
+    {
+      "id": "stage.7.intro",
+      "title": "THE SUBNET GATES",
+      "speaker": "NEURAL LINK",
+      "timing": "after",
+      "bindings": {
+        "mapId": 7,
+        "trigger": "worldTitle.finished"
+      },
+      "slides": [
+        [
+          "APEX divides the facility into private networks, keeping its reservoirs and supply systems beyond public reach. These binary panels guard the first boundaries.",
+          "Rebuild each subnet mask with the lamps, then count the network bits to enter its CIDR prefix. The five panels can cross Class A, B and C boundaries."
+        ],
+        [
+          "Understanding the boundary is how we cross it. Break these locks and bring the upper supply network within reach."
+        ]
+      ]
+    },
+    {
+      "id": "stage.8.intro",
+      "title": "THE CAPACITY CHECKPOINTS",
+      "speaker": "NEURAL LINK",
+      "timing": "after",
+      "bindings": {
+        "mapId": 8,
+        "trigger": "worldTitle.finished"
+      },
+      "slides": [
+        [
+          "The next checkpoints verify both identity and capacity. APEX will not pass a route unless its subnet layout agrees with the mask that opened the gate.",
+          "Solve each Class C CIDR panel, then carry its exact interesting octet into the linked Subnet Simulator. Calculate subnet counts before host capacity."
+        ],
+        [
+          "We need a route that works when the public systems reconnect. Precision here protects the people who will depend on it."
+        ]
+      ]
+    },
+    {
+      "id": "stage.9.intro",
+      "title": "THE SHIFTING BOUNDARY",
+      "speaker": "NEURAL LINK",
+      "timing": "after",
+      "bindings": {
+        "mapId": 9,
+        "trigger": "worldTitle.finished"
+      },
+      "slides": [
+        [
+          "APEX has noticed the intrusion. Its adaptive boundary now replaces a subnet mask whenever a submitted lamp pattern or prefix is wrong.",
+          "Read the new target after each mistake and recalculate. Only the mask you finally verify can supply the linked Subnet Simulator's reference."
+        ],
+        [
+          "The occupiers built these boundaries to exclude everyone else. We will understand them well enough to open a path through."
+        ]
+      ]
+    },
+    {
+      "id": "stage.10.intro",
+      "title": "THE LAST MASK LOCKS",
+      "speaker": "NEURAL LINK",
+      "timing": "after",
+      "bindings": {
+        "mapId": 10,
+        "trigger": "worldTitle.finished"
+      },
+      "slides": [
+        [
+          "These adaptive relays seal the upper edge of the subnet-control wing. Above them are the engines that enforce APEX's resource monopoly.",
+          "One wrong answer re-keys the active mask. Rebuild the binary pattern and CIDR prefix from the current target, not the one APEX discarded."
+        ],
+        [
+          "Clear the wing and carry your subnetting knowledge into the containment floors. The climb is getting closer to the core."
+        ]
+      ]
+    },
+    {
+      "id": "stage.11.intro",
+      "title": "THE RESERVE ENGINES",
+      "speaker": "NEURAL LINK",
+      "timing": "after",
+      "bindings": {
+        "mapId": 11,
+        "trigger": "worldTitle.finished"
+      },
+      "slides": [
+        [
+          "The facility's engines reserve network capacity for the occupiers while clinics and neighborhoods remain disconnected. We must calculate a bypass that can support real users.",
+          "At each Host-Power Reactor, find the smallest h for which 2^h - 2 meets the required usable hosts. Begin with the guided reactor, then stabilize the remaining nodes."
+        ],
+        [
+          "Enough capacity, without waste: that is how we prepare a network meant to serve everyone."
+        ]
+      ]
+    },
+    {
+      "id": "stage.12.intro",
+      "title": "THE CONTAINMENT FLOOR",
+      "speaker": "NEURAL LINK",
+      "timing": "after",
+      "bindings": {
+        "mapId": 12,
+        "trigger": "worldTitle.finished"
+      },
+      "slides": [
+        [
+          "APEX isolates stolen reserves behind hostile network segments. Charging through would expose our route to its countermeasures.",
+          "Verify host capacity at the first two reactors. Then re-segment the allocated network: classify it, choose borrowed bits, verify usable hosts and secure the route."
+        ],
+        [
+          "Keep the intrusion contained while we move upward. The systems we are reclaiming must survive the breach."
+        ]
+      ]
+    },
+    {
+      "id": "stage.13.intro",
+      "title": "THE COUNTERMEASURE WING",
+      "speaker": "NEURAL LINK",
+      "timing": "after",
+      "bindings": {
+        "mapId": 13,
+        "trigger": "worldTitle.finished"
+      },
+      "slides": [
+        [
+          "APEX is defending the supply backbone with capacity locks and isolated segments. Its automated enforcers are protecting the hoard, not the people outside.",
+          "Combine Host-Power Reactors with network re-segmentation. At the final training node, Subnet Blaster turns network and broadcast calculations into a way through the defenses."
+        ],
+        [
+          "Defeating an enforcer opens another route. The main APEX command core still waits at the top of the facility."
+        ]
+      ]
+    },
+    {
+      "id": "stage.14.intro",
+      "title": "THE UPPER TRANSIT SHAFT",
+      "speaker": "NEURAL LINK",
+      "timing": "after",
+      "bindings": {
+        "mapId": 14,
+        "trigger": "worldTitle.finished"
+      },
+      "slides": [
+        [
+          "The containment wing is behind us. This transit floor carries the cables linking the occupiers' reserves to the upper command network.",
+          "Follow the route beacon to the next access point. The offices ahead hold the address tables that keep public services cut off."
+        ],
+        [
+          "We are close enough to restore those links. Keep the mission in sight: resources for the planet, not a privileged few."
+        ]
+      ]
+    },
+    {
+      "id": "stage.16.intro",
+      "title": "THE FINAL APPROACH",
+      "speaker": "NEURAL LINK",
+      "timing": "after",
+      "bindings": {
+        "mapId": 16,
+        "trigger": "worldTitle.finished"
+      },
+      "slides": [
+        [
+          "We have reached the approach to the central routing grid. Behind its final gates, APEX decides which branches receive access to the planet's hoarded resources.",
+          "Follow the beacon through this floor and prepare to allocate address space in the command sector ahead."
+        ],
+        [
+          "Our goal is to dismantle the system of exclusion while keeping the infrastructure ready for everyone to use."
+        ]
+      ]
+    },
+    {
+      "id": "stage.17.intro",
+      "title": "THE PUBLIC ROUTE",
+      "speaker": "NEURAL LINK",
+      "timing": "after",
+      "bindings": {
+        "mapId": 17,
+        "trigger": "worldTitle.finished"
+      },
+      "slides": [
+        [
+          "This routing grid is the last technical barrier to the command core. The occupiers gave themselves every route and left the rest of the planet disconnected.",
+          "Use VLSM to give each branch enough host capacity. Allocate the largest demand first, choose aligned network addresses and prevent overlaps."
+        ],
+        [
+          "Once every branch is valid, commit the route table at the core gateway. We are building the connections APEX refused to share."
+        ]
+      ]
+    },
+    {
+      "id": "stage.18.intro",
+      "title": "THE APEX CROWN",
+      "speaker": "NEURAL LINK",
+      "timing": "after",
+      "bindings": {
+        "mapId": 18,
+        "trigger": "worldTitle.finished"
+      },
+      "slides": [
+        [
+          "The command crown is in reach. Beneath us are the power rings, supply networks and service routes you fought to reconnect.",
+          "Reach the final uplink. Break APEX's control of the facility and release the resources it has kept from the planet."
+        ],
+        [
+          "End the hoarding system. Let the water, energy and essential supplies belong to everyone again."
         ]
       ]
     }

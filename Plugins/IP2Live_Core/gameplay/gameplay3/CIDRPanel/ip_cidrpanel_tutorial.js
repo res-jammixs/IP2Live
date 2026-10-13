@@ -141,14 +141,14 @@
                 return false;
             }
 
-            // The guided training panel always gives the learner the full 3 minutes.
-            target.solveTimeSeconds = 180;
-            target.solveTimerMaxTicks = 180 * 60;
-            target.solveTimerTicks = 180 * 60;
-
-            // Corruption pacing for the 3-minute training run.
-            target.glitchStartElapsedSeconds = 120;
-            target.glitchHeavyElapsedSeconds = 160;
+            // Keep the configured solve budget; lessons pause the countdown themselves.
+            const seconds = Number(target.solveTimeSeconds) > 0 ? Number(target.solveTimeSeconds) : 180;
+            target.solveTimeSeconds = seconds;
+            target.solveTimerMaxTicks = seconds * 60;
+            target.solveTimerTicks = target.solveTimerMaxTicks;
+            target.glitchStartElapsedSeconds = seconds * (2 / 3);
+            target.glitchHeavyElapsedSeconds = seconds * (8 / 9);
+            if (IP2Live.GameplayTimer) IP2Live.GameplayTimer.forget(target);
             target.timerExpired = false;
             target.timeoutFailureCommitted = false;
 

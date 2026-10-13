@@ -18,6 +18,10 @@ class IP2LiveSettingsMenu extends Scene.Base {
             'MUSIC VOLUME',
             'LANGUAGE [EN]',
         ];
+        const gm = IP2Live.GameManager;
+        if (gm && gm.enableDeveloperButtons !== false && typeof gm.setPVPButtonEnabled === 'function') {
+            this.menuItems.push('PVP BUTTON / DEBUG');
+        }
 
         this.selectedIndex =
             0;
@@ -591,6 +595,12 @@ class IP2LiveSettingsMenu extends Scene.Base {
     }
 
     _executeAction(idx) {
+        if (this.menuItems[idx] === 'PVP BUTTON / DEBUG') {
+            const gm = IP2Live.GameManager;
+            gm.setPVPButtonEnabled(!gm.isPVPButtonEnabled());
+            Manager.Stack.requestPaintHUD = true;
+            return;
+        }
         /*
          * Key Bindings.
          */
@@ -1029,7 +1039,8 @@ class IP2LiveSettingsMenu extends Scene.Base {
     drawHUD() {
         const ctx = Common.Platform.ctx, c = ctx.canvas, chrome = IP2Live.PopupChrome;
         const scale = Math.min(c.width / 1280, c.height / 720);
-        const w = 580, h = 390, x = (c.width / scale - w) / 2, y = (c.height / scale - h) / 2;
+        const w = 580, h = 390 + Math.max(0, this.menuItems.length - 4) * 60;
+        const x = (c.width / scale - w) / 2, y = (c.height / scale - h) / 2;
         const progress = this.popupProgress;
         ctx.save(); this._drawSettingsBackdrop(ctx, progress); ctx.scale(scale, scale);
         chrome.animate(ctx, { x, y, w, h }, progress);
@@ -1047,6 +1058,15 @@ class IP2LiveSettingsMenu extends Scene.Base {
                 ctx.textAlign = 'right'; ctx.fillStyle = '#83b9c1'; ctx.fillText('>', r.x + r.w - 20, r.y + 30);
             }
             if (i === 1 || i === 2) this._drawVolumeControl(ctx, r, i === 1 ? 'sfx' : 'music', i, active, scale);
+            if (label === 'PVP BUTTON / DEBUG') {
+                const enabled = IP2Live.GameManager.isPVPButtonEnabled();
+                const tx = r.x + r.w - 82, ty = r.y + 14;
+                ctx.fillStyle = '#050c13'; ctx.fillRect(tx, ty, 62, 22);
+                ctx.fillStyle = enabled ? '#143d3c' : '#30202c'; ctx.fillRect(tx + 2, ty + 2, 58, 18);
+                ctx.fillStyle = enabled ? '#77e8d6' : '#bd849a'; ctx.fillRect(tx + 3, ty + 4, 2, 14);
+                ctx.textAlign = 'center'; ctx.font = 'bold 12px Oxanium-Medium, sans-serif';
+                ctx.fillText(enabled ? 'ON' : 'OFF', tx + 33, ty + 15);
+            }
         });
         const back = { x: x + w / 2 - 90, y: y + h - 57, w: 180, h: 36 };
         this.backButtonRect = { x: back.x * scale, y: back.y * scale, w: back.w * scale, h: back.h * scale };

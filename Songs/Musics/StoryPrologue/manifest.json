@@ -1,0 +1,62 @@
+{
+  "format": "PCM WAV, stereo, 44100 Hz, 16 bit",
+  "synthesis": "Original procedural composition; no external samples.",
+  "files": [
+    {
+      "file": "Songs/Musics/StoryPrologue/01-arrival-ost.wav",
+      "seconds": 32,
+      "loop": true,
+      "rmsDb": -19.58,
+      "peakDb": -6.79
+    },
+    {
+      "file": "Songs/MusicEffects/StoryPrologue/01-arrival-sfx.wav",
+      "seconds": 4.6,
+      "loop": false,
+      "rmsDb": -20.17,
+      "peakDb": -5.19
+    },
+    {
+      "file": "Songs/Musics/StoryPrologue/02-taking-ost.wav",
+      "seconds": 32,
+      "loop": true,
+      "rmsDb": -19.58,
+      "peakDb": -7.69
+    },
+    {
+      "file": "Songs/MusicEffects/StoryPrologue/02-taking-sfx.wav",
+      "seconds": 16,
+      "loop": true,
+      "rmsDb": -23.1,
+      "peakDb": -9.94
+    },
+    {
+      "file": "Songs/Musics/StoryPrologue/03-fortress-ost.wav",
+      "seconds": 32,
+      "loop": true,
+      "rmsDb": -19.58,
+      "peakDb": -6.98
+    },
+    {
+      "file": "Songs/MusicEffects/StoryPrologue/03-fortress-sfx.wav",
+      "seconds": 16,
+      "loop": true,
+      "rmsDb": -23.1,
+      "peakDb": -10.34
+    },
+    {
+      "file": "Songs/Musics/StoryPrologue/04-our-way-inside-ost.wav",
+      "seconds": 32,
+      "loop": true,
+      "rmsDb": -19.58,
+      "peakDb": -6.34
+    },
+    {
+      "file": "Songs/MusicEffects/StoryPrologue/04-our-way-inside-sfx.wav",
+      "seconds": 16,
+      "loop": true,
+      "rmsDb": -23.1,
+      "peakDb": -11.37
+    }
+  ]
+}

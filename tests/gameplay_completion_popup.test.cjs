@@ -24,6 +24,7 @@ function loadPopup() {
     new Function('IP2Live', 'Manager', 'window', source)(IP2Live, Manager, windowObject);
     return {
         popup: IP2Live.GameplayCompletionPopup,
+        IP2Live,
         Manager,
         setDialogueActive(value) { dialogueActive = !!value; },
     };
@@ -184,11 +185,34 @@ function testEveryGameplayUsesTheSharedComponent() {
     );
 }
 
+function testWalkthroughCompletesWithoutPopup() {
+    const { popup, IP2Live, setDialogueActive } = loadPopup();
+    IP2Live.PracticeMode = { active: true, course: { index: 0 } };
+    const canvas = fakeContext(1280, 720);
+    assert.equal(popup.draw(canvas.ctx, { label: 'Tutorial finished' }), false, 'legacy direct success renderers are hidden in the walkthrough');
+    assert.equal(canvas.text.length, 0);
+    const result = { passed: true };
+    let completed = 0;
+    const screen = { options: { tutorialCourse: true } };
+    popup.begin(screen, { startedAt: 100, result, onComplete(value) { assert.equal(value, result); completed++; } });
+    assert.equal(popup.drawFor(screen, canvas.ctx), false);
+    setDialogueActive(true);
+    assert.equal(popup.update(screen, 100), true, 'remaining teaching can finish before moving on');
+    assert.equal(completed, 0);
+    setDialogueActive(false);
+    popup.update(screen, 150);
+    assert.equal(completed, 1, 'walkthrough completion does not wait for the popup duration');
+    popup.update(screen, 1000); assert.equal(completed, 1);
+    IP2Live.PracticeMode.active = false;
+    assert.ok(popup.draw(canvas.ctx, { label: 'Story gameplay' }), 'story completion feedback is unchanged');
+}
+
 try {
     testCompactSharedRenderer();
     testTimedCompletionRunsExactlyOnce();
     testDialogueDefersPopupAndPausesTimer();
     testEveryGameplayUsesTheSharedComponent();
+    testWalkthroughCompletesWithoutPopup();
     console.log('gameplay_completion_popup.test.cjs: PASS');
 } catch (error) {
     console.error(error);

@@ -125,9 +125,13 @@ class IP2LiveCIDRQuarantineMatrixConnectorScreen extends Scene.Base {
     static ADDRESS_DROP = { release: 260, fall: 620, hold: 2600, transfer: 950, settle: 700 };
     static DOCK_TYPING = { erase: 180, stagger: 25, type: 420,
         fields: ['classValue', 'addressLabel', 'addressValue', 'bitsLabel', 'bitsValue', 'formulaGiven', 'operator', 'blockSize', 'correction', 'answer'] };
-    constructor(options) { super(true); this.options = options || {}; this._configure(); }
+    constructor(options, timeSeconds) {
+        super(true); this.options = options || {}; this._constructorTimeSeconds = timeSeconds; this._configure();
+    }
     initialize() { this.options = this.options || {}; this._configure(); }
     _configure() {
+        this.sharedProblemSeed = IP2Live.PVPRules ? IP2Live.PVPRules.problemSeedFor(this.options) : null;
+        const random = IP2Live.PVPRules ? IP2Live.PVPRules.problemRandom(this.options, 'order') : Math.random;
         this.gameplayId = 'ip_cidr_quarantine_matrix';
         this.gameplayVersion = 'subnet-blaster-v4';
         this.tutorialMode = !!(this.options.tutorialMode || (this.options.spec && this.options.spec.tutorial));
@@ -140,31 +144,39 @@ class IP2LiveCIDRQuarantineMatrixConnectorScreen extends Scene.Base {
         this.activeElapsedMs = 0; this.preparationMs = 0; this.preparationSkips = 0;
         this.calculatorUses = 0; this.calculatorElapsedMs = 0; this.helpElapsedMs = 0;
         this.phaseDurationsMs = {}; this.barrierImpacts = 0; this.bossBulletImpacts = 0;
-        this.classOrder = IP2LiveSubnetBlasterRules.shuffle(['A', 'B', 'C']);
-        this.askedOrder = IP2LiveSubnetBlasterRules.shuffle(['broadcast', 'network']);
-        this.bitsOrder = IP2LiveSubnetBlasterRules.shuffle(['borrowed', 'host']);
+        this.classOrder = IP2LiveSubnetBlasterRules.shuffle(['A', 'B', 'C'], random);
+        this.askedOrder = IP2LiveSubnetBlasterRules.shuffle(['broadcast', 'network'], random);
+        this.bitsOrder = IP2LiveSubnetBlasterRules.shuffle(['borrowed', 'host'], random);
         this.challengeSerial = 0; this.animTick = 0; this.elapsedMs = 0; this.lastUpdateAt = null;
         this.selectedLane = 1; this.calculatorOpen = false; this.helpOpen = false;
         this.tutorialWalkthroughActive = false; this.tutorialPromptActive = false; this.tutorialSeenPhases = {};
         this.pointerPosition = null;
+        const prep = Number(this.options.preparationTimeSeconds !== undefined
+            ? this.options.preparationTimeSeconds : (this.options.spec || {}).preparationTimeSeconds);
+        this.preparationTimeSeconds = Number.isFinite(prep) && prep > 0 ? Math.max(1, prep) : 60;
         this.skipHoverStartedAt = null;
         this.buttonRects = [];
         this._newEncounter(this.options.problem);
+        if (IP2Live.GameplayTimer) IP2Live.GameplayTimer.reset(this);
     }
     async load() { this.loading = false; this.lastUpdateAt = null; this._paint(); }
     _newEncounter(problem) {
         const rules = IP2LiveSubnetBlasterRules, old = this.problem;
         const previous = old && old.asked && old.givenAddress ? this._dockValues(old) : null;
-        const settings = { ipClass: this.classOrder[3 - this.bossHP], asked: this.askedOrder[this.challengeSerial % 2], givenBits: this.bitsOrder[Math.floor(this.challengeSerial / 2) % 2] };
-        this.problem = problem && problem.asked && problem.answerAddress ? problem : rules.generate(settings);
-        for (let n = 0; old && this.problem.id === old.id && n < 10; n++) this.problem = rules.generate(settings);
+        // Successful boss hits select the shared subquestion. A wrong weapon
+        // retries that subquestion instead of shifting this player's sequence.
+        const index = this.sharedProblemSeed === null ? this.challengeSerial : 3 - this.bossHP;
+        const random = this.sharedProblemSeed === null ? Math.random : IP2Live.PVPRules.problemRandom(this.options, 'encounter:' + index);
+        const settings = { ipClass: this.classOrder[3 - this.bossHP], asked: this.askedOrder[index % 2], givenBits: this.bitsOrder[Math.floor(index / 2) % 2] };
+        this.problem = problem && problem.asked && problem.answerAddress ? problem : rules.generate(settings, random);
+        for (let n = 0; this.sharedProblemSeed === null && old && this.problem.id === old.id && n < 10; n++) this.problem = rules.generate(settings, random);
         if (problem && problem.ipClass) this.classOrder = [problem.ipClass].concat(this.classOrder.filter(value => value !== problem.ipClass));
         this.challengeSerial++;
-        this.waves = rules.waves(this.problem).map(wave => ({ ...wave, choices: rules.shuffle(wave.choices) }));
+        this.waves = rules.waves(this.problem).map(wave => ({ ...wave, choices: rules.shuffle(wave.choices, random) }));
         this.waveIndex = 0; this.weapon = {}; this.weaponLabels = {}; this.encounterResult = null;
         this.encounterTelemetry = { preparationMs: 0, preparationSkipped: false, calculatorUses: 0, calculatorElapsedMs: 0,
             activeElapsedMs: 0, barrierImpacts: 0, bossBulletImpacts: 0, collectedAtMs: {} };
-        this.thinkRemainingMs = 60000; this.pickup = null; this.projectiles = []; this.barrierHits = [0, 0, 0];
+        this.thinkRemainingMs = this.preparationTimeSeconds * 1000; this.pickup = null; this.projectiles = []; this.barrierHits = [0, 0, 0];
         this.fireCooldownMs = 500; this.waveAgeMs = 0;
         this.bossImpactCount = 0; this.bossImpactFlashMs = 0;
         this.calculatorOpen = false; this.calculatorExponent = 0;
@@ -182,7 +194,8 @@ class IP2LiveCIDRQuarantineMatrixConnectorScreen extends Scene.Base {
         this.tutorialWalkthroughActive = true;
         const started = this._showTutorialLesson('intro', finish => helper.showIntro(this.problem, finish), () => {
             if (!this.finished && !this._ip2liveGameplayExited && typeof helper.showPreparationGuide === 'function') {
-                this._showTutorialLesson('preparation', finish => helper.showPreparationGuide(this.problem, finish));
+                this._showTutorialLesson('preparation', finish => helper.showPreparationGuide({ ...this.problem,
+                    preparationTimeSeconds: this.preparationTimeSeconds }, finish));
             }
         });
         if (started === false) this.tutorialWalkthroughActive = false;
@@ -232,6 +245,7 @@ class IP2LiveCIDRQuarantineMatrixConnectorScreen extends Scene.Base {
     }
     update() {
         this._ensureSessionCompatible();
+        if (IP2Live.GameplayTimer && IP2Live.GameplayTimer.update(this, ['think', 'barriers', 'boss'])) return;
         const now = Date.now(), dt = this.lastUpdateAt === null ? 0 : Math.max(0, Math.min(100, now - this.lastUpdateAt));
         this.lastUpdateAt = now;
         const popup = IP2Live.GameplayCompletionPopup;
@@ -399,7 +413,9 @@ class IP2LiveCIDRQuarantineMatrixConnectorScreen extends Scene.Base {
         else this._newEncounter();
     }
     _result(passed) {
-        return { telemetrySchemaVersion: 2, gameplayVersion: this.gameplayVersion, gameplayId: this.gameplayId, passed, problemId: this.problem.id,
+        return { ...(IP2Live.GameplayTimer ? IP2Live.GameplayTimer.result(this) : {}),
+            preparationTimeSeconds: this.preparationTimeSeconds,
+            telemetrySchemaVersion: 2, gameplayVersion: this.gameplayVersion, gameplayId: this.gameplayId, passed, problemId: this.problem.id,
             baseCIDR: this.problem.baseCIDR, attemptsUsed: this.attemptsUsed + (passed ? 1 : 0), maxAttempts: 3,
             retries: this.attemptsUsed, mistakeCount: this.attemptsUsed, heartsRemaining: this.hearts,
             bossHits: 3 - this.bossHP, correctShots: this.correctShots, totalShots: this.totalShots, bulletsFired: this.bulletsFired,
@@ -421,10 +437,11 @@ class IP2LiveCIDRQuarantineMatrixConnectorScreen extends Scene.Base {
         if (popup && popup.begin && popup.begin(this, { gameplayId: this.gameplayId, label: 'Subnet Blaster cleared', footer: 'THREE ADDRESS CORES RECOVERED', durationMs: 950, result: payload, onComplete: complete })) return;
         complete();
     }
-    _failOut() {
+    _onTimerExpired() { this._failOut('time_expired'); }
+    _failOut(reason = 'hearts_exhausted') {
         if (this.finished) return;
         this.finished = true; this._setPhase('failed');
-        if (typeof this.options.onFailed === 'function') this.options.onFailed({ ...this._result(false), reason: 'hearts_exhausted' });
+        if (typeof this.options.onFailed === 'function') this.options.onFailed({ ...this._result(false), reason });
     }
     _cancel() { if (this.finished) return; this.finished = true; if (typeof this.options.onCancel === 'function') this.options.onCancel(); }
     _openPauseMenu() { this.lastUpdateAt = null; if (IP2Live.GameplayPause && IP2Live.GameplayPause.open) IP2Live.GameplayPause.open(this, this.gameplayId); else this._cancel(); }
@@ -550,6 +567,7 @@ class IP2LiveCIDRQuarantineMatrixConnectorScreen extends Scene.Base {
         for (const button of this.buttonRects) this._button(ctx, button);
         ctx.restore();
         this._drawTutorialFocus(ctx);
+        if (IP2Live.GameplayTimer) IP2Live.GameplayTimer.draw(this, ctx);
         if (IP2Live.DialogueManager && IP2Live.DialogueManager.drawOverlay) IP2Live.DialogueManager.drawOverlay(ctx);
         if (IP2Live.GameplayCompletionPopup && IP2Live.GameplayCompletionPopup.drawFor) IP2Live.GameplayCompletionPopup.drawFor(this, ctx, { tick: this.animTick });
     }
@@ -1247,7 +1265,7 @@ class IP2LiveCIDRQuarantineMatrixConnectorScreen extends Scene.Base {
             'Keep network + broadcast. Do not subtract 2; that counts usable hosts.',
             'Broadcast = network + block - 1. Network = broadcast - block + 1.',
             'Choose operator, then block size. The -1 or +1 is already in the bar.',
-            'Prepare for one minute, or Skip / Enter. C opens the calculator.',
+            'Prepare for ' + this.preparationTimeSeconds + ' seconds, or Skip / Enter. C opens the calculator.',
             'Aim: A/D, arrows, 1/2/3 or mouse. Auto-fire: 10 hits per barrier.',
             'Five boss hits: correct drops the answer; wrong costs a heart. APEX retreats.',
             'Win three times before losing three hearts. Escape closes this briefing.',
@@ -1361,7 +1379,9 @@ const CIDRQuarantineMatrixGameplayManager = {
     _playMusicZone(zoneName) {
         const music = IP2Live.MusicManager;
         if (!music || !music.ZONE || !music.ZONE[zoneName] || typeof music.play !== 'function') return false;
-        music.play(music.ZONE[zoneName]);
+        if (zoneName.indexOf('GAMEPLAY_') === 0 && typeof music.playGameplay === 'function') music.playGameplay('ip_cidr_quarantine_matrix');
+        else if (zoneName.indexOf('STAGE_') === 0 && typeof music.restoreContext === 'function') music.restoreContext();
+        else music.play(music.ZONE[zoneName]);
         return true;
     },
 
@@ -1392,6 +1412,7 @@ const CIDRQuarantineMatrixGameplayManager = {
         const problem = opts.problem || null;
         const open = () => {
             const screen = new IP2LiveCIDRQuarantineMatrixConnectorScreen({
+                ...(IP2Live.GameplayTimer ? IP2Live.GameplayTimer.launchOptions(opts) : {}),
                 spec: opts.spec,
                 questId: opts.questId,
                 objectiveId: opts.objectiveId,
@@ -1406,7 +1427,7 @@ const CIDRQuarantineMatrixGameplayManager = {
                 onCancel: () => this._onCancel(opts),
             });
             const openGameplay = () => {
-                this._playMusicZone('GAMEPLAY_56');
+                this._playMusicZone('GAMEPLAY_6');
                 if (opts.tutorialReplay) IP2Live.GameManager.prepareTutorialReplayScreen(screen, opts);
                 const stack = Manager && Manager.Stack ? Manager.Stack : null;
                 if (stack) {
@@ -1563,8 +1584,10 @@ IP2Live.CIDRQuarantineMatrixGameplayManager = CIDRQuarantineMatrixGameplayManage
 IP2Live.CIDRQuarantineMatrixGameplayScreen = IP2LiveCIDRQuarantineMatrixConnectorScreen;
 window.IP2LiveCIDRQuarantineMatrixGameplayManager = CIDRQuarantineMatrixGameplayManager;
 window.IP2LiveCIDRQuarantineMatrixGameplayScreen = IP2LiveCIDRQuarantineMatrixConnectorScreen;
-window.startCIDRQuarantineMatrixGameplaySix = function (options) {
-    return CIDRQuarantineMatrixGameplayManager.launchCIDRQuarantineMatrixGameplay(options || {});
+window.startCIDRQuarantineMatrixGameplaySix = function (options, timeSeconds) {
+    const opts = Object.assign({}, options || {});
+    if (Number.isFinite(Number(timeSeconds)) && Number(timeSeconds) > 0) opts.timeLimitSeconds = Number(timeSeconds);
+    return CIDRQuarantineMatrixGameplayManager.launchCIDRQuarantineMatrixGameplay(opts);
 };
 
 console.log('[IP2Live] ip_cidr_quarantine_matrix_gameplay.js module loaded.');

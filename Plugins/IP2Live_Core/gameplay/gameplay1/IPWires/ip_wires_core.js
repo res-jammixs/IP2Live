@@ -33,14 +33,14 @@
         return Math.max(5, Math.min(8, Math.round(normalized)));
     }
 
-    function rand(min, max) {
-        return min + Math.floor(Math.random() * (max - min + 1));
+    function rand(min, max, random = Math.random) {
+        return min + Math.floor(random() * (max - min + 1));
     }
 
-    function shuffle(items) {
+    function shuffle(items, random = Math.random) {
         const copy = Array.isArray(items) ? items.slice() : [];
         for (let i = copy.length - 1; i > 0; i--) {
-            const j = Math.floor(Math.random() * (i + 1));
+            const j = Math.floor(random() * (i + 1));
             const tmp = copy[i];
             copy[i] = copy[j];
             copy[j] = tmp;
@@ -55,14 +55,14 @@
         return null;
     }
 
-    function generateIPForClass(className) {
+    function generateIPForClass(className, random = Math.random) {
         const spec = specByClassName(className);
         if (!spec) return null;
         const octets = [
-            rand(spec.min, spec.max),
-            rand(0, 255),
-            rand(0, 255),
-            rand(1, 254),
+            rand(spec.min, spec.max, random),
+            rand(0, 255, random),
+            rand(0, 255, random),
+            rand(1, 254, random),
         ];
         return {
             className: spec.className,
@@ -72,24 +72,24 @@
         };
     }
 
-    function generateDefaultPuzzle() {
+    function generateDefaultPuzzle(random = Math.random) {
         const output = [];
         for (let i = 0; i < CLASS_SPECS.length; i++) {
-            const generated = generateIPForClass(CLASS_SPECS[i].className);
+            const generated = generateIPForClass(CLASS_SPECS[i].className, random);
             if (generated) output.push(generated);
         }
         return output;
     }
 
-    function generateHarderPuzzle(wireCount) {
+    function generateHarderPuzzle(wireCount, random = Math.random) {
         const clamped = clampWireCount(wireCount, 8);
         const classNames = CLASS_SPECS.map(function (spec) { return spec.className; });
         const counts = {};
         for (let i = 0; i < classNames.length; i++) counts[classNames[i]] = 0;
         const minDistinct = Math.min(3, classNames.length, clamped);
         const maxDistinct = Math.min(5, classNames.length, clamped);
-        const distinctCount = rand(minDistinct, Math.max(minDistinct, maxDistinct));
-        const chosen = shuffle(classNames).slice(0, distinctCount);
+        const distinctCount = rand(minDistinct, Math.max(minDistinct, maxDistinct), random);
+        const chosen = shuffle(classNames, random).slice(0, distinctCount);
         let used = 0;
         for (let i = 0; i < chosen.length; i++) {
             counts[chosen[i]] += 1;
@@ -99,7 +99,7 @@
         // Fill remaining leads from the selected pool. Depending on the roll,
         // strict boards can use three, four, or all five Class inputs.
         while (used < clamped) {
-            const className = chosen[rand(0, chosen.length - 1)];
+            const className = chosen[rand(0, chosen.length - 1, random)];
             counts[className] += 1;
             used++;
         }
@@ -111,9 +111,9 @@
         }
 
         const output = [];
-        const finalSelection = shuffle(selectedClasses);
+        const finalSelection = shuffle(selectedClasses, random);
         for (let i = 0; i < finalSelection.length; i++) {
-            const generated = generateIPForClass(finalSelection[i]);
+            const generated = generateIPForClass(finalSelection[i], random);
             if (generated) output.push(generated);
         }
         return output;

@@ -405,7 +405,7 @@
          */
         showTimerGuide(context, onComplete) {
             const c = context || {};
-            const durationSeconds = Math.max(10, safeNumber(c.durationSeconds, 120));
+            const durationSeconds = Math.max(1, safeNumber(c.durationSeconds, 120));
             const durationText = formatDuration(durationSeconds);
 
             return this._startDynamicDialogue('stage.hostpower.guided.timer.', {

@@ -142,6 +142,9 @@ const Tutorial = {
         this.slideIndex = 0;
         this.pressedKeys = new Set();
         this._stepTimeout = null;
+        this._pendingStep = null;
+        this._ownerGame = Core.Game.current;
+        this._ownerMapScene = opts.scene || Scene.Map.current || null;
         this.animTick = 0;
 
         this._questArrowMesh = null;
@@ -205,6 +208,9 @@ const Tutorial = {
         }
 
         this.isActive = false;
+        this._pendingStep = null;
+        this._ownerGame = null;
+        this._ownerMapScene = null;
         this.phase = this.PHASE.IDLE;
         this.slideIndex = 0;
         this.animTick = 0;
@@ -254,8 +260,18 @@ const Tutorial = {
 
     // — Input handlers ————————————————————————————————————————————————————
 
+    _inputSuspended() {
+        const scene = this._ownerMapScene || this._currentMapScene();
+        const top = Manager && Manager.Stack && Manager.Stack.top;
+        return !!((this._ownerGame && this._ownerGame !== Core.Game.current) ||
+            (this._ownerMapScene && Scene.Map.current && this._ownerMapScene !== Scene.Map.current) ||
+            (top && scene && top !== scene) ||
+            IP2Live.MenuTransition?.active || IP2Live.GameplayPause?.menuOpen ||
+            (typeof document !== 'undefined' && (document.hidden || (document.hasFocus && !document.hasFocus()))));
+    },
+
     _onKey(e) {
-        if (!this.isActive) return;
+        if (!this.isActive || this._inputSuspended()) return;
         const code = e.code;
 
         if (this._dialogueLocksMovement() && this._isMovementCode(code)) {
@@ -297,6 +313,7 @@ const Tutorial = {
     },
 
     _onClick(e) {
+        if (this._inputSuspended()) return;
         if (this.phase === this.PHASE.DONE) {
             if (this._isClickOnReplay(e)) {
                 Data.Systems.soundConfirmation.playSound();
@@ -337,11 +354,26 @@ const Tutorial = {
     },
 
     _scheduleNextStep() {
-        if (this._stepTimeout) return;
+        if (this._stepTimeout || this._pendingStep) return;
+        const pending = { phase: this.phase, game: Core.Game.current, scene: this._currentMapScene() };
         this._stepTimeout = setTimeout(() => {
             this._stepTimeout = null;
-            this._nextStep();
+            this._pendingStep = pending;
+            this._resumePendingStep();
         }, 500); // short delay
+    },
+
+    _resumePendingStep() {
+        const pending = this._pendingStep;
+        if (!pending) return;
+        if (!this.isActive || pending.phase !== this.phase || pending.game !== Core.Game.current ||
+            (pending.scene && Scene.Map.current && pending.scene !== Scene.Map.current)) {
+            this._pendingStep = null;
+            return;
+        }
+        if (this._inputSuspended()) return;
+        this._pendingStep = null;
+        this._nextStep();
     },
 
     _nextStep() {
@@ -767,7 +799,7 @@ const Tutorial = {
         const tutorialId = IP2Live.MapManager && IP2Live.MapManager.getInitialMapId
             ? IP2Live.MapManager.getInitialMapId()
             : 1;
-        return mapId === tutorialId || (this.isActive && this.phase !== this.PHASE.IDLE);
+        return Number(mapId) === Number(tutorialId);
     },
 
     _dialogueLocksMovement() {
@@ -800,6 +832,7 @@ const Tutorial = {
     },
 
     _stripMovementInputs() {
+        if (IP2Live.InputGuard) return;
         if (!Manager || !Manager.Events || !Manager.Events.keysPressed) return;
         for (let i = Manager.Events.keysPressed.length - 1; i >= 0; i--) {
             if (this._isMovementKey(Manager.Events.keysPressed[i])) {
@@ -2435,6 +2468,7 @@ if (!Scene.Map.prototype._ip2liveTutorialInjected) {
     const _origMapUpdate = Scene.Map.prototype.update;
     Scene.Map.prototype.update = function () {
         Tutorial._setSceneContext(this);
+        Tutorial._resumePendingStep();
 
         const getHero = () => (Scene.Map.current && Scene.Map.current.heroMapObject) ||
             this.heroMapObject ||

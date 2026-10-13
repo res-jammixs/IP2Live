@@ -32,7 +32,7 @@
         _tutorialHighlighted: false,
 
         create() {
-            if (IP2Live.PracticeMode && IP2Live.PracticeMode.active) return;
+            if ((IP2Live.PracticeMode && IP2Live.PracticeMode.active) || (IP2Live.PVPMode && IP2Live.PVPMode.active)) return;
             if (this.isActive()) return;
             if (typeof document === 'undefined') return;
 

@@ -18,8 +18,8 @@
         return null;
     }
 
-    function shuffle(items) {
-        return typeof core.shuffle === 'function' ? core.shuffle(items) : (Array.isArray(items) ? items.slice() : []);
+    function shuffle(items, random = Math.random) {
+        return typeof core.shuffle === 'function' ? core.shuffle(items, random) : (Array.isArray(items) ? items.slice() : []);
     }
 
     function orderedClassSpecs(items) {
@@ -33,15 +33,19 @@
     }
 
     class IP2LiveWiresGameplayScreen extends Scene.Base {
-        constructor(options) {
+        constructor(options, timeSeconds) {
             super(true);
             this.options = options || {};
+            this._constructorTimeSeconds = timeSeconds;
             this.maxAttempts = Math.max(1, Number(this.options.maxAttempts) || 3);
             this.allowDuplicateTargets = !!this.options.allowDuplicateTargets;
             this.mode = this.options.mode || 'default';
             this.gameplayId = this.options.gameplayId || 'ip_class_wires';
             this.classSpecs = classSpecs();
-            this._ensurePuzzleReady();
+            // Scene.Base may initialize a default board before options exist.
+            if (IP2Live.PVPRules && IP2Live.PVPRules.problemSeedFor(this.options) !== null) this._resetPuzzleState();
+            else this._ensurePuzzleReady();
+            if (IP2Live.GameplayTimer) IP2Live.GameplayTimer.reset(this);
         }
 
         initialize() {
@@ -54,6 +58,7 @@
 
         _resetPuzzleState() {
             this.options = this.options || {};
+            this.problemRandom = IP2Live.PVPRules ? IP2Live.PVPRules.problemRandom(this.options) : Math.random;
             if (!Array.isArray(this.classSpecs) || !this.classSpecs.length) this.classSpecs = classSpecs();
             if (!this.mode) this.mode = this.options.mode || 'default';
             if (!this.gameplayId) this.gameplayId = this.options.gameplayId || 'ip_class_wires';
@@ -83,10 +88,11 @@
             this._finished = false;
 
             const puzzle = this._generatePuzzle();
-            this.leftItems = shuffle(puzzle.map((entry) => Object.assign({}, entry)));
+            this.leftItems = shuffle(puzzle.map((entry) => Object.assign({}, entry)), this.problemRandom);
             this.rightItems = this._buildRightConnectors();
             this.leftCount = this.leftItems.length;
             this.rightCount = this.rightItems.length;
+            if (IP2Live.GameplayTimer) IP2Live.GameplayTimer.reset(this);
         }
 
         _ensurePuzzleReady() {
@@ -112,6 +118,7 @@
         }
 
         update() {
+            if (IP2Live.GameplayTimer && IP2Live.GameplayTimer.update(this)) return;
             this.animTick++;
             this.scanlineOffset = (this.scanlineOffset + 0.55) % 4;
             for (let i = this.sparks.length - 1; i >= 0; i--) {
@@ -159,7 +166,7 @@
         }
 
         onMouseDown(x, y) {
-            if (this.completed || this.verdictTimer > 0 || this.randomizeTimer > 0 || (IP2Live.DialogueManager && IP2Live.DialogueManager.isActive())) return true;
+            if (this._finished || this.completed || this.verdictTimer > 0 || this.randomizeTimer > 0 || (IP2Live.DialogueManager && IP2Live.DialogueManager.isActive())) return true;
             this._ensurePuzzleReady();
             this.mouse = { x, y };
             const layout = this._layout();
@@ -191,7 +198,7 @@
         onMouseUp(x, y) {
             this.mouse = { x, y };
             this._ensurePuzzleReady();
-            if (!this.dragging || this.completed || this.verdictTimer > 0 || this.randomizeTimer > 0) return true;
+            if (this._finished || !this.dragging || this.completed || this.verdictTimer > 0 || this.randomizeTimer > 0) return true;
 
             const sourceId = this.dragging.sourceId;
             const sourceItem = this._itemById(this.leftItems, sourceId);
@@ -283,6 +290,7 @@
             if (this.completed) this._drawCompleteOverlay(ctx, layout, font);
             ctx.restore();
             this._drawFailureOverlay(ctx, cW, cH);
+            if (IP2Live.GameplayTimer) IP2Live.GameplayTimer.draw(this, ctx);
             if (IP2Live.DialogueManager && typeof IP2Live.DialogueManager.drawOverlay === 'function') {
                 IP2Live.DialogueManager.drawOverlay(ctx);
             }
@@ -1483,7 +1491,7 @@
                 return Object.assign({}, entry);
             });
             if (this._isHarderMode()) return base;
-            return shuffle(base);
+            return shuffle(base, this.problemRandom);
         }
 
         _hasClassDuplicate(items) {
@@ -1501,7 +1509,7 @@
         _fallbackGeneratedForClass(className) {
             const spec = classSpec(className) || { className: className || 'A' };
             if (typeof core.generateIPForClass === 'function') {
-                const generated = core.generateIPForClass(spec.className);
+                const generated = core.generateIPForClass(spec.className, this.problemRandom);
                 if (generated) return generated;
             }
             return {
@@ -1519,7 +1527,7 @@
             while (list.length > desiredCount) list.pop();
             while (list.length < desiredCount) {
                 const sourceClass = this.classSpecs.length
-                    ? this.classSpecs[Math.floor(Math.random() * this.classSpecs.length)].className
+                    ? this.classSpecs[Math.floor(this.problemRandom() * this.classSpecs.length)].className
                     : 'A';
                 list.push(this._fallbackGeneratedForClass(sourceClass));
             }
@@ -1531,16 +1539,17 @@
             const mode = String(this.mode || 'default').toLowerCase();
             let generated = [];
             if (mode === 'harder' && typeof core.generateHarderPuzzle === 'function') {
-                generated = core.generateHarderPuzzle(this._resolveWireCount());
+                generated = core.generateHarderPuzzle(this._resolveWireCount(), this.problemRandom);
             } else if (typeof core.generateDefaultPuzzle === 'function') {
-                generated = core.generateDefaultPuzzle();
+                generated = core.generateDefaultPuzzle(this.problemRandom);
             }
             generated = this._normalizeGeneratedPuzzle(generated, mode);
             const output = [];
             for (let i = 0; i < generated.length; i++) {
                 const item = generated[i];
                 output.push({
-                    id: 'src_' + i + '_' + item.className + '_' + Date.now() + '_' + Math.floor(Math.random() * 100000),
+                    id: 'src_' + i + '_' + item.className + (IP2Live.PVPRules && IP2Live.PVPRules.problemSeedFor(this.options) !== null
+                        ? '' : '_' + Date.now() + '_' + Math.floor(this.problemRandom() * 100000)),
                     className: item.className,
                     color: item.color || this._classColor(item.className),
                     ip: item.ip,
@@ -1902,14 +1911,16 @@
             }
         }
 
-        _failOut(mistakes) {
+        _onTimerExpired() { this.dragging = null; this._failOut([], 'time_expired'); }
+
+        _failOut(mistakes, reason = 'attempts_exhausted') {
             if (this._finished) return;
             this._finished = true;
             if (typeof this.options.onFailed === 'function') {
                 this.options.onFailed({
                     ...this._assessmentResult(),
                     gameplayId: this.gameplayId,
-                    reason: 'attempts_exhausted',
+                    reason,
                     attemptsUsed: this.attemptsUsed,
                     maxAttempts: this.maxAttempts,
                     mistakes: mistakes || [],
@@ -1925,7 +1936,8 @@
         _assessmentResult() {
             const history = Array.isArray(this.decisionHistory) ? this.decisionHistory : [];
             const correct = history.filter(row => row.correct).length;
-            return { telemetrySchemaVersion: 2, totalDecisions: history.length, correctDecisions: correct,
+            return { ...(IP2Live.GameplayTimer ? IP2Live.GameplayTimer.result(this) : {}),
+                telemetrySchemaVersion: 2, totalDecisions: history.length, correctDecisions: correct,
                 incorrectDecisions: history.length - correct, decisionHistory: history.map(row => ({ ...row })) };
         }
 
@@ -2100,7 +2112,9 @@
         _playMusicZone(zoneName) {
             const music = IP2Live.MusicManager;
             if (!music || !music.ZONE || !music.ZONE[zoneName] || typeof music.play !== 'function') return false;
-            music.play(music.ZONE[zoneName]);
+            if (zoneName.indexOf('GAMEPLAY_') === 0 && typeof music.playGameplay === 'function') music.playGameplay('ip_class_wires');
+            else if (zoneName.indexOf('STAGE_') === 0 && typeof music.restoreContext === 'function') music.restoreContext();
+            else music.play(music.ZONE[zoneName]);
             return true;
         },
 
@@ -2111,12 +2125,7 @@
                 clearTimeout(this._musicRestoreTimer);
                 this._musicRestoreTimer = null;
             }
-            if (typeof music.stop === 'function') music.stop(120);
-            this._musicRestoreTimer = setTimeout(() => {
-                this._musicRestoreTimer = null;
-                this._playMusicZone('STAGE_1');
-            }, 150);
-            return true;
+            return this._playMusicZone('STAGE_1');
         },
 
         launchWireGameplay(options) {
@@ -2133,6 +2142,8 @@
             this._activeAttempt = attemptKey;
 
             const createScreen = () => new IP2LiveWiresGameplayScreen({
+                ...(IP2Live.GameplayTimer ? IP2Live.GameplayTimer.launchOptions(opts) : {}),
+                pvpMode: opts.pvpMode, pvpProblemSeed: opts.pvpProblemSeed,
                 mode: 'default',
                 gameplayId: 'ip_class_wires',
                 maxAttempts: 3,

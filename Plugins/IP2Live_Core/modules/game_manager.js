@@ -30,6 +30,7 @@ const IP2LiveGameManager = {
         GAMEPLAY_FAILED: 'gameplay.failed',
         GAMEPLAY_COMPLETED: 'gameplay.completed',
         QUEST_OBJECTIVE_COMPLETED: 'quest.objectiveCompleted',
+        QUEST_PROGRESS_CHANGED: 'quest.progressChanged',
         MAP_ENTERED: 'map.entered',
     },
 
@@ -73,6 +74,33 @@ const IP2LiveGameManager = {
     enableGameplayTestingButton: true,
     // Set false to hide the Debug Map Jump entry from the pause menu.
     enableDebugMapJumpButton: true,
+    // Developer access to all Practice exercises and Endless without Story progress.
+    // Set false to restore normal unlock requirements; earned progress is preserved.
+    unlockPracticeAndEndlessForTesting: true,
+    // Local debug preference; does not change campaign progress or an active race.
+    enablePVPButton: true,
+    _pvpButtonPreferenceLoaded: false,
+    isPVPButtonEnabled() {
+        if (!this._pvpButtonPreferenceLoaded) {
+            this._pvpButtonPreferenceLoaded = true;
+            try {
+                const storage = typeof localStorage !== 'undefined' ? localStorage : window.localStorage;
+                const saved = storage && storage.getItem('ip2live.debug.pvpButton');
+                if (saved === 'on' || saved === 'off') this.enablePVPButton = saved === 'on';
+            } catch (error) {}
+        }
+        return this.enablePVPButton !== false;
+    },
+    setPVPButtonEnabled(enabled) {
+        this._pvpButtonPreferenceLoaded = true;
+        this.enablePVPButton = !!enabled;
+        try {
+            const storage = typeof localStorage !== 'undefined' ? localStorage : window.localStorage;
+            if (storage) storage.setItem('ip2live.debug.pvpButton', this.enablePVPButton ? 'on' : 'off');
+        } catch (error) {}
+        if (Manager && Manager.Stack) Manager.Stack.requestPaintHUD = true;
+        return this.enablePVPButton;
+    },
     _skipQuestButtonRect: null,
     _singleQuestSkipButtonRect: null,
     _questFailButtonRect: null,
@@ -584,6 +612,7 @@ const IP2LiveGameManager = {
     },
 
     _ensureReportSession() {
+        if (IP2Live.FeatureTelemetry) IP2Live.FeatureTelemetry.rememberProfile(Core.Game.current);
         const profileName = this._deriveTelemetryProfileName({});
         const profileId = this._deriveTelemetryProfileId({});
         if (this._reportSessionId && this._reportSessionProfileName === profileName && this._reportSessionProfileId === profileId) return this._reportSessionId;
@@ -859,7 +888,7 @@ const IP2LiveGameManager = {
         return !!(source.developerTest || source.developerTesting || spec.developerTest || source.practiceMode || spec.practiceMode || source.practiceGameplay || spec.practiceGameplay || source.simulated ||
             source.developerQuestSkip || source.developerQuestFail ||
             (source.result && (source.result.developerTest || source.result.developerSkip || source.result.developerFail || source.result.practiceMode)) ||
-            (IP2Live.PracticeMode && IP2Live.PracticeMode.active));
+            (IP2Live.PracticeMode && IP2Live.PracticeMode.active) || (IP2Live.PVPMode && IP2Live.PVPMode.active));
     },
 
     _reportActiveAttempt(gameplayId) {
@@ -1395,6 +1424,7 @@ const IP2LiveGameManager = {
     },
 
     startNewGameFlow(playerName) {
+        if (IP2Live.StoryPrologue?.active) return false;
         const game = Core.Game.current;
         this.resetStoryRuntime(game);
         const states = IP2Live.GameStateManager;
@@ -1406,15 +1436,20 @@ const IP2LiveGameManager = {
         if (IP2Live.NeuralLifeForce && typeof IP2Live.NeuralLifeForce.reset === 'function') {
             IP2Live.NeuralLifeForce.reset();
         }
-        // The first checkpoint must contain only this new run's progress.
-        // beginStory retains the previous durable autosave until that commits.
-        if (IP2Live.StoryAutosave) IP2Live.StoryAutosave.beginStory(game);
-        return this.startTutorialFlow({
-            playerName,
-            useLoading: false,
-            cleanMapSession: true,
-            source: 'GameManager.startNewGameFlow',
-        });
+        // The prologue owns no map or learning timer. Begin autosave/report play
+        // only when its final fade ends, preserving the previous durable save.
+        let storyBegan = false;
+        const enterFacility = () => {
+            if (Core.Game.current !== game) return false;
+            if (!storyBegan) {
+                storyBegan = true;
+                if (IP2Live.StoryAutosave) IP2Live.StoryAutosave.beginStory(game);
+            }
+            return this.startTutorialFlow({ playerName, useLoading: false, cleanMapSession: true,
+                source: 'GameManager.startNewGameFlow' });
+        };
+        if (IP2Live.StoryPrologue?.show(enterFacility)) return true;
+        return enterFacility();
     },
 
     startTutorialFlow(options) {
@@ -1926,6 +1961,7 @@ const IP2LiveGameManager = {
     },
 
     _ensureQuestMinimap() {
+        if (IP2Live.PVPMode && IP2Live.PVPMode.active) return false;
         const minimap = IP2Live.QuestMinimap;
         if (!minimap || typeof minimap.isActive !== 'function') return false;
         if (!minimap.isActive()) {
@@ -1968,11 +2004,13 @@ const IP2LiveGameManager = {
 
     _prepareMapAfterLoad(mapId, scene) {
         const stage = this._stageFor(mapId);
+        const music = IP2Live.MusicManager;
+        if (music && typeof music.playMap === 'function') music.playMap(mapId);
         if (stage && stage.tutorial) {
             if (IP2Live.LightingManager && typeof IP2Live.LightingManager.applyPreset === 'function') {
                 IP2Live.LightingManager.applyPreset(mapId, scene || this._currentScene());
             }
-            if (IP2Live.MusicManager && IP2Live.MusicManager.ZONE) {
+            if (music && typeof music.playMap !== 'function' && music.ZONE) {
                 IP2Live.MusicManager.play(IP2Live.MusicManager.ZONE.TUTORIAL);
             }
         }
@@ -2629,6 +2667,7 @@ const IP2LiveGameManager = {
     },
 
     _queueCheckpoint(reason) {
+        if (IP2Live.PVPMode && IP2Live.PVPMode.active) return false;
         if (IP2Live.PracticeMode && IP2Live.PracticeMode.active) return false;
         if (!this._hasExplicitSaveSlot() || this._checkpointInFlight || typeof setTimeout !== 'function') return false;
         if (this._checkpointDebounceTimer) clearTimeout(this._checkpointDebounceTimer);
@@ -2877,7 +2916,7 @@ const IP2LiveGameManager = {
         const screen = pause && pause.activeScreen;
         const options = screen && screen.options || {};
         const spec = options.spec || {};
-        return !!((IP2Live.PracticeMode && IP2Live.PracticeMode.active) ||
+        return !!((IP2Live.PracticeMode && IP2Live.PracticeMode.active) || (IP2Live.PVPMode && IP2Live.PVPMode.active) ||
             (IP2Live.TutorialReplay && IP2Live.TutorialReplay.session) ||
             options.developerTest || options.developerTesting || spec.developerTest || spec.developerTesting ||
             options.practiceMode || spec.practiceMode || options.tutorialReplay || spec.tutorialReplay ||
@@ -2976,6 +3015,10 @@ const IP2LiveGameManager = {
 
     resetStoryRuntime(game) {
         // These objects belong to live scenes; durable state is restored separately.
+        IP2Live.InputGuard?.reset();
+        this._prepareTransitionState(Number(game && game.currentMapID) || 0, 'stage', { discardDialogue: true });
+        this._tutorialIntroPending = false;
+        this._lastWorldTitleFinishKey = null;
         this.state = this.STATE.MAP_LOAD;
         this._activeGameplayNode = null;
         this._reportActiveAttempts = {};
@@ -3090,6 +3133,7 @@ const IP2LiveGameManager = {
         const resolvedMapId = Number(mapId) || this._currentMapId();
         const context = this.getPendingSlotRestoreForMap(resolvedMapId, scene);
         if (!context || context.suppressMapEntryDialogue === false) return false;
+        this._prepareMapAfterLoad(resolvedMapId, scene);
 
         if (scene) {
             scene._ip2livePendingSlotRestore = context;
@@ -3149,11 +3193,13 @@ const IP2LiveGameManager = {
     },
 
     saveProgressToActiveSlot(preferredSlot, saveName, options) {
+        if (IP2Live.PVPMode && IP2Live.PVPMode.active) return Promise.resolve({ saved: false, reason: 'pvp-mode' });
         if (IP2Live.PracticeMode && IP2Live.PracticeMode.active) return Promise.resolve({ saved: false, reason: 'practice-mode' });
         return this.enqueueSaveTask(() => this._saveProgressToActiveSlotNow(preferredSlot, saveName, options));
     },
 
     async _saveProgressToActiveSlotNow(preferredSlot, saveName, options) {
+        if (IP2Live.PVPMode && IP2Live.PVPMode.active) return { saved: false, reason: 'pvp-mode' };
         if (IP2Live.PracticeMode && IP2Live.PracticeMode.active) return { saved: false, reason: 'practice-mode' };
         const game = Core && Core.Game ? Core.Game.current : null;
         if (!game) return { saved: false, reason: 'no-game' };

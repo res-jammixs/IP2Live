@@ -13,13 +13,13 @@
     }
 
     class IP2LiveCIDRPanelHarderGameplayScreen extends BaseScreen {
-        constructor(options) {
+        constructor(options, timeSeconds) {
             const opts = options || {};
             super(Object.assign({}, opts, {
                 gameplayId: 'ip_cidr_binary_panel_harder',
                 tutorialMode: !!opts.tutorialMode,
                 guidedTutorial: !!opts.guidedTutorial,
-            }));
+            }), timeSeconds);
         }
 
         _configure() {
@@ -367,6 +367,7 @@
 
             const open = () => {
                 const screen = new IP2LiveCIDRPanelHarderGameplayScreen({
+                    ...(IP2Live.GameplayTimer ? IP2Live.GameplayTimer.launchOptions(opts) : {}),
                     targetMask: opts.targetMask || spec.targetMask,
                     targetClass: opts.targetClass || spec.targetClass || 'C',
                     randomizeTarget: opts.randomizeTarget !== false,
@@ -515,7 +516,9 @@
         _playMusicZone(zoneName) {
             const music = IP2Live.MusicManager;
             if (!music || !music.ZONE || !music.ZONE[zoneName] || typeof music.play !== 'function') return false;
-            music.play(music.ZONE[zoneName]);
+            if (zoneName.indexOf('GAMEPLAY_') === 0 && typeof music.playGameplay === 'function') music.playGameplay('ip_cidr_binary_panel');
+            else if (zoneName.indexOf('STAGE_') === 0 && typeof music.restoreContext === 'function') music.restoreContext();
+            else music.play(music.ZONE[zoneName]);
             return true;
         },
 

@@ -31,7 +31,7 @@ const IPHostPowerRules = {
         return this.CLASS_LIMITS[this.normalizeClass(value)];
     },
 
-    randomClass(allowedClasses) {
+    randomClass(allowedClasses, random = Math.random) {
         const source = Array.isArray(allowedClasses) && allowedClasses.length
             ? allowedClasses
             : ['A', 'B', 'C'];
@@ -39,10 +39,10 @@ const IPHostPowerRules = {
             .map((value) => this.normalizeClass(value))
             .filter((value, index, all) => all.indexOf(value) === index);
         const choices = valid.length ? valid : ['A', 'B', 'C'];
-        return choices[Math.floor(Math.random() * choices.length)];
+        return choices[Math.floor(random() * choices.length)];
     },
 
-    randomRequiredHosts(className) {
+    randomRequiredHosts(className, random = Math.random) {
         const config = this.classConfig(className);
         const min = Math.max(1, Number(config.minHosts) || 1);
         const max = Math.max(min, Number(config.maxHosts) || min);
@@ -51,18 +51,18 @@ const IPHostPowerRules = {
         // allowing the very large Class A band to dominate every draw.
         const minExponent = this.minimumExponent(min);
         const maxExponent = config.maxHostBits;
-        const exponent = minExponent + Math.floor(Math.random() * Math.max(1, maxExponent - minExponent + 1));
+        const exponent = minExponent + Math.floor(random() * Math.max(1, maxExponent - minExponent + 1));
         const bandLow = Math.max(min, exponent <= 1 ? 1 : Math.pow(2, exponent - 1) - 1);
         const bandHigh = Math.min(max, Math.pow(2, exponent) - this.RESERVED_ADDRESSES);
         const low = Math.max(min, Math.min(bandLow, bandHigh));
         const high = Math.max(low, bandHigh);
-        return low + Math.floor(Math.random() * (high - low + 1));
+        return low + Math.floor(random() * (high - low + 1));
     },
 
-    clampRequiredHosts(className, value) {
+    clampRequiredHosts(className, value, random = Math.random) {
         const config = this.classConfig(className);
         const parsed = Math.floor(Number(value));
-        if (!Number.isFinite(parsed)) return this.randomRequiredHosts(className);
+        if (!Number.isFinite(parsed)) return this.randomRequiredHosts(className, random);
         return Math.max(1, Math.min(config.maxHosts, parsed));
     },
 
@@ -105,13 +105,14 @@ const IPHostPowerRules = {
 
     createScenario(options) {
         const opts = options || {};
+        const random = IP2Live.PVPRules ? IP2Live.PVPRules.problemRandom(opts) : Math.random;
         const className = opts.targetClass
             ? this.normalizeClass(opts.targetClass)
-            : this.randomClass(opts.targetClasses);
+            : this.randomClass(opts.targetClasses, random);
         const classConfig = this.classConfig(className);
         const requiredHosts = opts.requiredHosts === undefined || opts.requiredHosts === null
-            ? this.randomRequiredHosts(className)
-            : this.clampRequiredHosts(className, opts.requiredHosts);
+            ? this.randomRequiredHosts(className, random)
+            : this.clampRequiredHosts(className, opts.requiredHosts, random);
         const targetExponent = this.minimumExponent(requiredHosts);
 
         if (targetExponent > classConfig.maxHostBits) {
@@ -160,7 +161,7 @@ class IP2LiveHostPowerReactorGameplayScreen extends Scene.Base {
         super(true);
         this.options = options || {};
         const explicitTime = Number(timeSeconds);
-        this._explicitDurationSeconds = Number.isFinite(explicitTime) && explicitTime > 0 ? explicitTime : null;
+        this._explicitDurationSeconds = typeof timeSeconds !== 'boolean' && Number.isFinite(explicitTime) && explicitTime > 0 ? explicitTime : null;
         this._configure();
     }
 
@@ -184,7 +185,9 @@ class IP2LiveHostPowerReactorGameplayScreen extends Scene.Base {
         this.tutorialSpotlightComplete = null;
 
         const spec = this.options.spec || {};
-        const configuredSeconds =
+        const configuredSeconds = IP2Live.GameplayTimer
+            ? IP2Live.GameplayTimer.resolve(this.options, this._explicitDurationSeconds, 120, ['durationSeconds'])
+            :
             this._explicitDurationSeconds ||
             Number(this.options.timeSeconds) ||
             Number(this.options.durationSeconds) ||
@@ -192,8 +195,12 @@ class IP2LiveHostPowerReactorGameplayScreen extends Scene.Base {
             Number(spec.durationSeconds) ||
             120;
 
-        this.durationSeconds = Math.max(10, configuredSeconds);
+        this.durationSeconds = Math.max(1, configuredSeconds);
+        this.timeLimitSeconds = this.durationSeconds;
+        this.timerEnabled = true;
         this.durationMs = this.durationSeconds * 1000;
+        this.roundRemainingMs = this.durationMs;
+        if (IP2Live.GameplayTimer) IP2Live.GameplayTimer.forget(this);
 
         this.animTick = 0;
         this.finished = false;
@@ -273,6 +280,8 @@ class IP2LiveHostPowerReactorGameplayScreen extends Scene.Base {
         const now = Number.isFinite(numericNow) ? numericNow : Date.now();
         this.startedAt = now;
         this.endsAt = now + this.durationMs;
+        this.roundRemainingMs = this.durationMs;
+        if (IP2Live.GameplayTimer) IP2Live.GameplayTimer.forget(this);
         this.nextSpawnAt = now;
         this.lastUpdateAt = now;
         this.roundState = 'active';
@@ -292,6 +301,15 @@ class IP2LiveHostPowerReactorGameplayScreen extends Scene.Base {
         const dialogueActive = this._dialogueActive();
         if (!this.finished && !dialogueActive && !this.tutorialPaused && this.roundState === 'ready') {
             this._startRoundClock(now);
+        }
+
+        if (IP2Live.GameplayTimer) {
+            const elapsed = IP2Live.GameplayTimer.deltaMs(this,
+                !this.finished && !dialogueActive && !this.tutorialPaused && this.roundState === 'active', now);
+            if (this.roundState === 'active') {
+                this.roundRemainingMs = Math.max(0, this.roundRemainingMs - elapsed);
+                this.endsAt = now + this.roundRemainingMs;
+            }
         }
 
         if (this.finished || dialogueActive || this.tutorialPaused) {
@@ -321,6 +339,7 @@ class IP2LiveHostPowerReactorGameplayScreen extends Scene.Base {
             if (!this.failureStartedAt) this.failureStartedAt = now;
             if (now - this.failureStartedAt >= this.failureAnimationDurationMs) {
                 this.roundState = 'failed';
+                if (IP2Live.GameplayTimer && IP2Live.GameplayTimer.isEndless(this.options)) this._cancel(true);
             }
         }
 
@@ -821,7 +840,7 @@ class IP2LiveHostPowerReactorGameplayScreen extends Scene.Base {
         this.heldLeft = false;
         this.heldRight = false;
         this.shootHeld = false;
-        this.failureReason = 'timeout';
+        this.failureReason = IP2Live.GameplayTimer && IP2Live.GameplayTimer.isEndless(this.options) ? 'time_expired' : 'timeout';
         this.failureStartedAt = Date.now();
 
         this.entities = [];
@@ -874,6 +893,7 @@ class IP2LiveHostPowerReactorGameplayScreen extends Scene.Base {
             requiredHosts: this.scenario.requiredHosts, atMs: attempt.atMs }));
         return Object.assign({
             telemetrySchemaVersion: 2, totalDecisions: history.length, correctDecisions: history.filter(row => row.correct).length,
+            timerEnabled: true, timeLimitSeconds: this.durationSeconds,
             incorrectDecisions: history.filter(row => !row.correct).length, decisionHistory: history,
             gameplayId: 'ip_host_power_reactor',
             className: this.scenario.className,
@@ -887,7 +907,7 @@ class IP2LiveHostPowerReactorGameplayScreen extends Scene.Base {
             usableHosts: IPHostPowerRules.usableHosts(this.exponent),
             reservedAddresses: IPHostPowerRules.RESERVED_ADDRESSES,
             elapsedMs: this.startedAt ? Math.max(0, now - this.startedAt) : 0,
-            timeRemainingMs: this.endsAt ? Math.max(0, this.endsAt - now) : 0,
+            timeRemainingMs: IP2Live.GameplayTimer ? this.roundRemainingMs : (this.endsAt ? Math.max(0, this.endsAt - now) : 0),
             overshoots: this.overshoots,
             calculationAttempts: this.calculationAttempts.slice(),
             hits: this.hits.slice(),
@@ -914,6 +934,16 @@ class IP2LiveHostPowerReactorGameplayScreen extends Scene.Base {
                 onComplete: finish,
             });
         } else finish();
+    }
+
+    onGameplayResume() {
+        this.lastUpdateAt = null;
+        if (IP2Live.GameplayTimer) {
+            IP2Live.GameplayTimer.forget(this);
+            // Old story saves predate the remaining-time field; their deadline was already rebased by GameplayPause.
+            if (!Number.isFinite(this.roundRemainingMs)) this.roundRemainingMs = Math.max(0, Number(this.endsAt) - Date.now());
+            if (this.roundState === 'active') this.endsAt = Date.now() + this.roundRemainingMs;
+        }
     }
 
     _cancel(failed) {
@@ -3575,7 +3605,9 @@ const HostPowerReactorGameplayManager = {
     _playMusicZone(zoneName) {
         const music = IP2Live.MusicManager;
         if (!music || !music.ZONE || !music.ZONE[zoneName] || typeof music.play !== 'function') return false;
-        music.play(music.ZONE[zoneName]);
+        if (zoneName.indexOf('GAMEPLAY_') === 0 && typeof music.playGameplay === 'function') music.playGameplay('ip_host_power_reactor');
+        else if (zoneName.indexOf('STAGE_') === 0 && typeof music.restoreContext === 'function') music.restoreContext();
+        else music.play(music.ZONE[zoneName]);
         return true;
     },
 
@@ -3605,7 +3637,7 @@ const HostPowerReactorGameplayManager = {
                 // creates a fresh, valid host-capacity puzzle. Tutorial specs
                 // never enter this branch and therefore remain fixed.
                 delete scenarioOptions.requiredHosts;
-                const previousHosts = this._regularQuestHostCounts[attemptKey];
+                const previousHosts = opts.pvpMode ? undefined : this._regularQuestHostCounts[attemptKey];
                 scenario = this.createScenario(scenarioOptions);
                 for (let draw = 0; draw < 8 && scenario.requiredHosts === previousHosts; draw++) {
                     scenario = this.createScenario(scenarioOptions);
@@ -3781,7 +3813,10 @@ window.IP2LiveHostPowerReactorGameplayManager = HostPowerReactorGameplayManager;
 
 window.startHostPowerGameplayFourPointFive = function (options, timeSeconds) {
     const opts = Object.assign({}, options || {});
-    if (Number.isFinite(Number(timeSeconds)) && Number(timeSeconds) > 0) opts.timeSeconds = Number(timeSeconds);
+    if (Number.isFinite(Number(timeSeconds)) && Number(timeSeconds) > 0) {
+        opts.timeSeconds = Number(timeSeconds);
+        opts.timeLimitSeconds = Number(timeSeconds);
+    }
     return HostPowerReactorGameplayManager.launchHostPowerReactorGameplay(opts);
 };
 

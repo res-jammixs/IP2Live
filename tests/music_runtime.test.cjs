@@ -78,6 +78,19 @@ async function main() {
         [2, song(2, 'Typing.mp3', 4)],
         [3, song(3, 'Glitch01.mp3', 4)],
     ]);
+    const registry = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'songs.json'), 'utf8'));
+    for (const group of registry.list.filter(group => group.k === 1 || group.k === 4)) {
+        const target = group.k === 1 ? music : effects;
+        for (const entry of group.v.filter(entry => entry.id > 0)) {
+            if (!target.has(entry.id)) target.set(entry.id, song(entry.id, entry.name, group.k));
+        }
+    }
+    for (const directory of ['story-prologue', 'gameplay']) {
+        const bundled = JSON.parse(fs.readFileSync(path.join(__dirname, '..', `Plugins/IP2Live_Core/assets/audio/${directory}/manifest.json`), 'utf8'));
+        for (const entry of bundled.entries) {
+            (entry.kind === 1 ? music : effects).set(entry.id, song(entry.id, entry.name, entry.kind));
+        }
+    }
     const nativeCalls = [];
     let replaceOnNextPlay = null;
     const managerSongs = {

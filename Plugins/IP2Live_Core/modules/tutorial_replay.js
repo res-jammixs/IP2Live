@@ -3,7 +3,9 @@ class IP2LiveTutorialReplay {
     constructor() { this.session = null; this._serial = 0; }
 
     launch(gameplayId, context) {
-        const practice = !!(context && context.practiceMode);
+        const endless = !!(context && context.endlessMode);
+        const practice = endless || !!(context && context.practiceMode);
+        const pvp = !!(context && context.pvpMode);
         const developerTest = !!(context && context.developerTest);
         const practiceGameplay = practice && !!context.practiceGameplay;
         const gm = IP2Live.GameManager;
@@ -32,8 +34,16 @@ class IP2LiveTutorialReplay {
         }
         spec.tutorial = !practiceGameplay;
         if (practiceGameplay) spec.harderIntro = false;
-        spec.practiceMode = practice;
+        spec.practiceMode = practice && !pvp && !endless;
         spec.practiceGameplay = practiceGameplay;
+        spec.pvpMode = pvp;
+        if (endless) {
+            spec.endlessMode = true; spec.featureMode = 'endless';
+            spec.timeLimitSeconds = context.timeLimitSeconds;
+        }
+        if (pvp) spec.pvpProblemSeed = context.pvpProblemSeed;
+        spec.tutorialCourse = !!(context && context.tutorialCourse);
+        if ((pvp || endless) && context.handoffKey) spec.handoffKey = context.handoffKey;
         spec.tutorialSource = { mapId: source.mapId, questId: source.id, objectiveId: source.dialogueObjectiveId || source.objectiveId };
         spec.id = token;
         spec.mapId = mapId;
@@ -42,8 +52,10 @@ class IP2LiveTutorialReplay {
             spec, tutorialReplay: true, mapId, questId: token, objectiveId: source.objectiveId,
             developerTest,
             tutorialMode: !practiceGameplay, guidedTutorial: !practiceGameplay, tutorialFeedback: !practiceGameplay,
-            practiceMode: practice, practiceGameplay,
-            maxAttempts: practice ? Infinity : 3, enforceAttemptLimit: false,
+            practiceMode: practice && !pvp && !endless, practiceGameplay,
+            pvpMode: pvp,
+            maxAttempts: practice && !pvp && !endless ? Infinity : 3, enforceAttemptLimit: pvp || endless,
+            tutorialCourse: spec.tutorialCourse,
             showIntro: false, useLoading: false, mode: 'push', _fromGameManager: true,
         });
         const savedOwnerState = {};
@@ -52,7 +64,7 @@ class IP2LiveTutorialReplay {
         }
         const music = IP2Live.MusicManager;
         this.session = {
-            gameplayId, options, owner, savedOwnerState, screen: null, practice, developerTest,
+            gameplayId, options, owner, savedOwnerState, screen: null, practice, pvp, endless, developerTest,
             cidrState: gm._clonePlain(IP2Live.CIDRGameplayState),
             hadCidrState: Object.prototype.hasOwnProperty.call(IP2Live, 'CIDRGameplayState'),
             musicZone: practice && music && music.ZONE ? music.ZONE.MAIN_MENU : music && typeof music._resolveStageZoneFromMap === 'function'
@@ -65,6 +77,7 @@ class IP2LiveTutorialReplay {
         if ('_introShownMaps' in savedOwnerState) owner._introShownMaps = {};
         if ('_tutorialShownKeys' in savedOwnerState) owner._tutorialShownKeys = {};
         if (practice || developerTest) delete IP2Live.CIDRGameplayState;
+        if ((pvp || endless) && context.cidrState) IP2Live.CIDRGameplayState = gm._clonePlain(context.cidrState);
         if (owner._musicRestoreTimer) {
             clearTimeout(owner._musicRestoreTimer);
             owner._musicRestoreTimer = null;
@@ -77,6 +90,11 @@ class IP2LiveTutorialReplay {
             else if (typeof dialogue.discardActive === 'function') dialogue.discardActive();
         }
         gm._activeGameplayNode = token;
+        if (practice && !developerTest && IP2Live.FeatureTelemetry) {
+            this.session.featureSession = endless ? IP2Live.EndlessMode && IP2Live.EndlessMode.telemetrySession
+                : pvp ? IP2Live.PVPMode && IP2Live.PVPMode.telemetrySession : IP2Live.PracticeMode && IP2Live.PracticeMode.telemetrySession;
+            this.session.featureRound = IP2Live.FeatureTelemetry.startRound(this.session.featureSession, gameplayId, options);
+        }
         const open = () => {
             if (!this.session || this.session.options !== options) return;
             if (practice) gm.state = gm.STATE.GAMEPLAY_ACTIVE;
@@ -103,11 +121,17 @@ class IP2LiveTutorialReplay {
         screen.options = Object.assign({}, screen.options, {
             tutorialReplay: true, spec: options.spec, gameplayId: replay.gameplayId,
             questId: options.questId, objectiveId: options.objectiveId, mapId: options.mapId,
-            practiceMode: replay.practice, practiceGameplay: options.practiceGameplay,
+            practiceMode: replay.practice && !replay.pvp && !replay.endless, practiceGameplay: options.practiceGameplay,
+            endlessMode: replay.endless, featureMode: replay.endless ? 'endless' : screen.options && screen.options.featureMode,
             developerTest: replay.developerTest,
+            pvpMode: replay.pvp,
+            pvpProblemSeed: options.pvpProblemSeed,
+            tutorialCourse: options.tutorialCourse,
         });
         replay.screen = screen;
-        if (replay.practice && IP2Live.PracticeMode) IP2Live.PracticeMode.configureScreen(screen);
+        if (replay.endless && IP2Live.EndlessMode) IP2Live.EndlessMode.configureScreen(screen);
+        else if (replay.pvp && IP2Live.PVPMode) IP2Live.PVPMode.configureScreen(screen);
+        else if (replay.practice && IP2Live.PracticeMode) IP2Live.PracticeMode.configureScreen(screen);
         return true;
     }
 
@@ -130,6 +154,12 @@ class IP2LiveTutorialReplay {
                 },
             });
             return true;
+        }
+        const completedCidrState = replay.pvp || replay.endless ? gm._clonePlain(IP2Live.CIDRGameplayState) : null;
+        if (replay.endless && IP2Live.EndlessMode) result = IP2Live.EndlessMode.prepareResult(gameplayId, outcome, result, replay.screen);
+        if (replay.featureRound && IP2Live.FeatureTelemetry) {
+            const timed = gm._attachReportTiming(gameplayId, Object.assign({}, replay.options, { result }));
+            IP2Live.FeatureTelemetry.endRound(replay.featureSession, replay.featureRound, outcome, timed.result || result);
         }
         this.session = null;
         gm._activeGameplayNode = null;
@@ -155,6 +185,14 @@ class IP2LiveTutorialReplay {
             gameplayId, mapId: replay.options.mapId, questId: replay.returnQuestId, objectiveId: replay.returnObjectiveId,
             payload: { action: outcome, tutorialQuestId: replay.options.spec.tutorialSource.questId },
         });
+        if (replay.endless && IP2Live.EndlessMode) {
+            IP2Live.EndlessMode.onRoundFinished(gameplayId, outcome, result, completedCidrState);
+            return true;
+        }
+        if (replay.pvp && IP2Live.PVPMode) {
+            IP2Live.PVPMode.onRoundFinished(gameplayId, outcome, result, completedCidrState);
+            return true;
+        }
         if (replay.practice && IP2Live.PracticeMode) {
             IP2Live.PracticeMode.onReplayFinished(outcome);
             return true;

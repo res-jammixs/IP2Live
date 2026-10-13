@@ -27,7 +27,7 @@ class IP2LiveCIDRPanelGameplayScreen extends Scene.Base {
 
         const explicitTime = Number(timeSeconds);
         this._constructorTimeSeconds =
-            Number.isFinite(explicitTime) && explicitTime > 0
+            typeof timeSeconds !== 'boolean' && Number.isFinite(explicitTime) && explicitTime > 0
                 ? explicitTime
                 : null;
 
@@ -40,6 +40,7 @@ class IP2LiveCIDRPanelGameplayScreen extends Scene.Base {
     }
 
     _configure() {
+        this.problemRandom = IP2Live.PVPRules ? IP2Live.PVPRules.problemRandom(this.options) : Math.random;
         this.values = [128, 64, 32, 16, 8, 4, 2, 1];
         this.totalRows = 4;
         this.totalCols = 8;
@@ -96,8 +97,8 @@ class IP2LiveCIDRPanelGameplayScreen extends Scene.Base {
         //
         // Priority:
         // 1) constructor(options, timeSeconds)
-        // 2) options.timeSeconds
-        // 3) legacy options.solveTimeSeconds
+        // 2) options.timeLimitSeconds / timeSeconds / legacy solveTimeSeconds
+        // 3) the same properties on options.spec
         // 4) default: 180 seconds (3 minutes)
         const optionTime = Number(
             this.options.timeSeconds !== undefined
@@ -105,8 +106,9 @@ class IP2LiveCIDRPanelGameplayScreen extends Scene.Base {
                 : this.options.solveTimeSeconds
         );
 
-        const requestedTime =
-            this._constructorTimeSeconds !== null
+        const requestedTime = IP2Live.GameplayTimer
+            ? IP2Live.GameplayTimer.resolve(this.options, this._constructorTimeSeconds, 180, ['solveTimeSeconds'])
+            : this._constructorTimeSeconds != null
                 ? this._constructorTimeSeconds
                 : (
                     Number.isFinite(optionTime) && optionTime > 0
@@ -114,7 +116,10 @@ class IP2LiveCIDRPanelGameplayScreen extends Scene.Base {
                         : 180
                 );
 
-        this.solveTimeSeconds = Math.max(5, requestedTime);
+        this.solveTimeSeconds = Math.max(1, requestedTime);
+        this.timeLimitSeconds = this.solveTimeSeconds;
+        this.timerEnabled = true;
+        if (IP2Live.GameplayTimer) IP2Live.GameplayTimer.forget(this);
         this.solveTimerMaxTicks = Math.round(this.solveTimeSeconds * 60);
         this.solveTimerTicks = this.solveTimerMaxTicks;
 
@@ -149,6 +154,7 @@ class IP2LiveCIDRPanelGameplayScreen extends Scene.Base {
     }
 
     _randomUniqueTargetMask() {
+        const sharedProblem = IP2Live.PVPRules && IP2Live.PVPRules.problemSeedFor(this.options) !== null;
         const allClasses = [
             // Keep the partially filled octet inside the class's native mask
             // boundary so each generated mask is visibly A, B, or C.
@@ -175,7 +181,7 @@ class IP2LiveCIDRPanelGameplayScreen extends Scene.Base {
             lastMask = String(IP2Live.CIDRGameplayState.latest.mask);
         }
 
-        const selectedClass = classes[Math.floor(Math.random() * classes.length)] || classes[0];
+        const selectedClass = classes[Math.floor(this.problemRandom() * classes.length)] || classes[0];
         const orderedClasses = [selectedClass].concat(classes.filter((entry) => entry !== selectedClass));
         const fresh = [];
         for (let ci = 0; ci < orderedClasses.length; ci++) {
@@ -183,22 +189,22 @@ class IP2LiveCIDRPanelGameplayScreen extends Scene.Base {
             for (let cidr = cls.minCIDR; cidr <= cls.maxCIDR; cidr++) {
                 const mask = this._cidrToMask(cidr);
                 if (!mask) continue;
-                if (mask === lastMask) continue;
-                if (IP2Live.CIDRGameplayState.generatedMasks[mask]) continue;
+                if (!sharedProblem && mask === lastMask) continue;
+                if (!sharedProblem && IP2Live.CIDRGameplayState.generatedMasks[mask]) continue;
                 fresh.push({ mask, className: cls.name, preferred: cls === selectedClass });
             }
         }
         if (fresh.length > 0) {
             const preferredFresh = fresh.filter((entry) => entry.preferred);
             const pool = preferredFresh.length ? preferredFresh : fresh;
-            const chosen = pool[Math.floor(Math.random() * pool.length)];
+            const chosen = pool[Math.floor(this.problemRandom() * pool.length)];
             this.generatedTargetClass = chosen.className;
             return chosen.mask;
         }
 
         for (let tries = 0; tries < 32; tries++) {
-            const cls = classes[Math.floor(Math.random() * classes.length)];
-            const cidr = cls.minCIDR + Math.floor(Math.random() * (cls.maxCIDR - cls.minCIDR + 1));
+            const cls = classes[Math.floor(this.problemRandom() * classes.length)];
+            const cidr = cls.minCIDR + Math.floor(this.problemRandom() * (cls.maxCIDR - cls.minCIDR + 1));
             const mask = this._cidrToMask(cidr);
             if (!mask) continue;
             if (mask !== lastMask) {
@@ -350,8 +356,10 @@ class IP2LiveCIDRPanelGameplayScreen extends Scene.Base {
     }
 
     _updateSolveTimer() {
-        if (!this._shouldRunSolveTimer()) return;
-        this.solveTimerTicks = Math.max(0, this.solveTimerTicks - 1);
+        const running = this._shouldRunSolveTimer();
+        const ticks = IP2Live.GameplayTimer ? IP2Live.GameplayTimer.deltaMs(this, running) * 0.06 : 1;
+        if (!running) return;
+        this.solveTimerTicks = Math.max(0, this.solveTimerTicks - ticks);
         if (this.solveTimerTicks <= 0) this._beginTimeoutFailure();
     }
 
@@ -1069,7 +1077,9 @@ class IP2LiveCIDRPanelGameplayScreen extends Scene.Base {
 
     _assessmentResult() {
         const history = this.decisionHistory || [], correct = history.filter(row => row.correct).length;
-        return { telemetrySchemaVersion: 2, totalDecisions: history.length, correctDecisions: correct,
+        return { timerEnabled: true, timeLimitSeconds: this.solveTimeSeconds,
+            timeRemainingMs: Math.max(0, this.solveTimerTicks / 60 * 1000),
+            telemetrySchemaVersion: 2, totalDecisions: history.length, correctDecisions: correct,
             incorrectDecisions: history.length - correct, decisionHistory: history.map(row => ({ ...row })) };
     }
 
@@ -3229,7 +3239,9 @@ const CIDRPanelGameplayManager = {
     _playMusicZone(zoneName) {
         const music = IP2Live.MusicManager;
         if (!music || !music.ZONE || !music.ZONE[zoneName] || typeof music.play !== 'function') return false;
-        music.play(music.ZONE[zoneName]);
+        if (zoneName.indexOf('GAMEPLAY_') === 0 && typeof music.playGameplay === 'function') music.playGameplay('ip_cidr_binary_panel');
+        else if (zoneName.indexOf('STAGE_') === 0 && typeof music.restoreContext === 'function') music.restoreContext();
+        else music.play(music.ZONE[zoneName]);
         return true;
     },
 
@@ -3272,7 +3284,9 @@ const CIDRPanelGameplayManager = {
             //   { ..., timeSeconds: 120 }
             //
             // If nothing is supplied, the screen constructor defaults to 180.
-            const configuredTimeSeconds = Number(
+            const configuredTimeSeconds = IP2Live.GameplayTimer
+                ? IP2Live.GameplayTimer.resolve(opts, undefined, 180, ['solveTimeSeconds'])
+                : Number(
                 opts.timeSeconds !== undefined
                     ? opts.timeSeconds
                     : (
@@ -3287,6 +3301,8 @@ const CIDRPanelGameplayManager = {
             );
 
             const screen = new IP2LiveCIDRPanelGameplayScreen({
+                ...(IP2Live.GameplayTimer ? IP2Live.GameplayTimer.launchOptions(opts) : {}),
+                pvpMode: opts.pvpMode, pvpProblemSeed: opts.pvpProblemSeed,
                 targetMask: opts.targetMask,
                 targetClass: opts.targetClass,
                 targetClasses: opts.targetClasses,
@@ -3489,8 +3505,10 @@ IP2Live.CIDRPanelGameplayManager = CIDRPanelGameplayManager;
 IP2Live.CIDRPanelGameplayScreen = IP2LiveCIDRPanelGameplayScreen;
 window.IP2LiveCIDRPanelGameplayManager = CIDRPanelGameplayManager;
 window.IP2LiveCIDRPanelGameplayScreen = IP2LiveCIDRPanelGameplayScreen;
-window.startCIDRGameplayThree = function (options) {
-    return CIDRPanelGameplayManager.launchCIDRGameplay(options || {});
+window.startCIDRGameplayThree = function (options, timeSeconds) {
+    const opts = Object.assign({}, options || {});
+    if (Number.isFinite(Number(timeSeconds)) && Number(timeSeconds) > 0) opts.timeLimitSeconds = Number(timeSeconds);
+    return CIDRPanelGameplayManager.launchCIDRGameplay(opts);
 };
 
 console.log('[IP2Live] ip_cidrpanel_gameplay.js module loaded.');

@@ -376,7 +376,7 @@
 
             const manager = this;
             class IP2LiveHarderWiresGameplayScreen extends IP2Live.WiresGameplayScreen {
-                constructor(options) {
+                constructor(options, timeSeconds) {
                     super(Object.assign({}, options || {}, {
                         mode: 'harder',
                         gameplayId: 'ip_class_wires_harder',
@@ -385,7 +385,7 @@
                         guidedTutorial: false,
                         adaptiveReroll: true,
                         strictTutorial: !!(options && options.strictTutorial),
-                    }));
+                    }), timeSeconds);
                 }
 
                 _resetPuzzleState() {
@@ -427,7 +427,9 @@
         _playMusicZone(zoneName) {
             const music = IP2Live.MusicManager;
             if (!music || !music.ZONE || !music.ZONE[zoneName] || typeof music.play !== 'function') return false;
-            music.play(music.ZONE[zoneName]);
+            if (zoneName.indexOf('GAMEPLAY_') === 0 && typeof music.playGameplay === 'function') music.playGameplay('ip_class_wires');
+            else if (zoneName.indexOf('STAGE_') === 0 && typeof music.restoreContext === 'function') music.restoreContext();
+            else music.play(music.ZONE[zoneName]);
             return true;
         },
 
@@ -438,12 +440,7 @@
                 clearTimeout(this._musicRestoreTimer);
                 this._musicRestoreTimer = null;
             }
-            if (typeof music.stop === 'function') music.stop(120);
-            this._musicRestoreTimer = setTimeout(() => {
-                this._musicRestoreTimer = null;
-                this._playMusicZone('STAGE_1');
-            }, 150);
-            return true;
+            return this._playMusicZone('STAGE_1');
         },
 
         launchHarderWireGameplay(options) {
@@ -463,6 +460,7 @@
             const harderPuzzleEntries = this._generateHarderPuzzleEntries(wireCount);
             const HarderScreenClass = this._ensureHarderScreenClass() || IP2Live.WiresGameplayScreen;
             const createScreen = () => new HarderScreenClass({
+                ...(IP2Live.GameplayTimer ? IP2Live.GameplayTimer.launchOptions(opts) : {}),
                 mode: 'harder',
                 gameplayId: 'ip_class_wires_harder',
                 maxAttempts: 3,

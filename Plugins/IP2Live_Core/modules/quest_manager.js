@@ -163,7 +163,15 @@ class IP2LiveQuestManager {
 
         if (this._arrowGuide) this._arrowGuide.setObjective(this.currentObjective());
         if (Manager && Manager.Stack) Manager.Stack.requestPaintHUD = true;
+        if (opts.restart) this._notifyProgressChanged(this.activeMapId, 'quest-restarted');
         return true;
+    }
+
+    _notifyProgressChanged(mapId, reason) {
+        const gm = IP2Live.GameManager;
+        if (gm && typeof gm.emit === 'function') gm.emit(gm.EVENT?.QUEST_PROGRESS_CHANGED || 'quest.progressChanged', {
+            mapId: Number(mapId) || this.activeMapId, questId: this.activeQuestId, reason,
+        });
     }
 
     setQuestState(options) {
@@ -225,7 +233,7 @@ class IP2LiveQuestManager {
             const firstOpen = this._firstOpenObjective(this.activeQuestId);
             const done = this.completedObjectives[this.activeQuestId] || {};
             const requestedObjective = state.activeObjectiveId || null;
-            this.activeObjectiveId = (requestedObjective && !done[requestedObjective]) ? requestedObjective : firstOpen;
+            this.activeObjectiveId = (requestedObjective && this._objectiveById(this.currentQuest(), requestedObjective) && !done[requestedObjective]) ? requestedObjective : firstOpen;
         }
 
         if (!this.activeQuestId && this.activeMapId) {
@@ -240,6 +248,7 @@ class IP2LiveQuestManager {
         if (!this.guideActive && this._arrowGuide) this._arrowGuide.clear();
         if (this._arrowGuide) this._arrowGuide.setObjective(this.currentObjective());
         if (Manager && Manager.Stack) Manager.Stack.requestPaintHUD = true;
+        this._notifyProgressChanged(this.activeMapId, 'quest-progress-restored');
         return true;
     }
 
@@ -405,7 +414,11 @@ class IP2LiveQuestManager {
         this.animTick++;
 
         const context = this._buildContext(sceneOrContext);
+        // Map.update may be called to paint a transition's background. It must
+        // not complete an exit or reset restored objectives behind that overlay.
+        if (context.scene && (context.scene.loading || (Manager.Stack.top && Manager.Stack.top !== context.scene))) return null;
         this._syncMapQuestQueue(context);
+        this._resumeMapQuestGuide(context);
 
         const objective = this.currentObjective();
         if (!this.visible || this.suppressedByDialogue || !objective || this._stageSpawnPending(context.scene)) {
@@ -427,6 +440,21 @@ class IP2LiveQuestManager {
         }
 
         return null;
+    }
+
+    _resumeMapQuestGuide(context) {
+        const mapId = this._getMapId(context.scene), queue = this._mapQuestQueue(mapId);
+        if (!queue.autoStart || !queue.questIds.includes(this.activeQuestId) || !this.currentObjective()) return;
+        const dialogue = IP2Live.DialogueManager;
+        // Suppression is transient UI state, never durable quest progression.
+        if (!dialogue || !dialogue.isActive()) this.suppressedByDialogue = false;
+        const title = IP2Live.WorldTitleOverlay;
+        if ((dialogue && dialogue.isActive()) || (title && title.isActive()) ||
+            (IP2Live.GameManager && IP2Live.GameManager._activeGameplayNode)) return;
+        this.visible = true;
+        this.guideActive = true;
+        this.allowCompletion = true;
+        this._mapQuestMode = true;
     }
 
     drawHUD(ctx) {
@@ -687,16 +715,25 @@ class IP2LiveQuestManager {
 
         const queue = this._mapQuestQueue(mapId);
         if (!queue.autoStart) return;
-        if (this.activeQuestId && this.activeObjectiveId) return;
+        if (queue.questIds.includes(this.activeQuestId) && this.currentObjective() &&
+            !(this.completedObjectives[this.activeQuestId] || {})[this.activeObjectiveId]) return;
         if (this._showFinishedPanel && !this._queueHasOpenQuest(queue)) return;
         this._showFinishedPanel = false;
         this._startNextQuestForMap(mapId);
     }
 
     _syncStageFoundation() {
-        if (IP2Live.MapManager && typeof IP2Live.MapManager.registerStageQuests === 'function') {
-            this._stageFoundationSynced = !!IP2Live.MapManager.registerStageQuests(this) || this._stageFoundationSynced;
-        }
+        const mapManager = IP2Live.MapManager, gameManager = IP2Live.GameManager;
+        if (!mapManager || typeof mapManager.registerStageQuests !== 'function') return;
+        // Registration walks every floor. Repeat only when a manager/catalog is
+        // replaced (including the asynchronous GameManager boot), not each frame.
+        if (this._stageFoundationSynced && this._foundationMapManager === mapManager &&
+            this._foundationGameManager === gameManager && this._foundationCatalog === (gameManager && gameManager.flowConfig)) return;
+        if (!mapManager.registerStageQuests(this)) return;
+        this._stageFoundationSynced = true;
+        this._foundationMapManager = mapManager;
+        this._foundationGameManager = gameManager;
+        this._foundationCatalog = gameManager && gameManager.flowConfig;
     }
 
     _stageSpawnPending(scene) {
@@ -797,12 +834,15 @@ class IP2LiveQuestManager {
     _resetMapEntryQuests(mapId) {
         const queue = this._mapQuestQueue(mapId);
         const questIds = queue.questIds || [];
+        let changed = false;
         for (let i = 0; i < questIds.length; i++) {
             const quest = this.quests[questIds[i]];
             if (quest && quest.resetOnMapEnter) {
+                changed = changed || Object.keys(this.completedObjectives[quest.id] || {}).length > 0;
                 this.completedObjectives[quest.id] = {};
             }
         }
+        if (changed) this._notifyProgressChanged(mapId, 'floor-quests-reset');
     }
 
     _isQuestFinished(questId) {

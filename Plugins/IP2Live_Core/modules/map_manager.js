@@ -19,13 +19,6 @@ const MapManager = {
             stage: 1,
             level: 2,
             exit: { x: 26, y: 0, z: 0 },
-            introLines: [
-                'Congratulations, Hacker. You reached Stage 1 Level 2.',
-                '',
-                'Keep doing what you do best: hack your way deeper into the APEX facilities.',
-                'The first two nodes use the familiar IP wire-routing system. Stabilize them before moving deeper into this floor.',
-                'The third node introduces a new Patch Panel defense. I will guide you through it before you face that system on your own.',
-            ],
         },
         { id: 5, name: 'Stage 1 Level 3', stage: 1, level: 3 },
         { id: 6, name: 'Stage 1 Level 4', stage: 1, level: 4 },
@@ -35,13 +28,6 @@ const MapManager = {
             stage: 2,
             level: 1,
             exit: { x: 12, y: 0, z: 4 },
-            introLines: [
-                'Welcome to Stage 2 Level 1, Hacker.',
-                '',
-                'Your breach has reached the APEX subnet-control wing. To stop our advance, APEX encoded five access relays behind binary subnet-mask locks.',
-                'Your next task is to follow the route beacon to each CIDR Binary Panel. Every launch generates a fresh mask across the Class A, B, and C boundaries; rebuild it with the lamp array and enter the matching CIDR prefix.',
-                'Stabilize all five panels to break the lock and open the route deeper into the network.',
-            ],
         },
         {
             id: 8,
@@ -49,13 +35,6 @@ const MapManager = {
             stage: 2,
             level: 2,
             exit: { x: 34, y: 0, z: 19 },
-            introLines: [
-                'Welcome to Stage 2 Level 2, Hacker.',
-                '',
-                'APEX has chained each CIDR panel to a subnet-capacity simulator. Every panel now draws a fresh Class C mask in the 255.255.255.x range.',
-                'These panels use the normal lock protocol: a mistake does not change the active mask. The blinking interesting-octet row from the mask you solve will be carried into the next console as its calculation key.',
-                'Follow the route beacon through each paired panel. I will guide you through the first chain, then the remaining security nodes are yours to breach.',
-            ],
         },
         {
             id: 9,
@@ -63,24 +42,12 @@ const MapManager = {
             stage: 2,
             level: 3,
             exit: { x: 12, y: 0, z: 4 },
-            introLines: [
-                'Congratulations, Hacker. You reached Stage 2 Level 3.',
-                '',
-                'The task looks familiar, but APEX has activated its adaptive CIDR defense. Every wrong lamp pattern or CIDR prefix immediately burns the current subnet mask and replaces it with another one.',
-                'Stay precise. Only the mask you finally solve survives long enough to become the reference for the linked Subnet Simulator.',
-            ],
         },
         {
             id: 10,
             name: 'Stage 2 Level 4',
             stage: 2,
             level: 4,
-            introLines: [
-                'Congratulations, Hacker. You reached the final CIDR sector of Stage 2.',
-                '',
-                'These panels use the same binary-mask task, but every terminal is running the harder adaptive lock. One mistake changes the subnet mask, erases the old answer, and forces a fresh calculation.',
-                'Break every adaptive relay to finish the Stage 2 breach.',
-            ],
         },
         {
             id: 11,
@@ -88,13 +55,6 @@ const MapManager = {
             stage: 3,
             level: 1,
             spawn: { x: 8, y: 0, z: 17 },
-            introLines: [
-                'Welcome to Stage 3 Level 1.',
-                '',
-                'Before you build quarantine routes, you must learn how much host power each subnet actually needs.',
-                'Every node on this floor is a Host-Power Reactor. Find the smallest exponent h where 2^h - 2 can hold the required usable hosts.',
-                'Begin with the guided calibration reactor, then stabilize the remaining four nodes. This is the bridge to the quarantine systems ahead.',
-            ],
         },
         {
             id: 12,
@@ -102,13 +62,6 @@ const MapManager = {
             stage: 3,
             level: 2,
             spawn: { x: 6, y: 0, z: 16 },
-            introLines: [
-                'Welcome to Stage 3 Level 2.',
-                '',
-                'Start by proving the host capacity at the first two Host-Power Reactors.',
-                'Once those relays are stable, the next node introduces CIDR Quarantine: connect the blue endpoints, avoid virus tiles, and finish on the optimized prefix.',
-                'Use the host-power calculation as your capacity guide, then secure the remaining quarantine nodes.',
-            ],
         },
         {
             id: 13,
@@ -116,13 +69,6 @@ const MapManager = {
             stage: 3,
             level: 3,
             spawn: { x: 8, y: 0, z: 17 },
-            introLines: [
-                'Welcome to Stage 3 Level 3.',
-                '',
-                'This sector combines Host-Power Reactors with the single-route CIDR Quarantine you already know.',
-                'The final node introduces Subnet Blaster. Shoot formula barriers to recover network and broadcast addresses, then defeat APEX.',
-                'Follow the route beacon in order. Calculate capacity, stabilize each quarantine route, then complete subnet analysis training.',
-            ],
         },
         { id: 14, name: 'Stage 3 Level 4', stage: 3, level: 4 },
         { id: 15, name: 'Stage 4 Level 1', stage: 4, level: 1 },
@@ -356,6 +302,7 @@ const MapManager = {
         if (this._stageRouteLocked) return false;
 
         const currentStage = this.stageFor(currentMapId);
+        if (!currentStage) return false;
         const nextId = this.nextStage(Number(currentMapId));
         if (!nextId) {
             this._stageRouteLocked = true;
@@ -468,7 +415,9 @@ const MapManager = {
             }
             // Start tutorial music immediately on transition
             if (IP2Live.MusicManager) {
-                IP2Live.MusicManager.play(IP2Live.MusicManager.ZONE.TUTORIAL);
+                const music = IP2Live.MusicManager;
+                if (typeof music.playMap === 'function') music.playMap(tutorialMapId);
+                else music.play(music.ZONE.TUTORIAL);
             }
 
             // Allow the map scene to fully initialise before showing the tutorial.
@@ -679,14 +628,14 @@ const MapManager = {
     },
 
     _stageIntroDialogue(stage) {
-        const exit = this.exitFor(stage.id);
+        const lore = IP2Live.StoryLore?.floorDialogue(stage.id);
+        if (lore) return lore;
         const lines = stage.introLines || [
             'Welcome to ' + stage.name + '.',
             '',
-            'Context placeholder: this subnet sector is still being prepared for its full gameplay layer.',
-            'For now, the route beacon is online so you can verify world-to-world connectivity.',
-            'Reach the highlighted exit node to advance to the next registered world.',
-            this._targetDetail(exit),
+            'This sector carries another part of the network APEX uses to keep the planet\'s resources from its people.',
+            'Follow the route beacon and breach the access controls ahead. Every floor brings us closer to the command core.',
+            'We are reclaiming working services so everyone can use them again.',
         ];
         return {
             title: 'WORLD BRIEF',
@@ -696,6 +645,11 @@ const MapManager = {
     },
 
     _showCampaignCompleteScreen(stage) {
+        if (IP2Live.StoryCompletion) {
+            const started = IP2Live.StoryCompletion.start(stage);
+            if (!started) this._stageRouteLocked = false;
+            return started;
+        }
         const payload = {
             stage: stage || null,
             completedAt: new Date().toISOString(),
@@ -847,9 +801,11 @@ const MapManager = {
     _ensureGameplayStageReady(scene) {
         if (!scene) return false;
         const mapId = this._getMapIdFromScene(scene);
-        if (!this.isGameplayStage(mapId)) return false;
-
+        // Music belongs to the loaded floor, including restored tutorial maps.
+        // It must not depend on a new-game callback or an entry dialogue.
         this._ensureStageMusic(scene, mapId);
+        if (IP2Live.StoryCompletion && IP2Live.StoryCompletion.resumeIfCompleted(scene)) return true;
+        if (!this.isGameplayStage(mapId)) return false;
 
         if (!scene._ip2liveStageFoundationSynced) {
             scene._ip2liveStageFoundationSynced = this.syncStageFoundation();
@@ -871,16 +827,20 @@ const MapManager = {
         const stage = this.stageFor(mapId);
         const music = IP2Live.MusicManager;
         if (!stage || !music || !music.ZONE || typeof music.play !== 'function') return false;
+        if (scene.loading || (Manager.Stack && Manager.Stack.top && Manager.Stack.top !== scene)) return false;
 
         let zone = null;
-        if (stage.stage === 1) zone = music.ZONE.STAGE_1;
+        if (typeof music.zoneForMap === 'function') zone = music.zoneForMap(mapId);
+        else if (stage.tutorial) zone = music.ZONE.TUTORIAL;
+        else if (stage.stage === 1) zone = music.ZONE.STAGE_1;
         else if (stage.stage === 2) zone = music.ZONE.STAGE_2 || music.ZONE.STAGE_1;
         else if (stage.stage === 3) zone = music.ZONE.STAGE_3 || music.ZONE.STAGE_1;
         else if (stage.stage === 4) zone = music.ZONE.STAGE_4 || music.ZONE.STAGE_1;
         if (!zone) return false;
 
         const musicKey = String(mapId) + ':' + zone;
-        if (scene._ip2liveMusicZoneKey === musicKey) return true;
+        if (scene._ip2liveMusicZoneKey === musicKey &&
+            (typeof music.isZoneActive !== 'function' || music.isZoneActive(zone))) return true;
         if (scene._ip2liveMusicPendingKey === musicKey) return true;
         if (Number(scene._ip2liveMusicRetryAt) > Date.now()) return false;
 

@@ -4,9 +4,10 @@
  */
 
 class IP2LiveCIDRQuarantineGameplayScreen extends Scene.Base {
-    constructor(options) {
+    constructor(options, timeSeconds) {
         super(true);
         this.options = options || {};
+        this._constructorTimeSeconds = timeSeconds;
         this._configure();
     }
 
@@ -16,6 +17,8 @@ class IP2LiveCIDRQuarantineGameplayScreen extends Scene.Base {
     }
 
     _configure() {
+        this.problemRandom = IP2Live.PVPRules ? IP2Live.PVPRules.problemRandom(this.options) : Math.random;
+        this.sharedProblemSeed = IP2Live.PVPRules ? IP2Live.PVPRules.problemSeedFor(this.options) : null;
         this.tools = IP2Live.CIDRTools;
         this.animTick = 0;
         this.finished = false;
@@ -97,8 +100,12 @@ class IP2LiveCIDRQuarantineGameplayScreen extends Scene.Base {
         this.segmentationRects = [];
         const configured = this.options.timeLimitSeconds !== undefined ? this.options.timeLimitSeconds
             : (this.options.spec || {}).timeLimitSeconds;
-        this.timeLimitSeconds = configured === 0 ? 0
+        this.timeLimitSeconds = IP2Live.GameplayTimer
+            ? IP2Live.GameplayTimer.resolve(this.options, this._constructorTimeSeconds, 180, [], true)
+            : configured === 0 ? 0
             : (Number.isFinite(Number(configured)) && Number(configured) > 0 ? Number(configured) : 180);
+        this.timerEnabled = this.timeLimitSeconds > 0;
+        if (IP2Live.GameplayTimer) IP2Live.GameplayTimer.forget(this);
         this.questElapsedMs = 0;
         this.lastUpdateAt = Date.now();
     }
@@ -141,7 +148,7 @@ class IP2LiveCIDRQuarantineGameplayScreen extends Scene.Base {
             this._fillRandomViruses(viruses, blockedKeys, start, cursor, solutionBufferKeys, edgeBuffer, desiredVirusCount, 950);
 
             return {
-                id: ['path-quarantine', questIndex, classInfo.ipClass, targetCIDR, Date.now(), Math.floor(Math.random() * 9999)].join(':'),
+                id: ['path-quarantine', questIndex, classInfo.ipClass, targetCIDR, this.sharedProblemSeed === null ? Date.now() : this.sharedProblemSeed, Math.floor(this.problemRandom() * 9999)].join(':'),
                 questIndex,
                 difficulty,
                 directionWeights,
@@ -202,10 +209,12 @@ class IP2LiveCIDRQuarantineGameplayScreen extends Scene.Base {
     }
 
     _updateQuestClock(now = Date.now()) {
-        const delta = Math.max(0, now - this.lastUpdateAt);
+        const running = !this.finished && !this._classUnlockActive(now) && !this.tutorialPromptActive && !this._isDialogueActive()
+            && !(IP2Live.GameplayPause && IP2Live.GameplayPause.menuOpen)
+            && (this._isPrerequisitePhase() || this.phase === 'build');
+        const delta = IP2Live.GameplayTimer ? IP2Live.GameplayTimer.deltaMs(this, running, now) : Math.max(0, now - this.lastUpdateAt);
         this.lastUpdateAt = now;
-        if (this.finished || this._classUnlockActive(now) || this.tutorialPromptActive || this._isDialogueActive() || (IP2Live.GameplayPause && IP2Live.GameplayPause.menuOpen)) return;
-        if (!this._isPrerequisitePhase() && this.phase !== 'build') return;
+        if (!running) return;
         this.questElapsedMs += delta;
         if (this.timeLimitSeconds && this.questElapsedMs >= this.timeLimitSeconds * 1000) {
             this.questElapsedMs = this.timeLimitSeconds * 1000;
@@ -302,6 +311,8 @@ class IP2LiveCIDRQuarantineGameplayScreen extends Scene.Base {
     }
 
     _rerollClassLock() {
+        // A mistake costs time/attempts in a race; it cannot replace the shared question.
+        if (this.sharedProblemSeed !== null) { this.answer = ''; return; }
         const oldViruses = this.problem.viruses.map((tile) => this._cloneTile(tile));
         const choices = ['A', 'B', 'C'].filter((letter) => letter !== this.problem.ipClass);
         const nextClass = choices[this._randomInt(0, choices.length - 1)];
@@ -1473,7 +1484,8 @@ class IP2LiveCIDRQuarantineGameplayScreen extends Scene.Base {
             this.options.onFailed(Object.assign({}, result, {
                 gameplayId: 'ip_cidr_quarantine',
                 passed: false,
-                reason: 'attempts_exhausted',
+                reason: result && result.reason === 'virus_overrun' && IP2Live.GameplayTimer
+                    && IP2Live.GameplayTimer.isEndless(this.options) ? 'time_expired' : 'attempts_exhausted',
                 attemptsUsed: classLockout ? 3 : this.attemptsUsed,
                 maxAttempts: classLockout ? 3 : this.maxAttempts,
                 retries: classLockout ? 2 : this.attemptsUsed,
@@ -2398,7 +2410,7 @@ class IP2LiveCIDRQuarantineGameplayScreen extends Scene.Base {
         const min = range.min;
         const max = range.max;
         if (max <= min) return min;
-        const roll = Math.random();
+        const roll = this.problemRandom();
         const r1 = Math.max(min, Math.min(max, 1));
         const r2 = Math.max(min, Math.min(max, 2));
         const r3 = Math.max(min, Math.min(max, 3));
@@ -2458,6 +2470,8 @@ class IP2LiveCIDRQuarantineGameplayScreen extends Scene.Base {
             allocatedSubnets: this.problem.allocatedSubnets,
             timeLimitSeconds: this.timeLimitSeconds,
             elapsedSeconds: this.questElapsedMs / 1000,
+            timerEnabled: this.timeLimitSeconds > 0,
+            timeRemainingMs: this.timeLimitSeconds > 0 ? Math.max(0, this.timeLimitSeconds * 1000 - this.questElapsedMs) : null,
             targetAddedBits: this.problem.targetAddedBits,
             targetHostBits: this.problem.targetHostBits,
             targetBorrowedBits: this.problem.borrowedBits,
@@ -2701,7 +2715,7 @@ class IP2LiveCIDRQuarantineGameplayScreen extends Scene.Base {
         const viruses = [];
         this._fillRandomViruses(viruses, blockedKeys, start, end, solutionBufferKeys, this._virusEdgeBuffer(), Math.min(20, difficulty.baseViruses), 400);
         return {
-            id: ['path-quarantine-fallback', questIndex, Date.now(), Math.floor(Math.random() * 9999)].join(':'),
+            id: ['path-quarantine-fallback', questIndex, this.sharedProblemSeed === null ? Date.now() : this.sharedProblemSeed, Math.floor(this.problemRandom() * 9999)].join(':'),
             questIndex,
             difficulty,
             directionWeights: this._normalizeDirectionWeights(this.directionWeights),
@@ -2739,6 +2753,7 @@ class IP2LiveCIDRQuarantineGameplayScreen extends Scene.Base {
             { ipClass: 'C', originalCIDR: 24, minAddedBits: 1, maxAddedBits: 4 },
         ];
         if (classOverride) return classes.find((c) => c.ipClass === classOverride) || classes[2];
+        if (this.sharedProblemSeed !== null) return classes[this._randomInt(0, classes.length - 1)];
         let bag = IP2LiveCIDRQuarantineGameplayScreen._classBag;
         if (!bag || !bag.length) {
             bag = ['A', 'B', 'C'];
@@ -2755,7 +2770,7 @@ class IP2LiveCIDRQuarantineGameplayScreen extends Scene.Base {
     _randomIPForClass(ipClass) {
         const core = IP2Live.IPWiresCore;
         if (core && typeof core.generateIPForClass === 'function') {
-            const generated = core.generateIPForClass(ipClass);
+            const generated = core.generateIPForClass(ipClass, this.problemRandom);
             if (generated && generated.ip) return generated.ip;
         }
         const ranges = {
@@ -2868,7 +2883,7 @@ class IP2LiveCIDRQuarantineGameplayScreen extends Scene.Base {
             ['U', 'L', 'D', 'R'],
         ];
         const order = orders[(Math.abs(Number(questIndex || 1)) + this._randomInt(0, orders.length - 1)) % orders.length].slice();
-        if (Math.random() < 0.5) order.reverse();
+        if (this.problemRandom() < 0.5) order.reverse();
         return order;
     }
 
@@ -3044,7 +3059,7 @@ class IP2LiveCIDRQuarantineGameplayScreen extends Scene.Base {
         const lo = Math.ceil(Number(min) || 0);
         const hi = Math.floor(Number(max) || 0);
         if (hi <= lo) return lo;
-        return lo + Math.floor(Math.random() * (hi - lo + 1));
+        return lo + Math.floor(this.problemRandom() * (hi - lo + 1));
     }
 
     _drawPath(ctx, m, path, color, alpha, visibleMoves) {
@@ -3363,7 +3378,9 @@ const CIDRQuarantineGameplayManager = {
     _playMusicZone(zoneName) {
         const music = IP2Live.MusicManager;
         if (!music || !music.ZONE || !music.ZONE[zoneName] || typeof music.play !== 'function') return false;
-        music.play(music.ZONE[zoneName]);
+        if (zoneName.indexOf('GAMEPLAY_') === 0 && typeof music.playGameplay === 'function') music.playGameplay('ip_cidr_quarantine');
+        else if (zoneName.indexOf('STAGE_') === 0 && typeof music.restoreContext === 'function') music.restoreContext();
+        else music.play(music.ZONE[zoneName]);
         return true;
     },
 
@@ -3394,12 +3411,12 @@ const CIDRQuarantineGameplayManager = {
         const problem = this._freshProblem(opts.spec || this._defaultQuestSpec(opts.mapId));
         const open = () => {
             const screen = new IP2LiveCIDRQuarantineGameplayScreen({
+                ...(IP2Live.GameplayTimer ? IP2Live.GameplayTimer.launchOptions(opts) : {}),
                 spec: opts.spec,
                 questId: opts.questId,
                 objectiveId: opts.objectiveId,
                 mapId: opts.mapId || (opts.spec && opts.spec.mapId) || 12,
                 maxAttempts: 3,
-                timeLimitSeconds: opts.timeLimitSeconds,
                 problem,
                 tutorialMode: !!(opts.spec && opts.spec.tutorial),
                 onComplete: (result) => this._onComplete(opts, result),
@@ -3544,8 +3561,10 @@ IP2Live.CIDRQuarantineGameplayManager = CIDRQuarantineGameplayManager;
 IP2Live.CIDRQuarantineGameplayScreen = IP2LiveCIDRQuarantineGameplayScreen;
 window.IP2LiveCIDRQuarantineGameplayManager = CIDRQuarantineGameplayManager;
 window.IP2LiveCIDRQuarantineGameplayScreen = IP2LiveCIDRQuarantineGameplayScreen;
-window.startCIDRQuarantineGameplayFive = function (options) {
-    return CIDRQuarantineGameplayManager.launchCIDRQuarantineGameplay(options || {});
+window.startCIDRQuarantineGameplayFive = function (options, timeSeconds) {
+    const opts = Object.assign({}, options || {});
+    if (Number.isFinite(Number(timeSeconds)) && Number(timeSeconds) >= 0) opts.timeLimitSeconds = Number(timeSeconds);
+    return CIDRQuarantineGameplayManager.launchCIDRQuarantineGameplay(opts);
 };
 
 console.log('[IP2Live] ip_cidr_quarantine_gameplay.js module loaded.');

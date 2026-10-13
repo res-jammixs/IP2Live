@@ -1,0 +1,61 @@
+{
+  "version": 1,
+  "entries": [
+    {
+      "kind": 1,
+      "id": 18,
+      "name": "StoryPrologue/01-arrival-ost.wav",
+      "file": "01-arrival-ost.wav",
+      "sha256": "7629975f9709c8e1be1b7dee44cf23fe2217a294e88e87b680d925a66f2a6b53"
+    },
+    {
+      "kind": 4,
+      "id": 4,
+      "name": "StoryPrologue/01-arrival-sfx.wav",
+      "file": "01-arrival-sfx.wav",
+      "sha256": "0572d05221ad63d21d07c59d82f58302b7e3f06212e36da7c6ea3f923b23557c"
+    },
+    {
+      "kind": 1,
+      "id": 19,
+      "name": "StoryPrologue/02-taking-ost.wav",
+      "file": "02-taking-ost.wav",
+      "sha256": "8ec336cb1a27f37d6662c1ccccc0f1ace227a838e1f49fded8a49cc001758a2a"
+    },
+    {
+      "kind": 4,
+      "id": 5,
+      "name": "StoryPrologue/02-taking-sfx.wav",
+      "file": "02-taking-sfx.wav",
+      "sha256": "1bf70f1be788ea768d4cd25a5660bd6db9c62e16998eee774da48af8b4f6a12e"
+    },
+    {
+      "kind": 1,
+      "id": 20,
+      "name": "StoryPrologue/03-fortress-ost.wav",
+      "file": "03-fortress-ost.wav",
+      "sha256": "b624f212ede6c7ec157dbbc7c1d545628ea063db1f673a538b6039229cb684e8"
+    },
+    {
+      "kind": 4,
+      "id": 6,
+      "name": "StoryPrologue/03-fortress-sfx.wav",
+      "file": "03-fortress-sfx.wav",
+      "sha256": "fbf5c02e99b97b15ddcfb481d3a801a6646c1cf9189f270acb91694a14406ba1"
+    },
+    {
+      "kind": 1,
+      "id": 21,
+      "name": "StoryPrologue/04-our-way-inside-ost.wav",
+      "file": "04-our-way-inside-ost.wav",
+      "sha256": "9ec39a9155658844408ae49c9f6cf063b38281213cd36ac7ad3b8aa20b21ffd9"
+    },
+    {
+      "kind": 4,
+      "id": 7,
+      "name": "StoryPrologue/04-our-way-inside-sfx.wav",
+      "file": "04-our-way-inside-sfx.wav",
+      "sha256": "d55bf3d720187bae492892e650528da419bbd301f88fa5c851ace521365f1a46"
+    }
+  ]
+}

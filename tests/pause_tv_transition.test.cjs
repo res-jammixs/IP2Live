@@ -62,6 +62,10 @@ const settle = async () => { for (let i = 0; i < 8; i++) await Promise.resolve()
         h.context.Common.ScreenResolution = { SCREEN_X: 1280, SCREEN_Y: 720 };
         const ctx = h.context.Common.Platform.ctx;
         ctx.createLinearGradient = () => ({ addColorStop() {} });
+        ctx.createRadialGradient = () => ({ addColorStop() {} });
+        ctx.translate = () => {};
+        ctx.scale = () => {};
+        ctx.arc = () => {};
         ctx.fillText = () => {};
         ctx.stroke = () => {};
         const animation = [];
@@ -80,6 +84,7 @@ const settle = async () => { for (let i = 0; i < 8; i++) await Promise.resolve()
         h.context.IP2Live.BgFx = { create: () => ({ update() {}, drawBg() {}, drawParticles() {} }) };
         h.context.IP2Live.TextScramble = { create: () => ({ update() {} }) };
         vm.runInContext(source('pause-menu.js'), h.context);
+        h.context.IP2Live.PauseUI.captureBackdrop = () => frame;
 
         openPause.call({ super() {} }, 'Escape');
         const pause = h.stack.top;
@@ -97,12 +102,12 @@ const settle = async () => { for (let i = 0; i < 8; i++) await Promise.resolve()
         assert.equal(pause.popupProgress, 1);
         pause.drawHUD();
         assert.equal(animation[1], 1);
-        assert.equal(backdropAlpha[1], 0);
+        assert.equal(backdropAlpha.length, 1, 'the hidden snapshot is not composited after the panel opens');
         pause._resume();
         pause.update();
         pause.drawHUD();
         assert.ok(animation[2] < animation[1], 'the popup reverses on resume');
-        assert.ok(backdropAlpha[2] > 0, 'the frozen map returns as the pause panel closes');
+        assert.ok(backdropAlpha[1] > 0, 'the frozen map returns as the pause panel closes');
         for (let i = 0; i < 10; i++) pause.update();
         assert.equal(h.stack.top, pause, 'world remains paused while the popup closes');
         pause.update();

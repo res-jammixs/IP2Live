@@ -12,6 +12,17 @@ const ENGINE_SEND_CHANNELS = new Set([
 
 const invoke = (channel, payload) => ipcRenderer.invoke(channel, payload);
 
+contextBridge.exposeInMainWorld('ip2livePVP', Object.freeze({
+    create: payload => invoke('ip2live-pvp:create', payload || {}),
+    discover: () => invoke('ip2live-pvp:discover'),
+    join: payload => invoke('ip2live-pvp:join', payload || {}),
+    poll: () => invoke('ip2live-pvp:poll'),
+    ready: payload => invoke('ip2live-pvp:ready', payload || {}),
+    start: () => invoke('ip2live-pvp:start'),
+    result: payload => invoke('ip2live-pvp:result', payload || {}),
+    leave: () => invoke('ip2live-pvp:leave'),
+}));
+
 contextBridge.exposeInMainWorld('ipcRenderer', Object.freeze({
     send(channel, ...args) {
         if (!ENGINE_SEND_CHANNELS.has(channel)) {

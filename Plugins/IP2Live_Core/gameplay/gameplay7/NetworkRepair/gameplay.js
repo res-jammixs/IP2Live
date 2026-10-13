@@ -9,9 +9,10 @@
  */
 
 class IP2LiveNetworkRepairGameplayScreen extends Scene.Base {
-    constructor(options) {
+    constructor(options, timeSeconds) {
         super(true);
         this.options = options || {};
+        this._constructorTimeSeconds = timeSeconds;
         this._configure();
     }
 
@@ -61,6 +62,7 @@ class IP2LiveNetworkRepairGameplayScreen extends Scene.Base {
         this.gameAreaRect = null;
         this.laneRects = [];
         this.formulaSlotRects = [];
+        if (IP2Live.GameplayTimer) IP2Live.GameplayTimer.reset(this);
     }
 
     async load() {
@@ -71,6 +73,7 @@ class IP2LiveNetworkRepairGameplayScreen extends Scene.Base {
     // ── Game Loop ────────────────────────────────────────────────
 
     update() {
+        if (IP2Live.GameplayTimer && IP2Live.GameplayTimer.update(this, ['catching', 'arranging'])) return;
         this.animTick++;
         if (this.phase === 'catching') {
             this._updateCatchingPhase();
@@ -317,7 +320,7 @@ class IP2LiveNetworkRepairGameplayScreen extends Scene.Base {
             }
             return true;
         }
-        if (this.phase === 'locked' || this.phase === 'success') return true;
+        if (this.finished || this.phase === 'locked' || this.phase === 'success') return true;
         if (Data.Keyboards.checkCancelMenu && Data.Keyboards.checkCancelMenu(key)) {
             this._cancel();
             return true;
@@ -378,7 +381,7 @@ class IP2LiveNetworkRepairGameplayScreen extends Scene.Base {
             IP2Live.DialogueManager.advance();
             return true;
         }
-        if (this.phase === 'locked' || this.phase === 'success') return true;
+        if (this.finished || this.phase === 'locked' || this.phase === 'success') return true;
         var m = this._metrics();
         this._buildRects(m);
 
@@ -430,13 +433,17 @@ class IP2LiveNetworkRepairGameplayScreen extends Scene.Base {
 
     // ── Lifecycle ────────────────────────────────────────────────
 
+    _onTimerExpired() { this._failRun('time_expired'); }
+
     _failRun(reason) {
+        if (this.finished) return;
+        this.finished = true;
         if (typeof this.options.onFailed === 'function') {
-            this.finished = true;
             this.options.onFailed({
                 ...this._assessmentResult(),
                 gameplayId: 'ip_network_repair',
                 passed: false,
+                reason: reason || 'failed',
                 taskType: this.scenario.taskType,
                 expected: this.scenario.expected,
                 expectedText: this.scenario.expectedText,
@@ -461,7 +468,8 @@ class IP2LiveNetworkRepairGameplayScreen extends Scene.Base {
 
     _assessmentResult() {
         const history = this.decisionHistory || [], correct = history.filter(row => row.correct).length;
-        return { telemetrySchemaVersion: 2, totalDecisions: history.length, correctDecisions: correct,
+        return { ...(IP2Live.GameplayTimer ? IP2Live.GameplayTimer.result(this) : {}),
+            telemetrySchemaVersion: 2, totalDecisions: history.length, correctDecisions: correct,
             incorrectDecisions: history.length - correct, decisionHistory: history.map(row => ({ ...row,
                 submitted: Array.isArray(row.submitted) ? row.submitted.slice() : row.submitted,
                 expected: Array.isArray(row.expected) ? row.expected.slice() : row.expected })),
@@ -531,6 +539,7 @@ class IP2LiveNetworkRepairGameplayScreen extends Scene.Base {
         this._drawTutorialFocus(ctx, m);
         if (this.phase === 'success') this._drawSuccess(ctx, m);
         ctx.restore();
+        if (IP2Live.GameplayTimer) IP2Live.GameplayTimer.draw(this, ctx);
         if (IP2Live.DialogueManager && typeof IP2Live.DialogueManager.drawOverlay === 'function') IP2Live.DialogueManager.drawOverlay(ctx);
     }
 
@@ -1242,6 +1251,7 @@ const NetworkRepairGameplayManager = {
         var self = this;
         var open = function () {
             var screen = new IP2LiveNetworkRepairGameplayScreen({
+                ...(IP2Live.GameplayTimer ? IP2Live.GameplayTimer.launchOptions(opts) : {}),
                 spec: spec,
                 questLabel: spec.label,
                 scenario: self._scenarioForSpec(spec),
@@ -1759,7 +1769,9 @@ const NetworkRepairGameplayManager = {
     _playMusicZone(zoneName) {
         var music = IP2Live.MusicManager;
         if (!music || !music.ZONE || !music.ZONE[zoneName] || typeof music.play !== 'function') return false;
-        music.play(music.ZONE[zoneName]);
+        if (zoneName.indexOf('GAMEPLAY_') === 0 && typeof music.playGameplay === 'function') music.playGameplay('ip_network_repair');
+        else if (zoneName.indexOf('STAGE_') === 0 && typeof music.restoreContext === 'function') music.restoreContext();
+        else music.play(music.ZONE[zoneName]);
         return true;
     },
 
@@ -1781,8 +1793,10 @@ IP2Live.NetworkRepairGameplayManager = NetworkRepairGameplayManager;
 IP2Live.NetworkRepairGameplayScreen = IP2LiveNetworkRepairGameplayScreen;
 window.IP2LiveNetworkRepairGameplayManager = NetworkRepairGameplayManager;
 window.IP2LiveNetworkRepairGameplayScreen = IP2LiveNetworkRepairGameplayScreen;
-window.startNetworkRepairGameplaySeven = function (options) {
-    return NetworkRepairGameplayManager.launchNetworkRepairGameplay(options || {});
+window.startNetworkRepairGameplaySeven = function (options, timeSeconds) {
+    const opts = Object.assign({}, options || {});
+    if (Number.isFinite(Number(timeSeconds)) && Number(timeSeconds) > 0) opts.timeLimitSeconds = Number(timeSeconds);
+    return NetworkRepairGameplayManager.launchNetworkRepairGameplay(opts);
 };
 
 console.log('[IP2Live] gameplay7 NetworkRepair gameplay.js module loaded (Formula Catcher).');
