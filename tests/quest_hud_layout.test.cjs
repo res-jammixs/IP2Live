@@ -29,11 +29,11 @@ gm._injectMapHooks();
 
 // Every combination packs into a single row, and the minimap follows the
 // current flags even before the old canvas hit rectangles are repainted.
-const flags = ['enableSingleQuestSkipButton', 'enableQuestFailButton', 'enableQuestSkipButton', 'enableGameOverButton'];
+const flags = ['enableSingleQuestSkipButton', 'enableQuestFailButton', 'enableQuestSkipButton', 'enableGameOverButton', 'enableEndingSimulationButton'];
 for (const [width, height] of [[1280, 720], [1920, 1080], [960, 540]]) {
     ctx.canvas.width = width;
     ctx.canvas.height = height;
-    for (let mask = 0; mask < 16; mask++) {
+    for (let mask = 0; mask < (1 << flags.length); mask++) {
         flags.forEach((flag, i) => { gm[flag] = !!(mask & (1 << i)); });
         const layout = gm.getQuestHudLayout(ctx, scene);
         assert.equal(layout.buttons.length, flags.filter(flag => gm[flag]).length);

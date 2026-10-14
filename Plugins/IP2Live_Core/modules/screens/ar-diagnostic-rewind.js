@@ -594,28 +594,30 @@ class IP2LiveARDiagnosticRewindScreen extends Scene.Base {
         ctx.restore();
     }
 
-    _drawFadedAction(ctx, r, label, font, mix, focused) {
+    _drawFadedAction(ctx, r, label, font, mix, focused, palette) {
         ctx.save();
+        const colors = palette || { fill: '165,28,69', edge: '255,148,179', glow: '#FF608C',
+            text: '#FFF2F7', muted: '#AFA4B6', shine: '#FFE2EC' };
         // Feathered edges: light and lettering emerge from the background.
-        const glow = 'rgba(165,28,69,' + (0.09 + mix * 0.2) + ')';
+        const glow = 'rgba(' + colors.fill + ',' + (0.09 + mix * 0.2) + ')';
         ctx.fillStyle = this._linear(ctx, r.x, 0, r.x + r.w, 0,
             [[0, 'rgba(0,0,0,0)'], [0.3, glow], [0.7, glow], [1, 'rgba(0,0,0,0)']], 'transparent');
         ctx.fillRect(r.x, r.y, r.w, r.h);
         ctx.fillStyle = this._linear(ctx, r.x, 0, r.x + r.w, 0,
-            [[0, 'rgba(255,90,138,0)'], [0.5, 'rgba(255,148,179,' + (0.22 + mix * 0.55) + ')'], [1, 'rgba(255,90,138,0)']], '#8B475C');
+            [[0, 'rgba(' + colors.edge + ',0)'], [0.5, 'rgba(' + colors.edge + ',' + (0.22 + mix * 0.55) + ')'], [1, 'rgba(' + colors.edge + ',0)']], 'rgba(' + colors.edge + ',0.5)');
         ctx.fillRect(r.x, r.y, r.w, 1);
         ctx.fillRect(r.x, r.y + r.h, r.w, 1);
         ctx.textAlign = 'center';
         this._fit(ctx, label, r.w - 42, 17, font);
-        ctx.shadowColor = '#FF608C'; ctx.shadowBlur = 6 + mix * 12;
-        ctx.fillStyle = focused ? '#FFF2F7' : '#AFA4B6';
+        ctx.shadowColor = colors.glow; ctx.shadowBlur = 6 + mix * 12;
+        ctx.fillStyle = focused ? colors.text : colors.muted;
         ctx.fillText(label, r.x + r.w / 2, r.y + r.h / 2 + 6);
         ctx.shadowBlur = 0;
         // A quiet moving light along the lower edge marks keyboard focus.
         ctx.globalAlpha *= mix * 0.6;
         const sweep = (Math.sin(this.tick * 0.022) * 0.5 + 0.5) * (r.w - 70);
         ctx.fillStyle = this._linear(ctx, r.x + sweep, 0, r.x + sweep + 70, 0,
-            [[0, 'transparent'], [0.5, '#FFE2EC'], [1, 'transparent']], '#FFD1E1');
+            [[0, 'transparent'], [0.5, colors.shine], [1, 'transparent']], colors.shine);
         ctx.fillRect(r.x + sweep, r.y + r.h, 70, 1);
         ctx.restore();
     }

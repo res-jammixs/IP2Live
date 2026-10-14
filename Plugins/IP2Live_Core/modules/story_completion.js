@@ -95,6 +95,8 @@
             return { archived, storySaved };
         },
         _open(record, certificateOnly) {
+            IP2Live.InputGuard?.reset();
+            IP2Live.DialogueManager?.resetTransitionState?.({ stopActive: true, discardActive: true });
             const qm = IP2Live.QuestManager;
             if (qm && qm.hideQuest) qm.hideQuest();
             if (IP2Live.QuestMinimap && IP2Live.QuestMinimap.destroy) IP2Live.QuestMinimap.destroy();

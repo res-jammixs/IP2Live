@@ -707,6 +707,8 @@
         return [...points[points.length - 1], 0];
     }
     IP2Live.PrologueArt = {
+        // Shared architectural vocabulary for the rendered story epilogue.
+        elements: { city, fortress, person, pipe, farms },
         arrivalFleetPose(seconds = 0, options = {}) {
             const time = Math.max(0, Number(seconds) || 0);
             return ARRIVAL_FLEET.map(definition => ({ x: definition.x, y: arrivalShipY(definition, time, options.reducedMotion), scale: definition.scale }));

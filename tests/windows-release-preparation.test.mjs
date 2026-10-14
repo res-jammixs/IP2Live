@@ -70,7 +70,9 @@ test('prepares a clean release and exactly replaces the exported project plugin'
     await write(project, 'Plugins/IP2Live_Core/modules/desktop_storage.js', '// current bridge\n');
     const certificateModule = await fs.readFile(path.join(repositoryRoot, 'Plugins/IP2Live_Core/modules/pvp_certificate.js'), 'utf8');
     await write(project, 'Plugins/IP2Live_Core/modules/pvp_certificate.js', certificateModule);
-    const endingModules = ['certificate_pdf.js', 'story_certificate.js', 'story_completion.js', 'screens/story-ending.js'];
+    const endingModules = ['certificate_pdf.js', 'story_certificate.js', 'story_completion.js',
+        'screens/story-prologue-art.js','screens/story-prologue.js','screens/story-epilogue-art.js',
+        'screens/story-epilogue.js','screens/story-ending.js'];
     for (const module of endingModules) {
         await write(project, 'Plugins/IP2Live_Core/modules/' + module, await fs.readFile(path.join(repositoryRoot, 'Plugins/IP2Live_Core/modules', module), 'utf8'));
     }

@@ -2,28 +2,37 @@
 <html><head><meta charset="utf-8"><title>IP2Live Story Ending Preview</title>
 <style>
 @font-face { font-family: Oxanium-Medium; src: url('../../Fonts/Oxanium-Medium.ttf'); }
+@font-face { font-family: Nebula-Regular; src: url('../../Fonts/Nebula-Regular.otf'); }
 html, body { margin: 0; width: 100%; height: 100%; background: #03080d; overflow: hidden; }
 canvas { width: 100vw; height: 100vh; display: block; }
 </style></head><body><canvas id="preview"></canvas><script>
 const params = new URLSearchParams(location.search), canvas = document.getElementById('preview');
 canvas.width = Number(params.get('w')) || innerWidth; canvas.height = Number(params.get('h')) || innerHeight;
 const Common = { Platform: { ctx: canvas.getContext('2d') } }, Core = { Game: { current: null } };
-const Manager = { Stack: { requestPaintHUD: true, pop() {}, popAll() {}, pushTitleScreen() {} } };
+const Manager = { Stack: { top:null, requestPaintHUD: true, pop() {}, popAll() {}, pushTitleScreen() {} } };
 const Scene = { Base: class { constructor() { this.initialize(); } initialize() {} close() {} } };
 const Data = { Systems: {}, Keyboards: { checkActionMenu: key => key === 'Enter', checkCancelMenu: key => key === 'Escape' } };
-const IP2Live = { Assets: { loadPauseFonts: () => document.fonts.load('18px Oxanium-Medium') }, MusicManager: { play() {} } };
+const IP2Live = { Assets: { loadPauseFonts: () => Promise.all([document.fonts.load('18px Oxanium-Medium'),document.fonts.load('32px Nebula-Regular')]) }, MusicManager: { play() {},fadeOutForTransition() {} } };
 const record = { version: 1, mode: 'story', status: 'completed', id: 'story-2026-nova', storyRunId: 'story-2026-nova',
     name: params.get('state') === 'long' ? 'Alexandria Montgomery 王' : 'NOVA', completedAt: Date.UTC(2026, 9, 12), finalMapId: 18, floors: 16 };
 (async () => {
-    for (const file of ['certificate_pdf.js', 'story_completion.js', 'story_certificate.js', 'screens/story-ending.js']) {
+    for (const file of ['certificate_pdf.js', 'story_completion.js', 'story_certificate.js', 'story_lore.js',
+        'screens/ar-diagnostic-rewind.js','screens/story-prologue-art.js','screens/story-prologue.js',
+        'screens/story-epilogue-art.js','screens/story-epilogue.js','screens/story-ending.js']) {
         const response = await fetch('../../Plugins/IP2Live_Core/modules/' + file);
         if (!response.ok) throw new Error('Preview source could not be loaded: ' + file);
         new Function('Common','Core','Data','Manager','Scene','IP2Live','window', await response.text())(Common,Core,Data,Manager,Scene,IP2Live,window);
     }
     const state = params.get('state') || 'complete';
     IP2Live.StoryCompletion.list = async () => state === 'empty' ? [] : [record];
-    const scene = new IP2Live.StoryEndingScreen(record, { certificateOnly: !['cutscene','apex','restored'].includes(state), archive: ['archive','empty'].includes(state) });
-    await scene.load(); scene.beat = state === 'apex' ? 1 : state === 'restored' ? 2 : Number(params.get('beat')) || 0; scene.beatStarted = Date.now() - 4000;
+    const scene = new IP2Live.StoryEndingScreen(record, { certificateOnly: !['cutscene','apex','robots','restored'].includes(state), archive: ['archive','empty'].includes(state) });
+    Manager.Stack.top=scene; await scene.load(); scene._completeTime=2000;
+    if(scene.epilogue) {
+        scene._worldFaded=true;
+        const ep=scene.epilogue; ep.index=state==='apex'?1:state==='robots'?2:state==='restored'?3:Number(params.get('beat'))||0;
+        ep.characters=Array.from(ep.beats[ep.index].text);ep.phase='reading';ep.visibleChars=Infinity;ep.ambientTime=2000;
+    }
+    if(state==='certificate-view') scene._certificateOpen=true;
     await document.fonts.ready;
     if (state === 'certificate') {
         IP2Live.StoryCertificate.draw(canvas.getContext('2d'), record);
@@ -34,6 +43,9 @@ const record = { version: 1, mode: 'story', status: 'completed', id: 'story-2026
     document.body.dataset.previewState = 'ready';
     addEventListener('keydown', event => { scene.onKeyPressed(event.key); scene.drawHUD(); });
     canvas.onpointermove = event => { scene.onMouseMove(event.clientX * canvas.width / innerWidth, event.clientY * canvas.height / innerHeight); scene.drawHUD(); };
+    canvas.onpointerdown = event => scene.onMouseDown(event.clientX * canvas.width / innerWidth,event.clientY * canvas.height / innerHeight);
+    canvas.onpointerup = event => {scene.onMouseUp(event.clientX * canvas.width / innerWidth,event.clientY * canvas.height / innerHeight);scene.drawHUD();};
+    if(params.get('animate')==='1') { const frame=()=>{scene.update();scene.drawHUD();requestAnimationFrame(frame);};requestAnimationFrame(frame); }
     window.previewScene = scene; window.previewCertificate = () => IP2Live.StoryCertificate.create(record);
 })().catch(error => { document.body.dataset.previewState = 'error'; document.body.dataset.previewError = error.message; console.error(error); });
 </script></body></html>

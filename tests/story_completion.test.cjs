@@ -44,9 +44,13 @@ function harness() {
     ip.DBManager = { getRecord: async (_, key) => profiles.get(key), saveRecord: async (_, value) => profiles.set(value.infiltratorName, copy(value)),
         getAllRecords: async () => [...profiles.values()] };
     ip.MusicManager = { play: zone => songs.push(zone) };
-    load('modules/certificate_pdf.js'); load('modules/story_completion.js'); load('modules/story_certificate.js'); load('modules/screens/story-ending.js');
+    for(const file of ['modules/certificate_pdf.js','modules/story_completion.js','modules/story_certificate.js',
+        'modules/story_lore.js','modules/screens/ar-diagnostic-rewind.js','modules/screens/story-prologue-art.js','modules/screens/story-prologue.js',
+        'modules/screens/story-epilogue-art.js','modules/screens/story-epilogue.js','modules/screens/story-ending.js']) load(file);
+    const tick=(ms,target=stack.top)=>{ while(ms>0) { const step=Math.min(100,ms); now+=step; target.update(); ms-=step; } };
+    const finishEnding=ending=>{ tick(1400,ending); for(let i=0;i<4;i++) { tick(14000,ending); ending.onKeyPressed('Enter'); tick(700,ending); } };
     return { env, ip, maps, gm, game, map, stack, load, saves, profiles, storage, drawn, downloads, songs,
-        advance: ms => { now += ms; }, titleCalls: () => titleCalls };
+        advance: ms => { now += ms; }, tick, finishEnding, titleCalls: () => titleCalls };
 }
 
 test('the final story exit creates one named award, saves it and plays the ending before completion', async () => {
@@ -55,12 +59,13 @@ test('the final story exit creates one named award, saves it and plays the endin
     h.maps.goToNextStage(18);
     const ending = h.stack.top;
     assert.ok(ending instanceof h.ip.StoryEndingScreen); assert.equal(ending.phase, 'cutscene');
-    await ending.load(); assert.deepEqual(h.songs, ['STORY_ENDING']);
+    await ending.load(); assert.deepEqual(h.songs, []);
+    h.tick(1400); assert.deepEqual(h.songs, ['STORY_ENDING'], 'ending score starts after the world fades to black');
     const record = h.game.ip2liveGameStates.storyCompletion;
     assert.equal(record.name, 'Zoë 王'); assert.equal(record.profileId, 'profile-one'); assert.equal(record.floors, 16);
     assert.equal(h.ip.StoryCompletion.start(h.maps.stageFor(18)), false, 'repeated final triggers do not stack endings');
     assert.equal(ending._actions().some(a => a.id === 'pdf'), false, 'the cutscene precedes the certificate screen');
-    for (let i = 0; i < 3; i++) { h.advance(6000); ending.update(); }
+    h.finishEnding(ending);
     assert.equal(ending.phase, 'complete');
     assert.equal(ending.record.name, 'Zoë 王'); ending.drawHUD();
     assert.ok(h.drawn.includes('STORY COMPLETE'));
@@ -70,7 +75,7 @@ test('the final story exit creates one named award, saves it and plays the endin
     const profile = h.profiles.get(record.name);
     assert.equal(profile.progressBySlot[2].marker, 'preserve'); assert.equal(profile.storyCompletions.length, 1);
     assert.equal((await h.ip.StoryCompletion.list()).length, 1);
-    h.advance(400); await ending._activate('menu');
+    h.advance(400); await ending._activate('menu'); h.tick(900,ending);
     assert.equal(h.titleCalls(), 1); assert.equal(h.ip.StoryCompletion.activeScene, null); assert.equal(h.maps._stageRouteLocked, false);
     assert.equal((await h.ip.StoryCompletion.list())[0].name, 'Zoë 王', 'returning to title retains the award');
 });
@@ -140,7 +145,7 @@ test('failed saves and archive storage leave the earned PDF available and report
     ending._finishCutscene(); h.advance(400); ending.drawHUD();
     assert.ok(h.drawn.some(s => String(s).includes('archive could not be saved')));
     await ending._activate('pdf'); assert.equal(h.downloads.length, 1);
-    await ending._activate('menu'); assert.equal(h.titleCalls(), 1, 'failed storage does not trap the player');
+    await ending._activate('menu'); h.tick(900,ending); assert.equal(h.titleCalls(), 1, 'failed storage does not trap the player');
 });
 
 test('story certificates contain the saved Unicode name in a valid landscape PDF and download offline', async () => {
@@ -210,16 +215,56 @@ test('archive survives a fresh runtime and supports retrying a failed download',
     await archive._activate('menu'); assert.equal(h.titleCalls(), 0, 'archive returns to its parent without replacing the title');
 });
 
-test('keyboard skips the cutscene, respects the action guard and mouse hit targets follow canvas scaling', async () => {
+test('ending requires reading its four chapters, guards transition input and scales certificate mouse targets', async () => {
     const h = harness(); h.maps.goToNextStage(18); const ending = h.stack.top;
+    await ending.load();
     ending.onKeyPressed('Escape'); assert.equal(ending.phase, 'cutscene');
-    h.advance(400); ending.onKeyPressed('Escape'); assert.equal(ending.phase, 'complete');
-    ending.onKeyPressed('Enter'); assert.equal(h.downloads.length, 0, 'skip cannot also activate Download');
-    h.advance(400);
-    const pdf = ending._actions()[0];
+    h.tick(1400); ending.onKeyPressed('Escape'); assert.equal(ending.phase, 'cutscene');
+    ending.onKeyPressed('Enter'); assert.equal(ending.epilogue.index,0,'unread text cannot advance');
+    h.finishEnding(ending); assert.equal(ending.phase,'complete');
+    ending.onKeyPressed('Enter'); assert.equal(h.titleCalls(), 0, 'the final story press cannot also leave the completion screen');
+    h.advance(400); await ending._activate('certificate'); h.advance(300);
+    const pdf = ending._actions().find(action=>action.id==='pdf');
     ending.onMouseDown((pdf.x + 10) * 1.5, (pdf.y + 10) * 1.5);
     ending.onMouseUp(0, 0); await settle(); assert.equal(h.downloads.length, 0, 'dragging off a button does not activate it');
     ending.onMouseUp((pdf.x + 10) * 1.5, (pdf.y + 10) * 1.5); await settle();
     assert.equal(h.downloads.length, 1);
     await ending.saveTask;
+});
+
+test('completion offers three actions, saves progress again, and keeps failed saves retryable', async () => {
+    const h=harness(); h.maps.goToNextStage(18); const ending=h.stack.top;
+    await ending.load(); await ending.saveTask; ending._finishCutscene(); h.advance(400);
+    assert.deepEqual(Array.from(ending._actions(),a=>a.id),['menu','save-story','certificate']);
+    const initial=h.saves.length; await ending._activate('save-story');
+    assert.ok(h.saves.length>initial); assert.equal(ending.noticeError,false); assert.match(ending.notice,/has been saved/);
+    h.gm.saveProgressToActiveSlot=async()=>({saved:false}); h.ip.StoryAutosave.checkpoint=async()=>({saved:false});
+    await ending._activate('save-story'); assert.equal(ending.noticeError,true); assert.equal(ending.busy,false);
+    h.gm.saveProgressToActiveSlot=async()=>({saved:true});
+    await ending._activate('save-story'); assert.equal(ending.noticeError,false);
+    assert.equal((await h.ip.StoryCompletion.list()).length,1,'explicit saves do not award a second completion');
+});
+
+test('ending motion and typing freeze when hidden or covered, and closing releases its painting caches', async () => {
+    const h=harness(); h.maps.goToNextStage(18); const ending=h.stack.top; await ending.load(); h.tick(2300);
+    const epilogue=ending.epilogue, before=epilogue.ambientTime;
+    h.env.document.hidden=true; h.tick(4000); assert.equal(epilogue.ambientTime,before);
+    h.env.document.hidden=false; h.tick(100); assert.equal(epilogue.ambientTime,before);
+    h.stack.push({}); h.tick(1000,ending); assert.equal(epilogue.ambientTime,before); h.stack.pop();
+    h.tick(1000,ending); assert.ok(epilogue.ambientTime>before);
+    h.stack.pop(); assert.equal(epilogue.closed,true); assert.equal(epilogue._cache.size,0);
+    assert.equal(h.ip.StoryCompletion.activeScene,null);
+});
+
+test('certificate model reuses its texture sprites, reduced motion holds a pose, and close releases the textures', async () => {
+    const h=harness(); h.maps.goToNextStage(18); const ending=h.stack.top; await ending.load();
+    ending._finishCutscene(); h.tick(1000); ending.drawHUD();
+    const faces=ending._modelFaces, surfaces=Object.values(faces).flatMap(face=>face.cells.map(cell=>cell.surface));
+    assert.equal(surfaces.length,64);
+    h.tick(1000); ending.drawHUD(); assert.equal(ending._modelFaces,faces);
+    ending.reducedMotion=true; ending.drawHUD(); assert.equal(ending._modelFrame,0);
+    h.tick(1000); ending.drawHUD(); assert.equal(ending._modelFrame,0);
+    await ending._activate('certificate'); assert.equal(ending._certificateOpen,true);
+    h.advance(300); await ending._activate('close-certificate'); assert.equal(ending._certificateOpen,false);
+    h.stack.pop(); assert.ok(surfaces.every(surface=>surface.width===0 && surface.height===0));
 });

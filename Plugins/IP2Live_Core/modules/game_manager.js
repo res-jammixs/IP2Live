@@ -62,6 +62,9 @@ const IP2LiveGameManager = {
     // Master switch for the compact developer toolbar.
     enableDeveloperButtons: true,
     enableGameOverButton: true,
+    // Complete the Story route for testing, leaving the final ending marker open.
+    enableEndingSimulationButton: true,
+    _endingSimulationPending: null,
     _gameOverButtonRect: null,
     _developerPointer: null,
     // Set true to show the developer button that completes only the active quest.
@@ -3602,6 +3605,108 @@ const IP2LiveGameManager = {
         });
     },
 
+    _endingSimulationTarget() {
+        const maps = IP2Live.MapManager;
+        const route = maps && (maps.stages || []).filter(stage => stage && !stage.tutorial && stage.questEnabled !== false);
+        return route && route[route.length - 1] || null;
+    },
+
+    _canSimulateEnding() {
+        const game = Core.Game.current, scene = this._currentScene();
+        return !!(this.enableDeveloperButtons && this.enableEndingSimulationButton && !this._endingSimulationPending &&
+            game && scene && !scene.loading && (!Manager.Stack.top || Manager.Stack.top === scene) &&
+            !this.isStorySaveExcluded(game) && !IP2Live.EndlessMode?.active && !IP2Live.StoryCompletion?.activeScene &&
+            !IP2Live.MapManager?._stageRouteLocked && this._endingSimulationTarget() && IP2Live.QuestManager &&
+            typeof IP2Live.QuestManager.startQuest === 'function' && IP2Live.StoryCompletion && IP2Live.StoryEndingScreen);
+    },
+
+    simulateEnding() {
+        if (!this._developerActionActive('ending', this._currentMapId())) return false;
+        const maps = IP2Live.MapManager, qm = IP2Live.QuestManager, game = Core.Game.current;
+        // Register every floor first, including floors this run has never visited.
+        if (!maps.registerStageQuests(qm)) return false;
+        const stage = this._endingSimulationTarget(), exitQuestId = 'stage.default_exit.' + stage.id;
+        if (!qm.quests[exitQuestId]) return false;
+        const questIds = new Set();
+        for (const floor of maps.stages) {
+            if (!floor || floor.questEnabled === false && !floor.tutorial) continue;
+            const queue = qm.mapQuestQueues[floor.id];
+            for (const id of queue && queue.questIds || []) if (qm.quests[id]) questIds.add(id);
+        }
+        const previous = qm.snapshotProgress();
+        const states = game.ip2liveGameStates || (game.ip2liveGameStates = {});
+        const previousCompletion = states.storyCompletion;
+        const previouslySeen = this.hasSeenMapEntryDialogue(stage.id, game);
+        const session = { game, mapId: Number(stage.id), exitQuestId, questIds: [...questIds] };
+        this._endingSimulationPending = session;
+        // A restored completion record would otherwise reopen the certificate
+        // screen on map entry, before the player can reach the marker.
+        delete states.storyCompletion;
+        this._setEndingSimulationProgress(session);
+        this.markMapEntryDialogueSeen(stage.id, game);
+        IP2Live.InputGuard?.reset();
+        try {
+            const started = this.startMapFlow(stage.id, maps.spawnFor(stage.id), {
+                mode: 'stage', status: 'Simulate Ending', detail: 'Preparing the final Story quest',
+                source: 'GameManager.simulateEnding', cleanMapSession: true, discardDialogue: true,
+                onAfterLoad: loadedMapId => this._finishEndingSimulation(session, loadedMapId),
+            });
+            if (!started) throw new Error('Final Story map could not be opened.');
+            return true;
+        } catch (error) {
+            this._endingSimulationPending = null;
+            qm.restoreProgress(previous);
+            if (previousCompletion) states.storyCompletion = previousCompletion;
+            if (!previouslySeen) delete this._entryDialogueState(game, true)[String(stage.id)];
+            console.warn('[IP2Live] Ending simulation could not start:', error);
+            return false;
+        }
+    },
+
+    _setEndingSimulationProgress(session) {
+        const qm = IP2Live.QuestManager;
+        // Set flags directly: simulating a route must not fabricate successful
+        // gameplay attempts, invoke floor exits, or replay completion callbacks.
+        for (const id of session.questIds) {
+            const quest = qm.quests[id];
+            if (!quest) continue;
+            const done = qm.completedObjectives[id] || (qm.completedObjectives[id] = {});
+            for (const objective of quest.objectives || []) {
+                if (id === session.exitQuestId) delete done[objective.id];
+                else done[objective.id] = true;
+            }
+        }
+    },
+
+    _finishEndingSimulation(session, loadedMapId) {
+        if (this._endingSimulationPending !== session) return false;
+        if (Core.Game.current !== session.game || Number(loadedMapId) !== session.mapId || this._currentMapId() !== session.mapId) {
+            this._endingSimulationPending = null; return false;
+        }
+        const qm = IP2Live.QuestManager, scene = this._currentScene();
+        this._setEndingSimulationProgress(session);
+        if (scene) {
+            // The new scene may still be loading. Preserve these flags through
+            // its first quest update instead of letting map-entry reset erase them.
+            scene._ip2liveQuestEntryReset = true;
+            scene._ip2liveStageQuestEnsured = true;
+            scene._ip2liveStageIntroStarted = true;
+            scene._ip2liveStageIntroPending = false;
+        }
+        qm.setDialogueSuppressed(false);
+        qm.startQuest(session.exitQuestId, {
+            mapId: session.mapId, mapQuestMode: true, visible: true, preview: false,
+            guideActive: true, allowCompletion: true,
+        });
+        qm._notifyProgressChanged(session.mapId, 'developer-ending-simulation');
+        this._endingSimulationPending = null;
+        IP2Live.InputGuard?.reset();
+        this._ensureQuestMinimap();
+        this._queueCheckpoint('developer_ending_simulation_ready');
+        Manager.Stack.requestPaintHUD = true;
+        return true;
+    },
+
     _injectMapHooks() {
         if (!Scene || !Scene.Map || !Scene.Map.prototype) return false;
         if (Scene.Map.prototype._ip2liveGameManagerSkipButtonInjected) return false;
@@ -3615,6 +3720,7 @@ const IP2LiveGameManager = {
             manager._drawQuestFailButton(Common && Common.Platform ? Common.Platform.ctx : null, this);
             manager._drawQuestSkipButton(Common && Common.Platform ? Common.Platform.ctx : null, this);
             manager._drawGameOverButton(Common && Common.Platform ? Common.Platform.ctx : null, this);
+            manager._drawEndingSimulationButton(Common && Common.Platform ? Common.Platform.ctx : null, this);
             manager._updateQuestHudAnchorRect();
             manager._drawDeveloperTooltip(Common && Common.Platform ? Common.Platform.ctx : null);
         };
@@ -3642,6 +3748,7 @@ const IP2LiveGameManager = {
             { enabled: this.enableQuestFailButton, key: '_questFailButtonRect', icon: 'fail', title: 'Simulate fail quest', detail: 'Apply a terminal quest failure', accent: '#FF8298' },
             { enabled: this.enableQuestSkipButton, key: '_skipQuestButtonRect', icon: 'floor', title: 'Skip floor quests', detail: 'Complete this floor; keep the exit', accent: '#6CDCE5' },
             { enabled: this.enableGameOverButton, key: '_gameOverButtonRect', icon: 'power', title: 'Simulate Game Over', detail: 'Deduct 100 Life Force immediately', accent: '#C5A3FF' },
+            { enabled: this.enableEndingSimulationButton, key: '_simulateEndingButtonRect', icon: 'ending', title: 'Simulate Ending', detail: 'Complete quests; jump to the final floor', accent: '#E9D49B' },
         ].filter(action => action.enabled);
     },
 
@@ -3663,6 +3770,7 @@ const IP2LiveGameManager = {
     },
 
     _developerActionActive(icon, mapId) {
+        if (this._endingSimulationPending) return false;
         if (this._activeGameplayNode) return false;
         if (IP2Live.DialogueManager && IP2Live.DialogueManager.isActive()) return false;
         if (IP2Live.WorldTitleOverlay && IP2Live.WorldTitleOverlay.isActive()) return false;
@@ -3671,6 +3779,7 @@ const IP2LiveGameManager = {
         if (icon === 'skip') return this._hasSkippableSingleQuest(mapId);
         if (icon === 'fail') return this._hasFailableCurrentQuest(mapId);
         if (icon === 'floor') return this._hasSkippableFloorQuests(mapId);
+        if (icon === 'ending') return this._canSimulateEnding();
         return !!(neural && typeof neural.simulateGameOver === 'function');
     },
 
@@ -3697,6 +3806,7 @@ const IP2LiveGameManager = {
     _drawQuestFailButton(ctx, scene) { return this._drawDeveloperAction(ctx, scene, '_questFailButtonRect'); },
     _drawQuestSkipButton(ctx, scene) { return this._drawDeveloperAction(ctx, scene, '_skipQuestButtonRect'); },
     _drawGameOverButton(ctx, scene) { return this._drawDeveloperAction(ctx, scene, '_gameOverButtonRect'); },
+    _drawEndingSimulationButton(ctx, scene) { return this._drawDeveloperAction(ctx, scene, '_simulateEndingButtonRect'); },
 
     _drawDeveloperQuestButton(ctx, o) {
         const pointer = this._developerPointer;
@@ -3727,6 +3837,11 @@ const IP2LiveGameManager = {
             ctx.moveTo(9, 11); ctx.lineTo(15, 17); ctx.lineTo(9, 23);
             ctx.moveTo(17, 11); ctx.lineTo(23, 17); ctx.lineTo(17, 23);
             ctx.moveTo(26, 11); ctx.lineTo(26, 23);
+        } else if (o.icon === 'ending') {
+            ctx.moveTo(9, 8); ctx.lineTo(25, 8); ctx.lineTo(25, 25); ctx.lineTo(9, 25); ctx.closePath();
+            ctx.moveTo(13, 12); ctx.lineTo(21, 12);
+            ctx.moveTo(17, 15); ctx.lineTo(21, 19); ctx.lineTo(17, 23); ctx.lineTo(13, 19); ctx.closePath();
+            ctx.moveTo(15, 24); ctx.lineTo(14, 28); ctx.lineTo(17, 26); ctx.lineTo(20, 28); ctx.lineTo(19, 24);
         } else {
             ctx.arc(17, 18, 8, -Math.PI / 4, Math.PI * 1.25);
             ctx.moveTo(17, 7); ctx.lineTo(17, 17);
@@ -3777,6 +3892,7 @@ const IP2LiveGameManager = {
             const changed = action.icon === 'skip' ? this.skipCurrentQuest(mapId)
                 : action.icon === 'fail' ? this.failCurrentQuest(mapId)
                 : action.icon === 'floor' ? this.skipCurrentFloorQuests(mapId)
+                : action.icon === 'ending' ? this.simulateEnding()
                 : this.simulateGameOver();
             if (changed) this._playConfirm();
             else this._playCursor();
