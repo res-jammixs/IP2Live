@@ -1,6 +1,8 @@
-/** A short, skippable story epilogue followed by a permanent completion award. */
+/** Story epilogue, animated completion award and persistent certificate archive. */
 (function () {
     const C = { bg: '#060e16', panel: '#0c1c27', cyan: '#79f4dc', gold: '#ecd598', text: '#edf6f7', muted: '#98afbd', line: '#294452' };
+    const SUCCESS_BUTTONS = { fill: '24,128,76', edge: '116,242,161', glow: '#61E593',
+        text: '#E9FFF0', muted: '#95B89F', shine: '#D9FFE5' };
     function text(ctx, value, x, y, size, color = C.text, align = 'left', width = 1120) {
         ctx.font = size + 'px "Oxanium-Medium", sans-serif'; ctx.fillStyle = color;
         ctx.textAlign = align; ctx.textBaseline = 'middle'; ctx.fillText(String(value), x, y, width);
@@ -32,6 +34,11 @@
     function gradient(ctx, x, y, x2, y2, colors) {
         const g = ctx.createLinearGradient(x, y, x2, y2); colors.forEach((color, i) => g.addColorStop(i / (colors.length - 1), color)); return g;
     }
+    function glowEnding(ctx,x,y,rx,ry,color) {
+        ctx.save(); ctx.translate(x,y); ctx.scale(rx,ry);
+        const g=ctx.createRadialGradient(0,0,0,0,0,1); g.addColorStop(0,color); g.addColorStop(1,'#00000000');
+        ctx.fillStyle=g; ctx.fillRect(-1,-1,2,2); ctx.restore();
+    }
     function trace(ctx, points, color, width = 1) {
         ctx.beginPath(); points.forEach(([x, y], i) => i ? ctx.lineTo(x, y) : ctx.moveTo(x, y));
         ctx.strokeStyle = color; ctx.lineWidth = width; ctx.stroke();
@@ -61,6 +68,12 @@
         constructor(record, options = {}) {
             super(true);
             this.record = record; this.archive = !!options.archive;
+            this._storyFinale = !!record && !this.archive;
+            this.parentScene = Manager.Stack.top; this.storyGame = Core.Game.current;
+            this._worldElapsed = 0; this._worldFaded = false; this._lastAt = null; this._suspended = false;
+            this._completeTime = 0; this._exitTime = null; this._certificateOpen = false;
+            this._actionMix = new Map();
+            this.epilogue = null; this._completionBackdrop = null; this._certificateBack = null;
             this.phase = this.archive || options.certificateOnly ? 'complete' : 'cutscene';
             this.beat = 0; this.beatStarted = Date.now(); this.readyAt = Date.now() + 300;
             this.selected = 0; this.hovered = -1; this.pressed = -1; this.pointerDownSeen = false;
@@ -82,7 +95,14 @@
             } catch (error) { console.warn('[IP2Live] Ending fonts could not be loaded:', error); }
             if (this.closed) return;
             if (this.archive) await this._loadRecords();
-            else if (IP2Live.MusicManager) IP2Live.MusicManager.play('STORY_ENDING');
+            else if (this._storyFinale && this.phase === 'cutscene') {
+                IP2Live.InputGuard?.reset();
+                IP2Live.MusicManager?.fadeOutForTransition?.(900);
+                this.epilogue = new IP2Live.StoryEpilogueScreen(this);
+                await this.epilogue.load();
+            } else if (IP2Live.MusicManager) IP2Live.MusicManager.play('STORY_ENDING');
+            if (this.closed) return;
+            this._lastAt = Date.now();
             this.beatStarted = Date.now(); this.loading = false; this._paint();
         }
         async _loadRecords() {
@@ -95,19 +115,70 @@
         }
         _paint() { Manager.Stack.requestPaintHUD = true; }
         update() {
+            if (this._storyFinale) {
+                const now=Date.now(); let delta=Math.min(100,Math.max(0,now-(this._lastAt ?? now))); this._lastAt=now;
+                if (this.loading || this.closed || Manager.Stack.top!==this || document.hidden || (document.hasFocus && !document.hasFocus())) {
+                    this._suspended=true; return;
+                }
+                if(this._suspended) { delta=0; this._suspended=false; if(this.epilogue) this.epilogue.lastAt=now; }
+                if(this.phase==='cutscene') {
+                    if(!this._worldFaded) {
+                        this._worldElapsed+=delta;
+                        if(this._worldElapsed>=1300) { this._worldFaded=true; this.epilogue.lastAt=now; IP2Live.MusicManager?.play('STORY_ENDING'); this._paint(); }
+                    } else this.epilogue?.update();
+                } else {
+                    this._completeTime+=delta;
+                    this._actions().forEach((action,index)=>{
+                        const target=index===this.selected?1:0, previous=this._actionMix.get(action.id) ?? target;
+                        this._actionMix.set(action.id,this.reducedMotion?target:previous+(target-previous)*(1-Math.exp(-delta/110)));
+                    });
+                }
+                if(this._exitTime!==null) {
+                    this._exitTime+=delta;
+                    if(this._exitTime >= (this.reducedMotion?140:650)) {
+                        this._exitTime=null;
+                        IP2Live.InputGuard?.reset();
+                        IP2Live.DialogueManager?.discardActive?.();
+                        Manager.Stack.popAll(); Manager.Stack.pushTitleScreen(true); return;
+                    }
+                }
+                if(this.phase==='cutscene' && this._worldFaded) return; // The caption clock owns these paints.
+                const frame=Math.floor((this.phase==='cutscene'?this._worldElapsed:this._completeTime)/(1000/30));
+                if(frame!==this._lastPaintFrame && (!this.reducedMotion || this.phase==='cutscene' || this._completeTime<1000 || this._exitTime!==null)) {
+                    this._lastPaintFrame=frame;
+                    if(!this.reducedMotion) this._completionBackdrop?.update();
+                    this._paint();
+                }
+                return;
+            }
             if (this.phase === 'cutscene' && Date.now() - this.beatStarted >= 6000) this._advance();
             this._paint();
         }
         _advance() {
+            if(this._storyFinale) { if(this._worldFaded) this.epilogue?._advance(); return; }
             if (this.phase !== 'cutscene') return;
             if (++this.beat >= this.beats.length) this._finishCutscene();
             else this.beatStarted = Date.now();
             this._paint();
         }
         _finishCutscene() {
+            if(this.epilogue) { this.epilogue.close(); this.epilogue=null; }
+            this._completeTime=0; IP2Live.InputGuard?.reset();
             this.phase = 'complete'; this.selected = 0; this.readyAt = Date.now() + 300; this._paint();
         }
         _actions() {
+            if(this._storyFinale) {
+                if(this.phase==='cutscene') return [];
+                if(this._certificateOpen) return [
+                    {id:'close-certificate',label:'BACK',x:310,y:620,w:230,h:52},
+                    {id:'pdf',label:this.busy?'PLEASE WAIT...':'DOWNLOAD CERTIFICATE',x:560,y:620,w:410,h:52},
+                ];
+                return [
+                    {id:'menu',label:'BACK TO MAIN MENU',x:180,y:620,w:290,h:52},
+                    {id:'save-story',label:this.busy?'PLEASE WAIT...':'SAVE STORY',x:495,y:620,w:290,h:52},
+                    {id:'certificate',label:'CERTIFICATE',x:810,y:620,w:290,h:52},
+                ];
+            }
             if (this.phase === 'cutscene') return [{ id: 'next', label: this.beat === 2 ? 'COMPLETE STORY' : 'CONTINUE', x: 974, y: 606, w: 226, h: 50 }];
             if (!this.record) return [
                 ...(this.noticeError ? [{ id: 'retry', label: 'RETRY', x: 80, y: 606, w: 230, h: 50 }] : []),
@@ -122,9 +193,29 @@
         }
         async _activate(id) {
             if (this.busy || this.closed || Date.now() < this.readyAt) return;
+            if(this._storyFinale && this.phase==='cutscene') return;
             const sound = Data.Systems && Data.Systems.soundConfirmation;
             if (sound) sound.playSound();
             if (id === 'next') return this._advance();
+            if(id==='certificate' || id==='close-certificate') {
+                this._certificateOpen=id==='certificate'; this.selected=this._certificateOpen?1:2;
+                this.notice=''; this.readyAt=Date.now()+220; this._paint(); return;
+            }
+            if(id==='save-story') {
+                this.busy=true; this.notice='Saving your completed story...'; this._paint();
+                try {
+                    await this.saveTask;
+                    if(this.closed) return;
+                    this.saveTask=IP2Live.StoryCompletion.save(this.record,this.storyGame);
+                    this.saveResult=await this.saveTask;
+                    if(!this.closed) {
+                        this.notice=this.saveResult.storySaved?'Your completed story has been saved.':'Could not save Story progress. Please try Save Story again.';
+                        this.noticeError=!this.saveResult.storySaved;
+                    }
+                } catch(error) { if(!this.closed) { this.notice='Could not save Story progress. Please try Save Story again.'; this.noticeError=true; } }
+                finally { this.busy=false; this._paint(); }
+                return;
+            }
             if (id === 'retry') { this.noticeError = false; return this._loadRecords(); }
             if (id === 'previous' || id === 'next-record') {
                 if (!this.records.length) return;
@@ -155,6 +246,7 @@
                 this.busy = true; this.notice = 'Saving your completion...'; this._paint();
                 await this.saveTask;
                 if (this.closed) return;
+                if(this._storyFinale) { this.notice=''; this._exitTime=0; this._paint(); return; }
                 if (IP2Live.DialogueManager && IP2Live.DialogueManager.discardActive) IP2Live.DialogueManager.discardActive();
                 Manager.Stack.popAll(); Manager.Stack.pushTitleScreen(true);
             }
@@ -166,15 +258,17 @@
             let delta = 0;
             if (['ARROWRIGHT', 'ARROWDOWN', 'RIGHT', 'DOWN'].includes(value) || equal(controls.Down) || equal(controls.Right)) delta = 1;
             if (['ARROWLEFT', 'ARROWUP', 'LEFT', 'UP'].includes(value) || equal(controls.Up) || equal(controls.Left)) delta = -1;
-            if (delta) { const count = this._actions().length; this.selected = (this.selected + delta + count) % count; this._paint(); }
+            if (delta) { const count = this._actions().length; if(count) this.selected = (this.selected + delta + count) % count; this._paint(); }
         }
         onKeyPressed(key) {
             if (this.busy || this.closed) return true;
+            if(this._storyFinale && this.phase==='cutscene') { if(this._worldFaded) this.epilogue?.onKeyPressed(key); return true; }
             const value = this._key(key), keys = Data.Keyboards || {};
             if ((keys.checkActionMenu && keys.checkActionMenu(key)) || ['ENTER', ' ', 'SPACE'].includes(value)) this._activate(this._actions()[this.selected].id);
             else if ((keys.checkCancelMenu && keys.checkCancelMenu(key)) || value === 'ESCAPE') {
                 if (Date.now() < this.readyAt) return true;
-                if (this.phase === 'cutscene') this._finishCutscene();
+                if(this._storyFinale && this._certificateOpen) this._activate('close-certificate');
+                else if (this.phase === 'cutscene') this._finishCutscene();
                 else this._activate('menu');
             } else this._navigate(key);
             return true;
@@ -192,7 +286,10 @@
             if (index >= 0 && (!this.pointerDownSeen || index === this.pressed)) this._activate(this._actions()[index].id);
             this.pressed = -1; this.pointerDownSeen = false;
         }
-        draw3D() { if (Manager.GL && Manager.GL.renderer) Manager.GL.renderer.clear(); }
+        draw3D() {
+            if(this._storyFinale && this.phase==='cutscene' && !this._worldFaded && this.parentScene?.draw3D) this.parentScene.draw3D();
+            else if (Manager.GL && Manager.GL.renderer) Manager.GL.renderer.clear();
+        }
         _background(ctx) {
             // Material and chassis passes are painted once, not regenerated each frame.
             const density = Math.min(2, Math.max(1, Math.min(ctx.canvas.width / 1280, ctx.canvas.height / 720)));
@@ -373,7 +470,147 @@
             ctx.fillStyle = '#00000060'; ctx.fillRect(648, 179, 552, 552 * 595 / 842);
             ctx.drawImage(this.preview, 640, 171, 552, 552 * 595 / 842);
         }
+        _certificateTextures() {
+            if(!this.preview) {
+                this.preview=document.createElement('canvas'); this.preview.width=1684; this.preview.height=1190;
+                IP2Live.StoryCertificate.draw(this.preview.getContext('2d'),this.record);
+            }
+            if(!this._modelFront) {
+                this._modelFront=document.createElement('canvas'); this._modelFront.width=842; this._modelFront.height=595;
+                this._modelFront.getContext('2d').drawImage(this.preview,0,0,842,595);
+            }
+            if(!this._certificateBack) {
+                this._certificateBack=document.createElement('canvas'); this._certificateBack.width=842; this._certificateBack.height=595;
+                const c=this._certificateBack.getContext('2d');
+                c.fillStyle=gradient(c,0,0,842,595,['#213a48','#0b1c2b','#233e47']); c.fillRect(0,0,842,595);
+                grain(c,0,0,842,595,5500);
+                for(let i=0;i<8;i++) {
+                    regular(c,421,295,230+i*15,230+i*15,6,null,'#a8ddc00b');
+                }
+                chamfer(c,19,19,804,557,20); c.strokeStyle=C.gold; c.lineWidth=2; c.stroke();
+                chamfer(c,25,25,792,545,17); c.strokeStyle='#91b3ac66'; c.stroke();
+                IP2Live.StoryCertificate.drawSeal(c,421,264,93);
+                text(c,'IP2LIVE',421,410,39,C.gold,'center');
+                text(c,'EVERY CONNECTION COUNTS',421,454,17,'#bed9d2','center');
+                text(c,'STORY MODE / COMPLETED',421,514,12,'#819eaa','center');
+            }
+            if(!this._modelFaces) this._modelFaces={front:IP2Live.EpilogueArt.prepareCertificateTexture(this._modelFront),back:IP2Live.EpilogueArt.prepareCertificateTexture(this._certificateBack)};
+        }
+        _drawCelebration(ctx) {
+            if(!this._celebrationBadge) {
+                const surface=this._celebrationBadge=document.createElement('canvas'); surface.width=240; surface.height=300;
+                const p=surface.getContext('2d'); p.translate(120,150);
+                // Faceted laurels surround an unlocked system seal. The inner
+                // circuits and check mark connect the award to the final breach.
+                for(const direction of [-1,1]) {
+                    const stalk=[];
+                    for(let i=0;i<9;i++) {
+                        const angle=Math.PI/2-direction*i*.32, x=Math.cos(angle)*82,y=Math.sin(angle)*82;
+                        stalk.push([x,y]);
+                        const at=(radius,offset)=>[Math.cos(angle+direction*offset)*radius,Math.sin(angle+direction*offset)*radius];
+                        polygon(p,[[x,y],at(101,.08),at(111,-.10),at(89,-.20)],
+                            gradient(p,x-15,y-15,x+20,y+15,i%3===0?['#b59b64','#655c3e','#c0ab71']:['#709d76','#254b3c','#759c6b']),
+                            i%3===0?'#ddc78c9e':'#a0d8a073',.8);
+                        trace(p,[[x,y],at(109,-.10)],'#d7e8b144',.8);
+                    }
+                    trace(p,stalk,'#cfb67b',1.4);
+                }
+                regular(p,0,-8,55,62,6,'#d1bd87','#f5e0a9',-Math.PI/2,1);
+                regular(p,0,-8,50,57,6,gradient(p,-50,-64,50,50,['#31544b','#0a211e','#213b33']),'#789f7c',-Math.PI/2,1.2);
+                regular(p,0,-8,43,49,6,null,'#b5d6ab33');
+                for(const dir of [-1,1]) {
+                    trace(p,[[dir*15,23],[dir*31,23],[dir*38,10]],'#7ab98a',1);
+                    regular(p,dir*38,10,2.2,2.2,4,'#c8f6bd');
+                }
+                // Open shackle above the lock; the green tick marks reclaimed access.
+                p.beginPath();p.arc(0,-23,14,Math.PI,Math.PI*1.88);p.strokeStyle='#dbc98b';p.lineWidth=4;p.stroke();
+                trace(p,[[-14,-23],[-14,-9]],'#dbc98b',4);
+                chamfer(p,-20,-12,40,32,5);p.fillStyle=gradient(p,0,-12,0,20,['#d4bb7b','#8e784c']);p.fill();p.strokeStyle='#ecdc9e';p.lineWidth=1;p.stroke();
+                trace(p,[[-9,3],[-2,10],[11,-3]],'#113e2b',3.5);
+                const star=Array.from({length:10},(_,i)=>{const a=-Math.PI/2+i*Math.PI/5,r=i%2?6:14;return[Math.cos(a)*r,-111+Math.sin(a)*r];});
+                polygon(p,star,'#e6ca87','#fff0b4',1);
+                for(let i=0;i<3;i++) regular(p,(i-1)*13,106,2.7,3.8,4,i===1?'#e6cd96':'#7ac394');
+            }
+            const time=this.reducedMotion?0:this._completeTime/1000;
+            ctx.save();
+            for(const side of [0,1]) {
+                const cx=side?1145:135;
+                glowEnding(ctx,cx,340,155,205,'#459d5e19');
+                ctx.drawImage(this._celebrationBadge,cx-120,190,240,300);
+                // Sparse gold and green foil fragments stay in the side gutters.
+                for(let i=0;i<18;i++) {
+                    const progress=((i*.057+time*(.018+i%3*.003))%1);
+                    const x=(side?1010:20)+(i*61%245)+Math.sin(time*.45+i)*10;
+                    const y=510-progress*325;
+                    ctx.save();ctx.globalAlpha*=Math.sin(progress*Math.PI)*.65;
+                    ctx.translate(x,y);ctx.rotate(i*1.37+time*(i%2?.22:-.18));
+                    ctx.fillStyle=i%3?'#8adea5':'#ecd298';ctx.fillRect(-1.5,-3,i%4?3:5,i%4?6:2);ctx.restore();
+                }
+                const burst=this.reducedMotion?-1:((time+side*2.7)%6)/2;
+                if(burst>=0 && burst<1) {
+                    const x=side?1207:73,y=side?438:227,radius=8+burst*35;
+                    ctx.save();ctx.globalAlpha*=Math.sin(burst*Math.PI)*.5;
+                    for(let ray=0;ray<10;ray++) {
+                        const a=ray*Math.PI/5;
+                        trace(ctx,[[x+Math.cos(a)*radius*.65,y+Math.sin(a)*radius*.65],[x+Math.cos(a)*radius,y+Math.sin(a)*radius]],ray%2?'#a6edb7':'#eed49b',1.1);
+                    }
+                    ctx.restore();
+                }
+            }
+            ctx.restore();
+        }
+        _drawFinale(ctx) {
+            if(!this._completionBackdrop && IP2Live.GameOverBackdrop) this._completionBackdrop=IP2Live.GameOverBackdrop.create();
+            if(this._completionBackdrop) this._completionBackdrop.draw(ctx,1280,720);
+            else {
+                ctx.fillStyle=gradient(ctx,0,0,1280,720,['#04050d','#171425','#070a13']); ctx.fillRect(0,0,1280,720);
+            }
+            glowEnding(ctx,640,333,530,335,'#3b9d8821');
+            const reveal=Math.min(1,this._completeTime/(this.reducedMotion?140:900));
+            ctx.save(); ctx.globalAlpha*=reveal*reveal*(3-2*reveal);
+            if(!this._certificateOpen) this._drawCelebration(ctx);
+            // The same broad diagonal title band as Game Over, in success colours.
+            polygon(ctx,[[-20,68],[183,49],[1300,68],[1112,144],[148,144]],gradient(ctx,0,65,1280,140,['#163334','#316e65','#1b4b49','#10262c']),'#a2d7bd55');
+            trace(ctx,[[182,52],[1131,52]],'#e8d7a654',1.5);
+            trace(ctx,[[150,141],[1109,141]],'#84e9cd78',1.2);
+            ctx.font='52px "Nebula-Regular", sans-serif'; ctx.fillStyle='#eff9ed'; ctx.textAlign='center'; ctx.textBaseline='middle';
+            ctx.fillText('STORY COMPLETE',640,103,1040);
+            this._certificateTextures();
+            if(!this._certificateOpen) {
+                if(!this._modelSurface) { this._modelSurface=document.createElement('canvas'); this._modelSurface.width=640; this._modelSurface.height=460; }
+                const frame=this.reducedMotion?0:Math.floor(this._completeTime/(1000/24));
+                if(frame!==this._modelFrame) {
+                    const p=this._modelSurface.getContext('2d'); p.setTransform(1,0,0,1,0,0); p.clearRect(0,0,640,460); p.translate(-320,-120);
+                    IP2Live.EpilogueArt.drawCertificateModel(p,this._modelFaces.front,this._modelFaces.back,this._completeTime/1000,this.reducedMotion);
+                    this._modelFrame=frame;
+                }
+                ctx.drawImage(this._modelSurface,320,120,640,460);
+            }
+            ctx.font='21px "Oxanium-Medium", sans-serif';
+            const name=String(this.record.name), measured=ctx.measureText(name).width;
+            if(measured>800) ctx.font=(21*800/measured)+'px "Oxanium-Medium", sans-serif';
+            ctx.fillStyle=C.gold; ctx.textAlign='center'; ctx.fillText(name,640,546);
+            text(ctx,'Thank you, Infiltrator. You gave Neo-Gaia its future back.',640,575,16,'#c3d6d6','center',1080);
+            ctx.restore();
+            if(this._certificateOpen) {
+                ctx.fillStyle='#02060bed'; ctx.fillRect(0,0,1280,720);
+                text(ctx,'YOUR STORY CERTIFICATE',640,43,20,C.gold,'center');
+                panel(ctx,272,72,736,526,'#9e9369');
+                ctx.drawImage(this.preview,280,80,720,720*595/842);
+            }
+        }
         _drawButton(ctx, r, active, index) {
+            if(this._storyFinale && IP2Live.ARDiagnosticRewind) {
+                // Use Game Over's actual action painter, including its feathered
+                // edges, fitted type and moving lower highlight, in success green.
+                const proto=IP2Live.ARDiagnosticRewind.prototype;
+                const painter={tick:this.reducedMotion?0:this._completeTime*.06,_linear:proto._linear,_fit:proto._fit};
+                const mix=this.reducedMotion?(active?1:0):(this._actionMix.get(r.id) ?? (active?1:0));
+                const alpha=this._certificateOpen || this.reducedMotion?1:Math.max(0,Math.min(1,(this._completeTime-index*120)/450));
+                ctx.save(); ctx.globalAlpha*=alpha; ctx.textBaseline='alphabetic';
+                proto._drawFadedAction.call(painter,ctx,{...r,y:r.y+(1-alpha)*12},r.label,'"Oxanium-Medium", sans-serif',mix,active,SUCCESS_BUTTONS);
+                ctx.restore(); return;
+            }
             const key = [r.w, r.h, active].join(':');
             if (!this._buttonSkins.has(key)) {
                 const surface = document.createElement('canvas'); surface.width = r.w; surface.height = r.h;
@@ -393,21 +630,47 @@
             text(ctx, r.label, r.x + r.w / 2 + (this.hideActionNumbers ? 0 : 5), r.y + r.h / 2, 13, active ? '#d0ffec' : C.text, 'center', r.w - 52);
         }
         drawHUD() {
+            if(this.closed) return;
+            if(this._storyFinale && this.phase==='cutscene') {
+                if(this._worldFaded) { this.epilogue?.drawHUD(); return; }
+                this.parentScene?.drawHUD?.();
+                const p=Common.Platform.ctx, a=Math.min(1,this._worldElapsed/900);
+                p.save(); p.setTransform(1,0,0,1,0,0); p.globalAlpha=a*a*(3-2*a); p.fillStyle='#000000'; p.fillRect(0,0,p.canvas.width,p.canvas.height); p.restore(); return;
+            }
             const ctx = Common.Platform.ctx, canvas = ctx.canvas;
             const scale = Math.min(canvas.width / 1280, canvas.height / 720);
             ctx.save(); ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.fillStyle = '#03080d'; ctx.fillRect(0, 0, canvas.width, canvas.height);
             ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = 'high';
             ctx.translate((canvas.width - 1280 * scale) / 2, (canvas.height - 720 * scale) / 2); ctx.scale(scale, scale);
-            this._background(ctx);
-            if (this.phase === 'cutscene') this._drawCutscene(ctx); else this._drawComplete(ctx);
+            if(this._storyFinale) this._drawFinale(ctx);
+            else {
+                this._background(ctx);
+                if (this.phase === 'cutscene') this._drawCutscene(ctx); else this._drawComplete(ctx);
+            }
             this._actions().forEach((r, index) => this._drawButton(ctx, r, index === this.selected, index));
             let notice = this.notice;
             if (!notice && this.saveResult && !this.saveResult.archived) notice = 'Download your certificate now. Its archive could not be saved on this device.';
-            if (this.phase === 'complete' && notice) text(ctx, notice, 80, 572, 13, this.noticeError || this.saveResult && !this.saveResult.archived ? C.gold : C.cyan);
-            text(ctx, this.footerRight || (this.phase === 'complete' ? 'IP2LIVE  /  EVERY CONNECTION COUNTS' : 'SECURE TRANSMISSION'), 1200, 679, 10, C.muted, 'right');
+            if (this.phase === 'complete' && notice) text(ctx, notice, this._storyFinale?640:80, this._storyFinale?599:572, 13, this.noticeError || this.saveResult && !this.saveResult.archived ? C.gold : C.cyan,this._storyFinale?'center':'left');
+            text(ctx, this.footerRight || (this.phase === 'complete' ? 'IP2LIVE  /  EVERY CONNECTION COUNTS' : 'SECURE TRANSMISSION'), this._storyFinale?640:1200, this._storyFinale?699:679, 10, C.muted, this._storyFinale?'center':'right');
+            if(this._storyFinale && this._exitTime!==null) {
+                const a=Math.min(1,this._exitTime/(this.reducedMotion?140:650));
+                ctx.globalAlpha=a*a*(3-2*a); ctx.fillStyle='#000'; ctx.fillRect(0,0,1280,720);
+            }
             ctx.restore();
         }
         close() {
+            this.epilogue?.close(); this.epilogue=null; this._completionBackdrop=null;
+            if(this._certificateBack) this._certificateBack.width=this._certificateBack.height=0;
+            if(this._modelFront) this._modelFront.width=this._modelFront.height=0;
+            if(this._modelSurface) this._modelSurface.width=this._modelSurface.height=0;
+            this._modelSurface=null;
+            this._modelFront=null;
+            if(this._modelFaces) for(const face of Object.values(this._modelFaces)) for(const cell of face.cells) cell.surface.width=cell.surface.height=0;
+            this._modelFaces=null;
+            this._certificateBack=null; this.parentScene=null; this.storyGame=null;
+            if(this._celebrationBadge) this._celebrationBadge.width=this._celebrationBadge.height=0;
+            this._celebrationBadge=null;
+            this._actionMix.clear();
             this.closed = true; this.preview = null; this._seal = null; this._metalTexture = null; this._backdrops.clear(); this._buttonSkins.clear();
             IP2Live.StoryCompletion.release(this); if (super.close) super.close();
         }

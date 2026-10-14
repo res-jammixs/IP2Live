@@ -19,6 +19,7 @@
         constructor(onComplete) {
             super(true);
             this.onComplete = onComplete; this.beats = IP2Live.StoryLore.prologue;
+            this.art = IP2Live.PrologueArt; this.channelLabel = 'IP2LIVE / ORIGINS';
             this.loading = true;
             this.characters = Array.from(this.beats[0].text);
             this.index = 0; this.phase = 'fadeIn'; this.elapsed = 0; this.visibleChars = 0; this.typeBudget = 0;
@@ -144,9 +145,10 @@
         onMouseUp() { return true; }
         draw3D() { Manager.GL?.renderer?.clear(); }
         _fleetSprites() {
+            if (!this.art.createArrivalFleet) return null;
             if (!this._arrivalFleet) {
                 const canvas = Common.Platform.ctx.canvas;
-                this._arrivalFleet = IP2Live.PrologueArt.createArrivalFleet(Math.min(canvas.width / W, canvas.height / H));
+                this._arrivalFleet = this.art.createArrivalFleet(Math.min(canvas.width / W, canvas.height / H));
             }
             return this._arrivalFleet;
         }
@@ -159,7 +161,7 @@
             const canvas = Common.Platform.ctx.canvas;
             const density = Math.min(1.5, Math.max(1, Math.min(canvas.width / W, canvas.height / H)));
             const surface = document.createElement('canvas'); surface.width = Math.round(W * density); surface.height = Math.round(H * density);
-            const p = surface.getContext('2d'); p.setTransform(density, 0, 0, density, 0, 0); IP2Live.PrologueArt.paint(p, index);
+            const p = surface.getContext('2d'); p.setTransform(density, 0, 0, density, 0, 0); this.art.paint(p, index);
             this._cache.set(index, surface); return surface;
         }
         _textRows(ctx) {
@@ -249,10 +251,10 @@
             else if (this.phase === 'leaving') opacity = 0;
             ctx.globalAlpha = opacity * opacity * (3 - 2 * opacity);
             ctx.drawImage(this._surface(this.index), 0, 0, W, H);
-            if (this.index === 0) IP2Live.PrologueArt.drawArrivalFleet(ctx, this._fleetSprites(), this.ambientTime / 1000, { reducedMotion: this.reducedMotion });
-            IP2Live.PrologueArt.paintAmbient(ctx, this.index, this.ambientTime / 1000, { reducedMotion: this.reducedMotion });
+            if (this.index === 0 && this.art.drawArrivalFleet) this.art.drawArrivalFleet(ctx, this._fleetSprites(), this.ambientTime / 1000, { reducedMotion: this.reducedMotion });
+            this.art.paintAmbient(ctx, this.index, this.ambientTime / 1000, { reducedMotion: this.reducedMotion });
             frame(ctx, 20, 20, 1240, 680, 18); ctx.strokeStyle = '#8a637b55'; ctx.lineWidth = 1; ctx.stroke();
-            label(ctx, 'IP2LIVE / ORIGINS', 54, 44, 11, '#c0abb9');
+            label(ctx, this.channelLabel, 54, 44, 11, '#c0abb9');
             const beat = this.beats[this.index];
             label(ctx, beat.subtitle, 72, 97, 10, '#d198a9');
             ctx.font = '32px "Nebula-Regular", sans-serif'; ctx.fillStyle = '#f3e9eb'; ctx.textAlign = 'left'; ctx.fillText(beat.title, 70, 132);

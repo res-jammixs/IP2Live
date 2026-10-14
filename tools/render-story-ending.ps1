@@ -1,5 +1,5 @@
 param(
-    [ValidateSet('complete', 'cutscene', 'apex', 'restored', 'archive', 'empty', 'long', 'certificate')][string[]]$States = @('cutscene', 'complete', 'archive', 'empty'),
+    [ValidateSet('complete', 'cutscene', 'apex', 'robots', 'restored', 'archive', 'empty', 'long', 'certificate', 'certificate-view')][string[]]$States = @('cutscene', 'apex', 'robots', 'restored', 'complete', 'certificate-view'),
     [ValidateRange(640, 3840)][int]$Width = 1920,
     [ValidateRange(480, 2160)][int]$Height = 1080
 )
