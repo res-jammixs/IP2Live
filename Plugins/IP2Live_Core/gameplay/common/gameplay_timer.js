@@ -52,6 +52,7 @@
             if (IP2Live.DialogueManager && IP2Live.DialogueManager.isActive && IP2Live.DialogueManager.isActive()) return false;
             if (typeof document !== 'undefined' && (document.hidden ||
                 (typeof document.hasFocus === 'function' && !document.hasFocus()))) return false;
+            if (screen.options && screen.options.combinedMode) return !!IP2Live.CombinedGameplay?.isActiveScreen(screen);
             if (typeof Manager !== 'undefined' && Manager.Stack && Manager.Stack.top && Manager.Stack.top !== screen) return false;
             return true;
         },

@@ -211,6 +211,34 @@ function Get-BundledGameplaySongNames {
     return @($names | Sort-Object)
 }
 
+function Get-BundledStoryEndingSongNames {
+    param([string]$PluginRoot)
+    $bundleRoot = Join-Path $PluginRoot 'assets\audio\story-ending'
+    $manifestPath = Join-Path $bundleRoot 'manifest.json'
+    if (-not (Test-Path -LiteralPath $manifestPath -PathType Leaf)) { return @() }
+    $bundle = [IO.File]::ReadAllText($manifestPath) | ConvertFrom-Json
+    $expected = @('01-a-network-restored.wav', '02-open-skies.wav')
+    if ($bundle.version -ne 1 -or @($bundle.entries).Count -ne $expected.Count) {
+        throw 'The story ending audio bundle must contain both recovery assets.'
+    }
+    $names = New-Object 'System.Collections.Generic.HashSet[string]' ([StringComparer]::Ordinal)
+    foreach ($entry in $bundle.entries) {
+        $file = [string]$entry.file
+        $expectedId = 29 + [array]::IndexOf($expected, $file)
+        if ($expected -cnotcontains $file -or $entry.name -cne ('StoryEnding/' + $file) -or
+            [int]$entry.kind -ne 1 -or [int]$entry.id -ne $expectedId) {
+            throw "Invalid story ending audio bundle entry: $file"
+        }
+        if (-not $names.Add([string]$entry.name)) { throw "Duplicate story ending audio bundle entry: $file" }
+        $asset = Join-Path $bundleRoot $file
+        if (-not (Test-Path -LiteralPath $asset -PathType Leaf)) { throw "Missing bundled story ending audio: $file" }
+        if ((Get-FileHash -LiteralPath $asset -Algorithm SHA256).Hash -ine [string]$entry.sha256) {
+            throw "Bundled story ending audio SHA256 mismatch: $file"
+        }
+    }
+    return @($names | Sort-Object)
+}
+
 function Assert-CustomSongsRegistered {
     param(
         [string[]]$ExpectedNames,
@@ -327,6 +355,7 @@ $audioPluginRoot = if ($syncProjectPlugin) { $projectPluginRoot } else {
 $bundledSongNames = @(
     Get-BundledPrologueSongNames -PluginRoot $audioPluginRoot
     Get-BundledGameplaySongNames -PluginRoot $audioPluginRoot
+    Get-BundledStoryEndingSongNames -PluginRoot $audioPluginRoot
 ) | Sort-Object
 Assert-CustomSongsRegistered -ExpectedNames $customSongNames -ExportedSongsPath $sourceSongsPath -BundledSongNames $bundledSongNames
 

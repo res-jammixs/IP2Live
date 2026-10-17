@@ -940,11 +940,14 @@ IP2Live.GameplayManagerReady = (async function () {
     const bundles = [
         {
             baseDir: root + 'Plugins/IP2Live_Core/gameplay/common/',
-            version: '20261013_gameplay_common_04_',
+            version: '20261015_gameplay_common_05_',
             files: [
+                'gameplay_definition.js',
                 'ip_class_ranges.js',
+                'gameplay_diagnostic.js',
                 'gameplay_timer.js',
                 'gameplay_completion_popup.js',
+                'windowed_gameplay.js',
             ],
         },
         {
@@ -956,6 +959,7 @@ IP2Live.GameplayManagerReady = (async function () {
                 'ip_wires_gameplay.js',
                 'ip_wires_gameplay_harder_tutorial.js',
                 'ip_wires_gameplay_harder.js',
+                'ip_wires_diagnostic.js',
             ],
         },
         {
@@ -964,6 +968,7 @@ IP2Live.GameplayManagerReady = (async function () {
             files: [
                 'ip_patchpanel_tutorial.js',
                 'ip_patchpanel_gameplay.js',
+                'ip_patchpanel_diagnostic.js',
             ],
         },
         {
@@ -974,6 +979,7 @@ IP2Live.GameplayManagerReady = (async function () {
                 'ip_cidrpanel_gameplay.js',
                 'ip_cidrpanel_gameplay_harder_tutorial.js',
                 'ip_cidrpanel_gameplay_harder.js',
+                'ip_cidrpanel_diagnostic.js',
             ],
         },
         {
@@ -982,6 +988,7 @@ IP2Live.GameplayManagerReady = (async function () {
             files: [
                 'ip_subnetsim_tutorial.js',
                 'ip_subnetsim_gameplay.js',
+                'ip_subnetsim_diagnostic.js',
             ],
         },
         {
@@ -991,6 +998,7 @@ IP2Live.GameplayManagerReady = (async function () {
                 'ip_host_power_gameplay.js',
                 'ip_host_power_tutorial.js',
                 'ip_host_power_tool.js',
+                'ip_host_power_diagnostic.js',
             ],
         },
         {
@@ -1006,6 +1014,7 @@ IP2Live.GameplayManagerReady = (async function () {
             files: [
                 'ip_vlsm_allocator_tutorial.js',
                 'ip_vlsm_allocator_gameplay.js',
+                'ip_vlsm_allocator_diagnostic.js',
             ],
         },
         {
@@ -1014,6 +1023,7 @@ IP2Live.GameplayManagerReady = (async function () {
             files: [
                 'ip_cidr_quarantine_tutorial.js',
                 'ip_cidr_quarantine_gameplay.js',
+                'ip_cidr_quarantine_diagnostic.js',
             ],
         },
         {
@@ -1022,6 +1032,7 @@ IP2Live.GameplayManagerReady = (async function () {
             files: [
                 'ip_cidr_quarantine_matrix_tutorial.js',
                 'ip_cidr_quarantine_matrix_gameplay.js',
+                'ip_subnet_blaster_diagnostic.js',
             ],
         },
         {
@@ -1030,6 +1041,26 @@ IP2Live.GameplayManagerReady = (async function () {
             files: [
                 'tutorial.js',
                 'gameplay.js',
+                'network_repair_diagnostic.js',
+            ],
+        },
+        {
+            baseDir: root + 'Plugins/IP2Live_Core/gameplay/',
+            version: '20261015_combined_windowed_01_',
+            files: [
+                'gameplay1/IPWires/ip_wires_gameplay_windowed_version.js',
+                'gameplay2/IPPatchPanel/ip_patchpanel_gameplay_windowed_version.js',
+                'gameplay3/CIDRPanel/ip_cidrpanel_gameplay_windowed_version.js',
+                'gameplay4/SubnetSimulator/ip_subnetsim_gameplay_windowed_version.js',
+                'gameplay4_5/HostPowerReactor/ip_host_power_gameplay_windowed_version.js',
+                'gameplay5/CIDRQuarantine/ip_cidr_quarantine_gameplay_windowed_version.js',
+                'gameplay6/CIDRQuarantineMatrix/ip_cidr_quarantine_matrix_gameplay_windowed_version.js',
+                'gameplay7/NetworkRepair/gameplay_windowed_version.js',
+                'gameplay8/VLSMAllocator/ip_vlsm_allocator_gameplay_windowed_version.js',
+                'gameplay1/IPWires/ip_wires_gameplay_harder_windowed_version.js',
+                'gameplay3/CIDRPanel/ip_cidrpanel_gameplay_harder_windowed_version.js',
+                'combined/combined_art.js',
+                'combined/combined_gameplay.js',
             ],
         },
     ];
@@ -1046,11 +1077,17 @@ IP2Live.GameplayManagerReady = (async function () {
                 }
                 if (!resp.ok) throw new Error('HTTP ' + resp.status);
                 const code = await resp.text();
-                new Function(
-                    'Common', 'Core', 'Data', 'Graphic',
-                    'Manager', 'Scene', 'Model', 'Main', 'THREE', 'IP2Live', 'inject',
-                    code
-                )(Common, Core, Data, Graphic, Manager, Scene, Model, Main, THREE, IP2Live, inject);
+                const definitions = IP2Live.GameplayDefinitions;
+                const before = definitions && definitions.beginModule(bundle.files[i], code);
+                try {
+                    new Function(
+                        'Common', 'Core', 'Data', 'Graphic',
+                        'Manager', 'Scene', 'Model', 'Main', 'THREE', 'IP2Live', 'inject',
+                        code
+                    )(Common, Core, Data, Graphic, Manager, Scene, Model, Main, THREE, IP2Live, inject);
+                } finally {
+                    if (definitions) definitions.endModule(before);
+                }
                 console.log('[IP2Live] Gameplay module loaded from:', resp.url || src);
             }
         }
@@ -1268,7 +1305,7 @@ IP2Live.MusicManagerReady = (async function () {
         // Do not let Electron's persistent Chromium profile reuse an older
         // music manager after a game update. Audio bugs otherwise survive a
         // reinstall even when the packaged module was replaced correctly.
-        const versionedSrc = src + '?v=20261014_managed_bgm_07_' + Date.now();
+        const versionedSrc = src + '?v=20261015_managed_bgm_08_' + Date.now();
         let resp = await fetch(versionedSrc, { cache: 'no-store' });
         if (!resp.ok) resp = await fetch(src, { cache: 'no-store' });
         if (!resp.ok) throw new Error('HTTP ' + resp.status);
@@ -1356,7 +1393,7 @@ IP2Live.GameManagerReady = (async function () {
             'Manager', 'Scene', 'Model', 'Main', 'THREE', 'IP2Live', 'inject',
             await replayResponse.text()
         )(Common, Core, Data, Graphic, Manager, Scene, Model, Main, THREE, IP2Live, inject);
-        const versionedSrc = src + '?v=20260918_game_manager_14_' + Date.now();
+        const versionedSrc = src + '?v=20261015_game_manager_16_' + Date.now();
         let resp = await fetch(versionedSrc, { cache: 'no-store' });
         if (!resp.ok) {
             console.warn('[IP2Live] Versioned game manager fetch failed, retrying plain path:', versionedSrc);
@@ -1370,7 +1407,7 @@ IP2Live.GameManagerReady = (async function () {
             code
         )(Common, Core, Data, Graphic, Manager, Scene, Model, Main, THREE, IP2Live, inject);
         if (IP2Live.GameManager && typeof IP2Live.GameManager.boot === 'function') {
-            for (const module of ['input_guard.js', 'achievements.js', 'feature_telemetry.js', 'practice_mode.js', 'pvp_rules.js', 'certificate_pdf.js', 'pvp_certificate.js', 'pvp_mode.js', 'endless_rules.js', 'endless_mode.js']) {
+            for (const module of ['input_guard.js', 'error_diagnostics.js', 'screens/error-diagnostics.js', 'achievements.js', 'feature_telemetry.js', 'practice_mode.js', 'pvp_rules.js', 'certificate_pdf.js', 'pvp_certificate.js', 'pvp_mode.js', 'endless_rules.js', 'endless_mode.js']) {
                 const response = await fetch(root + 'Plugins/IP2Live_Core/modules/' + module + '?v=' + Date.now(), { cache: 'no-store' });
                 if (!response.ok) throw new Error(module + ' HTTP ' + response.status);
                 new Function('Common', 'Core', 'Data', 'Graphic', 'Manager', 'Scene', 'Model', 'Main', 'THREE', 'IP2Live', 'inject',
@@ -1397,7 +1434,7 @@ IP2Live.ReportManagerReady = (async function () {
         const analyticsResponse = await fetch(root + 'Plugins/IP2Live_Core/modules/report_learning_analytics.js?v=' + Date.now(), { cache: 'no-store' });
         if (!analyticsResponse.ok) throw new Error('Learning analytics HTTP ' + analyticsResponse.status);
         new Function('IP2Live', await analyticsResponse.text())(IP2Live);
-        const versionedSrc = src + '?v=20260529_report_manager_01_' + Date.now();
+        const versionedSrc = src + '?v=20261015_report_manager_02_' + Date.now();
         let resp = await fetch(versionedSrc, { cache: 'no-store' });
         if (!resp.ok) {
             console.warn('[IP2Live] Versioned report manager fetch failed, retrying plain path:', versionedSrc);

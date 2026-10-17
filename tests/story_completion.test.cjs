@@ -9,7 +9,7 @@ const settle = async () => { for (let i = 0; i < 30; i++) await Promise.resolve(
 
 function harness() {
     let now = Date.UTC(2026, 9, 12), titleCalls = 0;
-    const storage = new Map(), profiles = new Map(), saves = [], drawn = [], downloads = [], songs = [];
+    const storage = new Map(), profiles = new Map(), saves = [], drawn = [], downloads = [], songs = [], telemetry = [];
     const canvas = { width: 1920, height: 1080, toDataURL: () => 'data:image/jpeg;base64,/9j/2Q==' };
     const context2d = surface => new Proxy({ canvas: surface, fillText: value => drawn.push(value), measureText: value => ({ width: String(value).length * 9 }),
         createRadialGradient: () => ({ addColorStop() {} }), createLinearGradient: () => ({ addColorStop() {} }) }, { get: (o, key) => key in o ? o[key] : () => {} });
@@ -41,7 +41,7 @@ function harness() {
     for (const stage of maps.stages.filter(s => !s.tutorial)) ip.QuestManager.completedObjectives['stage.default_exit.' + stage.id] = { reach_stage_exit: true };
     gm.saveProgressToActiveSlot = async () => { saves.push(copy(game.ip2liveGameStates)); return { saved: true }; };
     ip.StoryAutosave = { checkpoint: async reason => { saves.push({ reason, ...copy(game.ip2liveGameStates) }); return { saved: true }; } };
-    ip.DBManager = { getRecord: async (_, key) => profiles.get(key), saveRecord: async (_, value) => profiles.set(value.infiltratorName, copy(value)),
+    ip.DBManager = { getRecord: async (_, key) => profiles.get(key), saveRecord: async (store, value) => store === 'telemetry' ? telemetry.push(copy(value)) : profiles.set(value.infiltratorName, copy(value)),
         getAllRecords: async () => [...profiles.values()] };
     ip.MusicManager = { play: zone => songs.push(zone) };
     for(const file of ['modules/certificate_pdf.js','modules/story_completion.js','modules/story_certificate.js',
@@ -49,7 +49,7 @@ function harness() {
         'modules/screens/story-epilogue-art.js','modules/screens/story-epilogue.js','modules/screens/story-ending.js']) load(file);
     const tick=(ms,target=stack.top)=>{ while(ms>0) { const step=Math.min(100,ms); now+=step; target.update(); ms-=step; } };
     const finishEnding=ending=>{ tick(1400,ending); for(let i=0;i<4;i++) { tick(14000,ending); ending.onKeyPressed('Enter'); tick(700,ending); } };
-    return { env, ip, maps, gm, game, map, stack, load, saves, profiles, storage, drawn, downloads, songs,
+    return { env, ip, maps, gm, game, map, stack, load, saves, profiles, storage, drawn, downloads, songs, telemetry,
         advance: ms => { now += ms; }, tick, finishEnding, titleCalls: () => titleCalls };
 }
 
@@ -60,15 +60,20 @@ test('the final story exit creates one named award, saves it and plays the endin
     const ending = h.stack.top;
     assert.ok(ending instanceof h.ip.StoryEndingScreen); assert.equal(ending.phase, 'cutscene');
     await ending.load(); assert.deepEqual(h.songs, []);
-    h.tick(1400); assert.deepEqual(h.songs, ['STORY_ENDING'], 'ending score starts after the world fades to black');
+    h.tick(1400); assert.deepEqual(h.songs, ['STORY_EPILOGUE'], 'epilogue score starts after the world fades to black');
     const record = h.game.ip2liveGameStates.storyCompletion;
     assert.equal(record.name, 'Zoë 王'); assert.equal(record.profileId, 'profile-one'); assert.equal(record.floors, 16);
+    assert.ok(record.curriculum.gameplayCount > 0); assert.ok(record.curriculum.objectiveCount > 0);
+    assert.equal(h.telemetry.filter(row => row.eventType === 'story_completed').length, 1);
     assert.equal(h.ip.StoryCompletion.start(h.maps.stageFor(18)), false, 'repeated final triggers do not stack endings');
     assert.equal(ending._actions().some(a => a.id === 'pdf'), false, 'the cutscene precedes the certificate screen');
     h.finishEnding(ending);
     assert.equal(ending.phase, 'complete');
+    assert.deepEqual(h.songs, ['STORY_EPILOGUE', 'STORY_ENDING'], 'one uninterrupted slide score changes to victory only after the fourth chapter');
+    ending._finishCutscene(); assert.equal(h.songs.length, 2, 'a repeated completion cannot restart victory music');
     assert.equal(ending.record.name, 'Zoë 王'); ending.drawHUD();
     assert.ok(h.drawn.includes('STORY COMPLETE'));
+    assert.ok(h.drawn.includes(record.curriculum.floors+' FLOORS  /  '+record.curriculum.gameplayCount+' GAMEPLAY TYPES  /  '+record.curriculum.completedObjectives+' OBJECTIVES COMPLETED'));
     assert.ok(h.drawn.includes('Zoë 王'));
     await ending.saveTask;
     assert.ok(h.saves.every(s => s.storyCompletion.id === record.id));
@@ -102,6 +107,7 @@ test('completed saves reopen the final screen without changing the named run or 
     h.game.ip2liveGameStates.storyCompletion = record;
     assert.equal(h.ip.StoryCompletion.resumeIfCompleted(h.map), true);
     assert.equal(h.stack.top.phase, 'complete'); assert.equal(h.stack.top.record.completedAt, record.completedAt);
+    await h.stack.top.load(); assert.deepEqual(h.songs, ['STORY_ENDING'], 'a completed save starts the victory theme directly');
     assert.equal(h.ip.StoryCompletion.resumeIfCompleted(h.map), false);
     await h.stack.top.saveTask; assert.equal((await h.ip.StoryCompletion.list()).length, 1);
     h.stack.pop(); h.game._ip2liveStoryRunId = 'another-story';
@@ -205,6 +211,7 @@ test('archive survives a fresh runtime and supports retrying a failed download',
     h.stack.popAll(); h.env.Core.Game.current = null;
     h.load('modules/story_completion.js'); // Lose all in-memory completion records.
     const archive = new h.ip.StoryEndingScreen(null, { archive: true }); h.stack.push(archive); await archive.load();
+    assert.deepEqual(h.songs, [], 'browsing archived certificates keeps the existing menu music');
     assert.equal(archive.record.name, name); assert.equal(archive.phase, 'complete'); assert.equal(archive.records.length, 1);
     h.advance(400);
     const download = h.ip.StoryCertificate.download;

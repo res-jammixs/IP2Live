@@ -48,8 +48,12 @@
             const spec = options.spec || {}, gm = IP2Live.GameManager;
             const round = { id: options.questId || this._id('feature-round'), startedAt: Date.now(), gameplayId,
                 mapId: options.mapId || spec.mapId || 0, tutorial: session.kind === 'tutorial',
-                spec: gm._clonePlain(spec), ended: false };
+                spec: gm._clonePlain(spec), ended: false,
+                gameplayDefinition: gm.getGameplayDefinition ? gm.getGameplayDefinition(gameplayId) : null };
             this._write(session, 'feature_round_start', { attemptId: round.id, gameplayId, mapId: round.mapId,
+                gameplayDefinition: round.gameplayDefinition, definitionVersion: round.gameplayDefinition && round.gameplayDefinition.definitionVersion,
+                gameplayLabel: round.gameplayDefinition && round.gameplayDefinition.label,
+                gameplayVersion: round.gameplayDefinition && round.gameplayDefinition.gameplayVersion,
                 tutorial: round.tutorial, startedAt: round.startedAt, payload: { spec: round.spec } });
             return round;
         },
@@ -68,7 +72,11 @@
                 accuracy: metrics.accuracy, accuracyKnown: metrics.accuracy !== null,
                 correctDecisions: metrics.correctDecisions, totalDecisions: metrics.totalDecisions,
                 activeDurationMs: metrics.activeDurationMs, durationMethod: metrics.durationMethod,
-                gameplayVersion: result && result.gameplayVersion || null,
+                gameplayDefinition: round.gameplayDefinition, definitionVersion: round.gameplayDefinition && round.gameplayDefinition.definitionVersion,
+                gameplayLabel: round.gameplayDefinition && round.gameplayDefinition.label,
+                competencyKey: round.gameplayDefinition && round.gameplayDefinition.competencyKey,
+                competencyLabel: round.gameplayDefinition && round.gameplayDefinition.competencyLabel,
+                gameplayVersion: result && result.gameplayVersion || metrics.payload.gameplayVersion || round.gameplayDefinition && round.gameplayDefinition.gameplayVersion || null,
                 payload: Object.assign({}, metrics.payload, { spec: round.spec, result: gm._clonePlain(result || {}) }),
             });
             return true;

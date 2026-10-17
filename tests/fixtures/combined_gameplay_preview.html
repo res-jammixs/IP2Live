@@ -1,0 +1,110 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Combined gameplay toolkit preview</title>
+<style>
+@font-face { font-family:Oxanium-Medium; src:url('../../Fonts/Oxanium-Medium.ttf'); }
+@font-face { font-family:Nebula-Regular; src:url('../../Fonts/Nebula-Regular.otf'); }
+html,body { margin:0; width:100%; height:100%; background:#040a14; overflow:hidden; }
+canvas { display:block; width:100vw; height:100vh; touch-action:none; }
+</style></head><body><canvas id="preview" aria-label="Combined gameplay toolkit"></canvas><script>
+const canvas=document.getElementById('preview'), ctx=canvas.getContext('2d'), params=new URLSearchParams(location.search);
+canvas.width=innerWidth; canvas.height=innerHeight;
+const Common={Platform:{ctx},ScreenResolution:{SCREEN_X:1280,SCREEN_Y:720}};
+const Core={Game:{current:{currentMapID:18,ip2liveGameStates:{}}}};
+const frames=[], Manager={GL:{},Stack:{get top(){return frames.at(-1);},push:screen=>frames.push(screen),pop:()=>{const screen=frames.pop();if(screen.close)screen.close();return screen;},replace:screen=>{frames.pop();frames.push(screen);}}};
+const Data={Systems:{},Keyboards:{checkCancelMenu:key=>key==='Escape',checkActionMenu:key=>key==='Enter',menuControls:{},isKeyEqual:(a,b)=>a===b}};
+const Scene={Base:class{constructor(initialize){if(initialize&&this.initialize)this.initialize();}},Map:class{drawHUD(){}onMouseUp(){return false;}}};
+const IP2Live={Assets:{oxaniumMediumLoaded:true,nebulaLoaded:true},
+DialogueManager:{isActive:()=>false},QuestManager:{completedObjectives:{},_questPanelRect:ctx=>({x:18*ctx.canvas.width/1280,y:88*ctx.canvas.height/720,w:430*ctx.canvas.width/1280,h:126*ctx.canvas.height/720})},QuestMinimap:{destroy(){},update(){}}};
+const files=[
+    "modules/game_manager.js",
+    "gameplay/common/ip_class_ranges.js",
+    "gameplay/common/ip_cidr_tools.js",
+    "gameplay/common/gameplay_timer.js",
+    "gameplay/common/gameplay_completion_popup.js",
+    "gameplay/gameplay1/IPWires/ip_wires_core.js",
+    "gameplay/gameplay1/IPWires/ip_wires_gameplay.js",
+    "gameplay/gameplay2/IPPatchPanel/ip_patchpanel_gameplay.js",
+    "gameplay/gameplay3/CIDRPanel/ip_cidrpanel_gameplay.js",
+    "gameplay/gameplay4/SubnetSimulator/ip_subnetsim_gameplay.js",
+    "gameplay/gameplay4_5/HostPowerReactor/ip_host_power_gameplay.js",
+    "gameplay/gameplay5/CIDRQuarantine/ip_cidr_quarantine_gameplay.js",
+    "gameplay/gameplay6/CIDRQuarantineMatrix/ip_cidr_quarantine_matrix_gameplay.js",
+    "gameplay/gameplay7/NetworkRepair/gameplay.js",
+    "gameplay/gameplay8/VLSMAllocator/ip_vlsm_allocator_gameplay.js",
+    "gameplay/gameplay1/IPWires/ip_wires_gameplay_harder.js",
+    "gameplay/gameplay3/CIDRPanel/ip_cidrpanel_gameplay_harder.js",
+    "gameplay/gameplay4_5/HostPowerReactor/ip_host_power_tool.js",
+    "gameplay/common/windowed_gameplay.js",
+    "gameplay/gameplay1/IPWires/ip_wires_gameplay_windowed_version.js",
+    "gameplay/gameplay2/IPPatchPanel/ip_patchpanel_gameplay_windowed_version.js",
+    "gameplay/gameplay3/CIDRPanel/ip_cidrpanel_gameplay_windowed_version.js",
+    "gameplay/gameplay4/SubnetSimulator/ip_subnetsim_gameplay_windowed_version.js",
+    "gameplay/gameplay4_5/HostPowerReactor/ip_host_power_gameplay_windowed_version.js",
+    "gameplay/gameplay5/CIDRQuarantine/ip_cidr_quarantine_gameplay_windowed_version.js",
+    "gameplay/gameplay6/CIDRQuarantineMatrix/ip_cidr_quarantine_matrix_gameplay_windowed_version.js",
+    "gameplay/gameplay7/NetworkRepair/gameplay_windowed_version.js",
+    "gameplay/gameplay8/VLSMAllocator/ip_vlsm_allocator_gameplay_windowed_version.js",
+    "gameplay/gameplay1/IPWires/ip_wires_gameplay_harder_windowed_version.js",
+    "gameplay/gameplay3/CIDRPanel/ip_cidrpanel_gameplay_harder_windowed_version.js",
+    "gameplay/combined/combined_art.js",
+    "gameplay/combined/combined_gameplay.js",
+    "modules/screens/gameplay-pause.js"
+];
+async function load(file){const response=await fetch('../../Plugins/IP2Live_Core/'+file);if(!response.ok)throw new Error(file);
+new Function('Common','Core','Data','Manager','Scene','IP2Live','window','Graphic','Model','Main','THREE','inject',await response.text())(Common,Core,Data,Manager,Scene,IP2Live,window,{},{},{},{},()=>{});}
+function background(){
+ctx.fillStyle='#07121e';ctx.fillRect(0,0,canvas.width,canvas.height);
+ctx.strokeStyle='#132e3c';ctx.lineWidth=1;
+for(let x=0;x<canvas.width;x+=70){ctx.beginPath();ctx.moveTo(x,0);ctx.lineTo(x,canvas.height);ctx.stroke();}
+for(let y=0;y<canvas.height;y+=70){ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(canvas.width,y);ctx.stroke();}
+const s=Math.min(canvas.width/1280,canvas.height/720),p=IP2Live.QuestManager._questPanelRect(ctx),distanceY=p.y+p.h+8,distanceW=Math.min(340,p.w);
+ctx.font=14*s+'px Oxanium-Medium';ctx.fillStyle='#6adecf';ctx.fillText('NEURAL LIFE FORCE  /  100',20*s,35*s);
+ctx.fillStyle='#c9e4e9';ctx.fillText('STAGE 4  /  LEVEL 4',canvas.width-220*s,35*s);
+ctx.fillStyle='#0c2030';ctx.fillRect(p.x,p.y,p.w,p.h);ctx.strokeStyle='#fc6189';ctx.strokeRect(p.x,p.y,p.w,p.h);
+ctx.fillStyle='#d6eaf2';ctx.fillText('RECOVER THE FINAL SYSTEM',p.x+16*s,p.y+31*s);
+ctx.fillStyle='#83a6b7';ctx.fillText('Tool access online',p.x+16*s,p.y+64*s);
+ctx.fillStyle='#132430';ctx.fillRect(p.x,distanceY,distanceW,72);ctx.strokeStyle='#f45c81';ctx.strokeRect(p.x,distanceY,distanceW,72);
+ctx.fillStyle='#e8f1f5';ctx.fillText('DISTANCE // 12.4 TILES',p.x+22*s,distanceY+41);
+}
+(async()=>{
+for(const file of files)await load(file);
+await Promise.all(['Oxanium-Medium','Nebula-Regular'].map(font=>document.fonts.load('16px '+font)));
+const map=Scene.Map.current=new Scene.Map();map.id=18;frames.push(map);
+background();
+const combined=IP2Live.CombinedGameplay;
+combined.setPendingCounts({ip_class_wires:3,ip_cidr_binary_panel:2,ip_subnet_simulator:1,ip_host_power_reactor:1,ip_network_repair:4});
+if(params.get('state')!=='hud'){
+combined.launch();
+const index=params.get('tool')??(['minimized','minimizing','closing'].includes(params.get('state'))?'2':null);
+if(index!==null){
+const win=combined.desktop.openTool(Number(index));
+for(let i=0;i<20;i++)await Promise.resolve();
+if(win.status==='error')throw new Error('Windowed tool failed: '+win.definition.id);
+if(params.has('multi')){const first=combined.desktop.openTool(0);for(let i=0;i<20;i++)await Promise.resolve();combined.desktop.focus(win);}
+}
+if(params.get('state')==='dock'){
+for(const tool of [0,2,7]){combined.desktop.openTool(tool);for(let i=0;i<20;i++)await Promise.resolve();}
+for(const win of combined.session.windows.slice())win.desktop.minimize(win);
+}else if(params.get('state')==='minimized'){
+for(const win of combined.session.windows.slice())win.desktop.minimize(win);
+}else if(['minimizing','closing'].includes(params.get('state'))){
+const desktop=combined.desktop,win=desktop.focused;
+desktop.drawHUD();
+if(params.get('state')==='minimizing')desktop.minimize(win);else desktop.remove(win);
+const frozenNow=Date.now();Date.now=()=>frozenNow;
+for(const animation of combined.session.animations)animation.startedAt=frozenNow-(params.get('state')==='minimizing'?170:65);
+}
+}
+function paint(){const top=Manager.Stack.top;if(top!==map){top.update();top.drawHUD();}else{map.update();background();map.drawHUD();}requestAnimationFrame(paint);}
+canvas.addEventListener('pointerdown',event=>{canvas.setPointerCapture(event.pointerId);Manager.Stack.top.onMouseDown?.(event.offsetX*canvas.width/canvas.clientWidth,event.offsetY*canvas.height/canvas.clientHeight);});
+canvas.addEventListener('pointermove',event=>Manager.Stack.top.onMouseMove?.(event.offsetX*canvas.width/canvas.clientWidth,event.offsetY*canvas.height/canvas.clientHeight));
+canvas.addEventListener('pointerup',event=>Manager.Stack.top.onMouseUp?.(event.offsetX*canvas.width/canvas.clientWidth,event.offsetY*canvas.height/canvas.clientHeight));
+canvas.addEventListener('pointercancel',()=>Manager.Stack.top.onMouseLeave?.());
+addEventListener('keydown',event=>{event.preventDefault();if(!event.repeat)Manager.Stack.top.onKeyPressed?.(event.key);Manager.Stack.top.onKeyPressedAndRepeat?.(event.key);});
+addEventListener('keyup',event=>Manager.Stack.top.onKeyReleased?.(event.key));
+addEventListener('resize',()=>{canvas.width=innerWidth;canvas.height=innerHeight;});
+window.addEventListener('error',event=>{document.body.dataset.previewError=event.error?.stack||event.message;});
+document.body.dataset.previewState='ready';paint();
+})().catch(error=>{document.body.dataset.previewState='error';document.body.dataset.previewError=error.stack;console.error(error);});
+</script></body></html>
+

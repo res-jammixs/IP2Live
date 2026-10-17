@@ -1,0 +1,1011 @@
+✔ all stage floors have a toggle; only Stage 4 Level 4 shows the toolkit, with launch guards (77.7375ms)
+✔ all 11 real windowed gameplays load, render and update without changing campaign state or stack (318.3191ms)
+✔ windows keep a 16:9 content ratio, clamp dragging and resize, and translate captured input (28.4343ms)
+✔ smaller windows minimize to clickable bottom tabs; hidden timers continue and closing discards the tool (37.5497ms)
+✔ pending badges update and consume successes once; failures and dismissal leave campaign quests alone (36.1076ms)
+✔ native calculator overlays stay within each window and never pop the world stack (22.5687ms)
+✔ the production loader includes every windowed adapter after the shared host (0.9893ms)
+✔ all 11 windowed puzzles round-trip through the shared Story snapshot with their budgets and state intact (176.0065ms)
+✔ Stage 4 levels 1–4 retain separate tool floors in manual and transactional autosave payloads (37.8733ms)
+✔ regular Stage 4 Network Repair and VLSM terminals retain their puzzle state through Story saves (23.3011ms)
+✔ the native Cancel button exits fully without popping the world through the local calculator bridge (25.0737ms)
+✔ grid opening ignores accidental clicks until its transition finishes and honors reduced motion (30.6092ms)
+✔ minimizing travels into the bottom tab while timers continue; restoring cancels the visual (30.214ms)
+✔ closing fades the last frame while immediately removing the tool from timers and saves (23.2404ms)
+✔ minimized tabs and the grid animate closing, while reduced motion removes the effects (26.1536ms)
+[IP2Live] confirPopup component loaded.
+Confirmation popup design tests passed.
+✔ tests\confirmation_popup_design.test.cjs (75.0176ms)
+[IP2Live] desktop_storage.js loaded.
+[IP2Live] Durable desktop storage ready: desktop-node-fallback C:\Users\User\AppData\Local\Temp\ip2live-storage-test-O3u6qX\IP2Live
+desktop_storage.test.cjs: PASS
+✔ tests\desktop_storage.test.cjs (197.7624ms)
+✔ developer toolbar prepares every Story quest, teleports, and triggers the ending only at its marker (44.1814ms)
+✔ re-simulation clears a current award and preserves prepared quests across delayed map-entry reset (15.5758ms)
+✔ disabled, covered, busy and optional game modes cannot simulate Story completion (85.6178ms)
+✔ a rejected map launch restores the previous quest state and completion record (9.4289ms)
+[IP2Live] game_manager.js module loaded.
+[IP2Live] quest_manager.js module loaded.
+[IP2Live] neural_life_force_manager.js module loaded.
+[IP2Live] game_manager.js module loaded.
+[IP2Live] quest_manager.js module loaded.
+[IP2Live] neural_life_force_manager.js module loaded.
+[IP2Live] game_manager.js module loaded.
+[IP2Live] quest_manager.js module loaded.
+[IP2Live] neural_life_force_manager.js module loaded.
+[IP2Live] game_manager.js module loaded.
+[IP2Live] quest_manager.js module loaded.
+[IP2Live] neural_life_force_manager.js module loaded.
+[IP2Live] game_manager.js module loaded.
+[IP2Live] quest_manager.js module loaded.
+[IP2Live] neural_life_force_manager.js module loaded.
+[IP2Live] game_manager.js module loaded.
+[IP2Live] quest_manager.js module loaded.
+[IP2Live] neural_life_force_manager.js module loaded.
+[IP2Live] game_manager.js module loaded.
+[IP2Live] quest_manager.js module loaded.
+[IP2Live] neural_life_force_manager.js module loaded.
+[IP2Live] game_manager.js module loaded.
+[IP2Live] quest_manager.js module loaded.
+[IP2Live] neural_life_force_manager.js module loaded.
+[IP2Live] game_manager.js module loaded.
+[IP2Live] quest_manager.js module loaded.
+[IP2Live] neural_life_force_manager.js module loaded.
+[IP2Live] game_manager.js module loaded.
+[IP2Live] quest_manager.js module loaded.
+[IP2Live] neural_life_force_manager.js module loaded.
+[IP2Live] game_manager.js module loaded.
+[IP2Live] quest_manager.js module loaded.
+[IP2Live] neural_life_force_manager.js module loaded.
+[IP2Live] game_manager.js module loaded.
+[IP2Live] quest_manager.js module loaded.
+[IP2Live] neural_life_force_manager.js module loaded.
+[IP2Live] game_manager.js module loaded.
+[IP2Live] quest_manager.js module loaded.
+[IP2Live] neural_life_force_manager.js module loaded.
+[IP2Live] game_manager.js module loaded.
+[IP2Live] quest_manager.js module loaded.
+[IP2Live] neural_life_force_manager.js module loaded.
+[IP2Live] game_manager.js module loaded.
+[IP2Live] quest_manager.js module loaded.
+[IP2Live] neural_life_force_manager.js module loaded.
+developer quest failure integration tests passed
+✔ tests\developer_quest_failure_integration.test.cjs (230.7613ms)
+[IP2Live] ip_class_ranges.js loaded.
+[IP2Live] dialogue_manager.js module loaded.
+Dialogue typography tests passed.
+✔ tests\dialogue_typography.test.cjs (96.5857ms)
+✔ shuffled cycles cover all seven games and every 4 immediately follows its matching 3 (58.7546ms)
+✔ timers begin at 180, drop at five active minutes, and harder games lose time more gently (22.3178ms)
+✔ Story completion is revalidated, player identity is explicit, and busy feature sessions cannot start (18.7044ms)
+✔ developer unlock opens both menus and starts Endless on a fresh installation without earning Story completion (87.5532ms)
+✔ real gameplay managers launch all seven screens at 180 seconds and preserve the exact CIDR handoff (267.8854ms)
+✔ all seven real screens immediately end their run at zero without timeout animation or duplicate callbacks (152.7496ms)
+✔ pause, focus, overlays and automatic animations do not consume the run, retries do not refill it (25.2228ms)
+✔ results show a named, scored certificate, download offline, retain last run, and allow another run (81.622ms)
+✔ durable telemetry exports Endless scores and survival separately from matched learning evidence (43.6153ms)
+✔ real pause overlay resumes the same budget and Finish Run opens results without saving Story (20.0612ms)
+✔ real CIDR retry retains time and mistake evidence; pressure applies on the next round only (19.7535ms)
+✔ Endless PDF shrinks very long Unicode names uniformly and keeps the score and participation labels (32.3629ms)
+✔ the real main menu unlocks Endless from earned Story records and opens its lobby (12.0956ms)
+✔ CRT transitions cover launch and round changes without spending time or inserting another page (24.7053ms)
+✔ focus loss freezes real packet movement and neither clock charges the resume interval (21.2215ms)
+[IP2Live] game_manager.js module loaded.
+[IP2Live] ip_class_ranges.js loaded.
+[IP2Live] game_manager.js module loaded.
+[IP2Live] ip_class_ranges.js loaded.
+[IP2Live] game_manager.js module loaded.
+[IP2Live] ip_class_ranges.js loaded.
+[IP2Live] game_manager.js module loaded.
+[IP2Live] ip_class_ranges.js loaded.
+[IP2Live] game_manager.js module loaded.
+[IP2Live] ip_class_ranges.js loaded.
+[IP2Live] game_manager.js module loaded.
+[IP2Live] ip_class_ranges.js loaded.
+[IP2Live] game_manager.js module loaded.
+[IP2Live] ip_class_ranges.js loaded.
+[IP2Live] game_manager.js module loaded.
+[IP2Live] ip_class_ranges.js loaded.
+[IP2Live] game_manager.js module loaded.
+[IP2Live] ip_class_ranges.js loaded.
+[IP2Live] game_manager.js module loaded.
+[IP2Live] ip_class_ranges.js loaded.
+[IP2Live] game_manager.js module loaded.
+[IP2Live] ip_class_ranges.js loaded.
+[IP2Live] game_manager.js module loaded.
+[IP2Live] ip_class_ranges.js loaded.
+[IP2Live] game_manager.js module loaded.
+[IP2Live] ip_class_ranges.js loaded.
+[IP2Live] game_manager.js module loaded.
+[IP2Live] ip_class_ranges.js loaded.
+[IP2Live] game_manager.js module loaded.
+[IP2Live] ip_class_ranges.js loaded.
+[IP2Live] game_manager.js module loaded.
+[IP2Live] ip_class_ranges.js loaded.
+[IP2Live] game_manager.js module loaded.
+[IP2Live] ip_class_ranges.js loaded.
+[IP2Live] game_manager.js module loaded.
+[IP2Live] ip_class_ranges.js loaded.
+[IP2Live] game_manager.js module loaded.
+[IP2Live] ip_class_ranges.js loaded.
+[IP2Live] quest_manager.js module loaded.
+[IP2Live] game_manager.js module loaded.
+[IP2Live] ip_class_ranges.js loaded.
+[IP2Live] quest_manager.js module loaded.
+[IP2Live] QuestManager: unknown quest missing
+[IP2Live] neural_life_force_manager.js module loaded.
+[IP2Live] ip_wires_core.js loaded.
+[IP2Live] ip_wires_gameplay.js module loaded.
+[IP2Live] game_manager.js module loaded.
+[IP2Live] ip_class_ranges.js loaded.
+[IP2Live] quest_manager.js module loaded.
+[IP2Live] neural_life_force_manager.js module loaded.
+[IP2Live] ip_wires_core.js loaded.
+[IP2Live] ip_wires_gameplay.js module loaded.
+[IP2Live] game_manager.js module loaded.
+[IP2Live] ip_class_ranges.js loaded.
+[IP2Live] game_manager.js module loaded.
+[IP2Live] ip_class_ranges.js loaded.
+[IP2Live] game_manager.js module loaded.
+[IP2Live] ip_class_ranges.js loaded.
+[IP2Live] game_manager.js module loaded.
+[IP2Live] ip_class_ranges.js loaded.
+[IP2Live] game_manager.js module loaded.
+[IP2Live] ip_class_ranges.js loaded.
+[IP2Live] game_manager.js module loaded.
+[IP2Live] ip_class_ranges.js loaded.
+[IP2Live] game_manager.js module loaded.
+[IP2Live] ip_class_ranges.js loaded.
+[IP2Live] game_manager.js module loaded.
+[IP2Live] ip_class_ranges.js loaded.
+[IP2Live] game_manager.js module loaded.
+[IP2Live] ip_class_ranges.js loaded.
+[IP2Live] game_manager.js module loaded.
+[IP2Live] ip_class_ranges.js loaded.
+[IP2Live] game_manager.js module loaded.
+[IP2Live] ip_class_ranges.js loaded.
+[IP2Live] game_manager.js module loaded.
+[IP2Live] ip_class_ranges.js loaded.
+[IP2Live] game_manager.js module loaded.
+[IP2Live] ip_class_ranges.js loaded.
+[IP2Live] game_manager.js module loaded.
+[IP2Live] ip_class_ranges.js loaded.
+[IP2Live] game_manager.js module loaded.
+[IP2Live] ip_class_ranges.js loaded.
+[IP2Live] game_manager.js module loaded.
+[IP2Live] ip_class_ranges.js loaded.
+✔ groups repeated errors while preserving distinct corrections and observed decision identities (25.6903ms)
+✔ fallback mistakes and later full decision history reconcile without duplication (6.2851ms)
+✔ each gameplay has a targeted explanation, including both harder variants (8.9191ms)
+✔ only Story assessments enter the journal; clean passes and clean cancellation add nothing (8.7445ms)
+✔ state survives JSON save/load, acknowledgements persist and campaigns remain isolated (7.606ms)
+✔ real GameManager completion/failure routes feed the journal and keep assessment records intact (10.4889ms)
+✔ return-to-world captures current decisions, deduplicates resume and ignores blank cancellation (7.4232ms)
+✔ badge placement, sidebar selection, pixel dissolve and empty state follow real journal actions (18.0748ms)
+✔ opening/closing a hidden HUD cannot repeatedly reset gameplay input; profile switches remove the old view (8.2172ms)
+✔ leaving a recap unresolved and Escape closing preserve every mistake (6.052ms)
+✔ achievements anchor below the diagnostic area, including scaled minimap bounds (6.1834ms)
+✔ new errors and acknowledgement request Story autosave even without a numbered save slot (6.2483ms)
+✔ achievements wait while reading diagnostics and when the space below the badge is too short (13.7512ms)
+✔ an external scene pop closes the sidebar without popping the underlying world (7.0857ms)
+✔ an in-place profile switch cannot expose another learner’s recaps (8.8621ms)
+✔ the actual Story snapshot and restore pipeline retains unresolved recaps and cleared identities (9.4979ms)
+✔ different IP examples with the same class confusion share one latest recap and repeat count (8.408ms)
+✔ quest changes delete unpinned logs, retain pins and do not clear on a restart of the same quest (6.3403ms)
+✔ actual QuestManager start/advance clears logs at the quest boundary, not an objective change (8.7441ms)
+✔ three wrong IP Wires submissions retain one recap after first-quest retry (22.6158ms)
+✔ three wrong IP Wires submissions retain one recap after failure rollback (12.8708ms)
+✔ late completion of the previous quest cannot resurrect its expired recaps (6.7215ms)
+✔ only a terminal failure returning to its actual recovery quest can bypass expired-quest cleanup (53.3992ms)
+✔ old save journals compact duplicate recaps automatically without dropping pins (7.6405ms)
+✔ sidebar pin control updates its selected row, groups pins first and survives save/restore (7.1948ms)
+✔ pinned mistakes merge across quests and retain their pin with the newest example (13.4568ms)
+✔ quest cleanup respects mode isolation, map identity and restore into the same quest (7.9633ms)
+✔ quest cleanup updates an open sidebar and removes its stale selection and toast (7.3997ms)
+✔ an unpinned error from an older quest clears on the next quest change, even when revisiting its original quest (6.1327ms)
+[IP2Live] game_manager.js module loaded.
+[IP2Live] report_manager.js module loaded.
+[IP2Live] game_manager.js module loaded.
+[IP2Live] report_manager.js module loaded.
+[IP2Live] game_manager.js module loaded.
+[IP2Live] report_manager.js module loaded.
+[IP2Live] game_manager.js module loaded.
+[IP2Live] report_manager.js module loaded.
+[IP2Live] game_manager.js module loaded.
+[IP2Live] report_manager.js module loaded.
+✔ feature sessions retain the selected profile and use the durable journal without campaign attempts (23.865ms)
+✔ optional-mode evidence reports improvement and transfer without inflating assessed story mastery (162.2156ms)
+✔ practice writes wait for report initialization and poor accuracy blocks validated speed gains (13.5151ms)
+✔ actual practice replay completion, automatic next round and pause exit emit one lifecycle each (15.3717ms)
+✔ sparse, cancelled and legacy optional-mode data stay honest, and endless has separate cohorts (16.2951ms)
+✔ every assigned wire floor shares exact progress across normal, harder and tutorial objectives (84.4689ms)
+✔ finishing only ordinary wires cannot fully light a floor with unfinished harder wires (10.7004ms)
+✔ real terminal rollback from Patch Panel removes the preceding harder wire light and replay restores exactly one step (19.8875ms)
+✔ full light can be undone by a setback; restarting non-wire quests does not dim unrelated repairs (13.6705ms)
+✔ save restoration derives light from quests, correcting stale cleared flags and legacy brightness counters (10.1604ms)
+✔ leaving a wire floor restores its light and fog without leaking darkness into other maps (7.2978ms)
+✔ isolated feature/replay events cannot change a campaign floor or its brightness (14.7154ms)
+✔ newly assigned floors and multi-objective quests are discovered automatically and support other registered states (11.4565ms)
+✔ idle frames and duplicate events do not scan the curriculum or rebuild Three.js lights (11.6663ms)
+✔ runtime curriculum/settings edits recalculate the shared denominator and compatibility baseline (9.5491ms)
+✔ custom states release the old scene on same-floor reloads and when leaving the floor (7.3773ms)
+[IP2Live] game_manager.js module loaded.
+[IP2Live] game_state_manager.js module loaded.
+game_manager_map_assignments.test.cjs: PASS
+✔ tests\game_manager_map_assignments.test.cjs (101.4872ms)
+gameplay5_class_lock.test.cjs: PASS
+✔ tests\gameplay5_class_lock.test.cjs (393.4332ms)
+[IP2Live] ip_cidr_tools.js loaded.
+[IP2Live] game_manager.js module loaded.
+[IP2Live] ip_cidr_quarantine_gameplay.js module loaded.
+[IP2Live] ip_cidr_tools.js loaded.
+[IP2Live] game_manager.js module loaded.
+[IP2Live] ip_cidr_quarantine_gameplay.js module loaded.
+[IP2Live] ip_cidr_tools.js loaded.
+[IP2Live] game_manager.js module loaded.
+[IP2Live] ip_cidr_quarantine_gameplay.js module loaded.
+[IP2Live] ip_cidr_tools.js loaded.
+[IP2Live] game_manager.js module loaded.
+[IP2Live] ip_cidr_quarantine_gameplay.js module loaded.
+[IP2Live] ip_cidr_tools.js loaded.
+[IP2Live] game_manager.js module loaded.
+[IP2Live] ip_cidr_quarantine_gameplay.js module loaded.
+gameplay5 developer exit tests passed
+✔ tests\gameplay5_developer_exit.test.cjs (194.2825ms)
+✔ tests\gameplay5_host_power_tool.test.cjs (270.3858ms)
+gameplay5_segmentation.test.cjs: PASS
+✔ tests\gameplay5_segmentation.test.cjs (3468.0481ms)
+gameplay5_tutorial_flow.test.cjs: PASS
+✔ tests\gameplay5_tutorial_flow.test.cjs (177.3845ms)
+[IP2Live] game_manager.js module loaded.
+[IP2Live] gameplay_completion_popup.js loaded.
+[IP2Live] ip_cidr_quarantine_matrix_gameplay.js module loaded.
+[IP2Live] game_manager.js module loaded.
+[IP2Live] gameplay_completion_popup.js loaded.
+[IP2Live] ip_cidr_quarantine_matrix_gameplay.js module loaded.
+[IP2Live] game_manager.js module loaded.
+[IP2Live] gameplay_completion_popup.js loaded.
+[IP2Live] ip_cidr_quarantine_matrix_gameplay.js module loaded.
+[IP2Live] game_manager.js module loaded.
+[IP2Live] gameplay_completion_popup.js loaded.
+[IP2Live] ip_cidr_quarantine_matrix_gameplay.js module loaded.
+[IP2Live] game_manager.js module loaded.
+[IP2Live] gameplay_completion_popup.js loaded.
+[IP2Live] ip_cidr_quarantine_matrix_gameplay.js module loaded.
+[IP2Live] game_manager.js module loaded.
+[IP2Live] gameplay_completion_popup.js loaded.
+[IP2Live] ip_cidr_quarantine_matrix_gameplay.js module loaded.
+[IP2Live] game_manager.js module loaded.
+[IP2Live] gameplay_completion_popup.js loaded.
+[IP2Live] ip_cidr_quarantine_matrix_gameplay.js module loaded.
+gameplay6 developer exit tests passed
+✔ tests\gameplay6_developer_exit.test.cjs (263.0766ms)
+gameplay6_subnet_blaster.test.cjs: PASS
+✔ tests\gameplay6_subnet_blaster.test.cjs (762.7894ms)
+gameplay_assessment_telemetry.test.cjs: PASS
+✔ tests\gameplay_assessment_telemetry.test.cjs (205.7802ms)
+✖ seven gameplay cues are registered, distinct, and have exact bundled copies (3.6069ms)
+✔ Bitstream Decoder is a clean stereo loop with safe level (21.6167ms)
+✔ Subnet Relay is a clean stereo loop with safe level (13.8039ms)
+✔ Reactor Lattice is a clean stereo loop with safe level (16.69ms)
+✔ Quarantine Breach is a clean stereo loop with safe level (15.8176ms)
+✔ Matrix Lockdown is a clean stereo loop with safe level (15.8333ms)
+✔ Repair Uplink is a clean stereo loop with safe level (15.2253ms)
+✔ Allocation Protocol is a clean stereo loop with safe level (14.2775ms)
+[IP2Live] gameplay_completion_popup.js loaded.
+[IP2Live] gameplay_completion_popup.js loaded.
+[IP2Live] gameplay_completion_popup.js loaded.
+[IP2Live] gameplay_completion_popup.js loaded.
+gameplay_completion_popup.test.cjs: PASS
+✔ tests\gameplay_completion_popup.test.cjs (118.9743ms)
+[IP2Live] gameplay-pause.js loaded.
+[IP2Live] gameplay-pause.js loaded.
+[IP2Live] ip_cidr_quarantine_matrix_gameplay.js module loaded.
+[IP2Live] gameplay-pause.js loaded.
+[IP2Live] gameplay-pause.js loaded.
+[IP2Live] gameplay-pause.js loaded.
+[IP2Live] gameplay-pause.js loaded.
+[IP2Live] gameplay-pause.js loaded.
+[IP2Live] gameplay-pause.js loaded.
+[IP2Live] game_manager.js module loaded.
+gameplay_pause_persistence.test.cjs: PASS
+✔ tests\gameplay_pause_persistence.test.cjs (226.3403ms)
+✔ early registration immediately supplies launch, test entries, map assignments and report metadata (39.6927ms)
+✔ new result formats normalize into observed evidence and appear in PDF and Excel without an explicit catalog (134.7768ms)
+✔ generic launch callbacks record a single terminal result and developer tests stay outside assessed telemetry (9.3761ms)
+✔ optional modes use the same definition and result adapters without producing story attempts (9.8673ms)
+✔ definition changes preserve attempt snapshots and keep different implementations in separate learning cohorts (24.0065ms)
+✔ a gameplay source edit changes its definition revision without a manual version bump (12.2338ms)
+✔ completion snapshots count the live curriculum, persist its revisions and do not change after later edits (52.5734ms)
+✔ unknown gameplay IDs retain their evidence and missing grades remain unavailable (12.5169ms)
+[IP2Live] game_manager.js module loaded.
+[IP2Live] game_manager.js module loaded.
+[IP2Live] game_manager.js module loaded.
+[IP2Live] neural_life_force_manager.js module loaded.
+[IP2Live] game_manager.js module loaded.
+[IP2Live] game_manager.js module loaded.
+[IP2Live] game_manager.js module loaded.
+[IP2Live] game_manager.js module loaded.
+[IP2Live] pause-menu.js loaded.
+gameplay testing menu tests passed
+✔ tests\gameplay_testing_menu.test.cjs (162.7068ms)
+✔ all 11 constructors accept seconds, options and quest specs, including engine auto-initialization (187.9312ms)
+✔ formerly untimed gameplays retain untimed Story, Practice and PVP behavior and hide the new HUD (15.2949ms)
+✔ Endless-only countdowns fail each untimed gameplay once without inventing incorrect answers (95.5732ms)
+✔ existing timed games honor shorter limits and retain their timeout sequences with one failure callback (68.6915ms)
+✔ timers stop for pause, background, focus loss and dialogue without catching up on resume (154.725ms)
+✔ internal retries keep the remaining budget, and guided CIDR honors the configured duration (12.0841ms)
+✔ invalid timer inputs fall through safely and mode aliases only activate the new timers explicitly (10.5634ms)
+✔ timer options reach real screens through every gameplay manager (209.8163ms)
+✔ real pause persistence restores Reactor remaining time and migrates legacy deadlines without a bonus (14.7205ms)
+✔ critical Reactor pressure adjusts the new timer option consistently (11.1273ms)
+✔ learning comparisons keep different timer budgets in different task cohorts (11.9962ms)
+node:assert:152
+  throw new AssertionError(obj);
+  ^
+
+AssertionError [ERR_ASSERTION]: manual taps should use only a short debounce cooldown
+
+230 !== 160
+
+    at Object.<anonymous> (C:\Users\User\Desktop\IP2Live Dev\IP2Live\tests\host_power_reactor.test.cjs:168:8)
+    at Module._compile (node:internal/modules/cjs/loader:1812:14)
+    at Object..js (node:internal/modules/cjs/loader:1943:10)
+    at Module.load (node:internal/modules/cjs/loader:1533:32)
+    at Module._load (node:internal/modules/cjs/loader:1335:12)
+    at wrapModuleLoad (node:internal/modules/cjs/loader:255:19)
+    at Module.executeUserEntryPoint [as runMain] (node:internal/modules/run_main:154:5)
+    at node:internal/main/run_main_module:33:47 {
+  generatedMessage: false,
+  code: 'ERR_ASSERTION',
+  actual: 230,
+  expected: 160,
+  operator: 'strictEqual',
+  diff: 'simple'
+}
+
+Node.js v24.14.1
+✖ tests\host_power_reactor.test.cjs (97.393ms)
+IndexedDB durability: non-destructive migrations, strict commits, aborts, retry and connection ownership passed.
+✔ tests\indexeddb_durability.test.cjs (96.3036ms)
+✔ movement lifecycle with current engine Sets and Maps (10.6335ms)
+✔ movement lifecycle with legacy arrays (5.8873ms)
+✔ pause actions cannot fire twice, change selection in flight, or reopen a closed menu (4.5733ms)
+✔ the real Resume action closes pause after mouse and keyboard activation (7.6644ms)
+✔ loaded games and replaced maps discard stale dialogue locks and delayed triggers (4.7553ms)
+✔ world pause and child menus suspend map dialogue listeners without discarding the dialogue (2.647ms)
+✔ tutorial capture ignores pause/settings, defers its delayed step, and never treats another floor as the tutorial (6.8ms)
+✔ the shared numbered-save/autosave restore discards old tutorial capture and held inputs (10.4826ms)
+✔ quest exit guide recovers after restore; background transitions cannot complete or reset it (7.9361ms)
+✔ quest marker reattaches to a retained scene and disposes shared resources exactly once (4.6432ms)
+[IP2Live] ip_class_ranges.js loaded.
+[IP2Live] ip_wires_core.js loaded.
+[IP2Live] ip_patchpanel_tutorial.js loaded.
+[IP2Live] ip_patchpanel_gameplay.js module loaded.
+IP Patch Panel redesign tests passed.
+✔ tests\ip_patch_panel_redesign.test.cjs (109.0694ms)
+[IP2Live] ip_wires_tutorial.js loaded.
+IP Wires dialogue highlight tests passed.
+✔ tests\ip_wires_dialogue_highlights.test.cjs (93.2584ms)
+[IP2Live] ip_wires_gameplay.js module loaded.
+IP Wires terminal typography tests passed.
+✔ tests\ip_wires_terminal_typography.test.cjs (101.7301ms)
+✔ Reset Defaults returns through Settings and mouse Resume to working movement, preserving keyboard model references (16.1484ms)
+✔ duplicate resets are ignored and a closed menu cannot apply a late defaults response (6.2054ms)
+✔ missing or malformed defaults never partially change controls, and resetting can be retried (3.4929ms)
+✔ settings writes remain ordered across menu instances and their completion cannot clear gameplay input (4.1279ms)
+✔ Escape and Back cancel assignment without changing it, and conflicting navigation keys are rejected (5.0105ms)
+✔ legacy single-key settings writes run sequentially and persistence failure leaves usable live controls (4.6575ms)
+[IP2Live] game_manager.js module loaded.
+[IP2Live] report_manager.js module loaded.
+[IP2Live] game_manager.js module loaded.
+[IP2Live] report_manager.js module loaded.
+[IP2Live] game_manager.js module loaded.
+[IP2Live] report_manager.js module loaded.
+[IP2Live] game_manager.js module loaded.
+[IP2Live] report_manager.js module loaded.
+✔ first/latest and windowed percentages use actual error rates, balanced across gameplays and modes (199.3302ms)
+✔ ceiling, decline, unknown evidence, guidance, cancelled runs and task differences never manufacture gains (32.4519ms)
+✔ more repetition alone earns no percentage improvement and failed fast runs are not speed evidence (32.6946ms)
+✔ actual export queries all profile history while retaining the selected dashboard window (36.3718ms)
+[IP2Live] game_manager.js module loaded.
+[IP2Live] confirPopup component loaded.
+[IP2Live] load-game.js loaded.
+load game archive rendering and playtime tests passed
+✔ tests\load_game_archive.test.cjs (165.7245ms)
+[IP2Live] game_manager.js module loaded.
+[IP2Live] game_manager.js module loaded.
+[IP2Live] game_manager.js module loaded.
+[IP2Live] map_manager.js module loaded.
+load_resume_dialogue_guards.test.cjs: PASS
+✔ tests\load_resume_dialogue_guards.test.cjs (130.8928ms)
+[IP2Live] game_manager.js module loaded.
+[IP2Live] game_state_manager.js module loaded.
+[IP2Live] darklights_state.js module loaded.
+[IP2Live] quest_manager.js module loaded.
+[IP2Live] game_manager.js module loaded.
+[IP2Live] game_manager.js module loaded.
+[IP2Live] game_state_manager.js module loaded.
+[IP2Live] darklights_state.js module loaded.
+[IP2Live] game_manager.js module loaded.
+[IP2Live] game_state_manager.js module loaded.
+[IP2Live] darklights_state.js module loaded.
+[IP2Live] lighting_manager.js module loaded.
+[IP2Live] LightingManager: applied preset for map 4
+[IP2Live] LightingManager: applied preset for map 4
+load_resume_game_state.test.cjs: PASS
+✔ tests\load_resume_game_state.test.cjs (152.8476ms)
+[IP2Live] loading-screen.js loaded.
+Loading screen typography tests passed.
+✔ tests\loading_screen_typography.test.cjs (123.3358ms)
+main_menu_animation.test.cjs: PASS (staged reveal, frame rates, resume, navigation, gate and cloak idle)
+✔ tests\main_menu_animation.test.cjs (133.4419ms)
+[IP2Live] fully hardcoded cinematic main-menu.js loaded into Scene.TitleScreen.
+[IP2Live] fully hardcoded cinematic main-menu.js loaded into Scene.TitleScreen.
+[IP2Live] fully hardcoded cinematic main-menu.js loaded into Scene.TitleScreen.
+[IP2Live] fully hardcoded cinematic main-menu.js loaded into Scene.TitleScreen.
+[IP2Live] fully hardcoded cinematic main-menu.js loaded into Scene.TitleScreen.
+[IP2Live] fully hardcoded cinematic main-menu.js loaded into Scene.TitleScreen.
+menu TV transition lifecycle and navigation tests passed
+✔ tests\menu_transition.test.cjs (161.746ms)
+✔ missing prologue registrations recover from shipped plugin assets, including in protected builds (42.5794ms)
+✔ gameplays 3–8 use seven distinct full-volume BGM profiles and bundled recovery (11.5021ms)
+✔ epilogue and victory use separate native loops, recover in protected builds and respect music volume (9.4275ms)
+✔ ending recovery preserves authored songs that reuse its IDs (16.7643ms)
+✔ bundled recovery preserves existing audio and follows a registry reload during playback startup (10.8371ms)
+✔ prologue recovery avoids reused song IDs and reuses matching songs at a different ID (79.4453ms)
+✔ a missing non-bundled song warns once, ignores input retries, and recovers when the registry changes (32.3363ms)
+✔ four prologue profiles use distinct registered tracks and transition cleanly to tutorial (12.6564ms)
+✔ ambient SFX follow foreground time, loop, fade and the independent SFX slider (18.1056ms)
+✔ arrival one-shot skips expired/closed cues and late decoding cannot resurrect audio (15.8568ms)
+✔ ambient autoplay waits for unlock and removing its scene releases unlock listeners (8.362ms)
+✔ resumed tutorial replaces native title BGM without replaying entry dialogue (21.8548ms)
+✔ map lifecycle selects tutorial BGM even without a new-game or save callback (10.4499ms)
+✔ floor overrides, gameplay profiles and PVP profiles have independent volume (13.1151ms)
+✔ pause mix keeps playback and loops running while respecting live volume and mute (8.1956ms)
+✔ pause requests compose and apply to pending or replacement tracks without starting idle music (7.8289ms)
+✔ world and gameplay pause scenes retain ducking under settings and release it when removed (15.5829ms)
+✔ intro plays once and custom loops return to the configured second, including pause and seek (14.8512ms)
+✔ natural end loops skip the intro, and non-looping tracks stay finished (13.1511ms)
+✔ duplicate and superseded requests cannot restart old music or leak listeners (11.5495ms)
+✔ stale fade cleanup cannot stop a reused Howl and transition gestures stay silent (19.8825ms)
+✔ live timing changes replace pending starts and volume changes preserve the new loop configuration (16.2316ms)
+✔ editor fallback confirms playback and follows the same configured loop boundaries (10.0264ms)
+✔ invalid settings are rejected atomically and timing is checked against decoded duration (7.9328ms)
+music_registry.test.cjs: PASS
+✔ tests\music_registry.test.cjs (118.7489ms)
+music_runtime.test.cjs: PASS
+✔ tests\music_runtime.test.cjs (138.7346ms)
+[IP2Live] name-input.js loaded.
+Name input layout tests passed.
+✔ tests\name_input_layout.test.cjs (113.2422ms)
+neural_diagnostic_screens.test.cjs: PASS
+✔ tests\neural_diagnostic_screens.test.cjs (377.2381ms)
+neural_life_force_hud.test.cjs: PASS
+✔ tests\neural_life_force_hud.test.cjs (124.4161ms)
+[IP2Live] ip_vlsm_allocator_gameplay.js module loaded.
+neural_life_force_manager.test.cjs passed
+✔ tests\neural_life_force_manager.test.cjs (140.9814ms)
+neural_tutorial_replay.test.cjs: PASS
+✔ tests\neural_tutorial_replay.test.cjs (866.2592ms)
+pause_menu_design.test.cjs: PASS (shared pause skin, responsive hit targets, particles, reduced motion, persistent PVP toggle and stale-action guard)
+✔ tests\pause_menu_design.test.cjs (451.383ms)
+pause_rendering_performance.test.cjs: PASS (cached 4K artwork, bounded memory, sprite particles, idle warmup, transition copies and nonblocking fonts)
+✔ tests\pause_rendering_performance.test.cjs (151.6902ms)
+[IP2Live] pause-menu.js loaded.
+[IP2Live] pause-menu.js loaded.
+World pause popup and save-load TV transitions passed.
+✔ tests\pause_tv_transition.test.cjs (134.4905ms)
+[IP2Live] confirPopup component loaded.
+[IP2Live] export-report.js loaded.
+[IP2Live] pause-menu.js loaded.
+[IP2Live] gameplay-pause.js loaded.
+[IP2Live] fully hardcoded cinematic main-menu.js loaded into Scene.TitleScreen.
+Popup controls and export defaults passed.
+✔ tests\popup_menu_controls.test.cjs (121.6943ms)
+practice_mode.test.cjs: PASS (22 practice paths, 11 automatic tutorials, in-game teaching, pause controls, transitions, isolation and recovery)
+✔ tests\practice_mode.test.cjs (857.7452ms)
+pvp-certificate.test.cjs: PASS (winner eligibility, landscape PDF, binary offsets, Unicode, AI/forfeit details, download and archive)
+✔ tests\pvp-certificate.test.cjs (144.479ms)
+✔ desktop preload and main IPC forward LAN payloads through the real lobby transport (1377.2865ms)
+✔ an interrupted HTTP response rejects promptly instead of hanging the LAN client (106.7328ms)
+✔ a dropped join reply retries the same guest reservation without filling the lobby (99.3924ms)
+✔ an occupied preferred TCP port falls back to the address actually shown to players (42.26ms)
+✔ closing a search releases every adapter socket and permits another search (20.8048ms)
+✔ discovery uses the LAN adapter, tolerates an unavailable adapter and prefers LAN over loopback (1250.7337ms)
+✔ separate processes discover, join and sync a race through this machine’s LAN address (1497.9458ms)
+✔ shuffle covers 1–6 and 4.5, with an uninterrupted 3 → 4 handoff in every cycle (4.6953ms)
+✔ both players advance independently through the same problem seeds, including retries and later cycles (0.6088ms)
+✔ reward scales with difficulty and observed errors; failures retry without free charge (0.484ms)
+✔ bombs occur at wins 3 and 6, clamp to zero, and duplicate results are idempotent (0.5056ms)
+✔ attack meter banks wins, loses only one step per defeat and resets after each bomb (0.2205ms)
+✔ a third attack step still launches its bomb when that gameplay wins the race (0.1063ms)
+✔ two actual LAN clients discover, join, ready, start and exchange authoritative results (1515.0576ms)
+✔ disconnected lobby slots expire; race disconnections forfeit; public addresses are rejected (90.2419ms)
+✔ a departing host leaves its final result readable, then can host again (84.3521ms)
+AssertionError [ERR_ASSERTION]: ip_cidr_quarantine_matrix selects its own gameplay music profile
+    at main (C:\Users\User\Desktop\IP2Live Dev\IP2Live\tests\pvp-mode.test.cjs:345:16) {
+  generatedMessage: false,
+  code: 'ERR_ASSERTION',
+  actual: false,
+  expected: true,
+  operator: '==',
+  diff: 'simple'
+}
+✖ tests\pvp-mode.test.cjs (1257.5505ms)
+[IP2Live] game_manager.js module loaded.
+[IP2Live] quest_minimap.js module loaded.
+[IP2Live] neural_life_force_manager.js module loaded.
+quest HUD layout and developer game-over tests passed
+✔ tests\quest_hud_layout.test.cjs (111.5079ms)
+[IP2Live] report_manager.js module loaded.
+[IP2Live] export-report.js loaded.
+report_durability.test.cjs: PASS
+✔ tests\report_durability.test.cjs (180.7741ms)
+[IP2Live] report_manager.js module loaded.
+report_export_security.test.cjs: PASS
+✔ tests\report_export_security.test.cjs (210.6763ms)
+report_learning_analytics.test.cjs: PASS
+✔ tests\report_learning_analytics.test.cjs (129.6606ms)
+[IP2Live] report_manager.js module loaded.
+[IP2Live] export-report.js loaded.
+report_learning_export.test.cjs: PASS
+✔ tests\report_learning_export.test.cjs (933.7929ms)
+[IP2Live] game_manager.js module loaded.
+[IP2Live] pause-menu.js loaded.
+save_lifecycle_guards.test.cjs: PASS
+✔ tests\save_lifecycle_guards.test.cjs (165.0002ms)
+[IP2Live] game_manager.js module loaded.
+stage1_level3_gameplay_progression.test.cjs: PASS
+✔ tests\stage1_level3_gameplay_progression.test.cjs (107.9111ms)
+[IP2Live] game_manager.js module loaded.
+AssertionError [ERR_ASSERTION]: The input did not match the regular expression /five fixed lanes/i. Input:
+
+'/**\r\n' +
+  ' * IP2Live - Gameplay 4.5 Host-Power Reactor Tutorial\r\n' +
+  ' *\r\n' +
+  ' * Guided tutorial for the analytical host-capacity bridge.\r\n' +
+  ' *\r\n' +
+  ' * Learning sequence:\r\n' +
+  " *   1. Connect Gameplay 4's repeated-doubling idea to 2^h.\r\n" +
+  ' *   2. Read HOSTS NEEDED.\r\n' +
+  ' *   3. Understand the engine and the "smallest valid h" objective.\r\n' +
+  ' *   4. Catch positive energy cells with the collector tether.\r\n' +
+  ' *   5. Use broken red cells to reduce h after an overshoot.\r\n' +
+  ' *   6. Watch COLLECTED ENERGY to track the current exponent.\r\n' +
+  ' *   7. Calculate 2^h - 2 and interpret the result.\r\n' +
+  ' *   8. Press CALCULATE again whenever h changes.\r\n' +
+  ' *   9. Read the bubbling side-fluid columns as the APEX trace timer.\r\n' +
+  ' *\r\n' +
+  ' * Important dialogue terms use {{highlight:...}} so the Dialogue Manager\r\n' +
+  ' * can emphasize the concepts the learner should remember.\r\n' +
+  ' */\r\n' +
+  '\r\n' +
+  '(function () {\r\n' +
+  '    function highlight(value) {\r\n' +
+  "        return '{{highlight:' + String(value == null ? '' : value) + '}}';\r\n" +
+  '    }\r\n' +
+  '\r\n' +
+  '    function safeNumber(value, fallback) {\r\n' +
+  '        const n = Number(value);\r\n' +
+  '        return Number.isFinite(n) ? n : fallback;\r\n' +
+  '    }\r\n' +
+  '\r\n' +
+  '    function plural(value, singular, pluralValue) {\r\n' +
+  "        return Number(value) === 1 ? singular : (pluralValue || singular + 's');\r\n" +
+  '    }\r\n' +
+  '\r\n' +
+  '    function formatDuration(seconds) {\r\n' +
+  '        const total = Math.max(1, Math.round(safeNumber(seconds, 120)));\r\n' +
+  '        const minutes = Math.floor(total / 60);\r\n' +
+  '        const remaining = total % 60;\r\n' +
+  '\r\n' +
+  '        if (remaining === 0) {\r\n' +
+  "            return minutes + ' ' + plural(minutes, 'minute');\r\n" +
+  '        }\r\n' +
+  '\r\n' +
+  '        if (minutes <= 0) {\r\n' +
+  "            return remaining + ' ' + plural(remaining, 'second');\r\n" +
+  '        }\r\n' +
+  '\r\n' +
+  "        return minutes + ':' + String(remaining).padStart(2, '0');\r\n" +
+  '    }\r\n' +
+  '\r\n' +
+  '    const IPHostPowerReactorTutorial = {\r\n' +
+  "        VERSION: 'ip-host-power-reactor-tutorial-20260921-10',\r\n" +
+  '\r\n' +
+  '        _dialogueSerial: 0,\r\n' +
+  '        _screen: null,\r\n' +
+  '        _integrationInstalled: false,\r\n' +
+  '        _integrationAttempts: 0,\r\n' +
+  '\r\n' +
+  '        attachScreen(screen) {\r\n' +
+  '            if (screen) this._screen = screen;\r\n' +
+  '            return this._screen;\r\n' +
+  '        },\r\n' +
+  '\r\n' +
+  '        activeScreen() {\r\n' +
+  '            if (this._screen && !this._screen.finished) {\r\n' +
+  '                return this._screen;\r\n' +
+  '            }\r\n' +
+  '\r\n' +
+  '            const pause = IP2Live.GameplayPause;\r\n' +
+  '            if (\r\n' +
+  '                pause &&\r\n' +
+  '                pause.activeScreen &&\r\n' +
+  '                !pause.activeScreen.finished\r\n' +
+  '            ) {\r\n' +
+  '                const candidate = pause.activeScreen;\r\n' +
+  '\r\n' +
+  '                if (\r\n' +
+  "                    candidate.gameplayId === 'ip_host_power_reactor' ||\r\n" +
+  '                    (\r\n' +
+  '                        window.IP2LiveHostPowerReactorGameplayScreen &&\r\n' +
+  '                        candidate instanceof window.IP2LiveHostPowerReactorGameplayScreen\r\n' +
+  '                    )\r\n' +
+  '                ) {\r\n' +
+  '                    this._screen = candidate;\r\n' +
+  '                    return candidate;\r\n' +
+  '                }\r\n' +
+  '            }\r\n' +
+  '\r\n' +
+  '            return null;\r\n' +
+  '        },\r\n' +
+  '\r\n' +
+  '        contextForScreen(screen) {\r\n' +
+  '            const target = screen || this.activeScreen();\r\n' +
+  '            const scenario = target && target.scenario\r\n' +
+  '                ? target.scenario\r\n' +
+  '                : {};\r\n' +
+  '\r\n' +
+  '            return Object.assign({}, scenario, {\r\n' +
+  '                durationSeconds:\r\n' +
+  '                    target && Number(target.durationSeconds)\r\n' +
+  '                        ? Number(target.durationSeconds)\r\n' +
+  '                        : 120,\r\n' +
+  '\r\n' +
+  '                currentExponent:\r\n' +
+  '                    target\r\n' +
+  '                        ? Math.max(0, Number(target.exponent) || 0)\r\n' +
+  '                        : 0,\r\n' +
+  '\r\n' +
+  '                calculatedEvaluation:\r\n' +
+  '                    target && target.calculatedEvaluation\r\n' +
+  '                        ? Object.assign({}, target.calculatedEvaluation)\r\n' +
+  '                        : null,\r\n' +
+  '            });\r\n' +
+  '        },\r\n' +
+  '\r\n' +
+  '        /**\r\n' +
+  '         * ============================================================\r\n' +
+  '         * STORY INTRO\r\n' +
+  '         * ============================================================\r\n' +
+  '         *\r\n' +
+  '         * This normally appears before the gameplay screen opens, so it\r\n' +
+  '         * deliberately focuses on narrative continuity and the learning goal.\r\n' +
+  '         */\r\n' +
+  '        showIntro(context, onComplete) {\r\n' +
+  "            return this._startDynamicDialogue('stage.hostpower.intro.', {\r\n" +
+  "                title: 'APEX ENGINE SECTOR',\r\n" +
+  "                speaker: 'SYSTEM',\r\n" +
+  "                timing: 'before',\r\n" +
+  '\r\n' +
+  '                bindings: {\r\n' +
+  "                    gameplayId: 'ip_host_power_reactor',\r\n" +
+  "                    trigger: 'gameplay.before',\r\n" +
+  '                },\r\n' +
+  '\r\n' +
+  '                slides: [\r\n' +
+  '                    [\r\n' +
+  "                        'Good work, Infiltrator. We have reached another protected section of the APEX network.',\r\n" +
+  '\r\n' +
+  "                        'APEX has installed ' +\r\n" +
+  "                        highlight('BYPASS ENGINES') +\r\n" +
+  "                        ' throughout this sector to control access deeper into the system.',\r\n" +
+  '                    ],\r\n' +
+  '\r\n' +
+  '                    [\r\n' +
+  "                        'To move forward without being detected, we need to ' +\r\n" +
+  "                        highlight('STABILIZE THE ENGINE') +\r\n" +
+  "                        ' before APEX finishes tracing our connection.',\r\n" +
+  '\r\n' +
+  "                        'I will guide you through the reactor once we access its console.',\r\n" +
+  '                    ],\r\n' +
+  '                ],\r\n' +
+  '\r\n' +
+  '                onComplete,\r\n' +
+  '            });\r\n' +
+  '        },\r\n' +
+  '\r\n' +
+  '        /**\r\n' +
+  '         * ============================================================\r\n' +
+  '         * 01 — HOSTS NEEDED\r\n' +
+  '         * ============================================================\r\n' +
+  '         */\r\n' +
+  '        showTargetGuide(context, onComplete) {\r\n' +
+  '            const c = context || {};\r\n' +
+  '            const requiredHosts = Math.max(1, safeNumber(c.requiredHosts, 50));\r\n' +
+  '\r\n' +
+  "            return this._startDynamicDialogue('stage.hostpower.guided.target.', {\r\n" +
+  "                title: '01 // HOSTS NEEDED',\r\n" +
+  "                speaker: 'SYSTEM',\r\n" +
+  "                timing: 'during',\r\n" +
+  '\r\n' +
+  '                bindings: {\r\n' +
+  "                    gameplayId: 'ip_host_power_reactor',\r\n" +
+  "                    trigger: 'gameplay.during',\r\n" +
+  '                },\r\n' +
+  '\r\n' +
+  '                slides: [[\r\n' +
+  "                    'The highlighted plaque shows the ' +\r\n" +
+  "                    highlight('HOSTS NEEDED') +\r\n" +
+  "                    '. Find the smallest h where ' +\r\n" +
+  "                    highlight('2^h - 2 >= ' + requiredHosts) +\r\n" +
+  "                    '.',\r\n" +
+  '                ]],\r\n' +
+  '\r\n' +
+  '                onComplete,\r\n' +
+  '            });\r\n' +
+  '        },\r\n' +
+  '\r\n' +
+  '        /**\r\n' +
+  '         * Compatibility alias for older gameplay versions.\r\n' +
+  '         */\r\n' +
+  '        showReactorGuide(context, onComplete) {\r\n' +
+  '            return this.showTargetGuide(context, onComplete);\r\n' +
+  '        },\r\n' +
+  '\r\n' +
+  '        /**\r\n' +
+  '         * ============================================================\r\n' +
+  '         * 02 — ENGINE CHAMBER\r\n' +
+  '         * ============================================================\r\n' +
+  '         */\r\n' +
+  '        showEngineGuide(context, onComplete) {\r\n' +
+  "            return this._startDynamicDialogue('stage.hostpower.guided.engine.', {\r\n" +
+  "                title: '02 // BYPASS ENGINE',\r\n" +
+  "                speaker: 'SYSTEM',\r\n" +
+  "                timing: 'during',\r\n" +
+  '\r\n' +
+  '                bindings: {\r\n' +
+  "                    gameplayId: 'ip_host_power_reactor',\r\n" +
+  "                    trigger: 'gameplay.during',\r\n" +
+  '                },\r\n' +
+  '\r\n' +
+  '                slides: [[\r\n' +
+  "                    'The highlighted chamber is the ' +\r\n" +
+  "                    highlight('BYPASS ENGINE') +\r\n" +
+  "                    '; power it with the correct h without underpowering or overloading it.',\r\n" +
+  '                ]],\r\n' +
+  '\r\n' +
+  '                onComplete,\r\n' +
+  '            });\r\n' +
+  '        },\r\n' +
+  '\r\n' +
+  '        /**\r\n' +
+  '         * ============================================================\r\n' +
+  '         * 03 — ENERGY INTAKE\r\n' +
+  '         * ============================================================\r\n' +
+  '         */\r\n' +
+  '        showIntakeGuide(context, onComplete) {\r\n' +
+  "            return this._startDynamicDialogue('stage.hostpower.guided.intake.', {\r\n" +
+  "                title: '03 // ENERGY INTAKE',\r\n" +
+  "                speaker: 'SYSTEM',\r\n" +
+  "                timing: 'during',\r\n" +
+  '\r\n' +
+  '                bindings: {\r\n' +
+  "                    gameplayId: 'ip_host_power_reactor',\r\n" +
+  "                    trigger: 'gameplay.during',\r\n" +
+  '                },\r\n' +
+  '\r\n' +
+  '                slides: [[\r\n' +
+  "                    'Energy cells fall through ' +\r\n" +
+  "                    highlight('5 LANES') +\r\n" +
+  "                    '; normal cells add their number to h, while red broken cells subtract from h.',\r\n" +
+  '                ]],\r\n' +
+  '\r\n' +
+  '                onComplete,\r\n' +
+  '            });\r\n' +
+  '        },\r\n' +
+  '\r\n' +
+  '        /**\r\n' +
+  '         * ============================================================\r\n' +
+  '         * 04 — ENERGY CELL / BROKEN CELL\r\n' +
+  '         * ============================================================\r\n' +
+  '         */\r\n' +
+  '        showShellGuide(context, onComplete) {\r\n' +
+  "            return this._startDynamicDialogue('stage.hostpower.guided.cells.', {\r\n" +
+  "                title: '04 // ENERGY CELLS',\r\n" +
+  "                speaker: 'SYSTEM',\r\n" +
+  "                timing: 'during',\r\n" +
+  '\r\n' +
+  '                bindings: {\r\n' +
+  "                    gameplayId: 'ip_host_power_reactor',\r\n" +
+  "                    trigger: 'gameplay.during',\r\n" +
+  '                },\r\n' +
+  '\r\n' +
+  '                slides: [[\r\n' +
+  "                    'Colored cells ' +\r\n" +
+  "                    highlight('ADD ENERGY') +\r\n" +
+  "                    '; red broken cells ' +\r\n" +
+  "                    highlight('REMOVE ENERGY') +\r\n" +
+  "                    ' when you need to correct h.',\r\n" +
+  '                ]],\r\n' +
+  '\r\n' +
+  '                onComplete,\r\n' +
+  '            });\r\n' +
+  '        },\r\n' +
+  '\r\n' +
+  '        /**\r\n' +
+  '         * ============================================================\r\n' +
+  '         * 05 — COLLECTOR\r\n' +
+  '         * ============================================================\r\n' +
+  '         */\r\n' +
+  '        showControlsGuide(context, onComplete) {\r\n' +
+  "            return this._startDynamicDialogue('stage.hostpower.guided.controls.', {\r\n" +
+  "                title: '05 // COLLECTOR',\r\n" +
+  "                speaker: 'SYSTEM',\r\n" +
+  "                timing: 'during',\r\n" +
+  '\r\n' +
+  '               '... 29403 more characters
+
+    at testLoaderAndTutorialPlacement (C:\Users\User\Desktop\IP2Live Dev\IP2Live\tests\stage3_gameplay45_progression.test.cjs:124:12)
+    at Object.<anonymous> (C:\Users\User\Desktop\IP2Live Dev\IP2Live\tests\stage3_gameplay45_progression.test.cjs:328:5)
+    at Module._compile (node:internal/modules/cjs/loader:1812:14)
+    at Object..js (node:internal/modules/cjs/loader:1943:10)
+    at Module.load (node:internal/modules/cjs/loader:1533:32)
+    at Module._load (node:internal/modules/cjs/loader:1335:12)
+    at wrapModuleLoad (node:internal/modules/cjs/loader:255:19)
+    at Module.executeUserEntryPoint [as runMain] (node:internal/modules/run_main:154:5)
+    at node:internal/main/run_main_module:33:47 {
+  generatedMessage: true,
+  code: 'ERR_ASSERTION',
+  actual: '/**\r\n' +
+    ' * IP2Live - Gameplay 4.5 Host-Power Reactor Tutorial\r\n' +
+    ' *\r\n' +
+    ' * Guided tutorial for the analytical host-capacity bridge.\r\n' +
+    ' *\r\n' +
+    ' * Learning sequence:\r\n' +
+    " *   1. Connect Gameplay 4's repeated-doubling idea to 2^h.\r\n" +
+    ' *   2. Read HOSTS NEEDED.\r\n' +
+    ' *   3. Understand the engine and the "smallest valid h" objective.\r\n' +
+    ' *   4. Catch positive energy cells with the collector tether.\r\n' +
+    '...',
+  expected: /five fixed lanes/i,
+  operator: 'match',
+  diff: 'simple'
+}
+✖ tests\stage3_gameplay45_progression.test.cjs (88.8816ms)
+Story autosave: persistence, isolation, atomic failure, queueing, map changes, restore and prompts passed.
+✔ tests\story_autosave.test.cjs (163.4553ms)
+✔ the final story exit creates one named award, saves it and plays the ending before completion (185.2427ms)
+✔ unknown maps, unfinished routes, practice, PVP, tutorials and developer sessions cannot award completion (6.7928ms)
+✔ completed saves reopen the final screen without changing the named run or awarding twice (12.7893ms)
+✔ a completed legacy route earns its award, and the real autosave captures completion while the ending covers the map (13.9858ms)
+✔ failed saves and archive storage leave the earned PDF available and report the archive failure (56.2936ms)
+✔ story certificates contain the saved Unicode name in a valid landscape PDF and download offline (25.6214ms)
+✔ certificate names fit the reserved area at preview and PDF sizes without truncation or distortion (95.9791ms)
+✔ archive survives a fresh runtime and supports retrying a failed download (51.8397ms)
+✔ ending requires reading its four chapters, guards transition input and scales certificate mouse targets (120.3626ms)
+✔ completion offers three actions, saves progress again, and keeps failed saves retryable (30.6744ms)
+✔ ending motion and typing freeze when hidden or covered, and closing releases its painting caches (31.5193ms)
+✔ certificate model reuses its texture sprites, reduced motion holds a pose, and close releases the textures (56.2583ms)
+✖ two distinct ending scores are registered and ship exact recovery copies (3.4714ms)
+✔ A Network Restored: decodable stereo PCM, safe levels and continuous loop (48.0116ms)
+✔ Open Skies: decodable stereo PCM, safe levels and continuous loop (39.3587ms)
+Story persistence: atomic core snapshots, legacy load, profile isolation and report continuity passed.
+✔ tests\story_persistence.test.cjs (139.3037ms)
+✔ the four prologue scenes introduce the invaders, the resource monopoly, APEX and the subnetting mission (17.633ms)
+✔ each slide owns matching audio, freezes effects on focus loss and releases them before tutorial music (58.936ms)
+✔ closing before audio starts leaves menu music alone; reduced motion skips the ship descent cue (33.0759ms)
+✔ captions finish typing before Space or Enter advances, then fade through all four scenes (49.0603ms)
+✔ hidden/unfocused windows and background overlays suspend both text and fades (30.4642ms)
+✔ loading and fades block input, and Escape never skips the story (33.8615ms)
+✔ fresh Story creation waits for the prologue, starts autosave/tutorial once, and clears held input (87.5758ms)
+✔ the removed buttons cannot be clicked and the only visible control is the centered keyboard prompt (30.6588ms)
+✔ ambient motion reuses paintings and the textured housing without growing the bounded canvas cache (31.3372ms)
+✔ arrival ships descend from above, settle at their authored positions and remain still with reduced motion (30.8206ms)
+✔ ambient motion is capped at 24 fps, suspends when hidden or covered, and honors reduced motion (27.3868ms)
+✔ each illustration has deterministic ambient motion and reduced motion holds the same pose (47.1001ms)
+✔ the caption housing fits the full text, stays steady while typing, and places the diamonds above it (23.5572ms)
+✔ a failed tutorial handoff leaves a readable retry action instead of a black dead end (34.033ms)
+✔ canonical lore survives JSON loading, and every floor has exactly one world-title briefing (8.8392ms)
+✔ first gameplay context persists per Story, keeps spotlight indices intact and does not decorate optional replays (6.1626ms)
+✔ Songs/Musics/StoryPrologue/01-arrival-ost.wav: playable stereo PCM, headroom and a clean boundary (24.7387ms)
+✔ Songs/MusicEffects/StoryPrologue/01-arrival-sfx.wav: playable stereo PCM, headroom and a clean boundary (3.0495ms)
+✔ Songs/Musics/StoryPrologue/02-taking-ost.wav: playable stereo PCM, headroom and a clean boundary (12.4374ms)
+✔ Songs/MusicEffects/StoryPrologue/02-taking-sfx.wav: playable stereo PCM, headroom and a clean boundary (22.8529ms)
+✔ Songs/Musics/StoryPrologue/03-fortress-ost.wav: playable stereo PCM, headroom and a clean boundary (14.602ms)
+✔ Songs/MusicEffects/StoryPrologue/03-fortress-sfx.wav: playable stereo PCM, headroom and a clean boundary (9.4545ms)
+✔ Songs/Musics/StoryPrologue/04-our-way-inside-ost.wav: playable stereo PCM, headroom and a clean boundary (17.9551ms)
+✔ Songs/MusicEffects/StoryPrologue/04-our-way-inside-sfx.wav: playable stereo PCM, headroom and a clean boundary (8.8139ms)
+✔ each slide has an original OST and matching effects; only ship descent is a one-shot (1.681ms)
+✔ all eight recovery assets are bundled with the plugin and match the original Songs files (96.191ms)
+telemetry_learning_evidence.test.cjs: PASS
+✔ tests\telemetry_learning_evidence.test.cjs (141.4399ms)
+tutorial_cidr_defaults.test.cjs: PASS
+✔ tests\tutorial_cidr_defaults.test.cjs (142.7776ms)
+[IP2Live] tutorial.js module loaded.
+[IP2Live] Tutorial activated.
+[IP2Live] Tutorial version: quest-debug-20260916-19
+Tutorial dialogue centralization tests passed.
+✔ tests\tutorial_dialogue_centralization.test.cjs (94.5207ms)
+✔ prepares a clean release and exactly replaces the exported project plugin (4113.358ms)
+✔ stops with re-export guidance when a registered custom song is absent (388.6505ms)
+✔ initializes fixed storage directories and reports its stable root (37.5768ms)
+✔ writes and reads an integrity-protected core save (33.8346ms)
+✔ keeps a verified backup and recovers when the primary is corrupt (48.1043ms)
+✔ serializes concurrent writes to the same slot (142.6192ms)
+✔ persists engine keyboard and language settings and recovers a valid backup (55.3959ms)
+✔ accepts protected base64 engine settings and rejects malformed content (22.7134ms)
+✔ appends telemetry with integrity and filters unreadable or unrelated rows (26.3227ms)
+✔ saves reports only below the managed Reports directory (30.2123ms)
+✔ rejects invalid slots and oversized records before writing (15.7282ms)
+✔ imports legacy RPG Paper Maker saves without modifying the source (29.2567ms)
+ℹ tests 273
+ℹ suites 0
+ℹ pass 268
+ℹ fail 5
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 6689.7732
+
+✖ failing tests:
+
+test at tests\gameplay_bgm.test.cjs:13:1
+✖ seven gameplay cues are registered, distinct, and have exact bundled copies (3.6069ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+  + actual - expected
+  
+  + undefined
+  - 'Gameplay/03-bitstream-decoder.wav'
+  
+      at TestContext.<anonymous> (C:\Users\User\Desktop\IP2Live Dev\IP2Live\tests\gameplay_bgm.test.cjs:23:16)
+      at Test.runInAsyncScope (node:async_hooks:228:14)
+      at Test.run (node:internal/test_runner/test:1118:25)
+      at Test.start (node:internal/test_runner/test:1015:17)
+      at startSubtestAfterBootstrap (node:internal/test_runner/harness:358:17) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: undefined,
+    expected: 'Gameplay/03-bitstream-decoder.wav',
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at tests\host_power_reactor.test.cjs:1:1
+✖ tests\host_power_reactor.test.cjs (97.393ms)
+  'test failed'
+
+test at tests\pvp-mode.test.cjs:1:1
+✖ tests\pvp-mode.test.cjs (1257.5505ms)
+  'test failed'
+
+test at tests\stage3_gameplay45_progression.test.cjs:1:1
+✖ tests\stage3_gameplay45_progression.test.cjs (88.8816ms)
+  'test failed'
+
+test at tests\story_ending_audio.test.cjs:12:1
+✖ two distinct ending scores are registered and ship exact recovery copies (3.4714ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly deep-equal:
+  + actual - expected
+  
+  + undefined
+  - {
+  -   br: false,
+  -   id: 29,
+  -   name: 'StoryEnding/01-a-network-restored.wav'
+  - }
+  
+      at TestContext.<anonymous> (C:\Users\User\Desktop\IP2Live Dev\IP2Live\tests\story_ending_audio.test.cjs:21:16)
+      at Test.runInAsyncScope (node:async_hooks:228:14)
+      at Test.run (node:internal/test_runner/test:1118:25)
+      at Test.start (node:internal/test_runner/test:1015:17)
+      at startSubtestAfterBootstrap (node:internal/test_runner/harness:358:17) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: undefined,
+    expected: { id: 29, name: 'StoryEnding/01-a-network-restored.wav', br: false },
+    operator: 'deepStrictEqual',
+    diff: 'simple'
+  }

@@ -163,6 +163,7 @@ class IP2LiveQuestManager {
 
         if (this._arrowGuide) this._arrowGuide.setObjective(this.currentObjective());
         if (Manager && Manager.Stack) Manager.Stack.requestPaintHUD = true;
+        if (IP2Live.ErrorDiagnostics) IP2Live.ErrorDiagnostics.beginQuest(questId, this.activeMapId);
         if (opts.restart) this._notifyProgressChanged(this.activeMapId, 'quest-restarted');
         return true;
     }

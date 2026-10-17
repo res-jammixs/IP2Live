@@ -22,6 +22,18 @@
         },
 
         update(now) {
+            const delta = this._lastUpdate === undefined ? 0 : Math.max(0, now - this._lastUpdate);
+            this._lastUpdate = now;
+            const diagnostics = IP2Live.ErrorDiagnostics;
+            const diagnosticArea = diagnostics && diagnostics.getHudBounds();
+            const bannerHeight = this._element && this._element.getBoundingClientRect().height || 96;
+            if (diagnostics && ((diagnostics._ui && diagnostics._ui.screen) ||
+                (diagnosticArea && diagnosticArea.bottom + 12 + bannerHeight > window.innerHeight - 16))) {
+                // Keep achievements queued while reading, or until there is room below the journal.
+                if (this.active) this.active.startedAt += delta;
+                if (this._element) this._element.style.opacity = '0';
+                return;
+            }
             if (!this.active && this.queue.length) {
                 this.active = this.queue.shift();
                 this.active.startedAt = now;
@@ -46,7 +58,8 @@
                 // Use the rendered minimap size, including canvas scaling and letterboxing.
                 this._element.style.width = (anchored ? bounds.width : 220) + 'px';
                 this._element.style.maxWidth = anchored ? 'none' : 'calc(100vw - 36px)';
-                const top = anchored ? bounds.bottom + 12 : 24;
+                const diagnosticBounds = IP2Live.ErrorDiagnostics && IP2Live.ErrorDiagnostics.getHudBounds();
+                const top = diagnosticBounds && diagnosticBounds.height > 0 ? diagnosticBounds.bottom + 12 : anchored ? bounds.bottom + 12 : 24;
                 const height = this._element.getBoundingClientRect().height || 96;
                 this._element.style.top = Math.min(top, Math.max(16, window.innerHeight - height - 16)) + 'px';
                 this._element.style.right = (anchored ? window.innerWidth - bounds.right : 18) + 'px';

@@ -1,0 +1,1791 @@
+{
+  "source": "GameManager.getAllGameplayAssignments() evaluated in an isolated VM; configuration only, not a campaign playthrough.",
+  "maps": [
+    {
+      "mapId": 1,
+      "stage": 0,
+      "level": 0,
+      "name": "Tutorial Stage",
+      "combinedEnabled": false,
+      "questCount": 0,
+      "objectiveCount": 0,
+      "gameplays": [],
+      "tutorialObjectives": []
+    },
+    {
+      "mapId": 3,
+      "stage": 1,
+      "level": 1,
+      "name": "Stage 1 Level 1",
+      "combinedEnabled": false,
+      "questCount": 4,
+      "objectiveCount": 4,
+      "gameplays": [
+        "ip_class_wires"
+      ],
+      "tutorialObjectives": [
+        "repair_ip_wires_01"
+      ]
+    },
+    {
+      "mapId": 4,
+      "stage": 1,
+      "level": 2,
+      "name": "Stage 1 Level 2",
+      "combinedEnabled": false,
+      "questCount": 7,
+      "objectiveCount": 7,
+      "gameplays": [
+        "ip_class_wires",
+        "ip_patch_panel_classes"
+      ],
+      "tutorialObjectives": [
+        "route_stage4_ip_patch_panel_03"
+      ]
+    },
+    {
+      "mapId": 5,
+      "stage": 1,
+      "level": 3,
+      "name": "Stage 1 Level 3",
+      "combinedEnabled": false,
+      "questCount": 10,
+      "objectiveCount": 10,
+      "gameplays": [
+        "ip_class_wires",
+        "ip_patch_panel_classes",
+        "ip_class_wires_harder"
+      ],
+      "tutorialObjectives": [
+        "repair_stage5_ip_wires_harder_04_tutorial"
+      ]
+    },
+    {
+      "mapId": 6,
+      "stage": 1,
+      "level": 4,
+      "name": "Stage 1 Level 4",
+      "combinedEnabled": false,
+      "questCount": 8,
+      "objectiveCount": 8,
+      "gameplays": [
+        "ip_class_wires",
+        "ip_patch_panel_classes",
+        "ip_class_wires_harder"
+      ],
+      "tutorialObjectives": []
+    },
+    {
+      "mapId": 7,
+      "stage": 2,
+      "level": 1,
+      "name": "Stage 2 Level 1",
+      "combinedEnabled": false,
+      "questCount": 5,
+      "objectiveCount": 5,
+      "gameplays": [
+        "ip_cidr_binary_panel"
+      ],
+      "tutorialObjectives": [
+        "solve_cidr_panel_01"
+      ]
+    },
+    {
+      "mapId": 8,
+      "stage": 2,
+      "level": 2,
+      "name": "Stage 2 Level 2",
+      "combinedEnabled": false,
+      "questCount": 5,
+      "objectiveCount": 10,
+      "gameplays": [
+        "ip_cidr_binary_panel",
+        "ip_subnet_simulator"
+      ],
+      "tutorialObjectives": [
+        "solve_cidr_chain_01_subnet"
+      ]
+    },
+    {
+      "mapId": 9,
+      "stage": 2,
+      "level": 3,
+      "name": "Stage 2 Level 3",
+      "combinedEnabled": false,
+      "questCount": 5,
+      "objectiveCount": 10,
+      "gameplays": [
+        "ip_cidr_binary_panel_harder",
+        "ip_subnet_simulator"
+      ],
+      "tutorialObjectives": [
+        "solve_harder_cidr_chain_01_panel",
+        "solve_harder_cidr_chain_01_subnet"
+      ]
+    },
+    {
+      "mapId": 10,
+      "stage": 2,
+      "level": 4,
+      "name": "Stage 2 Level 4",
+      "combinedEnabled": false,
+      "questCount": 5,
+      "objectiveCount": 5,
+      "gameplays": [
+        "ip_cidr_binary_panel_harder"
+      ],
+      "tutorialObjectives": [
+        "solve_harder_cidr_panel_01"
+      ]
+    },
+    {
+      "mapId": 11,
+      "stage": 3,
+      "level": 1,
+      "name": "Stage 3 Level 1",
+      "combinedEnabled": false,
+      "questCount": 5,
+      "objectiveCount": 5,
+      "gameplays": [
+        "ip_host_power_reactor"
+      ],
+      "tutorialObjectives": [
+        "stabilize_host_power_11_01"
+      ]
+    },
+    {
+      "mapId": 12,
+      "stage": 3,
+      "level": 2,
+      "name": "Stage 3 Level 2",
+      "combinedEnabled": false,
+      "questCount": 5,
+      "objectiveCount": 5,
+      "gameplays": [
+        "ip_host_power_reactor",
+        "ip_cidr_quarantine"
+      ],
+      "tutorialObjectives": [
+        "solve_cidr_quarantine_12_03"
+      ]
+    },
+    {
+      "mapId": 13,
+      "stage": 3,
+      "level": 3,
+      "name": "Stage 3 Level 3",
+      "combinedEnabled": false,
+      "questCount": 5,
+      "objectiveCount": 5,
+      "gameplays": [
+        "ip_host_power_reactor",
+        "ip_cidr_quarantine",
+        "ip_cidr_quarantine_matrix"
+      ],
+      "tutorialObjectives": [
+        "solve_cidr_matrix_13_05"
+      ]
+    },
+    {
+      "mapId": 14,
+      "stage": 3,
+      "level": 4,
+      "name": "Stage 3 Level 4",
+      "combinedEnabled": false,
+      "questCount": 0,
+      "objectiveCount": 0,
+      "gameplays": [],
+      "tutorialObjectives": []
+    },
+    {
+      "mapId": 15,
+      "stage": 4,
+      "level": 1,
+      "name": "Stage 4 Level 1",
+      "combinedEnabled": false,
+      "questCount": 5,
+      "objectiveCount": 5,
+      "gameplays": [
+        "ip_network_repair"
+      ],
+      "tutorialObjectives": [
+        "repair_network_pc_01"
+      ]
+    },
+    {
+      "mapId": 16,
+      "stage": 4,
+      "level": 2,
+      "name": "Stage 4 Level 2",
+      "combinedEnabled": false,
+      "questCount": 0,
+      "objectiveCount": 0,
+      "gameplays": [],
+      "tutorialObjectives": []
+    },
+    {
+      "mapId": 17,
+      "stage": 4,
+      "level": 3,
+      "name": "Stage 4 Level 3",
+      "combinedEnabled": false,
+      "questCount": 6,
+      "objectiveCount": 6,
+      "gameplays": [
+        "ip_vlsm_allocator"
+      ],
+      "tutorialObjectives": [
+        "configure_vlsm_hq"
+      ]
+    },
+    {
+      "mapId": 18,
+      "stage": 4,
+      "level": 4,
+      "name": "Stage 4 Level 4",
+      "combinedEnabled": true,
+      "questCount": 0,
+      "objectiveCount": 0,
+      "gameplays": [],
+      "tutorialObjectives": []
+    }
+  ],
+  "assignments": [
+    {
+      "id": "stage.3.ip_wires.01.tutorial",
+      "sequence": 1,
+      "objectiveId": "repair_ip_wires_01",
+      "title": "REPAIR IP WIRES 01",
+      "label": "Lever 01",
+      "targetTile": {
+        "x": 6,
+        "y": 0,
+        "z": 21
+      },
+      "tutorial": true,
+      "mapId": 3,
+      "gameplayId": "ip_class_wires"
+    },
+    {
+      "id": "stage.3.ip_wires.02",
+      "sequence": 2,
+      "objectiveId": "repair_ip_wires_02",
+      "title": "REPAIR IP WIRES 02",
+      "label": "Lever 02",
+      "targetTile": {
+        "x": 27,
+        "y": 0,
+        "z": 10
+      },
+      "mapId": 3,
+      "gameplayId": "ip_class_wires"
+    },
+    {
+      "id": "stage.3.ip_wires.03",
+      "sequence": 3,
+      "objectiveId": "repair_ip_wires_03",
+      "title": "REPAIR IP WIRES 03",
+      "label": "Lever 03",
+      "targetTile": {
+        "x": 13,
+        "y": 0,
+        "z": 6
+      },
+      "mapId": 3,
+      "gameplayId": "ip_class_wires"
+    },
+    {
+      "id": "stage.3.ip_wires.04",
+      "sequence": 4,
+      "objectiveId": "repair_ip_wires_04",
+      "title": "REPAIR IP WIRES 04",
+      "label": "Lever 04",
+      "targetTile": {
+        "x": 19,
+        "y": 0,
+        "z": 27
+      },
+      "mapId": 3,
+      "gameplayId": "ip_class_wires"
+    },
+    {
+      "id": "stage.4.mixed.01.ip_wires",
+      "sequence": 1,
+      "objectiveId": "repair_stage4_ip_wires_01",
+      "title": "REPAIR IP WIRES 01",
+      "label": "Wire Node 01",
+      "targetTile": {
+        "x": 3,
+        "y": 0,
+        "z": 29
+      },
+      "mapId": 4,
+      "gameplayId": "ip_class_wires"
+    },
+    {
+      "id": "stage.4.mixed.02.ip_wires",
+      "sequence": 2,
+      "objectiveId": "repair_stage4_ip_wires_02",
+      "title": "REPAIR IP WIRES 02",
+      "label": "Wire Node 02",
+      "targetTile": {
+        "x": 21,
+        "y": 0,
+        "z": 31
+      },
+      "mapId": 4,
+      "gameplayId": "ip_class_wires"
+    },
+    {
+      "id": "stage.4.mixed.04.ip_wires",
+      "sequence": 4,
+      "objectiveId": "repair_stage4_ip_wires_04",
+      "title": "REPAIR IP WIRES 04",
+      "label": "Wire Node 04",
+      "targetTile": {
+        "x": 21,
+        "y": 0,
+        "z": 17
+      },
+      "mapId": 4,
+      "gameplayId": "ip_class_wires"
+    },
+    {
+      "id": "stage.4.mixed.05.ip_wires",
+      "sequence": 5,
+      "objectiveId": "repair_stage4_ip_wires_05",
+      "title": "REPAIR IP WIRES 05",
+      "label": "Wire Node 05",
+      "targetTile": {
+        "x": 12,
+        "y": 0,
+        "z": 6
+      },
+      "mapId": 4,
+      "gameplayId": "ip_class_wires"
+    },
+    {
+      "id": "stage.4.mixed.07.ip_wires",
+      "sequence": 7,
+      "objectiveId": "repair_stage4_ip_wires_07",
+      "title": "REPAIR IP WIRES 07",
+      "label": "Wire Node 07",
+      "targetTile": {
+        "x": 33,
+        "y": 0,
+        "z": 1
+      },
+      "mapId": 4,
+      "gameplayId": "ip_class_wires"
+    },
+    {
+      "id": "stage.4.mixed.03.ip_patch_panel.tutorial",
+      "sequence": 3,
+      "objectiveId": "route_stage4_ip_patch_panel_03",
+      "title": "LEARN PATCH PANEL ROUTING",
+      "label": "Patch Panel Tutorial",
+      "targetTile": {
+        "x": 21,
+        "y": 0,
+        "z": 26
+      },
+      "tutorial": true,
+      "mapId": 4,
+      "gameplayId": "ip_patch_panel_classes"
+    },
+    {
+      "id": "stage.4.mixed.06.ip_patch_panel",
+      "sequence": 6,
+      "objectiveId": "route_stage4_ip_patch_panel_06",
+      "title": "SECURE PATCH PANEL NODE 06",
+      "label": "Patch Panel Node 06",
+      "targetTile": {
+        "x": 19,
+        "y": 0,
+        "z": 6
+      },
+      "mapId": 4,
+      "gameplayId": "ip_patch_panel_classes"
+    },
+    {
+      "id": "stage.5.mixed.01.ip_wires",
+      "sequence": 1,
+      "objectiveId": "repair_stage5_ip_wires_01",
+      "title": "REPAIR IP WIRES 01",
+      "label": "Wire Relay 01",
+      "targetTile": {
+        "x": 6,
+        "y": 0,
+        "z": 29
+      },
+      "mapId": 5,
+      "gameplayId": "ip_class_wires"
+    },
+    {
+      "id": "stage.5.mixed.05.ip_wires",
+      "sequence": 5,
+      "objectiveId": "repair_stage5_ip_wires_05",
+      "title": "REPAIR IP WIRES 05",
+      "label": "Wire Relay 05",
+      "targetTile": {
+        "x": 21,
+        "y": 0,
+        "z": 16
+      },
+      "mapId": 5,
+      "gameplayId": "ip_class_wires"
+    },
+    {
+      "id": "stage.5.mixed.02.ip_patch_panel",
+      "sequence": 2,
+      "objectiveId": "route_stage5_ip_patch_panel_02",
+      "title": "SECURE PATCH PANEL NODE 02",
+      "label": "Patch Relay 02",
+      "targetTile": {
+        "x": 14,
+        "y": 0,
+        "z": 27
+      },
+      "mapId": 5,
+      "gameplayId": "ip_patch_panel_classes"
+    },
+    {
+      "id": "stage.5.mixed.03.ip_patch_panel",
+      "sequence": 3,
+      "objectiveId": "route_stage5_ip_patch_panel_03",
+      "title": "SECURE PATCH PANEL NODE 03",
+      "label": "Patch Relay 03",
+      "targetTile": {
+        "x": 16,
+        "y": 0,
+        "z": 25
+      },
+      "mapId": 5,
+      "gameplayId": "ip_patch_panel_classes"
+    },
+    {
+      "id": "stage.5.mixed.07.ip_patch_panel",
+      "sequence": 7,
+      "objectiveId": "route_stage5_ip_patch_panel_07",
+      "title": "SECURE PATCH PANEL NODE 07",
+      "label": "Patch Relay 07",
+      "targetTile": {
+        "x": 31,
+        "y": 0,
+        "z": 21
+      },
+      "mapId": 5,
+      "gameplayId": "ip_patch_panel_classes"
+    },
+    {
+      "id": "stage.5.mixed.08.ip_patch_panel",
+      "sequence": 8,
+      "objectiveId": "route_stage5_ip_patch_panel_08",
+      "title": "SECURE PATCH PANEL NODE 08",
+      "label": "Patch Relay 08",
+      "targetTile": {
+        "x": 30,
+        "y": 0,
+        "z": 30
+      },
+      "mapId": 5,
+      "gameplayId": "ip_patch_panel_classes"
+    },
+    {
+      "id": "stage.5.mixed.04.ip_wires_harder.tutorial",
+      "sequence": 4,
+      "objectiveId": "repair_stage5_ip_wires_harder_04_tutorial",
+      "dialogueObjectiveId": "repair_ip_wires_harder_01_tutorial",
+      "title": "ADAPTIVE RE-KEY BRIEFING",
+      "label": "Adaptive Wires Tutorial",
+      "targetTile": {
+        "x": 18,
+        "y": 0,
+        "z": 18
+      },
+      "tutorial": true,
+      "wireCount": 5,
+      "mapId": 5,
+      "gameplayId": "ip_class_wires_harder"
+    },
+    {
+      "id": "stage.5.mixed.06.ip_wires_harder",
+      "sequence": 6,
+      "objectiveId": "repair_stage5_ip_wires_harder_06",
+      "title": "STRICT IP WIRES CHALLENGE",
+      "label": "Strict Wire Relay 06",
+      "targetTile": {
+        "x": 28,
+        "y": 0,
+        "z": 18
+      },
+      "wireCount": 6,
+      "mapId": 5,
+      "gameplayId": "ip_class_wires_harder"
+    },
+    {
+      "id": "stage.5.mixed.09.ip_wires_harder",
+      "sequence": 9,
+      "objectiveId": "repair_stage5_ip_wires_harder_09",
+      "title": "STRICT IP WIRES CHALLENGE",
+      "label": "Strict Wire Relay 09",
+      "targetTile": {
+        "x": 21,
+        "y": 0,
+        "z": 31
+      },
+      "wireCount": 7,
+      "mapId": 5,
+      "gameplayId": "ip_class_wires_harder"
+    },
+    {
+      "id": "stage.5.mixed.10.ip_wires_harder",
+      "sequence": 10,
+      "objectiveId": "repair_stage5_ip_wires_harder_10",
+      "title": "STRICT IP WIRES CHALLENGE",
+      "label": "Strict Wire Relay 10",
+      "targetTile": {
+        "x": 4,
+        "y": 0,
+        "z": 32
+      },
+      "wireCount": 8,
+      "mapId": 5,
+      "gameplayId": "ip_class_wires_harder"
+    },
+    {
+      "id": "stage.6.ultimate.01.ip_wires",
+      "sequence": 1,
+      "objectiveId": "stage6_ultimate_01_ip_wires",
+      "title": "ULTIMATE IP WIRES 01",
+      "label": "Ultimate Wires 01",
+      "targetTile": {
+        "x": 4,
+        "y": 0,
+        "z": 28
+      },
+      "mapId": 6,
+      "gameplayId": "ip_class_wires"
+    },
+    {
+      "id": "stage.6.ultimate.05.ip_wires",
+      "sequence": 5,
+      "objectiveId": "stage6_ultimate_05_ip_wires",
+      "title": "ULTIMATE IP WIRES 05",
+      "label": "Ultimate Wires 05",
+      "targetTile": {
+        "x": 31,
+        "y": 0,
+        "z": 18
+      },
+      "mapId": 6,
+      "gameplayId": "ip_class_wires"
+    },
+    {
+      "id": "stage.6.ultimate.08.ip_wires",
+      "sequence": 8,
+      "objectiveId": "stage6_ultimate_08_ip_wires",
+      "title": "ULTIMATE IP WIRES 08",
+      "label": "Ultimate Wires 08",
+      "targetTile": {
+        "x": 4,
+        "y": 0,
+        "z": 14
+      },
+      "mapId": 6,
+      "gameplayId": "ip_class_wires"
+    },
+    {
+      "id": "stage.6.ultimate.02.patch_panel",
+      "sequence": 2,
+      "objectiveId": "stage6_ultimate_02_patch_panel",
+      "title": "ULTIMATE PATCH PANEL 02",
+      "label": "Ultimate Patch 02",
+      "targetTile": {
+        "x": 12,
+        "y": 0,
+        "z": 30
+      },
+      "mapId": 6,
+      "gameplayId": "ip_patch_panel_classes"
+    },
+    {
+      "id": "stage.6.ultimate.04.patch_panel",
+      "sequence": 4,
+      "objectiveId": "stage6_ultimate_04_patch_panel",
+      "title": "ULTIMATE PATCH PANEL 04",
+      "label": "Ultimate Patch 04",
+      "targetTile": {
+        "x": 30,
+        "y": 0,
+        "z": 30
+      },
+      "mapId": 6,
+      "gameplayId": "ip_patch_panel_classes"
+    },
+    {
+      "id": "stage.6.ultimate.07.patch_panel",
+      "sequence": 7,
+      "objectiveId": "stage6_ultimate_07_patch_panel",
+      "title": "ULTIMATE PATCH PANEL 07",
+      "label": "Ultimate Patch 07",
+      "targetTile": {
+        "x": 12,
+        "y": 0,
+        "z": 9
+      },
+      "mapId": 6,
+      "gameplayId": "ip_patch_panel_classes"
+    },
+    {
+      "id": "stage.6.ultimate.03.ip_wires_harder",
+      "sequence": 3,
+      "objectiveId": "stage6_ultimate_03_ip_wires_harder",
+      "title": "ULTIMATE STRICT WIRES 03",
+      "label": "Ultimate Strict 03",
+      "targetTile": {
+        "x": 21,
+        "y": 0,
+        "z": 27
+      },
+      "wireCount": 6,
+      "mapId": 6,
+      "gameplayId": "ip_class_wires_harder"
+    },
+    {
+      "id": "stage.6.ultimate.06.ip_wires_harder",
+      "sequence": 6,
+      "objectiveId": "stage6_ultimate_06_ip_wires_harder",
+      "title": "ULTIMATE STRICT WIRES 06",
+      "label": "Ultimate Strict 06",
+      "targetTile": {
+        "x": 23,
+        "y": 0,
+        "z": 12
+      },
+      "wireCount": 8,
+      "mapId": 6,
+      "gameplayId": "ip_class_wires_harder"
+    },
+    {
+      "id": "stage.7.ip_cidr_panel.01",
+      "sequence": 1,
+      "objectiveId": "solve_cidr_panel_01",
+      "title": "SOLVE CIDR BINARY PANEL 01",
+      "label": "CIDR Panel 01",
+      "tutorial": true,
+      "randomizeTarget": true,
+      "targetClasses": [
+        "A",
+        "B",
+        "C"
+      ],
+      "targetTile": {
+        "x": 4,
+        "y": 0,
+        "z": 28
+      },
+      "mapId": 7,
+      "gameplayId": "ip_cidr_binary_panel"
+    },
+    {
+      "id": "stage.7.ip_cidr_panel.02",
+      "sequence": 2,
+      "objectiveId": "solve_cidr_panel_02",
+      "title": "SOLVE CIDR BINARY PANEL 02",
+      "label": "CIDR Panel 02",
+      "randomizeTarget": true,
+      "targetClasses": [
+        "A",
+        "B",
+        "C"
+      ],
+      "targetTile": {
+        "x": 10,
+        "y": 0,
+        "z": 30
+      },
+      "mapId": 7,
+      "gameplayId": "ip_cidr_binary_panel"
+    },
+    {
+      "id": "stage.7.ip_cidr_panel.03",
+      "sequence": 3,
+      "objectiveId": "solve_cidr_panel_03",
+      "title": "SOLVE CIDR BINARY PANEL 03",
+      "label": "CIDR Panel 03",
+      "randomizeTarget": true,
+      "targetClasses": [
+        "A",
+        "B",
+        "C"
+      ],
+      "targetTile": {
+        "x": 18,
+        "y": 0,
+        "z": 27
+      },
+      "mapId": 7,
+      "gameplayId": "ip_cidr_binary_panel"
+    },
+    {
+      "id": "stage.7.ip_cidr_panel.04",
+      "sequence": 4,
+      "objectiveId": "solve_cidr_panel_04",
+      "title": "SOLVE CIDR BINARY PANEL 04",
+      "label": "CIDR Panel 04",
+      "randomizeTarget": true,
+      "targetClasses": [
+        "A",
+        "B",
+        "C"
+      ],
+      "targetTile": {
+        "x": 27,
+        "y": 0,
+        "z": 30
+      },
+      "mapId": 7,
+      "gameplayId": "ip_cidr_binary_panel"
+    },
+    {
+      "id": "stage.7.ip_cidr_panel.05",
+      "sequence": 5,
+      "objectiveId": "solve_cidr_panel_05",
+      "title": "SOLVE CIDR BINARY PANEL 05",
+      "label": "CIDR Panel 05",
+      "randomizeTarget": true,
+      "targetClasses": [
+        "A",
+        "B",
+        "C"
+      ],
+      "targetTile": {
+        "x": 31,
+        "y": 0,
+        "z": 21
+      },
+      "mapId": 7,
+      "gameplayId": "ip_cidr_binary_panel"
+    },
+    {
+      "id": "stage.8.cidr_chain.01",
+      "sequence": 1,
+      "objectiveSequence": 1,
+      "questLabel": "CIDR Chain 01",
+      "objectiveId": "solve_cidr_chain_01_panel",
+      "title": "SOLVE CIDR PANEL 01",
+      "label": "CIDR Panel 01",
+      "handoffKey": "stage8-cidr-chain-01",
+      "targetClass": "C",
+      "randomizeTarget": true,
+      "targetTile": {
+        "x": 5,
+        "y": 0,
+        "z": 28
+      },
+      "mapId": 8,
+      "gameplayId": "ip_cidr_binary_panel"
+    },
+    {
+      "id": "stage.8.cidr_chain.02",
+      "sequence": 2,
+      "objectiveSequence": 1,
+      "questLabel": "CIDR Chain 02",
+      "objectiveId": "solve_cidr_chain_02_panel",
+      "title": "SOLVE CIDR PANEL 02",
+      "label": "CIDR Panel 02",
+      "handoffKey": "stage8-cidr-chain-02",
+      "targetClass": "C",
+      "randomizeTarget": true,
+      "targetTile": {
+        "x": 12,
+        "y": 0,
+        "z": 30
+      },
+      "mapId": 8,
+      "gameplayId": "ip_cidr_binary_panel"
+    },
+    {
+      "id": "stage.8.cidr_chain.03",
+      "sequence": 3,
+      "objectiveSequence": 1,
+      "questLabel": "CIDR Chain 03",
+      "objectiveId": "solve_cidr_chain_03_panel",
+      "title": "SOLVE CIDR PANEL 03",
+      "label": "CIDR Panel 03",
+      "handoffKey": "stage8-cidr-chain-03",
+      "targetClass": "C",
+      "randomizeTarget": true,
+      "targetTile": {
+        "x": 24,
+        "y": 0,
+        "z": 28
+      },
+      "mapId": 8,
+      "gameplayId": "ip_cidr_binary_panel"
+    },
+    {
+      "id": "stage.8.cidr_chain.04",
+      "sequence": 4,
+      "objectiveSequence": 1,
+      "questLabel": "CIDR Chain 04",
+      "objectiveId": "solve_cidr_chain_04_panel",
+      "title": "SOLVE CIDR PANEL 04",
+      "label": "CIDR Panel 04",
+      "handoffKey": "stage8-cidr-chain-04",
+      "targetClass": "C",
+      "randomizeTarget": true,
+      "targetTile": {
+        "x": 8,
+        "y": 0,
+        "z": 18
+      },
+      "mapId": 8,
+      "gameplayId": "ip_cidr_binary_panel"
+    },
+    {
+      "id": "stage.8.cidr_chain.05",
+      "sequence": 5,
+      "objectiveSequence": 1,
+      "questLabel": "CIDR Chain 05",
+      "objectiveId": "solve_cidr_chain_05_panel",
+      "title": "SOLVE CIDR PANEL 05",
+      "label": "CIDR Panel 05",
+      "handoffKey": "stage8-cidr-chain-05",
+      "targetClass": "C",
+      "randomizeTarget": true,
+      "targetTile": {
+        "x": 22,
+        "y": 0,
+        "z": 18
+      },
+      "mapId": 8,
+      "gameplayId": "ip_cidr_binary_panel"
+    },
+    {
+      "id": "stage.8.cidr_chain.01",
+      "sequence": 1,
+      "objectiveSequence": 2,
+      "questLabel": "CIDR Chain 01",
+      "objectiveId": "solve_cidr_chain_01_subnet",
+      "title": "SOLVE SUBNET SIMULATOR 01",
+      "label": "Subnet Simulator 01",
+      "handoffKey": "stage8-cidr-chain-01",
+      "targetClass": "C",
+      "randomizeTarget": true,
+      "tutorial": true,
+      "targetTile": {
+        "x": 7,
+        "y": 0,
+        "z": 28
+      },
+      "mapId": 8,
+      "gameplayId": "ip_subnet_simulator"
+    },
+    {
+      "id": "stage.8.cidr_chain.02",
+      "sequence": 2,
+      "objectiveSequence": 2,
+      "questLabel": "CIDR Chain 02",
+      "objectiveId": "solve_cidr_chain_02_subnet",
+      "title": "SOLVE SUBNET SIMULATOR 02",
+      "label": "Subnet Simulator 02",
+      "handoffKey": "stage8-cidr-chain-02",
+      "targetClass": "C",
+      "randomizeTarget": true,
+      "targetTile": {
+        "x": 12,
+        "y": 0,
+        "z": 28
+      },
+      "mapId": 8,
+      "gameplayId": "ip_subnet_simulator"
+    },
+    {
+      "id": "stage.8.cidr_chain.03",
+      "sequence": 3,
+      "objectiveSequence": 2,
+      "questLabel": "CIDR Chain 03",
+      "objectiveId": "solve_cidr_chain_03_subnet",
+      "title": "SOLVE SUBNET SIMULATOR 03",
+      "label": "Subnet Simulator 03",
+      "handoffKey": "stage8-cidr-chain-03",
+      "targetClass": "C",
+      "randomizeTarget": true,
+      "targetTile": {
+        "x": 26,
+        "y": 0,
+        "z": 28
+      },
+      "mapId": 8,
+      "gameplayId": "ip_subnet_simulator"
+    },
+    {
+      "id": "stage.8.cidr_chain.04",
+      "sequence": 4,
+      "objectiveSequence": 2,
+      "questLabel": "CIDR Chain 04",
+      "objectiveId": "solve_cidr_chain_04_subnet",
+      "title": "SOLVE SUBNET SIMULATOR 04",
+      "label": "Subnet Simulator 04",
+      "handoffKey": "stage8-cidr-chain-04",
+      "targetClass": "C",
+      "randomizeTarget": true,
+      "targetTile": {
+        "x": 10,
+        "y": 0,
+        "z": 18
+      },
+      "mapId": 8,
+      "gameplayId": "ip_subnet_simulator"
+    },
+    {
+      "id": "stage.8.cidr_chain.05",
+      "sequence": 5,
+      "objectiveSequence": 2,
+      "questLabel": "CIDR Chain 05",
+      "objectiveId": "solve_cidr_chain_05_subnet",
+      "title": "SOLVE SUBNET SIMULATOR 05",
+      "label": "Subnet Simulator 05",
+      "handoffKey": "stage8-cidr-chain-05",
+      "targetClass": "C",
+      "randomizeTarget": true,
+      "targetTile": {
+        "x": 24,
+        "y": 0,
+        "z": 18
+      },
+      "mapId": 8,
+      "gameplayId": "ip_subnet_simulator"
+    },
+    {
+      "id": "stage.9.cidr_chain.01",
+      "sequence": 1,
+      "objectiveSequence": 1,
+      "questLabel": "Adaptive CIDR Chain 01",
+      "objectiveId": "solve_harder_cidr_chain_01_panel",
+      "title": "BREACH ADAPTIVE CIDR PANEL 01",
+      "label": "Adaptive CIDR Panel 01",
+      "handoffKey": "stage9-cidr-chain-01",
+      "targetClass": "C",
+      "randomizeTarget": true,
+      "harderIntro": true,
+      "targetTile": {
+        "x": 5,
+        "y": 0,
+        "z": 28
+      },
+      "mapId": 9,
+      "gameplayId": "ip_cidr_binary_panel_harder"
+    },
+    {
+      "id": "stage.9.cidr_chain.02",
+      "sequence": 2,
+      "objectiveSequence": 1,
+      "questLabel": "Adaptive CIDR Chain 02",
+      "objectiveId": "solve_harder_cidr_chain_02_panel",
+      "title": "BREACH ADAPTIVE CIDR PANEL 02",
+      "label": "Adaptive CIDR Panel 02",
+      "handoffKey": "stage9-cidr-chain-02",
+      "targetClass": "C",
+      "randomizeTarget": true,
+      "targetTile": {
+        "x": 12,
+        "y": 0,
+        "z": 30
+      },
+      "mapId": 9,
+      "gameplayId": "ip_cidr_binary_panel_harder"
+    },
+    {
+      "id": "stage.9.cidr_chain.03",
+      "sequence": 3,
+      "objectiveSequence": 1,
+      "questLabel": "Adaptive CIDR Chain 03",
+      "objectiveId": "solve_harder_cidr_chain_03_panel",
+      "title": "BREACH ADAPTIVE CIDR PANEL 03",
+      "label": "Adaptive CIDR Panel 03",
+      "handoffKey": "stage9-cidr-chain-03",
+      "targetClass": "C",
+      "randomizeTarget": true,
+      "targetTile": {
+        "x": 24,
+        "y": 0,
+        "z": 28
+      },
+      "mapId": 9,
+      "gameplayId": "ip_cidr_binary_panel_harder"
+    },
+    {
+      "id": "stage.9.cidr_chain.04",
+      "sequence": 4,
+      "objectiveSequence": 1,
+      "questLabel": "Adaptive CIDR Chain 04",
+      "objectiveId": "solve_harder_cidr_chain_04_panel",
+      "title": "BREACH ADAPTIVE CIDR PANEL 04",
+      "label": "Adaptive CIDR Panel 04",
+      "handoffKey": "stage9-cidr-chain-04",
+      "targetClass": "C",
+      "randomizeTarget": true,
+      "targetTile": {
+        "x": 8,
+        "y": 0,
+        "z": 18
+      },
+      "mapId": 9,
+      "gameplayId": "ip_cidr_binary_panel_harder"
+    },
+    {
+      "id": "stage.9.cidr_chain.05",
+      "sequence": 5,
+      "objectiveSequence": 1,
+      "questLabel": "Adaptive CIDR Chain 05",
+      "objectiveId": "solve_harder_cidr_chain_05_panel",
+      "title": "BREACH ADAPTIVE CIDR PANEL 05",
+      "label": "Adaptive CIDR Panel 05",
+      "handoffKey": "stage9-cidr-chain-05",
+      "targetClass": "C",
+      "randomizeTarget": true,
+      "targetTile": {
+        "x": 22,
+        "y": 0,
+        "z": 18
+      },
+      "mapId": 9,
+      "gameplayId": "ip_cidr_binary_panel_harder"
+    },
+    {
+      "id": "stage.9.cidr_chain.01",
+      "sequence": 1,
+      "objectiveSequence": 2,
+      "questLabel": "Adaptive CIDR Chain 01",
+      "objectiveId": "solve_harder_cidr_chain_01_subnet",
+      "title": "SOLVE SUBNET SIMULATOR 01",
+      "label": "Subnet Simulator 01",
+      "handoffKey": "stage9-cidr-chain-01",
+      "targetClass": "C",
+      "randomizeTarget": true,
+      "harderIntro": true,
+      "targetTile": {
+        "x": 7,
+        "y": 0,
+        "z": 28
+      },
+      "mapId": 9,
+      "gameplayId": "ip_subnet_simulator"
+    },
+    {
+      "id": "stage.9.cidr_chain.02",
+      "sequence": 2,
+      "objectiveSequence": 2,
+      "questLabel": "Adaptive CIDR Chain 02",
+      "objectiveId": "solve_harder_cidr_chain_02_subnet",
+      "title": "SOLVE SUBNET SIMULATOR 02",
+      "label": "Subnet Simulator 02",
+      "handoffKey": "stage9-cidr-chain-02",
+      "targetClass": "C",
+      "randomizeTarget": true,
+      "targetTile": {
+        "x": 12,
+        "y": 0,
+        "z": 28
+      },
+      "mapId": 9,
+      "gameplayId": "ip_subnet_simulator"
+    },
+    {
+      "id": "stage.9.cidr_chain.03",
+      "sequence": 3,
+      "objectiveSequence": 2,
+      "questLabel": "Adaptive CIDR Chain 03",
+      "objectiveId": "solve_harder_cidr_chain_03_subnet",
+      "title": "SOLVE SUBNET SIMULATOR 03",
+      "label": "Subnet Simulator 03",
+      "handoffKey": "stage9-cidr-chain-03",
+      "targetClass": "C",
+      "randomizeTarget": true,
+      "targetTile": {
+        "x": 26,
+        "y": 0,
+        "z": 28
+      },
+      "mapId": 9,
+      "gameplayId": "ip_subnet_simulator"
+    },
+    {
+      "id": "stage.9.cidr_chain.04",
+      "sequence": 4,
+      "objectiveSequence": 2,
+      "questLabel": "Adaptive CIDR Chain 04",
+      "objectiveId": "solve_harder_cidr_chain_04_subnet",
+      "title": "SOLVE SUBNET SIMULATOR 04",
+      "label": "Subnet Simulator 04",
+      "handoffKey": "stage9-cidr-chain-04",
+      "targetClass": "C",
+      "randomizeTarget": true,
+      "targetTile": {
+        "x": 10,
+        "y": 0,
+        "z": 18
+      },
+      "mapId": 9,
+      "gameplayId": "ip_subnet_simulator"
+    },
+    {
+      "id": "stage.9.cidr_chain.05",
+      "sequence": 5,
+      "objectiveSequence": 2,
+      "questLabel": "Adaptive CIDR Chain 05",
+      "objectiveId": "solve_harder_cidr_chain_05_subnet",
+      "title": "SOLVE SUBNET SIMULATOR 05",
+      "label": "Subnet Simulator 05",
+      "handoffKey": "stage9-cidr-chain-05",
+      "targetClass": "C",
+      "randomizeTarget": true,
+      "targetTile": {
+        "x": 24,
+        "y": 0,
+        "z": 18
+      },
+      "mapId": 9,
+      "gameplayId": "ip_subnet_simulator"
+    },
+    {
+      "id": "stage.10.ip_cidr_harder.01",
+      "sequence": 1,
+      "objectiveId": "solve_harder_cidr_panel_01",
+      "title": "BREACH ADAPTIVE CIDR PANEL 01",
+      "label": "Adaptive CIDR Panel 01",
+      "targetClass": "C",
+      "randomizeTarget": true,
+      "harderIntro": true,
+      "targetTile": {
+        "x": 4,
+        "y": 0,
+        "z": 28
+      },
+      "mapId": 10,
+      "gameplayId": "ip_cidr_binary_panel_harder"
+    },
+    {
+      "id": "stage.10.ip_cidr_harder.02",
+      "sequence": 2,
+      "objectiveId": "solve_harder_cidr_panel_02",
+      "title": "BREACH ADAPTIVE CIDR PANEL 02",
+      "label": "Adaptive CIDR Panel 02",
+      "targetClass": "C",
+      "randomizeTarget": true,
+      "targetTile": {
+        "x": 10,
+        "y": 0,
+        "z": 30
+      },
+      "mapId": 10,
+      "gameplayId": "ip_cidr_binary_panel_harder"
+    },
+    {
+      "id": "stage.10.ip_cidr_harder.03",
+      "sequence": 3,
+      "objectiveId": "solve_harder_cidr_panel_03",
+      "title": "BREACH ADAPTIVE CIDR PANEL 03",
+      "label": "Adaptive CIDR Panel 03",
+      "targetClass": "C",
+      "randomizeTarget": true,
+      "targetTile": {
+        "x": 18,
+        "y": 0,
+        "z": 27
+      },
+      "mapId": 10,
+      "gameplayId": "ip_cidr_binary_panel_harder"
+    },
+    {
+      "id": "stage.10.ip_cidr_harder.04",
+      "sequence": 4,
+      "objectiveId": "solve_harder_cidr_panel_04",
+      "title": "BREACH ADAPTIVE CIDR PANEL 04",
+      "label": "Adaptive CIDR Panel 04",
+      "targetClass": "C",
+      "randomizeTarget": true,
+      "targetTile": {
+        "x": 27,
+        "y": 0,
+        "z": 30
+      },
+      "mapId": 10,
+      "gameplayId": "ip_cidr_binary_panel_harder"
+    },
+    {
+      "id": "stage.10.ip_cidr_harder.05",
+      "sequence": 5,
+      "objectiveId": "solve_harder_cidr_panel_05",
+      "title": "BREACH ADAPTIVE CIDR PANEL 05",
+      "label": "Adaptive CIDR Panel 05",
+      "targetClass": "C",
+      "randomizeTarget": true,
+      "targetTile": {
+        "x": 31,
+        "y": 0,
+        "z": 21
+      },
+      "mapId": 10,
+      "gameplayId": "ip_cidr_binary_panel_harder"
+    },
+    {
+      "id": "stage.11.host_power.01.tutorial",
+      "sequence": 1,
+      "objectiveId": "stabilize_host_power_11_01",
+      "title": "CALIBRATE HOST-POWER REACTOR",
+      "label": "Host-Power Node 01",
+      "tutorial": true,
+      "targetClass": "C",
+      "requiredHosts": 50,
+      "targetTile": {
+        "x": 6,
+        "y": 0,
+        "z": 28
+      },
+      "mapId": 11,
+      "gameplayId": "ip_host_power_reactor"
+    },
+    {
+      "id": "stage.11.host_power.02",
+      "sequence": 2,
+      "objectiveId": "stabilize_host_power_11_02",
+      "title": "POWER CLASS C RELAY",
+      "label": "Host-Power Node 02",
+      "targetClass": "C",
+      "requiredHosts": 100,
+      "targetTile": {
+        "x": 34,
+        "y": 0,
+        "z": 17
+      },
+      "mapId": 11,
+      "gameplayId": "ip_host_power_reactor"
+    },
+    {
+      "id": "stage.11.host_power.03",
+      "sequence": 3,
+      "objectiveId": "stabilize_host_power_11_03",
+      "title": "BALANCE CLASS C CAPACITY",
+      "label": "Host-Power Node 03",
+      "targetClass": "C",
+      "requiredHosts": 200,
+      "targetTile": {
+        "x": 3,
+        "y": 0,
+        "z": 12
+      },
+      "mapId": 11,
+      "gameplayId": "ip_host_power_reactor"
+    },
+    {
+      "id": "stage.11.host_power.04",
+      "sequence": 4,
+      "objectiveId": "stabilize_host_power_11_04",
+      "title": "POWER CLASS B RELAY",
+      "label": "Host-Power Node 04",
+      "targetClass": "B",
+      "requiredHosts": 510,
+      "targetTile": {
+        "x": 10,
+        "y": 0,
+        "z": 25
+      },
+      "mapId": 11,
+      "gameplayId": "ip_host_power_reactor"
+    },
+    {
+      "id": "stage.11.host_power.05",
+      "sequence": 5,
+      "objectiveId": "stabilize_host_power_11_05",
+      "title": "FINALIZE HOST-POWER GRID",
+      "label": "Host-Power Node 05",
+      "targetClass": "B",
+      "requiredHosts": 1022,
+      "targetTile": {
+        "x": 18,
+        "y": 0,
+        "z": 1
+      },
+      "mapId": 11,
+      "gameplayId": "ip_host_power_reactor"
+    },
+    {
+      "id": "stage.12.mixed.01.host_power",
+      "sequence": 1,
+      "objectiveId": "stabilize_host_power_12_01",
+      "title": "VERIFY HOST-POWER CAPACITY",
+      "label": "Host-Power Node 01",
+      "targetClass": "C",
+      "requiredHosts": 126,
+      "targetTile": {
+        "x": 21,
+        "y": 0,
+        "z": 28
+      },
+      "mapId": 12,
+      "gameplayId": "ip_host_power_reactor"
+    },
+    {
+      "id": "stage.12.mixed.02.host_power",
+      "sequence": 2,
+      "objectiveId": "stabilize_host_power_12_02",
+      "title": "PRIME QUARANTINE CAPACITY",
+      "label": "Host-Power Node 02",
+      "targetClass": "B",
+      "requiredHosts": 2046,
+      "targetTile": {
+        "x": 0,
+        "y": 0,
+        "z": 16
+      },
+      "mapId": 12,
+      "gameplayId": "ip_host_power_reactor"
+    },
+    {
+      "id": "stage.12.mixed.03.cidr_quarantine.tutorial",
+      "sequence": 3,
+      "objectiveId": "solve_cidr_quarantine_12_03",
+      "title": "CALIBRATE QUARANTINE NODE",
+      "label": "Quarantine Node 03",
+      "tutorial": true,
+      "targetTile": {
+        "x": 17,
+        "y": 0,
+        "z": 0
+      },
+      "profile": {
+        "index": 1,
+        "minHosts": 18,
+        "maxHosts": 34
+      },
+      "mapId": 12,
+      "gameplayId": "ip_cidr_quarantine"
+    },
+    {
+      "id": "stage.12.mixed.04.cidr_quarantine",
+      "sequence": 4,
+      "objectiveId": "solve_cidr_quarantine_12_04",
+      "title": "TRAP ROGUE AI CLUSTER",
+      "label": "Quarantine Node 04",
+      "targetTile": {
+        "x": 34,
+        "y": 0,
+        "z": 16
+      },
+      "profile": {
+        "index": 2,
+        "minHosts": 26,
+        "maxHosts": 58
+      },
+      "mapId": 12,
+      "gameplayId": "ip_cidr_quarantine"
+    },
+    {
+      "id": "stage.12.mixed.05.cidr_quarantine",
+      "sequence": 5,
+      "objectiveId": "solve_cidr_quarantine_12_05",
+      "title": "SEAL INFECTED SEGMENT",
+      "label": "Quarantine Node 05",
+      "targetTile": {
+        "x": 17,
+        "y": 0,
+        "z": 19
+      },
+      "profile": {
+        "index": 3,
+        "minHosts": 42,
+        "maxHosts": 92
+      },
+      "mapId": 12,
+      "gameplayId": "ip_cidr_quarantine"
+    },
+    {
+      "id": "stage.13.mixed.01.host_power",
+      "sequence": 1,
+      "objectiveId": "stabilize_host_power_13_01",
+      "title": "CALCULATE CONTAINMENT POWER",
+      "label": "Host-Power Node 01",
+      "targetClass": "C",
+      "requiredHosts": 200,
+      "targetTile": {
+        "x": 6,
+        "y": 0,
+        "z": 28
+      },
+      "mapId": 13,
+      "gameplayId": "ip_host_power_reactor"
+    },
+    {
+      "id": "stage.13.mixed.03.host_power",
+      "sequence": 3,
+      "objectiveId": "stabilize_host_power_13_03",
+      "title": "RECALCULATE HOST CAPACITY",
+      "label": "Host-Power Node 03",
+      "targetClass": "B",
+      "requiredHosts": 4094,
+      "targetTile": {
+        "x": 3,
+        "y": 0,
+        "z": 12
+      },
+      "mapId": 13,
+      "gameplayId": "ip_host_power_reactor"
+    },
+    {
+      "id": "stage.13.mixed.02.cidr_quarantine",
+      "sequence": 2,
+      "objectiveId": "solve_cidr_quarantine_13_02",
+      "title": "BUILD SINGLE-ZONE QUARANTINE",
+      "label": "Quarantine Node 02",
+      "targetTile": {
+        "x": 34,
+        "y": 0,
+        "z": 17
+      },
+      "profile": {
+        "index": 4,
+        "minHosts": 70,
+        "maxHosts": 120
+      },
+      "mapId": 13,
+      "gameplayId": "ip_cidr_quarantine"
+    },
+    {
+      "id": "stage.13.mixed.04.cidr_quarantine",
+      "sequence": 4,
+      "objectiveId": "solve_cidr_quarantine_13_04",
+      "title": "SEAL APEX RELAY AI",
+      "label": "Quarantine Node 04",
+      "targetTile": {
+        "x": 10,
+        "y": 0,
+        "z": 25
+      },
+      "profile": {
+        "index": 5,
+        "minHosts": 96,
+        "maxHosts": 180
+      },
+      "mapId": 13,
+      "gameplayId": "ip_cidr_quarantine"
+    },
+    {
+      "id": "stage.13.mixed.05.cidr_matrix.tutorial",
+      "sequence": 5,
+      "objectiveId": "solve_cidr_matrix_13_05",
+      "title": "CALIBRATE SUBNET BLASTER",
+      "label": "Subnet Blaster Node 05",
+      "tutorial": true,
+      "targetTile": {
+        "x": 18,
+        "y": 0,
+        "z": 1
+      },
+      "profile": {
+        "index": 1
+      },
+      "mapId": 13,
+      "gameplayId": "ip_cidr_quarantine_matrix"
+    },
+    {
+      "id": "stage.15.ip_network_repair.01",
+      "sequence": 1,
+      "objectiveId": "repair_network_pc_01",
+      "title": "REPAIR PC 01",
+      "label": "PC 01",
+      "targetTile": {
+        "x": 1,
+        "y": 0,
+        "z": 30
+      },
+      "tutorial": true,
+      "taskType": "networkAddress",
+      "mapId": 15,
+      "gameplayId": "ip_network_repair"
+    },
+    {
+      "id": "stage.15.ip_network_repair.02",
+      "sequence": 2,
+      "objectiveId": "repair_network_pc_02",
+      "title": "REPAIR PC 02",
+      "label": "PC 02",
+      "targetTile": {
+        "x": 1,
+        "y": 0,
+        "z": 4
+      },
+      "taskType": "broadcastAddress",
+      "mapId": 15,
+      "gameplayId": "ip_network_repair"
+    },
+    {
+      "id": "stage.15.ip_network_repair.03",
+      "sequence": 3,
+      "objectiveId": "repair_network_pc_03",
+      "title": "REPAIR PC 03",
+      "label": "PC 03",
+      "targetTile": {
+        "x": 32,
+        "y": 3,
+        "z": 2
+      },
+      "taskType": "usableRange",
+      "mapId": 15,
+      "gameplayId": "ip_network_repair"
+    },
+    {
+      "id": "stage.15.ip_network_repair.04",
+      "sequence": 4,
+      "objectiveId": "repair_network_pc_04",
+      "title": "REPAIR PC 04",
+      "label": "PC 04",
+      "targetTile": {
+        "x": 32,
+        "y": 3,
+        "z": 5
+      },
+      "taskType": "networkAddress",
+      "mapId": 15,
+      "gameplayId": "ip_network_repair"
+    },
+    {
+      "id": "stage.15.ip_network_repair.05",
+      "sequence": 5,
+      "objectiveId": "repair_network_pc_05",
+      "title": "REPAIR PC 05",
+      "label": "PC 05",
+      "targetTile": {
+        "x": 32,
+        "y": 3,
+        "z": 8
+      },
+      "taskType": "usableRange",
+      "mapId": 15,
+      "gameplayId": "ip_network_repair"
+    },
+    {
+      "id": "stage.17.vlsm.hq",
+      "sequence": 1,
+      "objectiveId": "configure_vlsm_hq",
+      "title": "CONFIGURE HQ SUBNET",
+      "label": "HQ Terminal",
+      "targetTile": {
+        "x": 5,
+        "y": 0,
+        "z": 28
+      },
+      "terminalType": "branch",
+      "branchId": "hq",
+      "tutorial": true,
+      "mapId": 17,
+      "gameplayId": "ip_vlsm_allocator"
+    },
+    {
+      "id": "stage.17.vlsm.eugene",
+      "sequence": 2,
+      "objectiveId": "configure_vlsm_eugene",
+      "title": "CONFIGURE EUGENE SUBNET",
+      "label": "Eugene Terminal",
+      "targetTile": {
+        "x": 28,
+        "y": 0,
+        "z": 26
+      },
+      "terminalType": "branch",
+      "branchId": "eugene",
+      "mapId": 17,
+      "gameplayId": "ip_vlsm_allocator"
+    },
+    {
+      "id": "stage.17.vlsm.branch_a",
+      "sequence": 3,
+      "objectiveId": "configure_vlsm_branch_a",
+      "title": "CONFIGURE BRANCH A SUBNET",
+      "label": "Branch A Terminal",
+      "targetTile": {
+        "x": 30,
+        "y": 0,
+        "z": 10
+      },
+      "terminalType": "branch",
+      "branchId": "branch_a",
+      "mapId": 17,
+      "gameplayId": "ip_vlsm_allocator"
+    },
+    {
+      "id": "stage.17.vlsm.san_jose",
+      "sequence": 4,
+      "objectiveId": "configure_vlsm_san_jose",
+      "title": "CONFIGURE SAN JOSE SUBNET",
+      "label": "San Jose Terminal",
+      "targetTile": {
+        "x": 16,
+        "y": 0,
+        "z": 6
+      },
+      "terminalType": "branch",
+      "branchId": "san_jose",
+      "mapId": 17,
+      "gameplayId": "ip_vlsm_allocator"
+    },
+    {
+      "id": "stage.17.vlsm.seattle",
+      "sequence": 5,
+      "objectiveId": "configure_vlsm_seattle",
+      "title": "CONFIGURE SEATTLE SUBNET",
+      "label": "Seattle Terminal",
+      "targetTile": {
+        "x": 4,
+        "y": 0,
+        "z": 10
+      },
+      "terminalType": "branch",
+      "branchId": "seattle",
+      "mapId": 17,
+      "gameplayId": "ip_vlsm_allocator"
+    },
+    {
+      "id": "stage.17.vlsm.core",
+      "sequence": 6,
+      "objectiveId": "commit_vlsm_core",
+      "title": "COMMIT VLSM CORE GATEWAY",
+      "label": "Core Gateway",
+      "targetTile": {
+        "x": 17,
+        "y": 0,
+        "z": 18
+      },
+      "terminalType": "core",
+      "mapId": 17,
+      "gameplayId": "ip_vlsm_allocator"
+    }
+  ],
+  "catalog": {
+    "ip_class_wires": {
+      "gameplayId": "ip_class_wires",
+      "label": "IP Class Wires",
+      "competencyKey": "ip_classification",
+      "competencyLabel": "IP class identification",
+      "targetClearMs": 120000,
+      "objectiveHandler": {
+        "manager": "GameplayManager",
+        "method": "_handleWireObjective"
+      }
+    },
+    "ip_class_wires_harder": {
+      "gameplayId": "ip_class_wires_harder",
+      "label": "IP Class Wires Harder",
+      "competencyKey": "ip_classification_advanced",
+      "competencyLabel": "Advanced IP class identification",
+      "targetClearMs": 150000,
+      "objectiveHandler": {
+        "manager": "HarderWiresGameplayManager",
+        "method": "_handleWireObjective"
+      }
+    },
+    "ip_patch_panel_classes": {
+      "gameplayId": "ip_patch_panel_classes",
+      "label": "IP Patch Panel",
+      "competencyKey": "mask_ip_classification",
+      "competencyLabel": "Subnet mask and IP class classification",
+      "targetClearMs": 140000,
+      "objectiveHandler": {
+        "manager": "PatchPanelGameplayManager",
+        "method": "_handlePatchObjective"
+      }
+    },
+    "ip_cidr_binary_panel": {
+      "gameplayId": "ip_cidr_binary_panel",
+      "label": "CIDR Binary Panel",
+      "competencyKey": "cidr_custom_mask",
+      "competencyLabel": "CIDR and custom subnet mask understanding",
+      "targetClearMs": 120000,
+      "objectiveHandler": {
+        "manager": "CIDRPanelGameplayManager",
+        "method": "_handleCIDRObjective"
+      }
+    },
+    "ip_cidr_binary_panel_harder": {
+      "gameplayId": "ip_cidr_binary_panel_harder",
+      "label": "Adaptive CIDR Binary Panel",
+      "competencyKey": "cidr_custom_mask_adaptive",
+      "competencyLabel": "Adaptive CIDR and custom subnet mask understanding",
+      "targetClearMs": 150000,
+      "objectiveHandler": {
+        "manager": "CIDRPanelHarderGameplayManager",
+        "method": "_handleCIDRObjective"
+      }
+    },
+    "ip_subnet_simulator": {
+      "gameplayId": "ip_subnet_simulator",
+      "label": "Subnet Simulator",
+      "competencyKey": "hosts_subnets_calculation",
+      "competencyLabel": "Hosts and subnets calculation",
+      "targetClearMs": 150000,
+      "objectiveHandler": {
+        "manager": "SubnetSimulatorGameplayManager",
+        "method": "_handleObjective"
+      }
+    },
+    "ip_host_power_reactor": {
+      "gameplayId": "ip_host_power_reactor",
+      "label": "Host-Power Reactor",
+      "competencyKey": "host_bit_power_calculation",
+      "competencyLabel": "Host-bit exponent and usable-address capacity calculation",
+      "targetClearMs": 60000,
+      "objectiveHandler": {
+        "manager": "HostPowerReactorGameplayManager",
+        "method": "_handleObjective"
+      }
+    },
+    "ip_cidr_quarantine": {
+      "gameplayId": "ip_cidr_quarantine",
+      "label": "CIDR Quarantine",
+      "competencyKey": "cidr_quarantine_zone",
+      "competencyLabel": "CIDR quarantine zone construction",
+      "targetClearMs": 150000,
+      "objectiveHandler": {
+        "manager": "CIDRQuarantineGameplayManager",
+        "method": "_handleObjective"
+      }
+    },
+    "ip_cidr_quarantine_matrix": {
+      "gameplayId": "ip_cidr_quarantine_matrix",
+      "label": "Subnet Blaster",
+      "competencyKey": "subnet_address_analysis",
+      "competencyLabel": "Network and broadcast address analysis",
+      "targetClearMs": 180000,
+      "objectiveHandler": {
+        "manager": "CIDRQuarantineMatrixGameplayManager",
+        "method": "_handleObjective"
+      }
+    },
+    "ip_network_repair": {
+      "gameplayId": "ip_network_repair",
+      "label": "Network Repair PCs",
+      "competencyKey": "network_broadcast_usable_range",
+      "competencyLabel": "Network, broadcast, and usable IP range calculation",
+      "targetClearMs": 180000,
+      "pcCount": 5,
+      "objectiveHandler": {
+        "manager": "NetworkRepairGameplayManager",
+        "method": "_handleObjective"
+      }
+    },
+    "ip_vlsm_allocator": {
+      "gameplayId": "ip_vlsm_allocator",
+      "label": "VLSM Infiltration Grid",
+      "competencyKey": "vlsm_subnet_allocation",
+      "competencyLabel": "VLSM subnet allocation and route planning",
+      "targetClearMs": 240000,
+      "objectiveHandler": {
+        "manager": "VLSMAllocatorGameplayManager",
+        "method": "_handleObjective"
+      }
+    }
+  }
+}

@@ -8,7 +8,7 @@
  */
 
 const IP2LiveGameManager = {
-    VERSION: 'game-manager-20261011-story-state-15',
+    VERSION: 'game-manager-20261015-gameplay-definitions-16',
 
     STATE: {
         BOOT: 'BOOT',
@@ -53,6 +53,7 @@ const IP2LiveGameManager = {
     _reportSessionProfileId: null,
     _reportTutorialContexts: {},
     _reportActiveAttempts: {},
+    _gameplayResultAdapters: {},
     _reportTelemetrySequence: 0,
     _reportPendingWrites: new Set(),
     _checkpointTimer: null,
@@ -146,6 +147,7 @@ const IP2LiveGameManager = {
             3: {
                 id: 3,
                 name: 'Stage 1 Level 1',
+                combinedGameplayEnabled: false,
                 stage: 1,
                 level: 1,
                 spawn: { x: 16, y: 0, z: 17 },
@@ -154,6 +156,7 @@ const IP2LiveGameManager = {
             4: {
                 id: 4,
                 name: 'Stage 1 Level 2',
+                combinedGameplayEnabled: false,
                 stage: 1,
                 level: 2,
                 spawn: { x: 6, y: 0, z: 17 },
@@ -162,6 +165,7 @@ const IP2LiveGameManager = {
             5: {
                 id: 5,
                 name: 'Stage 1 Level 3',
+                combinedGameplayEnabled: false,
                 stage: 1,
                 level: 3,
                 spawn: { x: 6, y: 0, z: 17 },
@@ -170,6 +174,7 @@ const IP2LiveGameManager = {
             6: {
                 id: 6,
                 name: 'Stage 1 Level 4',
+                combinedGameplayEnabled: false,
                 stage: 1,
                 level: 4,
                 spawn: { x: 6, y: 0, z: 17 },
@@ -178,6 +183,7 @@ const IP2LiveGameManager = {
             7: {
                 id: 7,
                 name: 'Stage 2 Level 1',
+                combinedGameplayEnabled: false,
                 stage: 2,
                 level: 1,
                 spawn: { x: 6, y: 0, z: 17 },
@@ -186,6 +192,7 @@ const IP2LiveGameManager = {
             8: {
                 id: 8,
                 name: 'Stage 2 Level 2',
+                combinedGameplayEnabled: false,
                 stage: 2,
                 level: 2,
                 spawn: { x: 6, y: 0, z: 17 },
@@ -194,6 +201,7 @@ const IP2LiveGameManager = {
             9: {
                 id: 9,
                 name: 'Stage 2 Level 3',
+                combinedGameplayEnabled: false,
                 stage: 2,
                 level: 3,
                 spawn: { x: 6, y: 0, z: 17 },
@@ -202,6 +210,7 @@ const IP2LiveGameManager = {
             10: {
                 id: 10,
                 name: 'Stage 2 Level 4',
+                combinedGameplayEnabled: false,
                 stage: 2,
                 level: 4,
                 spawn: { x: 6, y: 0, z: 17 },
@@ -210,6 +219,7 @@ const IP2LiveGameManager = {
             11: {
                 id: 11,
                 name: 'Stage 3 Level 1',
+                combinedGameplayEnabled: false,
                 stage: 3,
                 level: 1,
                 spawn: { x: 6, y: 0, z: 17 },
@@ -218,6 +228,7 @@ const IP2LiveGameManager = {
             12: {
                 id: 12,
                 name: 'Stage 3 Level 2',
+                combinedGameplayEnabled: false,
                 stage: 3,
                 level: 2,
                 spawn: { x: 6, y: 0, z: 17 },
@@ -226,6 +237,7 @@ const IP2LiveGameManager = {
             13: {
                 id: 13,
                 name: 'Stage 3 Level 3',
+                combinedGameplayEnabled: false,
                 stage: 3,
                 level: 3,
                 spawn: { x: 8, y: 0, z: 17 },
@@ -234,6 +246,7 @@ const IP2LiveGameManager = {
             14: {
                 id: 14,
                 name: 'Stage 3 Level 4',
+                combinedGameplayEnabled: false,
                 stage: 3,
                 level: 4,
                 spawn: { x: 6, y: 0, z: 17 },
@@ -242,6 +255,7 @@ const IP2LiveGameManager = {
             15: {
                 id: 15,
                 name: 'Stage 4 Level 1',
+                combinedGameplayEnabled: false,
                 stage: 4,
                 level: 1,
                 spawn: { x: 6, y: 0, z: 17 },
@@ -250,6 +264,7 @@ const IP2LiveGameManager = {
             16: {
                 id: 16,
                 name: 'Stage 4 Level 2',
+                combinedGameplayEnabled: false,
                 stage: 4,
                 level: 2,
                 spawn: { x: 6, y: 0, z: 17 },
@@ -258,6 +273,7 @@ const IP2LiveGameManager = {
             17: {
                 id: 17,
                 name: 'Stage 4 Level 3',
+                combinedGameplayEnabled: false,
                 stage: 4,
                 level: 3,
                 spawn: { x: 6, y: 0, z: 17 },
@@ -266,6 +282,7 @@ const IP2LiveGameManager = {
             18: {
                 id: 18,
                 name: 'Stage 4 Level 4',
+                combinedGameplayEnabled: true,
                 stage: 4,
                 level: 4,
                 spawn: { x: 6, y: 0, z: 17 },
@@ -802,9 +819,9 @@ const IP2LiveGameManager = {
             data.payload.action = payload && payload.payload && payload.payload.action;
             data.tutorial = true;
         }
-        const catalogEntry = data.gameplayId && this.gameplayCatalog[data.gameplayId]
-            ? this.gameplayCatalog[data.gameplayId]
-            : null;
+        const activeAttempt = data.gameplayId && this._reportActiveAttempt(data.gameplayId);
+        const catalogEntry = data.gameplayDefinition || activeAttempt && activeAttempt.gameplayDefinition ||
+            (data.gameplayId ? this.getGameplayDefinition(data.gameplayId) : null);
         const mapId = Number(data.mapId || 0) || 0;
         const stageMeta = this._stageFor(mapId) || {};
         const stageId = data.stageId !== undefined && data.stageId !== null
@@ -814,7 +831,7 @@ const IP2LiveGameManager = {
             ? Number(data.levelId || 0) || 0
             : Number(stageMeta.level || 0) || 0;
         const record = {
-            telemetryVersion: 'telemetry-20261011-03',
+            telemetryVersion: 'telemetry-20261015-04',
             eventId: data.eventId || this._newEventId('telemetry'),
             sequence: this._nextTelemetrySeq(),
             sessionId: data.sessionId || this._ensureReportSession(),
@@ -825,7 +842,9 @@ const IP2LiveGameManager = {
             infiltratorName: this._deriveTelemetryProfileName(data),
             profileId: this._deriveTelemetryProfileId(data),
             gameplayId: data.gameplayId || null,
-            gameplayVersion: data.gameplayVersion || (data.payload && data.payload.gameplayVersion) || null,
+            gameplayVersion: data.gameplayVersion || (data.payload && data.payload.gameplayVersion) || (catalogEntry && catalogEntry.gameplayVersion) || null,
+            definitionVersion: data.definitionVersion || (catalogEntry && catalogEntry.definitionVersion) || null,
+            gameplayDefinition: this._clonePlain(catalogEntry),
             gameplayLabel: data.gameplayLabel || (catalogEntry && catalogEntry.label) || null,
             competencyKey: data.competencyKey || (catalogEntry && catalogEntry.competencyKey) || null,
             competencyLabel: data.competencyLabel || (catalogEntry && catalogEntry.competencyLabel) || null,
@@ -929,7 +948,7 @@ const IP2LiveGameManager = {
             return resumed;
         }
         if (candidates) delete candidates[gameplayId];
-        const catalog = gameplayId ? this.gameplayCatalog[gameplayId] : null;
+        const catalog = gameplayId ? this.getGameplayDefinition(gameplayId) : null;
         const spec = data.spec || {};
         const mapId = Number(data.mapId || spec.mapId || this._currentMapId() || 0) || 0;
         const stage = this._stageFor(mapId) || {};
@@ -940,6 +959,9 @@ const IP2LiveGameManager = {
             infiltratorName: this._deriveTelemetryProfileName(data),
             profileId: this._deriveTelemetryProfileId(data),
             gameplayId: gameplayId,
+            gameplayVersion: data.gameplayVersion || catalog && catalog.gameplayVersion || null,
+            definitionVersion: catalog && catalog.definitionVersion || null,
+            gameplayDefinition: this._clonePlain(catalog),
             gameplayLabel: catalog && catalog.label ? catalog.label : gameplayId,
             competencyKey: catalog && catalog.competencyKey ? catalog.competencyKey : null,
             competencyLabel: catalog && catalog.competencyLabel ? catalog.competencyLabel : null,
@@ -1002,6 +1024,9 @@ const IP2LiveGameManager = {
             startedAt: open.startedAt,
             endedAt: endedAt,
             gameplayId: open.gameplayId,
+            gameplayVersion: rawResult.gameplayVersion || metrics.payload.gameplayVersion || open.gameplayVersion,
+            definitionVersion: open.definitionVersion,
+            gameplayDefinition: this._clonePlain(open.gameplayDefinition),
             gameplayLabel: open.gameplayLabel,
             competencyKey: open.competencyKey,
             competencyLabel: open.competencyLabel,
@@ -1056,6 +1081,7 @@ const IP2LiveGameManager = {
         };
         delete this._reportActiveAttempts[gameplayId];
         this._logTelemetryEvent('attempt_end', completion);
+        if (IP2Live.ErrorDiagnostics) IP2Live.ErrorDiagnostics.recordAttempt(completion);
         return completion;
     },
 
@@ -1065,13 +1091,17 @@ const IP2LiveGameManager = {
         const timing = pause && typeof pause.getReportTiming === 'function' ? pause.getReportTiming(gameplayId, data) : null;
         const screen = pause && pause.activeScreen;
         let partialResult = {};
-        if (!data.result && screen && screen.options) {
+        if ((!data.result || !Array.isArray(data.result.decisionHistory)) && screen && screen.options) {
             const options = screen.options, spec = options.spec || {};
             const actualGameplayId = screen.gameplayId || options.gameplayId || spec.gameplayId || (pause._screenFallbackIds && pause._screenFallbackIds.get(screen));
             if (actualGameplayId === gameplayId && (!data.questId || data.questId === (options.questId || spec.id)) &&
                 (!data.objectiveId || data.objectiveId === (options.objectiveId || spec.objectiveId))) {
                 if (typeof screen._assessmentResult === 'function') partialResult = screen._assessmentResult();
                 else if (typeof screen._result === 'function') partialResult = screen._result(false);
+                partialResult = partialResult || {};
+                if (!Array.isArray(partialResult.decisionHistory) && Array.isArray(screen.decisionHistory)) {
+                    partialResult.decisionHistory = this._clonePlain(screen.decisionHistory);
+                }
             }
         }
         const result = Object.assign({}, partialResult || {}, data.result || {});
@@ -1094,7 +1124,17 @@ const IP2LiveGameManager = {
     },
 
     _extractGameplayMetrics(gameplayId, result, passed) {
-        const r = result || {};
+        let r = result || {};
+        const adapter = this._gameplayResultAdapters[gameplayId];
+        if (adapter) {
+            try {
+                const normalized = adapter(this._clonePlain(r), { gameplayId, passed: !!passed });
+                if (!normalized || typeof normalized !== 'object' || Array.isArray(normalized)) throw new TypeError('normalizeResult must return a result object.');
+                r = Object.assign({}, r, normalized);
+            } catch (error) {
+                console.warn('[IP2Live] Gameplay result adapter failed for', gameplayId, error);
+            }
+        }
         const metrics = this._extractLegacyGameplayMetrics(gameplayId, r, passed);
         const observedNumber = (key) => this._nullableTelemetryNumber(r[key]);
         const decisions = Array.isArray(r.decisionHistory) ? r.decisionHistory.filter((entry) => entry && typeof entry.correct === 'boolean') : [];
@@ -1154,7 +1194,7 @@ const IP2LiveGameManager = {
             wallElapsedMs: observedNumber('elapsedMs'),
             roundCount: Array.isArray(r.roundHistory) ? r.roundHistory.length : null,
         });
-        for (const key of ['preparationMs', 'preparationSkips', 'calculatorUses', 'calculatorElapsedMs', 'helpUses', 'helpElapsedMs', 'assistanceElapsedMs', 'phaseDurationsMs', 'bulletsFired', 'barrierImpacts', 'bossImpacts', 'bossBulletImpacts']) {
+        for (const key of ['gameplayVersion', 'comparisonKey', 'taskType', 'difficultyKey', 'preparationMs', 'preparationSkips', 'calculatorUses', 'calculatorElapsedMs', 'helpUses', 'helpElapsedMs', 'assistanceElapsedMs', 'phaseDurationsMs', 'bulletsFired', 'barrierImpacts', 'bossImpacts', 'bossBulletImpacts']) {
             if (r[key] !== undefined) metrics.payload[key] = this._clonePlain(r[key]);
         }
         if (r.timingCoverage) metrics.payload.timingCoverage = r.timingCoverage;
@@ -1729,6 +1769,14 @@ const IP2LiveGameManager = {
                     mode: 'replace',
                 }));
             }
+            const launcher = node.manager && IP2Live[node.manager];
+            if (launcher && typeof launcher[node.method] === 'function') {
+                const metadata = this.gameplayCatalog[node.id] || {};
+                const callbacks = metadata.lifecycle === 'manual' ? {} : this.createGameplayLifecycle(node.id, Object.assign({}, payload, gameplayLaunchOpts));
+                return launcher[node.method](Object.assign({}, gameplayLaunchOpts, callbacks, {
+                    _fromGameManager: true, mapId: payload.mapId, questId: payload.questId, objectiveId: payload.objectiveId,
+                }));
+            }
             return false;
         };
 
@@ -1943,6 +1991,13 @@ const IP2LiveGameManager = {
         this._ensureQuestMinimap();
         this._activeGameplayNode = null;
         this.emit('gameplay.cancelled', data);
+        const diagnosticAttempt = this._reportActiveAttempt(gameplayId);
+        if (diagnosticAttempt && IP2Live.ErrorDiagnostics && !this._excludeAssessmentTelemetry(data)) {
+            IP2Live.ErrorDiagnostics.recordAttempt(Object.assign({}, diagnosticAttempt, data, {
+                outcome: 'cancelled', cancelled: true,
+                payload: { mistakes: diagnosticAttempt.mistakes || [], result: data.result || {} },
+            }));
+        }
         if (!this._suspendReportAttempt(gameplayId, 'returned_to_quest')) {
             this._closeReportAttempt(gameplayId, Object.assign({}, data, {
                 result: Object.assign({}, data.result || {}, { cancelled: true }),
@@ -2187,15 +2242,113 @@ const IP2LiveGameManager = {
         });
     },
 
-    getGameplayCatalog() {
-        const out = [];
-        const keys = Object.keys(this.gameplayCatalog || {});
-        for (let i = 0; i < keys.length; i++) {
-            const item = this.gameplayCatalog[keys[i]];
-            if (!item) continue;
-            out.push(this._clonePlain(item));
+    /** Register once; telemetry, reports, tests and completion summaries read this live. */
+    registerGameplay(definition) {
+        const data = definition || {}, id = String(data.gameplayId || data.id || '');
+        if (!/^[a-zA-Z0-9][a-zA-Z0-9_.:-]*$/.test(id) || ['constructor', 'prototype', '__proto__'].includes(id)) {
+            throw new TypeError('A stable gameplayId is required.');
         }
-        return out;
+        if (data.mapId !== undefined || data.quests !== undefined) throw new TypeError('Map placement belongs in mapGameplayAssignments, not gameplay metadata.');
+        if (data.normalizeResult !== undefined && data.normalizeResult !== null && typeof data.normalizeResult !== 'function') {
+            throw new TypeError('normalizeResult must be a function or null.');
+        }
+        if (data.lifecycle !== undefined && !['manual', 'callbacks'].includes(data.lifecycle)) throw new TypeError('lifecycle must be callbacks or manual.');
+        for (const key of ['launcher', 'objectiveHandler']) {
+            if (data[key] && (typeof data[key].manager !== 'string' || !data[key].manager || typeof data[key].method !== 'string' || !data[key].method)) {
+                throw new TypeError(key + ' requires manager and method names.');
+            }
+        }
+        const metadata = Object.assign({}, this.gameplayCatalog[id] || {}, data, { gameplayId: id });
+        delete metadata.id; delete metadata.launcher; delete metadata.normalizeResult;
+        this.gameplayCatalog[id] = this._clonePlain(metadata);
+        if (data.launcher) this.flowConfig.gameplayNodes[id] = Object.assign({}, this.flowConfig.gameplayNodes[id], data.launcher, { id });
+        if (data.normalizeResult !== undefined) {
+            if (data.normalizeResult) this._gameplayResultAdapters[id] = data.normalizeResult;
+            else delete this._gameplayResultAdapters[id];
+        }
+        const registered = this.getGameplayDefinition(id);
+        this.emit('gameplay.registered', registered);
+        return registered;
+    },
+
+    /** Generic launchers forward these callbacks to their screen; finish only once. */
+    createGameplayLifecycle(gameplayId, context) {
+        const options = context || {};
+        let finished = false;
+        const terminal = (method, callback, result) => {
+            if (finished) return false;
+            finished = true;
+            this[method](gameplayId, Object.assign({}, options, { result: result || {} }));
+            if (typeof options[callback] === 'function') options[callback](result);
+            return true;
+        };
+        return {
+            onComplete: result => terminal('handleGameplayCompleted', 'onComplete', result),
+            onFail: result => terminal('handleGameplayFailed', 'onFail', result),
+            onCancel: result => terminal('handleGameplayCancelled', 'onCancel', result),
+            onMistake: data => finished ? false : this.handleGameplayMistake(gameplayId, Object.assign({}, options, { onComplete: undefined }, data || {})),
+        };
+    },
+
+    _gameplayDefinitionHash(text) {
+        const definitions = IP2Live.GameplayDefinitions;
+        if (definitions) return definitions.hash(text);
+        let value = 2166136261;
+        for (let i = 0; i < text.length; i++) value = Math.imul(value ^ text.charCodeAt(i), 16777619);
+        return (value >>> 0).toString(16).padStart(8, '0');
+    },
+
+    getGameplayDefinition(gameplayId) {
+        const id = String(gameplayId || ''), metadata = this.gameplayCatalog[id] || {};
+        const node = this.flowConfig.gameplayNodes[id] || {}, definitions = IP2Live.GameplayDefinitions;
+        const owner = node.manager || metadata.objectiveHandler && metadata.objectiveHandler.manager;
+        const source = definitions && definitions.sources[owner] || metadata.source || null;
+        const adapter = this._gameplayResultAdapters[id];
+        const label = metadata.label || id;
+        const entry = Object.assign({}, this._clonePlain(metadata), {
+            gameplayId: id, label,
+            competencyKey: metadata.competencyKey || 'competency.' + id,
+            competencyLabel: metadata.competencyLabel || label,
+            gameplayVersion: metadata.gameplayVersion || metadata.version || source && source.revision || null,
+            source: this._clonePlain(source),
+        });
+        entry.definitionVersion = 'definition-' + this._gameplayDefinitionHash(JSON.stringify([
+            id, entry.gameplayVersion, entry.competencyKey, metadata.assessmentVersion || null,
+            source && source.revision, adapter ? String(adapter) : null,
+        ]));
+        return entry;
+    },
+
+    getGameplayCatalog() {
+        const ids = new Set(Object.keys(this.gameplayCatalog || {}));
+        Object.keys(this.flowConfig.gameplayNodes || {}).forEach(id => ids.add(id));
+        Object.values(this.mapGameplayAssignments || {}).forEach(map => Object.keys(map.gameplays || {}).forEach(id => ids.add(id)));
+        return Array.from(ids).map(id => this.getGameplayDefinition(id));
+    },
+
+    getStoryCompletionSummary(game) {
+        const maps = IP2Live.MapManager, route = maps && Array.isArray(maps.stages)
+            ? maps.stages.filter(stage => stage && !stage.tutorial && stage.questEnabled !== false) : [];
+        const done = IP2Live.QuestManager && IP2Live.QuestManager.completedObjectives || {};
+        const gameplays = new Map(), objectives = new Set();
+        let completedObjectives = 0;
+        for (const stage of route) for (const row of this._mapGameplayRows(stage.id)) {
+            const spec = row.spec, id = spec.gameplayId;
+            if (!gameplays.has(id)) gameplays.set(id, Object.assign(this.getGameplayDefinition(id), { mapIds: [], objectiveCount: 0, completedObjectives: 0 }));
+            const gameplay = gameplays.get(id);
+            if (!gameplay.mapIds.includes(Number(stage.id))) gameplay.mapIds.push(Number(stage.id));
+            for (const objective of spec.objectives && spec.objectives.length ? spec.objectives : [spec]) {
+                if (!objective.objectiveId) continue;
+                const key = [stage.id, spec.id, objective.objectiveId].join('|');
+                if (objectives.has(key)) continue;
+                objectives.add(key); gameplay.objectiveCount++;
+                if (done[spec.id] && done[spec.id][objective.objectiveId] === true) {
+                    gameplay.completedObjectives++; completedObjectives++;
+                }
+            }
+        }
+        return { version: 1, floors: route.length, gameplayCount: gameplays.size,
+            objectiveCount: objectives.size, completedObjectives, gameplays: Array.from(gameplays.values()) };
     },
 
     _mapGameplayRows(mapId) {
@@ -2437,7 +2590,13 @@ const IP2LiveGameManager = {
     },
 
     getGameplayTestCatalog() {
-        const definitions = Array.isArray(this.gameplayTestDefinitions) ? this.gameplayTestDefinitions : [];
+        const definitions = Array.isArray(this.gameplayTestDefinitions) ? this.gameplayTestDefinitions.slice() : [];
+        const known = new Set(definitions.map(definition => definition.gameplayId));
+        this.getGameplayCatalog().forEach(gameplay => {
+            if (known.has(gameplay.gameplayId) || !this.flowConfig.gameplayNodes[gameplay.gameplayId]) return;
+            definitions.push({ id: 'gameplay-test-' + gameplay.gameplayId, name: gameplay.label, gameplayId: gameplay.gameplayId, tutorial: false });
+            if (gameplay.tutorialSupported) definitions.push({ id: 'gameplay-test-' + gameplay.gameplayId + '-tutorial', name: gameplay.label + ' Tutorial', gameplayId: gameplay.gameplayId, tutorial: true });
+        });
         return definitions.map((definition) => {
             const catalog = this.gameplayCatalog[definition.gameplayId] || {};
             const specs = this._gameplayTestSpecsFor(definition.gameplayId);
@@ -2968,6 +3127,7 @@ const IP2LiveGameManager = {
         if (Core.Game.current === target && IP2Live.GameplayPause && IP2Live.GameplayPause.captureActiveSession) {
             IP2Live.GameplayPause.captureActiveSession(opts.checkpointReason || 'story_checkpoint');
         }
+        if (Core.Game.current === target && IP2Live.CombinedGameplay) IP2Live.CombinedGameplay.captureState(target);
         const mapId = Number(target.currentMapID) || this._currentMapId();
         const stage = this._stageFor(mapId) || {};
         const savedAt = Date.now();
@@ -3018,6 +3178,8 @@ const IP2LiveGameManager = {
 
     resetStoryRuntime(game) {
         // These objects belong to live scenes; durable state is restored separately.
+        if (IP2Live.ErrorDiagnostics) IP2Live.ErrorDiagnostics.resetUI();
+        if (IP2Live.CombinedGameplay) IP2Live.CombinedGameplay.resetRuntime();
         IP2Live.InputGuard?.reset();
         this._prepareTransitionState(Number(game && game.currentMapID) || 0, 'stage', { discardDialogue: true });
         this._tutorialIntroPending = false;
@@ -4046,6 +4208,7 @@ const IP2LiveGameManager = {
 };
 
 IP2Live.GameManager = IP2LiveGameManager;
+IP2Live.GameplayDefinitions?.flush();
 window.IP2LiveGameManager = IP2LiveGameManager;
 
 console.log('[IP2Live] game_manager.js module loaded.');

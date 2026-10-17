@@ -1,0 +1,319 @@
+{
+  "history": [
+    {
+      "commit": "7819666",
+      "description": "7819666 2026-09-28 feature(practice): added a new practice mode and the autosaved feature",
+      "file": "Plugins/IP2Live_Core/modules/practice_mode.js",
+      "previousFileExists": false,
+      "currentFileExists": true,
+      "previous": [],
+      "atCommit": [
+        {
+          "line": 30,
+          "text": "isUnlocked(id) {"
+        },
+        {
+          "line": 94,
+          "text": "configureScreen(screen) {"
+        }
+      ],
+      "note": "Selected historical source comparison; does not establish the date of MVP validation or an approved MVP baseline."
+    },
+    {
+      "commit": "61de0bb",
+      "description": "61de0bb 2026-09-18 feature(gameplaypause): allows to pause the gameplay during a quest and saves state so that going back to the gameplay quest again will just continue from where you left to",
+      "file": "Plugins/IP2Live_Core/modules/screens/gameplay-pause.js",
+      "previousFileExists": false,
+      "currentFileExists": true,
+      "previous": [],
+      "atCommit": [
+        {
+          "line": 11,
+          "text": "STORAGE_KEY: 'gameplaySessions',"
+        },
+        {
+          "line": 146,
+          "text": "if (!game.ip2liveGameStates[this.STORAGE_KEY] || typeof game.ip2liveGameStates[this.STORAGE_KEY] !== 'object') {"
+        },
+        {
+          "line": 148,
+          "text": "game.ip2liveGameStates[this.STORAGE_KEY] = {};"
+        },
+        {
+          "line": 150,
+          "text": "return game.ip2liveGameStates[this.STORAGE_KEY];"
+        },
+        {
+          "line": 207,
+          "text": "return this.captureScreen(screen, reason || 'checkpoint');"
+        },
+        {
+          "line": 210,
+          "text": "captureScreen(screen, reason) {"
+        },
+        {
+          "line": 215,
+          "text": "const state = this._captureScreenState(screen);"
+        },
+        {
+          "line": 231,
+          "text": "_captureScreenState(screen) {"
+        },
+        {
+          "line": 403,
+          "text": "this.captureScreen(screen, 'pause_opened');"
+        },
+        {
+          "line": 425,
+          "text": "this.captureScreen(screen, 'exit_quest');"
+        }
+      ],
+      "note": "Selected historical source comparison; does not establish the date of MVP validation or an approved MVP baseline."
+    },
+    {
+      "commit": "efd11ba",
+      "description": "efd11ba 2026-10-11 revamp(gameplay6): revamped the gameplay 6 design into a network and broadcast range",
+      "file": "Plugins/IP2Live_Core/gameplay/gameplay6/CIDRQuarantineMatrix/ip_cidr_quarantine_matrix_gameplay.js",
+      "previousFileExists": true,
+      "currentFileExists": true,
+      "previous": [],
+      "atCommit": [
+        {
+          "line": 2,
+          "text": "* Gameplay 6: Subnet Blaster. Canvas-native subnet analysis arcade."
+        },
+        {
+          "line": 6,
+          "text": "defaults: { A: 8, B: 16, C: 24 },"
+        },
+        {
+          "line": 23,
+          "text": "if (!defaultPrefix) throw new Error('Subnet Blaster supports Classes A, B and C.');"
+        },
+        {
+          "line": 52,
+          "text": "waves(problem) {"
+        },
+        {
+          "line": 421,
+          "text": "if (popup && popup.begin && popup.begin(this, { gameplayId: this.gameplayId, label: 'Subnet Blaster cleared', footer: 'THREE ADDRESS CORES RECOVERED', durationMs: 950, result: payload, onComplete: complete })) return;"
+        },
+        {
+          "line": 1274,
+          "text": "{ id: 'stage.13.mixed.05.cidr_matrix.tutorial', objectiveId: 'solve_cidr_matrix_13_05', title: 'CALIBRATE SUBNET BLASTER', label: 'Subnet Blaster Node 05', mapId: 13, sequence: 5, tutorial: true, targetTile: { x: 18, y: 0, z: 1 }, profile: { index: 1 } },"
+        },
+        {
+          "line": 1424,
+          "text": "if (opts.useLoading === true && this._showLoadingScreen2({ mode: 'push', status: 'Loading Gameplay', detail: 'Opening Subnet Blaster', onComplete: openGameplay })) return;"
+        }
+      ],
+      "note": "Selected historical source comparison; does not establish the date of MVP validation or an approved MVP baseline."
+    },
+    {
+      "commit": "d4b87d2",
+      "description": "d4b87d2 2026-10-07 revamp(gameplay5): revamped the entire gameplay 5 and the tutorial",
+      "file": "Plugins/IP2Live_Core/gameplay/gameplay5/CIDRQuarantine/ip_cidr_quarantine_gameplay.js",
+      "previousFileExists": true,
+      "currentFileExists": true,
+      "previous": [],
+      "atCommit": [
+        {
+          "line": 200,
+          "text": "return ['classify', 'default_prefix', 'borrow_bits', 'new_cidr', 'host_bits', 'host_capacity'].includes(this.phase);"
+        },
+        {
+          "line": 215,
+          "text": "_submitSegmentation(value) {"
+        },
+        {
+          "line": 246,
+          "text": "if (this.phase === 'borrow_bits') correct = this.borrowedBits === p.borrowedBits;"
+        },
+        {
+          "line": 250,
+          "text": "borrow_bits: this.borrowedBits < p.borrowedBits ? 'Too few subnets. Switch on another host bulb.' : 'Use the minimum bits; keep the remaining bits for hosts.',"
+        },
+        {
+          "line": 259,
+          "text": "const next = { classify: 'default_prefix', default_prefix: 'borrow_bits', borrow_bits: 'new_cidr',"
+        },
+        {
+          "line": 274,
+          "text": "if (this.phase !== 'borrow_bits') return;"
+        },
+        {
+          "line": 311,
+          "text": "if (key === 'ENTER') this._submitSegmentation();"
+        },
+        {
+          "line": 316,
+          "text": "if (this.phase === 'borrow_bits') {"
+        },
+        {
+          "line": 319,
+          "text": "if (key === 'ENTER') this._submitSegmentation();"
+        },
+        {
+          "line": 323,
+          "text": "if (key === 'ENTER') this._submitSegmentation();"
+        },
+        {
+          "line": 350,
+          "text": "if (hit.action === 'submit') this._submitSegmentation();"
+        },
+        {
+          "line": 371,
+          "text": "} else if (this.phase === 'borrow_bits') {"
+        },
+        {
+          "line": 813,
+          "text": "const phases = ['classify', 'default_prefix', 'borrow_bits', 'new_cidr', 'host_bits', 'host_capacity'];"
+        },
+        {
+          "line": 1021,
+          "text": "const phases = ['default_prefix', 'borrow_bits', 'new_cidr', 'host_bits', 'host_capacity'];"
+        },
+        {
+          "line": 1026,
+          "text": "const titles = { default_prefix: 'DEFAULT CLASSFUL PREFIX', borrow_bits: 'BORROW THE MINIMUM BITS',"
+        },
+        {
+          "line": 1029,
+          "text": "if (this.phase === 'borrow_bits') this._drawBitPanel(ctx, m);"
+        },
+        {
+          "line": 1536,
+          "text": "if (this.phase !== 'borrow_bits') {"
+        },
+        {
+          "line": 1570,
+          "text": "return ['borrow_bits', 'new_cidr', 'host_bits', 'host_capacity', 'build'].includes(this.phase);"
+        }
+      ],
+      "note": "Selected historical source comparison; does not establish the date of MVP validation or an approved MVP baseline."
+    },
+    {
+      "commit": "86c103b",
+      "description": "86c103b 2026-08-26 feature(neuraldeck): Added a neural deck that prompts user a purpose to win the quests and a game over screen",
+      "file": "Plugins/IP2Live_Core/modules/game-state/neural_life_force_manager.js",
+      "previousFileExists": false,
+      "currentFileExists": true,
+      "previous": [],
+      "atCommit": [
+        {
+          "line": 64,
+          "text": "return !state.runOver && Number(state.lifeForce) <= CRITICAL_LIFE_FORCE;"
+        },
+        {
+          "line": 80,
+          "text": "opts.neuralLifeForce = Number(state.lifeForce);"
+        },
+        {
+          "line": 110,
+          "text": "state.lifeForce = Math.min(MAX_LIFE_FORCE, Math.max(0, Number(state.lifeForce) || 0) + reward);"
+        },
+        {
+          "line": 123,
+          "text": "handleTerminalFailure(payload) {"
+        },
+        {
+          "line": 144,
+          "text": "state.lifeForce = Math.max(0, (Number(state.lifeForce) || 0) - loss);"
+        },
+        {
+          "line": 152,
+          "text": "if (state.lifeForce <= 0) {"
+        },
+        {
+          "line": 205,
+          "text": "lifeForce: DEFAULT_LIFE_FORCE,"
+        },
+        {
+          "line": 230,
+          "text": "state.lifeForce = Math.max(0, Math.min(MAX_LIFE_FORCE, Number(state.lifeForce)));"
+        },
+        {
+          "line": 231,
+          "text": "if (!Number.isFinite(state.lifeForce)) state.lifeForce = DEFAULT_LIFE_FORCE;"
+        },
+        {
+          "line": 260,
+          "text": "lifeForce: this._state().lifeForce,"
+        },
+        {
+          "line": 269,
+          "text": "data.neuralLifeForce = Number(state.lifeForce);"
+        },
+        {
+          "line": 271,
+          "text": "data.neuralCritical = Number(state.lifeForce) <= CRITICAL_LIFE_FORCE;"
+        },
+        {
+          "line": 578,
+          "text": "screen.show({ lifeForce: 0 });"
+        },
+        {
+          "line": 725,
+          "text": "const targetHp = Number(state.lifeForce) || 0;"
+        }
+      ],
+      "note": "Selected historical source comparison; does not establish the date of MVP validation or an approved MVP baseline."
+    },
+    {
+      "commit": "a434e7f",
+      "description": "a434e7f 2026-10-14 feature(revamp): made a lot of changes and added features like PVP, Endless Mode, Story cutscene, and new music BGM",
+      "file": "Plugins/IP2Live_Core/modules/pvp_mode.js",
+      "previousFileExists": false,
+      "currentFileExists": true,
+      "previous": [],
+      "atCommit": [
+        {
+          "line": 21,
+          "text": "active: false, bridge: () => typeof window !== 'undefined' ? window.ip2livePVP : null,"
+        },
+        {
+          "line": 43,
+          "text": "startAI(menu, name) {"
+        }
+      ],
+      "note": "Selected historical source comparison; does not establish the date of MVP validation or an approved MVP baseline."
+    }
+  ],
+  "probes": [
+    {
+      "function": "CIDRTools.ipToInt",
+      "input": "1..2.3",
+      "actual": 16777731,
+      "formatted": "1.0.2.3"
+    },
+    {
+      "function": "CIDRTools.parseCIDR",
+      "input": "192.168.1.0/",
+      "actual": {
+        "start": 3232235776,
+        "prefix": 0
+      }
+    },
+    {
+      "function": "CIDRTools.ipToInt",
+      "input": "256.0.0.1",
+      "actual": null
+    },
+    {
+      "function": "IPClassRanges.classifyAddress",
+      "input": "172.invalid",
+      "actual": "B"
+    },
+    {
+      "function": "CIDRTools.usableHosts",
+      "input": 31,
+      "actual": 2
+    },
+    {
+      "function": "CIDRTools.usableHosts",
+      "input": 32,
+      "actual": 1
+    }
+  ],
+  "note": "Read-only isolated VM probes, not approved acceptance tests. Permissive parsing is confirmed; exposure through controlled gameplay widgets requires separate investigation."
+}

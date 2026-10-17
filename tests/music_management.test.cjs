@@ -52,7 +52,7 @@ function harness() {
     const effects = new Map(entries(4).map(registered));
     // Seed a complete baseline independently of the editor's mutable database;
     // recovery tests below deliberately remove/reuse these IDs afterwards.
-    for (const directory of ['story-prologue', 'gameplay']) {
+    for (const directory of ['story-prologue', 'gameplay', 'story-ending']) {
         const bundled = JSON.parse(fs.readFileSync(path.join(root, `assets/audio/${directory}/manifest.json`), 'utf8'));
         for (const entry of bundled.entries) {
             const target = entry.kind === 1 ? music : effects;
@@ -138,6 +138,35 @@ test('gameplays 3–8 use seven distinct full-volume BGM profiles and bundled re
     assert.equal(await h.play('PVP_RACE'), true);
     assert.equal(h.nativeCalls.at(-1).id, 17, 'the PvP race retains its separate mix');
     assert.equal(h.warnings.length, 0); assert.equal(h.errors.length, 0);
+});
+
+test('epilogue and victory use separate native loops, recover in protected builds and respect music volume', async () => {
+    const h = harness(); h.enableBundledRecovery(); h.env.Data.Settings = { isProtected: true };
+    h.music.delete(29); h.music.delete(30); h.manager.setVolume(.5);
+    assert.equal(await h.play('STORY_EPILOGUE'), true);
+    const epilogue = h.music.get(29).howl;
+    assert.match(epilogue._src, /^build\/Plugins\/IP2Live_Core\/assets\/audio\/story-ending\/01-a-network-restored\.wav$/);
+    assert.equal(epilogue.loop(), true); assert.ok(Math.abs(epilogue.volume() - .44) < 1e-9);
+    const calls = h.nativeCalls.length;
+    assert.equal(await h.play('STORY_EPILOGUE'), true);
+    assert.equal(h.nativeCalls.length, calls, 'the same score continues when its zone is requested again');
+    assert.equal(await h.play('STORY_ENDING'), true);
+    const victory = h.music.get(30).howl;
+    assert.equal(h.nativeCalls.at(-1).id, 30); assert.equal(epilogue.playing(), false);
+    assert.match(victory._src, /assets\/audio\/story-ending\/02-open-skies\.wav$/);
+    assert.equal(victory.loop(), true); assert.ok(Math.abs(victory.volume() - .46) < 1e-9);
+    h.manager.setVolume(0); assert.equal(victory.volume(), 0, 'muting still works on the victory screen');
+    await h.play('MAIN_MENU'); assert.equal(victory.playing(), false);
+    assert.equal(h.warnings.length, 0); assert.equal(h.errors.length, 0);
+});
+
+test('ending recovery preserves authored songs that reuse its IDs', async () => {
+    const h = harness(); h.enableBundledRecovery();
+    const authored = h.music.get(29); authored.name = 'Authored credits.wav';
+    assert.equal(await h.play('STORY_EPILOGUE'), true);
+    assert.equal(h.music.get(29), authored); assert.equal(authored.howl.playing(), false);
+    assert.equal(h.nativeCalls.at(-1).id, 31, 'recovery skips the occupied victory ID too');
+    assert.equal(await h.play('STORY_ENDING'), true); assert.equal(h.nativeCalls.at(-1).id, 30);
 });
 
 test('bundled recovery preserves existing audio and follows a registry reload during playback startup', async () => {

@@ -85,7 +85,7 @@ async function main() {
             if (!target.has(entry.id)) target.set(entry.id, song(entry.id, entry.name, group.k));
         }
     }
-    for (const directory of ['story-prologue', 'gameplay']) {
+    for (const directory of ['story-prologue', 'gameplay', 'story-ending']) {
         const bundled = JSON.parse(fs.readFileSync(path.join(__dirname, '..', `Plugins/IP2Live_Core/assets/audio/${directory}/manifest.json`), 'utf8'));
         for (const entry of bundled.entries) {
             (entry.kind === 1 ? music : effects).set(entry.id, song(entry.id, entry.name, entry.kind));

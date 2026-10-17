@@ -1,0 +1,19 @@
+{
+  "version": 1,
+  "entries": [
+    {
+      "kind": 1,
+      "id": 29,
+      "name": "StoryEnding/01-a-network-restored.wav",
+      "file": "01-a-network-restored.wav",
+      "sha256": "cef409f78fe941b0b85559f525e4420c335a5a4ae3c65fa899ba9b2f1eeca707"
+    },
+    {
+      "kind": 1,
+      "id": 30,
+      "name": "StoryEnding/02-open-skies.wav",
+      "file": "02-open-skies.wav",
+      "sha256": "e05ad281a02c0f83c565bb4932ae6b4a8f2a657088a7689d6386c436a4fcfd35"
+    }
+  ]
+}
