@@ -6,6 +6,7 @@ const projectRoot = path.join(__dirname, '..');
 const songs = JSON.parse(fs.readFileSync(path.join(projectRoot, 'songs.json'), 'utf8'));
 const bundled = JSON.parse(fs.readFileSync(path.join(projectRoot, 'Plugins/IP2Live_Core/assets/audio/story-prologue/manifest.json'), 'utf8'));
 const gameplayBundle = JSON.parse(fs.readFileSync(path.join(projectRoot, 'Plugins/IP2Live_Core/assets/audio/gameplay/manifest.json'), 'utf8'));
+const endingBundle = JSON.parse(fs.readFileSync(path.join(projectRoot, 'Plugins/IP2Live_Core/assets/audio/story-ending/manifest.json'), 'utf8'));
 const title = JSON.parse(fs.readFileSync(path.join(projectRoot, 'titlescreenGameover.json'), 'utf8'));
 const musicManager = fs.readFileSync(
     path.join(projectRoot, 'Plugins', 'IP2Live_Core', 'modules', 'music_manager.js'),
@@ -41,6 +42,8 @@ const musicExpected = new Map([
     [26, 'Gameplay/06-matrix-lockdown.wav'],
     [27, 'Gameplay/07-repair-uplink.wav'],
     [28, 'Gameplay/08-allocation-protocol.wav'],
+    [29, 'StoryEnding/01-a-network-restored.wav'],
+    [30, 'StoryEnding/02-open-skies.wav'],
 ]);
 const effectsExpected = new Map([
     [2, 'Typing.mp3'],
@@ -59,7 +62,9 @@ function group(kind) {
 
 for (const [id, name] of musicExpected) {
     const record = group(1).find((item) => item.id === id);
-    if (name.startsWith('Gameplay/')) {
+    if (name.startsWith('StoryEnding/')) {
+        assert.ok(endingBundle.entries.some(entry => entry.kind === 1 && entry.id === id && entry.name === name), 'ending scores remain available if the editor removes their IDs');
+    } else if (name.startsWith('Gameplay/')) {
         assert.ok(gameplayBundle.entries.some(entry => entry.kind === 1 && entry.id === id && entry.name === name), 'gameplay BGM remains available if the editor removes its IDs');
     } else if (name.startsWith('StoryPrologue/')) {
         assert.ok(bundled.entries.some(entry => entry.kind === 1 && entry.name === name), 'prologue remains available if the editor removes its IDs');
@@ -81,9 +86,9 @@ assert.equal(title.tm.name, 'Main Menu.mp3');
 assert.equal(title.tm.vid.v, 9);
 assert.doesNotMatch(musicManager, /fetch\s*\(/, 'music playback must not fetch omitted loose files');
 assert.doesNotMatch(musicManager, /Songs[\\/]Musics/, 'music playback must use Data.Songs IDs');
-assert.match(musicManager, /VERSION: 'managed-bgm-20261014-07'/, 'runtime should expose the managed BGM build version');
+assert.match(musicManager, /VERSION: 'managed-bgm-20261015-08'/, 'runtime should expose the managed BGM build version');
 assert.match(musicManager, /Manager\.Songs\.playMusic\(kind, track\.id/, 'BGM must use RPG Paper Maker native playback');
-assert.match(pluginLoader, /managed_bgm_07_[^\n]+Date\.now\(\)/, 'music loader must cache-bust updated exports');
+assert.match(pluginLoader, /managed_bgm_08_[^\n]+Date\.now\(\)/, 'music loader must cache-bust updated exports');
 assert.match(pluginLoader, /fetch\(versionedSrc, \{ cache: 'no-store' \}\)/, 'music loader must bypass Electron cache');
 assert.match(mapManager, /if \(started\) \{[\s\S]*_ip2liveMusicZoneKey = musicKey/, 'map BGM guard must be committed only after playback');
 

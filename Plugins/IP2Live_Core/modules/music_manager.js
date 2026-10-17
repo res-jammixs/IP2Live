@@ -31,7 +31,8 @@ var MUSIC_TRACKS = {
     GAMEPLAY_8: { id: 28, name: 'Gameplay/08-allocation-protocol.wav', volume: 1.00, bundled: '08-allocation-protocol.wav', bundle: 'gameplay' },
     PVP_MENU:   { id: 9,  name: 'Main Menu.mp3',      volume: 0.70 },
     PVP_RACE:   { id: 17, name: 'Gameplay 5 & 6.mp3', volume: 0.58 },
-    STORY_ENDING: { id: 14, name: 'Stage 4 Music.mp3', volume: 0.55 },
+    STORY_EPILOGUE: { id: 29, name: 'StoryEnding/01-a-network-restored.wav', volume: 0.88, bundled: '01-a-network-restored.wav', bundle: 'story-ending' },
+    STORY_ENDING: { id: 30, name: 'StoryEnding/02-open-skies.wav', volume: 0.92, bundled: '02-open-skies.wav', bundle: 'story-ending' },
     STORY_PROLOGUE: { id: 18, name: 'StoryPrologue/01-arrival-ost.wav', volume: 0.88, bundled: '01-arrival-ost.wav' },
     PROLOGUE_TAKING: { id: 19, name: 'StoryPrologue/02-taking-ost.wav', volume: 0.88, bundled: '02-taking-ost.wav' },
     PROLOGUE_FORTRESS: { id: 20, name: 'StoryPrologue/03-fortress-ost.wav', volume: 0.88, bundled: '03-fortress-ost.wav' },
@@ -132,8 +133,8 @@ function _registeredSong(kind, id) {
 function _resolveManagedSong(kind, entry) {
     var song = _registeredSong(kind, entry.id);
     if (song && String(song.name || '') === entry.name) return song;
-    var bundleDirectory = entry.bundle === 'gameplay' ? 'gameplay' : 'story-prologue';
-    var songDirectory = entry.bundle === 'gameplay' ? 'Gameplay' : 'StoryPrologue';
+    var bundleDirectory = entry.bundle === 'gameplay' ? 'gameplay' : entry.bundle === 'story-ending' ? 'story-ending' : 'story-prologue';
+    var songDirectory = entry.bundle === 'gameplay' ? 'Gameplay' : entry.bundle === 'story-ending' ? 'StoryEnding' : 'StoryPrologue';
     if (!entry.bundled || entry.name !== songDirectory + '/' + entry.bundled) return song;
     var list = _kindList(kind);
     if (!list || typeof list.set !== 'function' || typeof list.forEach !== 'function') return song;
@@ -271,7 +272,7 @@ function _loadRegisteredHowl(kind, entry, label, cancellation) {
 }
 
 var MusicManager = {
-    VERSION: 'managed-bgm-20261014-07',
+    VERSION: 'managed-bgm-20261015-08',
     _howl: null,
     _soundId: null,
     _currentZone: null,
@@ -312,6 +313,7 @@ var MusicManager = {
         GAMEPLAY_5: 'GAMEPLAY_5', GAMEPLAY_6: 'GAMEPLAY_6',
         GAMEPLAY_7: 'GAMEPLAY_7', GAMEPLAY_8: 'GAMEPLAY_8',
         PVP_MENU: 'PVP_MENU', PVP_RACE: 'PVP_RACE',
+        STORY_EPILOGUE: 'STORY_EPILOGUE',
         STORY_ENDING: 'STORY_ENDING',
         STORY_PROLOGUE: 'STORY_PROLOGUE',
         PROLOGUE_TAKING: 'PROLOGUE_TAKING', PROLOGUE_FORTRESS: 'PROLOGUE_FORTRESS', PROLOGUE_UPLINK: 'PROLOGUE_UPLINK',

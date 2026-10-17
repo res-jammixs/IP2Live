@@ -14,7 +14,8 @@ const Scene = { Base: class { constructor() { this.initialize(); } initialize() 
 const Data = { Systems: {}, Keyboards: { checkActionMenu: key => key === 'Enter', checkCancelMenu: key => key === 'Escape' } };
 const IP2Live = { Assets: { loadPauseFonts: () => Promise.all([document.fonts.load('18px Oxanium-Medium'),document.fonts.load('32px Nebula-Regular')]) }, MusicManager: { play() {},fadeOutForTransition() {} } };
 const record = { version: 1, mode: 'story', status: 'completed', id: 'story-2026-nova', storyRunId: 'story-2026-nova',
-    name: params.get('state') === 'long' ? 'Alexandria Montgomery 王' : 'NOVA', completedAt: Date.UTC(2026, 9, 12), finalMapId: 18, floors: 16 };
+    name: params.get('state') === 'long' ? 'Alexandria Montgomery 王' : 'NOVA', completedAt: Date.UTC(2026, 9, 12), finalMapId: 18, floors: 16,
+    curriculum: { version: 1, floors: 16, gameplayCount: 11, objectiveCount: 64, completedObjectives: 64, gameplays: [] } };
 (async () => {
     for (const file of ['certificate_pdf.js', 'story_completion.js', 'story_certificate.js', 'story_lore.js',
         'screens/ar-diagnostic-rewind.js','screens/story-prologue-art.js','screens/story-prologue.js',

@@ -67,7 +67,11 @@
                 record = { version: 1, id: runId, storyRunId: runId, profileId: gm._resolveProfileId(game),
                     mode: 'story', status: 'completed', name, completedAt: Date.now(), finalMapId: Number(stage.id),
                     floors: IP2Live.MapManager.stages.filter(s => s && !s.tutorial && s.questEnabled !== false).length };
+                if (gm.getStoryCompletionSummary) record.curriculum = gm.getStoryCompletionSummary(game);
                 states.storyCompletion = record;
+                gm._logTelemetryEvent?.('story_completed', { infiltratorName: name, profileId: record.profileId,
+                    mapId: record.finalMapId, timestamp: record.completedAt, outcome: 'completed',
+                    payload: { record: gm._clonePlain(record) } });
             }
             this._merge([record]);
             // Freeze the world immediately; save after all synchronous quest handlers finish.

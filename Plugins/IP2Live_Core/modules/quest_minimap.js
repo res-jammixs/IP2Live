@@ -61,10 +61,12 @@
             this._syncCompletedState(data);
             this._updateText(data);
             this._draw(data);
+            if (IP2Live.ErrorDiagnostics) IP2Live.ErrorDiagnostics.updateHUD();
             return true;
         },
 
         destroy() {
+            if (IP2Live.ErrorDiagnostics) IP2Live.ErrorDiagnostics.hideHUD();
             if (this._rafId !== null) {
                 cancelAnimationFrame(this._rafId);
                 this._rafId = null;

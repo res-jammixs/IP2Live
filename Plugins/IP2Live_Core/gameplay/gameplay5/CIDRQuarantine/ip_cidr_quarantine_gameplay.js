@@ -288,6 +288,7 @@ class IP2LiveCIDRQuarantineGameplayScreen extends Scene.Base {
             new_cidr: 'borrowed_bits_to_cidr', host_bits: 'cidr_to_host_bits', host_capacity: 'host_bits_to_usable_hosts', route_host_bits: 'route_host_bit_total' };
         const row = { stepKey, concept: concepts[stepKey] || stepKey, submitted, expected, correct,
             problemId: this.problem.id, ipClass: this.problem.ipClass, requiredSubnets: this.problem.requiredSubnets,
+            sourceText: this.problem.ipAddress, originalPrefix: this.problem.originalCIDR, targetPrefix: this.problem.targetCIDR,
             atMs: this.questElapsedMs, ...extra };
         this.decisionHistory = this.decisionHistory || []; this.decisionHistory.push(row);
         if (!correct && IP2Live.GameManager && typeof IP2Live.GameManager.handleGameplayMistake === 'function') {

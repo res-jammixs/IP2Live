@@ -78,7 +78,7 @@ test('prepares a clean release and exactly replaces the exported project plugin'
     }
     await write(project, 'Plugins/IP2Live_Core/current.js', '// current project plugin\n');
     await write(project, 'Plugins/IP2Live_Core/.git/config', 'must not ship');
-    // Simulate an export whose engine database predates both audio additions.
+    // Simulate an export whose engine database predates the plugin audio additions.
     // The synchronized plugin carries verified native WAVs for runtime recovery.
     const audioBundlePath = 'Plugins/IP2Live_Core/assets/audio/story-prologue';
     const audioBundle = JSON.parse(await fs.readFile(path.join(repositoryRoot, audioBundlePath, 'manifest.json'), 'utf8'));
@@ -99,6 +99,15 @@ test('prepares a clean release and exactly replaces the exported project plugin'
         await write(project, gameplayBundlePath + '/' + entry.file, bytes);
     }
     await write(project, gameplayBundlePath + '/manifest.json', JSON.stringify(gameplayBundle));
+    const endingBundlePath = 'Plugins/IP2Live_Core/assets/audio/story-ending';
+    const endingBundle = JSON.parse(await fs.readFile(path.join(repositoryRoot, endingBundlePath, 'manifest.json'), 'utf8'));
+    for (const entry of endingBundle.entries) {
+        const bytes = Buffer.from('fixture ending audio for ' + entry.file);
+        entry.sha256 = createHash('sha256').update(bytes).digest('hex');
+        projectSongs.list.find(group => group.k === entry.kind).v.push({ id: entry.id, name: entry.name, br: false });
+        await write(project, endingBundlePath + '/' + entry.file, bytes);
+    }
+    await write(project, endingBundlePath + '/manifest.json', JSON.stringify(endingBundle));
     await write(project, 'songs.json', JSON.stringify(projectSongs));
     await write(source, 'resources/app/build/songs.json', JSON.stringify({
         list: [{ k: 1, v: [{ id: 1, name: 'Custom Track.mp3', data: 'ZmFrZQ==' }] }],
@@ -158,8 +167,9 @@ test('prepares a clean release and exactly replaces the exported project plugin'
 
     const manifest = JSON.parse(await fs.readFile(path.join(appRoot, 'ip2live-runtime-manifest.json'), 'utf8'));
     assert.equal(manifest.projectPluginSynced, true);
-    assert.deepEqual(new Set(manifest.verifiedCustomSongs), new Set(['Custom Track.mp3', ...audioBundle.entries.map(entry => entry.name), ...gameplayBundle.entries.map(entry => entry.name)]));
-    assert.deepEqual(new Set(manifest.verifiedBundledSongs), new Set([...audioBundle.entries.map(entry => entry.name), ...gameplayBundle.entries.map(entry => entry.name)]));
+    const bundledNames = [...audioBundle.entries, ...gameplayBundle.entries, ...endingBundle.entries].map(entry => entry.name);
+    assert.deepEqual(new Set(manifest.verifiedCustomSongs), new Set(['Custom Track.mp3', ...bundledNames]));
+    assert.deepEqual(new Set(manifest.verifiedBundledSongs), new Set(bundledNames));
     for (const entry of audioBundle.entries) {
         assert.deepEqual(await fs.readFile(path.join(pluginRoot, 'assets/audio/story-prologue', entry.file)),
             await fs.readFile(path.join(repositoryRoot, audioBundlePath, entry.file)));
@@ -167,6 +177,10 @@ test('prepares a clean release and exactly replaces the exported project plugin'
     for (const entry of gameplayBundle.entries) {
         assert.deepEqual(await fs.readFile(path.join(pluginRoot, 'assets/audio/gameplay', entry.file)),
             await fs.readFile(path.join(project, gameplayBundlePath, entry.file)));
+    }
+    for (const entry of endingBundle.entries) {
+        assert.deepEqual(await fs.readFile(path.join(pluginRoot, 'assets/audio/story-ending', entry.file)),
+            await fs.readFile(path.join(project, endingBundlePath, entry.file)));
     }
     const missingAsset = path.join(project, audioBundlePath, audioBundle.entries[0].file);
     await fs.unlink(missingAsset);
@@ -184,6 +198,18 @@ test('prepares a clean release and exactly replaces the exported project plugin'
     assert.notEqual(missingGameplayResult.code, 0);
     assert.match(missingGameplayResult.stdout + missingGameplayResult.stderr, /Missing bundled gameplay audio/);
     await assert.rejects(fs.access(destination + '-missing-gameplay'));
+    await fs.writeFile(missingGameplay, Buffer.from('fixture audio for ' + gameplayBundle.entries[0].file));
+    const missingEnding = path.join(project, endingBundlePath, endingBundle.entries[0].file);
+    await fs.unlink(missingEnding);
+    const missingEndingResult = await runPowerShell(['-SourceExportPath', source, '-DestinationPath', destination + '-missing-ending', '-ProjectRoot', project]);
+    assert.notEqual(missingEndingResult.code, 0);
+    assert.match(missingEndingResult.stdout + missingEndingResult.stderr, /Missing bundled story ending audio/);
+    await assert.rejects(fs.access(destination + '-missing-ending'));
+    await fs.writeFile(missingEnding, 'tampered ending audio');
+    const corruptEndingResult = await runPowerShell(['-SourceExportPath', source, '-DestinationPath', destination + '-corrupt-ending', '-ProjectRoot', project]);
+    assert.notEqual(corruptEndingResult.code, 0);
+    assert.match(corruptEndingResult.stdout + corruptEndingResult.stderr, /Bundled story ending audio SHA256 mismatch/);
+    await assert.rejects(fs.access(destination + '-corrupt-ending'));
 });
 
 test('stops with re-export guidance when a registered custom song is absent', async (t) => {

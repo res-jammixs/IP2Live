@@ -100,7 +100,7 @@
                 IP2Live.MusicManager?.fadeOutForTransition?.(900);
                 this.epilogue = new IP2Live.StoryEpilogueScreen(this);
                 await this.epilogue.load();
-            } else if (IP2Live.MusicManager) IP2Live.MusicManager.play('STORY_ENDING');
+            } else if (IP2Live.MusicManager) IP2Live.MusicManager.play(this.phase === 'cutscene' ? 'STORY_EPILOGUE' : 'STORY_ENDING');
             if (this.closed) return;
             this._lastAt = Date.now();
             this.beatStarted = Date.now(); this.loading = false; this._paint();
@@ -124,7 +124,7 @@
                 if(this.phase==='cutscene') {
                     if(!this._worldFaded) {
                         this._worldElapsed+=delta;
-                        if(this._worldElapsed>=1300) { this._worldFaded=true; this.epilogue.lastAt=now; IP2Live.MusicManager?.play('STORY_ENDING'); this._paint(); }
+                        if(this._worldElapsed>=1300) { this._worldFaded=true; this.epilogue.lastAt=now; IP2Live.MusicManager?.play('STORY_EPILOGUE'); this._paint(); }
                     } else this.epilogue?.update();
                 } else {
                     this._completeTime+=delta;
@@ -162,9 +162,11 @@
             this._paint();
         }
         _finishCutscene() {
+            if(this.closed || this.phase !== 'cutscene') return;
             if(this.epilogue) { this.epilogue.close(); this.epilogue=null; }
             this._completeTime=0; IP2Live.InputGuard?.reset();
-            this.phase = 'complete'; this.selected = 0; this.readyAt = Date.now() + 300; this._paint();
+            this.phase = 'complete'; this.selected = 0; this.readyAt = Date.now() + 300;
+            IP2Live.MusicManager?.play('STORY_ENDING'); this._paint();
         }
         _actions() {
             if(this._storyFinale) {
@@ -223,7 +225,8 @@
                 this.record = this.records[this.recordIndex]; this.preview = null; this.notice = ''; this._paint(); return;
             }
             if (id === 'replay') {
-                this.phase = 'cutscene'; this.beat = 0; this.beatStarted = Date.now(); this.selected = 0; this._paint(); return;
+                this.phase = 'cutscene'; this.beat = 0; this.beatStarted = Date.now(); this.selected = 0;
+                IP2Live.MusicManager?.play('STORY_EPILOGUE'); this._paint(); return;
             }
             if (id === 'pdf') {
                 this.busy = true; this.notice = ''; this._paint();
@@ -591,6 +594,10 @@
             if(measured>800) ctx.font=(21*800/measured)+'px "Oxanium-Medium", sans-serif';
             ctx.fillStyle=C.gold; ctx.textAlign='center'; ctx.fillText(name,640,546);
             text(ctx,'Thank you, Infiltrator. You gave Neo-Gaia its future back.',640,575,16,'#c3d6d6','center',1080);
+            if(this.record.curriculum) {
+                const summary=this.record.curriculum;
+                text(ctx,summary.floors+' FLOORS  /  '+summary.gameplayCount+' GAMEPLAY TYPES  /  '+summary.completedObjectives+' OBJECTIVES COMPLETED',640,598,11,'#9cc6ba','center',1080);
+            }
             ctx.restore();
             if(this._certificateOpen) {
                 ctx.fillStyle='#02060bed'; ctx.fillRect(0,0,1280,720);

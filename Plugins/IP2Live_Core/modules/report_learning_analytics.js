@@ -424,6 +424,7 @@ const IP2LiveReportLearningAnalytics = {
                     activeDurationMs: active !== null && active > 0 ? active : null,
                     preparationMs: this._number(round.preparationMs), preparationSkipped: round.preparationSkipped === true,
                     cohort: { unit: 'encounter', gameplayId: parent.gameplayId, version: parent.cohort.version,
+                        definitionVersion: parent.cohort.definitionVersion,
                         stageId: parent.cohort.stageId, levelId: parent.cohort.levelId, task: 'two_step_address_assembly',
                         difficulty: parent.cohort.difficulty, workload: shape, timingMethod: 'subnet_decisions_v1' },
                 });
@@ -487,7 +488,7 @@ const IP2LiveReportLearningAnalytics = {
             if (assisted) excluded.push('assisted');
             return {
                 source: row, result, payload, gameplayId: id,
-                gameplayLabel: catalog[id] && (catalog[id].label || catalog[id].name) || row.gameplayLabel || id,
+                gameplayLabel: row.gameplayDefinition && row.gameplayDefinition.label || catalog[id] && (catalog[id].label || catalog[id].name) || row.gameplayLabel || id,
                 attemptId: key, timestamp: Number(row.timestamp || row.endedAt || row.startedAt) || 0,
                 passed: outcome === 'passed', assessed, tutorial, assisted, nonLearning,
                 eligible: assessed && !nonLearning && !tutorial && !assisted, excluded, duplicate,
@@ -572,7 +573,9 @@ const IP2LiveReportLearningAnalytics = {
             // deduplicate so shuffled order and repeated checks stay comparable.
             workload.scenarioSet = Array.from(contexts.keys()).sort().map(key => contexts.get(key));
         }
-        return { unit: 'whole_launch', gameplayId: row.gameplayId || 'unknown_gameplay', version, stageId: Number(row.stageId) || 0, levelId: Number(row.levelId) || 0,
+        return { unit: 'whole_launch', gameplayId: row.gameplayId || 'unknown_gameplay', version,
+            definitionVersion: row.definitionVersion || row.gameplayDefinition && row.gameplayDefinition.definitionVersion || payload.definitionVersion || null,
+            stageId: Number(row.stageId) || 0, levelId: Number(row.levelId) || 0,
             task: String(task), difficulty: difficulty === undefined || difficulty === null ? 'not_recorded' : typeof difficulty === 'object' ? this._stableStringify(difficulty) : String(difficulty),
             workload, timingMethod, comparisonKey: row.comparisonKey || payload.comparisonKey || result.comparisonKey || null };
     },

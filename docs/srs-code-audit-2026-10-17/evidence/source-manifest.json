@@ -1,0 +1,1619 @@
+{
+  "version": {
+    "capturedAtUTC": "2026-10-17T10:53:13.430Z",
+    "head": "1362354e8dd1c844ff724ddce9cf2bf6f7f043b4",
+    "branch": "revamp/uiAll",
+    "dirty": true,
+    "description": "1362354 2026-10-15T01:31:49+08:00 fetaure(ui): revamped all ui as much as possible and added a proper starting and ending",
+    "node": "v24.14.1",
+    "status": [
+      "M Plugins/IP2Live_Core/code.js",
+      " M Plugins/IP2Live_Core/gameplay/common/gameplay_timer.js",
+      " M Plugins/IP2Live_Core/gameplay/gameplay5/CIDRQuarantine/ip_cidr_quarantine_gameplay.js",
+      " M Plugins/IP2Live_Core/gameplay/gameplay8/VLSMAllocator/ip_vlsm_allocator_gameplay.js",
+      " M Plugins/IP2Live_Core/modules/achievements.js",
+      " M Plugins/IP2Live_Core/modules/feature_telemetry.js",
+      " M Plugins/IP2Live_Core/modules/game_manager.js",
+      " M Plugins/IP2Live_Core/modules/music_manager.js",
+      " M Plugins/IP2Live_Core/modules/quest_manager.js",
+      " M Plugins/IP2Live_Core/modules/quest_minimap.js",
+      " M Plugins/IP2Live_Core/modules/report_learning_analytics.js",
+      " M Plugins/IP2Live_Core/modules/report_manager.js",
+      " M Plugins/IP2Live_Core/modules/screens/gameplay-pause.js",
+      " M Plugins/IP2Live_Core/modules/screens/story-ending.js",
+      " M Plugins/IP2Live_Core/modules/screens/story-epilogue.js",
+      " M Plugins/IP2Live_Core/modules/story_autosave.js",
+      " M Plugins/IP2Live_Core/modules/story_certificate.js",
+      " M Plugins/IP2Live_Core/modules/story_completion.js",
+      " M README.md",
+      " M Songs/README.md",
+      " M docs/screenshots/story-ending/certificate-1684x1190.png",
+      " M docs/screenshots/story-ending/certificate-example.pdf",
+      " M docs/screenshots/story-ending/complete-1280x720.png",
+      " M docs/story-completion.md",
+      " M tests/fixtures/story_ending_preview.html",
+      " M tests/music_management.test.cjs",
+      " M tests/music_registry.test.cjs",
+      " M tests/music_runtime.test.cjs",
+      " M tests/story_completion.test.cjs",
+      " M tests/windows-release-preparation.test.mjs",
+      " M tools/prepare-windows-release.ps1",
+      "?? Plugins/IP2Live_Core/assets/audio/story-ending/",
+      "?? Plugins/IP2Live_Core/gameplay/combined/",
+      "?? Plugins/IP2Live_Core/gameplay/common/gameplay_definition.js",
+      "?? Plugins/IP2Live_Core/gameplay/common/gameplay_diagnostic.js",
+      "?? Plugins/IP2Live_Core/gameplay/common/windowed_gameplay.js",
+      "?? Plugins/IP2Live_Core/gameplay/gameplay1/IPWires/ip_wires_diagnostic.js",
+      "?? Plugins/IP2Live_Core/gameplay/gameplay1/IPWires/ip_wires_gameplay_harder_windowed_version.js",
+      "?? Plugins/IP2Live_Core/gameplay/gameplay1/IPWires/ip_wires_gameplay_windowed_version.js",
+      "?? Plugins/IP2Live_Core/gameplay/gameplay2/IPPatchPanel/ip_patchpanel_diagnostic.js",
+      "?? Plugins/IP2Live_Core/gameplay/gameplay2/IPPatchPanel/ip_patchpanel_gameplay_windowed_version.js",
+      "?? Plugins/IP2Live_Core/gameplay/gameplay3/CIDRPanel/ip_cidrpanel_diagnostic.js",
+      "?? Plugins/IP2Live_Core/gameplay/gameplay3/CIDRPanel/ip_cidrpanel_gameplay_harder_windowed_version.js",
+      "?? Plugins/IP2Live_Core/gameplay/gameplay3/CIDRPanel/ip_cidrpanel_gameplay_windowed_version.js",
+      "?? Plugins/IP2Live_Core/gameplay/gameplay4/SubnetSimulator/ip_subnetsim_diagnostic.js",
+      "?? Plugins/IP2Live_Core/gameplay/gameplay4/SubnetSimulator/ip_subnetsim_gameplay_windowed_version.js",
+      "?? Plugins/IP2Live_Core/gameplay/gameplay4_5/HostPowerReactor/ip_host_power_diagnostic.js",
+      "?? Plugins/IP2Live_Core/gameplay/gameplay4_5/HostPowerReactor/ip_host_power_gameplay_windowed_version.js",
+      "?? Plugins/IP2Live_Core/gameplay/gameplay5/CIDRQuarantine/ip_cidr_quarantine_diagnostic.js",
+      "?? Plugins/IP2Live_Core/gameplay/gameplay5/CIDRQuarantine/ip_cidr_quarantine_gameplay_windowed_version.js",
+      "?? Plugins/IP2Live_Core/gameplay/gameplay6/CIDRQuarantineMatrix/ip_cidr_quarantine_matrix_gameplay_windowed_version.js",
+      "?? Plugins/IP2Live_Core/gameplay/gameplay6/CIDRQuarantineMatrix/ip_subnet_blaster_diagnostic.js",
+      "?? Plugins/IP2Live_Core/gameplay/gameplay7/NetworkRepair/gameplay_windowed_version.js",
+      "?? Plugins/IP2Live_Core/gameplay/gameplay7/NetworkRepair/network_repair_diagnostic.js",
+      "?? Plugins/IP2Live_Core/gameplay/gameplay8/VLSMAllocator/ip_vlsm_allocator_diagnostic.js",
+      "?? Plugins/IP2Live_Core/gameplay/gameplay8/VLSMAllocator/ip_vlsm_allocator_gameplay_windowed_version.js",
+      "?? Plugins/IP2Live_Core/modules/error_diagnostics.js",
+      "?? Plugins/IP2Live_Core/modules/screens/error-diagnostics.js",
+      "?? Songs/Musics/StoryEnding/",
+      "?? docs/combined-gameplay.md",
+      "?? docs/error-diagnostics.md",
+      "?? docs/gameplay-registration.md",
+      "?? docs/midterm-execution-guide/",
+      "?? docs/screenshots/combined/",
+      "?? docs/testing/",
+      "?? tests/combined_gameplay.test.cjs",
+      "?? tests/error_diagnostics.test.cjs",
+      "?? tests/fixtures/combined_gameplay_preview.html",
+      "?? tests/fixtures/error_diagnostics_preview.html",
+      "?? tests/gameplay_registration.test.cjs",
+      "?? tests/story_ending_audio.test.cjs",
+      "?? tools/build-diagnostic-preview.cjs",
+      "?? tools/generate-story-ending-audio.cjs",
+      "?? tools/render-combined.ps1"
+    ],
+    "scope": "Local working tree. No deployed URL or release artifact inspected. Asset binaries and personal save fixture contents are excluded."
+  },
+  "files": [
+    {
+      "path": "BUGFIX_VERIFICATION.md",
+      "bytes": 7142,
+      "sha256": "e92d5ccb664c1e21c927e5f45de4580ae2a6d51ef1fa1a576bf5943d10d180a9"
+    },
+    {
+      "path": "Plugins/IP2Live_Core/assets/audio/gameplay/manifest.json",
+      "bytes": 1574,
+      "sha256": "2719a79d47e572d2d562ec8851c6ad06c351a4b3ff02afe020ee0789bd7b7ad1"
+    },
+    {
+      "path": "Plugins/IP2Live_Core/assets/audio/story-ending/manifest.json",
+      "bytes": 476,
+      "sha256": "4f84cc2583255a1a111c7fd4f424bf380e3a615920c90e6aec95a42406b2fc47"
+    },
+    {
+      "path": "Plugins/IP2Live_Core/assets/audio/story-prologue/manifest.json",
+      "bytes": 1782,
+      "sha256": "3f8875fc882213036ccbf32dc08f272dd1a19f033ce52da5a71a03f927f559a9"
+    },
+    {
+      "path": "Plugins/IP2Live_Core/assets/quest_arrow.js",
+      "bytes": 30264,
+      "sha256": "552fdc159b74e149d78853f993dab98e5f989ff0135ecf5e8d2cb04b5eeb0183"
+    },
+    {
+      "path": "Plugins/IP2Live_Core/assets/quest_pathfinder.js",
+      "bytes": 10392,
+      "sha256": "dea6bafffbeaf7d112f5d538fa27c2acb0b58b601e58549f592b46d553e2502f"
+    },
+    {
+      "path": "Plugins/IP2Live_Core/code.js",
+      "bytes": 72249,
+      "sha256": "50e74d15547d0c493b2514ac711055044859f13a7164fe368601129e54dff3fa"
+    },
+    {
+      "path": "Plugins/IP2Live_Core/details.json",
+      "bytes": 320,
+      "sha256": "d619570b928b945de7637b6098d0533436d19255d47a743e715b9935001afc8a"
+    },
+    {
+      "path": "Plugins/IP2Live_Core/gameplay/combined/combined_art.js",
+      "bytes": 9089,
+      "sha256": "0707ffe51dc2d66fa161c690eb95a08f62306595ca4788f209f911d764335dbf"
+    },
+    {
+      "path": "Plugins/IP2Live_Core/gameplay/combined/combined_gameplay.js",
+      "bytes": 39795,
+      "sha256": "52a4fd20af133a4283b1ac792c75d144a16e39ccd55eab732377c74596aaa752"
+    },
+    {
+      "path": "Plugins/IP2Live_Core/gameplay/common/gameplay_completion_popup.js",
+      "bytes": 17672,
+      "sha256": "6f005f98938e77f0821d0d28323b6d47adf6110a4b070cd3a64a3eb02761b609"
+    },
+    {
+      "path": "Plugins/IP2Live_Core/gameplay/common/gameplay_definition.js",
+      "bytes": 2248,
+      "sha256": "2abb2d12d0303ec5fbb5a51da3bd85246e35487573c41faf5f7c7bac88fc3a71"
+    },
+    {
+      "path": "Plugins/IP2Live_Core/gameplay/common/gameplay_diagnostic.js",
+      "bytes": 3617,
+      "sha256": "177bbd809fed95f39f211ac0fb255c0de765ce9205a91b0277b782a285d65e81"
+    },
+    {
+      "path": "Plugins/IP2Live_Core/gameplay/common/gameplay_timer.js",
+      "bytes": 7840,
+      "sha256": "ceb2cef836bf650b05893fa8ad652b873b0efd4eee5df7df3543571e3a1fe27a"
+    },
+    {
+      "path": "Plugins/IP2Live_Core/gameplay/common/ip_cidr_tools.js",
+      "bytes": 3967,
+      "sha256": "d3fc8f262927e43337e567ecd573ee7a88e2efbfe9a5fe833d92a5adfd4c89e2"
+    },
+    {
+      "path": "Plugins/IP2Live_Core/gameplay/common/ip_class_ranges.js",
+      "bytes": 2943,
+      "sha256": "df94ecb51c0b1dc81fa771045a3e9a99ec598cf2a67ac0bddef1182a7bdbb433"
+    },
+    {
+      "path": "Plugins/IP2Live_Core/gameplay/common/windowed_gameplay.js",
+      "bytes": 12781,
+      "sha256": "8006fa469c196d0d67ddd820a8734a47f40190c89a3f535bda58a26b6d833c39"
+    },
+    {
+      "path": "Plugins/IP2Live_Core/gameplay/gameplay1/IPWires/ip_wires_core.js",
+      "bytes": 4911,
+      "sha256": "50a34047029f0de6137222a9b60b71bfd0279b91099e6c6199a339eade96327c"
+    },
+    {
+      "path": "Plugins/IP2Live_Core/gameplay/gameplay1/IPWires/ip_wires_diagnostic.js",
+      "bytes": 665,
+      "sha256": "d2253b90206b7ca921ab22a5b695c36564542716927cf88961f033bf4b001ab0"
+    },
+    {
+      "path": "Plugins/IP2Live_Core/gameplay/gameplay1/IPWires/ip_wires_gameplay.js",
+      "bytes": 107406,
+      "sha256": "7b14a8db0f22fbd0c528d6eca18259fad2cec81a644957a01bcac531ae8b3a75"
+    },
+    {
+      "path": "Plugins/IP2Live_Core/gameplay/gameplay1/IPWires/ip_wires_gameplay_harder.js",
+      "bytes": 30264,
+      "sha256": "842cbfc11255fe41995b8729ff32c27eb5d69703ebef9fdce9b04969c7250732"
+    },
+    {
+      "path": "Plugins/IP2Live_Core/gameplay/gameplay1/IPWires/ip_wires_gameplay_harder_tutorial.js",
+      "bytes": 12198,
+      "sha256": "e62de0706d4084ff49b5fb78b22b233a5aeb53acb652edfeafccc4356c618f88"
+    },
+    {
+      "path": "Plugins/IP2Live_Core/gameplay/gameplay1/IPWires/ip_wires_gameplay_harder_windowed_version.js",
+      "bytes": 516,
+      "sha256": "23d89cc13ec98d3053b3bc7ec8157b033794de1478a617dc59cfe858130c7283"
+    },
+    {
+      "path": "Plugins/IP2Live_Core/gameplay/gameplay1/IPWires/ip_wires_gameplay_windowed_version.js",
+      "bytes": 361,
+      "sha256": "948669c8e48f26341dd6886d34a6ca98c9b80a20b2ace121b064bdbca1e985f2"
+    },
+    {
+      "path": "Plugins/IP2Live_Core/gameplay/gameplay1/IPWires/ip_wires_tutorial.js",
+      "bytes": 30548,
+      "sha256": "2a133832b5e432fb933f11f1a48d674aacb1e917a21ab04882874820ad9087f4"
+    },
+    {
+      "path": "Plugins/IP2Live_Core/gameplay/gameplay2/IPPatchPanel/ip_patchpanel_diagnostic.js",
+      "bytes": 430,
+      "sha256": "310e6c0593ef7f22e5a3fe1dd2c73407cdffb98c2c28cc41fd52451a5cc39a37"
+    },
+    {
+      "path": "Plugins/IP2Live_Core/gameplay/gameplay2/IPPatchPanel/ip_patchpanel_gameplay.js",
+      "bytes": 122010,
+      "sha256": "2309954f84aed646890613eb05707c2be8758ae78e04d9c55081986cbcb53b68"
+    },
+    {
+      "path": "Plugins/IP2Live_Core/gameplay/gameplay2/IPPatchPanel/ip_patchpanel_gameplay_windowed_version.js",
+      "bytes": 378,
+      "sha256": "86f84401a9e904edfb68f2dc03ab2f1ccf586442a42efb8c993e8398603dab31"
+    },
+    {
+      "path": "Plugins/IP2Live_Core/gameplay/gameplay2/IPPatchPanel/ip_patchpanel_tutorial.js",
+      "bytes": 17369,
+      "sha256": "fb3852ce0af1133f65713c68fc312722043b97c7eef0eff96864060e33730df6"
+    },
+    {
+      "path": "Plugins/IP2Live_Core/gameplay/gameplay3/CIDRPanel/ip_cidrpanel_diagnostic.js",
+      "bytes": 1486,
+      "sha256": "6d30f90c838113c88ca6625745721d96785cbb19ff5dccd862a7fab0d98b55e6"
+    },
+    {
+      "path": "Plugins/IP2Live_Core/gameplay/gameplay3/CIDRPanel/ip_cidrpanel_gameplay.js",
+      "bytes": 147009,
+      "sha256": "2ac992798d7d51f1c51789e7ef8e70f2b55f144794155af5d4490ff6476be665"
+    },
+    {
+      "path": "Plugins/IP2Live_Core/gameplay/gameplay3/CIDRPanel/ip_cidrpanel_gameplay_harder.js",
+      "bytes": 30922,
+      "sha256": "d9eca9639a6af9c17fe7ab28cafe28291be1531bd3cc26e8c6e29c3535a73acf"
+    },
+    {
+      "path": "Plugins/IP2Live_Core/gameplay/gameplay3/CIDRPanel/ip_cidrpanel_gameplay_harder_tutorial.js",
+      "bytes": 4136,
+      "sha256": "fe0d9d7e2b881bcf00b83ee156fddfee85a018bf2565aef621f49e4cda5ad05d"
+    },
+    {
+      "path": "Plugins/IP2Live_Core/gameplay/gameplay3/CIDRPanel/ip_cidrpanel_gameplay_harder_windowed_version.js",
+      "bytes": 392,
+      "sha256": "60e5b9f4554b396382cc1ea0de40d46cdf6ccfad2ef79e610dff1b2e716185f0"
+    },
+    {
+      "path": "Plugins/IP2Live_Core/gameplay/gameplay3/CIDRPanel/ip_cidrpanel_gameplay_windowed_version.js",
+      "bytes": 382,
+      "sha256": "482ba0f0a6b696487f1c433dfa0aa9c095e4b376af70127e6c6967b8c3e8137d"
+    },
+    {
+      "path": "Plugins/IP2Live_Core/gameplay/gameplay3/CIDRPanel/ip_cidrpanel_tutorial.js",
+      "bytes": 47470,
+      "sha256": "0aa88899adbd458df76383bb34ff4820382ecf43f1b37bb613a76e70f2cba5e8"
+    },
+    {
+      "path": "Plugins/IP2Live_Core/gameplay/gameplay4/SubnetSimulator/ip_subnetsim_diagnostic.js",
+      "bytes": 1460,
+      "sha256": "2d9f17fd876b8a51ce9b244337424ff3456fcf18abb534f32e0fbf66ad9d5091"
+    },
+    {
+      "path": "Plugins/IP2Live_Core/gameplay/gameplay4/SubnetSimulator/ip_subnetsim_gameplay.js",
+      "bytes": 166328,
+      "sha256": "a5e6501998ed77c90c8fad6759c37b253a687f7e00213e3f726096574aff0bd6"
+    },
+    {
+      "path": "Plugins/IP2Live_Core/gameplay/gameplay4/SubnetSimulator/ip_subnetsim_gameplay_windowed_version.js",
+      "bytes": 434,
+      "sha256": "f2fb0555f8e0220f6101a50f80d348e524500046f502d7f09dcd38d16e34a150"
+    },
+    {
+      "path": "Plugins/IP2Live_Core/gameplay/gameplay4/SubnetSimulator/ip_subnetsim_tutorial.js",
+      "bytes": 49568,
+      "sha256": "28812354ba597804ac60dcca14f7d577c14dfbb6c0d3a6a6abb620045621c892"
+    },
+    {
+      "path": "Plugins/IP2Live_Core/gameplay/gameplay4_5/HostPowerReactor/README.md",
+      "bytes": 3298,
+      "sha256": "440dea45b40aadbda5aa2d70d438a6e7da3033b30b6a95aebb5b8f5e4eacbb94"
+    },
+    {
+      "path": "Plugins/IP2Live_Core/gameplay/gameplay4_5/HostPowerReactor/ip_host_power_diagnostic.js",
+      "bytes": 974,
+      "sha256": "e06295208105c0856ba45318feee834c12c52dd6f6726b2f33e932eec4c160a0"
+    },
+    {
+      "path": "Plugins/IP2Live_Core/gameplay/gameplay4_5/HostPowerReactor/ip_host_power_gameplay.js",
+      "bytes": 162784,
+      "sha256": "9c2f602cee95890147744d92f4507c822dc7fc26734aba1fa5d3c7d1f282507e"
+    },
+    {
+      "path": "Plugins/IP2Live_Core/gameplay/gameplay4_5/HostPowerReactor/ip_host_power_gameplay_windowed_version.js",
+      "bytes": 393,
+      "sha256": "2fa73da1bfb0a58bc0914c880abd6b3f5774569486b005490896b994fc118d92"
+    },
+    {
+      "path": "Plugins/IP2Live_Core/gameplay/gameplay4_5/HostPowerReactor/ip_host_power_tool.js",
+      "bytes": 36619,
+      "sha256": "84f9a8a693ba8f4dd1032f7244b6fc313923c0f4fa66b5b3a4ae69be998d4fc2"
+    },
+    {
+      "path": "Plugins/IP2Live_Core/gameplay/gameplay4_5/HostPowerReactor/ip_host_power_tutorial.js",
+      "bytes": 39421,
+      "sha256": "1db69bfe2abd4d48c34e39e54f103a54713061a18f2ea2c99d6639c6e729c255"
+    },
+    {
+      "path": "Plugins/IP2Live_Core/gameplay/gameplay5/CIDRQuarantine/ip_cidr_quarantine_diagnostic.js",
+      "bytes": 1983,
+      "sha256": "0a948321ade6b3c1c7c35078cb81232f1708e3144cf782bff1b9aef3da0bf007"
+    },
+    {
+      "path": "Plugins/IP2Live_Core/gameplay/gameplay5/CIDRQuarantine/ip_cidr_quarantine_gameplay.js",
+      "bytes": 180662,
+      "sha256": "dbb94532995fa531bba9e811bba4fab0dd5c644f53d465c3a1f25385afd181eb"
+    },
+    {
+      "path": "Plugins/IP2Live_Core/gameplay/gameplay5/CIDRQuarantine/ip_cidr_quarantine_gameplay_windowed_version.js",
+      "bytes": 397,
+      "sha256": "b4ea22e94f006749e478dbcfe4e3f1c8c9f26ef0d125af10ab616376313fe452"
+    },
+    {
+      "path": "Plugins/IP2Live_Core/gameplay/gameplay5/CIDRQuarantine/ip_cidr_quarantine_tutorial.js",
+      "bytes": 11210,
+      "sha256": "e974a79840324ae9a05465085ea21ac7291066ef1d28a91e306d56cbb5ef9684"
+    },
+    {
+      "path": "Plugins/IP2Live_Core/gameplay/gameplay6/CIDRQuarantineMatrix/ip_cidr_quarantine_matrix_gameplay.js",
+      "bytes": 103584,
+      "sha256": "d7aaab165f304377dbc35087a6368391c77474e9c92f11c0ae17768258901c79"
+    },
+    {
+      "path": "Plugins/IP2Live_Core/gameplay/gameplay6/CIDRQuarantineMatrix/ip_cidr_quarantine_matrix_gameplay_windowed_version.js",
+      "bytes": 386,
+      "sha256": "73bb257b9d334cb2327f709a21eeb48c7d3ccfdb09b4f49a66a36ef6e3c57940"
+    },
+    {
+      "path": "Plugins/IP2Live_Core/gameplay/gameplay6/CIDRQuarantineMatrix/ip_cidr_quarantine_matrix_tutorial.js",
+      "bytes": 7088,
+      "sha256": "f5be93aecd2559d2677211462cab4f7244717604382828ed9da2132c92ad5308"
+    },
+    {
+      "path": "Plugins/IP2Live_Core/gameplay/gameplay6/CIDRQuarantineMatrix/ip_subnet_blaster_diagnostic.js",
+      "bytes": 1728,
+      "sha256": "46a2e27aaf704e08b05406b87212605a647af498748c4c166fc90af45b2f5bdc"
+    },
+    {
+      "path": "Plugins/IP2Live_Core/gameplay/gameplay7/NetworkRepair/gameplay.js",
+      "bytes": 80252,
+      "sha256": "7529448357c6ac91b2da4516f46411ed732b2e3ac9330993b4f07512e5a49f8c"
+    },
+    {
+      "path": "Plugins/IP2Live_Core/gameplay/gameplay7/NetworkRepair/gameplay_windowed_version.js",
+      "bytes": 375,
+      "sha256": "44ffe64d82c3bb0f4ea201ff03070f96465cea7f100b70ffdfbfb7e597233f66"
+    },
+    {
+      "path": "Plugins/IP2Live_Core/gameplay/gameplay7/NetworkRepair/network_repair_diagnostic.js",
+      "bytes": 958,
+      "sha256": "8329d4967ea1baf9f3957510ba6d81f9e1371b0d49671845b6663be6033811e9"
+    },
+    {
+      "path": "Plugins/IP2Live_Core/gameplay/gameplay7/NetworkRepair/tutorial.js",
+      "bytes": 4663,
+      "sha256": "ddfdb4a2e486da7ac72481dd48802de577f7d917584e1ae543be59eea18a4e5e"
+    },
+    {
+      "path": "Plugins/IP2Live_Core/gameplay/gameplay8/VLSMAllocator/ip_vlsm_allocator_diagnostic.js",
+      "bytes": 3035,
+      "sha256": "8b29e4d01e5171de25671f9fa55cb7403ca09305159062b9a97f6dd88dc28392"
+    },
+    {
+      "path": "Plugins/IP2Live_Core/gameplay/gameplay8/VLSMAllocator/ip_vlsm_allocator_gameplay.js",
+      "bytes": 59312,
+      "sha256": "d5bef995dd3aca0175026df9c019f9505287be48f48a5ee1dad0b16229cd5c9f"
+    },
+    {
+      "path": "Plugins/IP2Live_Core/gameplay/gameplay8/VLSMAllocator/ip_vlsm_allocator_gameplay_windowed_version.js",
+      "bytes": 898,
+      "sha256": "73aeb307c3793dc8e08a3e75e1ba8ff5e08673bd9c72c7638b174683cf6024dc"
+    },
+    {
+      "path": "Plugins/IP2Live_Core/gameplay/gameplay8/VLSMAllocator/ip_vlsm_allocator_tutorial.js",
+      "bytes": 3738,
+      "sha256": "90f0c61b234f61b8111c382fc968c4f0512478ece98c79e2a5809eb890934fa6"
+    },
+    {
+      "path": "Plugins/IP2Live_Core/modules/achievements.js",
+      "bytes": 8603,
+      "sha256": "8c73f32927ffa5b5c9e6b49e934e88ddfa6c0316797f40a8d13487e12aea3e58"
+    },
+    {
+      "path": "Plugins/IP2Live_Core/modules/certificate_pdf.js",
+      "bytes": 2857,
+      "sha256": "894f88452976c2ca4d72880b13af7e2d13ef98e297a134b21e9d108fdd9177e3"
+    },
+    {
+      "path": "Plugins/IP2Live_Core/modules/desktop_storage.js",
+      "bytes": 33945,
+      "sha256": "f8f370c0a7cd275ec10e1278a544f0c3908ffd447490fc8b271eb94e6b5aad08"
+    },
+    {
+      "path": "Plugins/IP2Live_Core/modules/dialogue_manager.js",
+      "bytes": 81535,
+      "sha256": "d73b82fa0d8f427c633395bf0a9e338ca8dcffc75baab63180791d8d528c7aa0"
+    },
+    {
+      "path": "Plugins/IP2Live_Core/modules/dialogues.json",
+      "bytes": 27655,
+      "sha256": "e137b9a4a225e8aef70ee0a99f829595db3cc09989ee0ed3d14356f9dfda9917"
+    },
+    {
+      "path": "Plugins/IP2Live_Core/modules/endless_mode.js",
+      "bytes": 15291,
+      "sha256": "1285c93ac3fd11a094220c1de743d73cf1487f4c785925311e8c051bbd58f858"
+    },
+    {
+      "path": "Plugins/IP2Live_Core/modules/endless_rules.js",
+      "bytes": 3153,
+      "sha256": "029ca1e030977b39b3e8dc92bd5c1be3dd413d2d72e8bb403c38b8bb8cef10af"
+    },
+    {
+      "path": "Plugins/IP2Live_Core/modules/error_diagnostics.js",
+      "bytes": 15916,
+      "sha256": "25d678f1ef824aa47a2bb99dfdb9063d0b81393457e64168cdc128787bb8738f"
+    },
+    {
+      "path": "Plugins/IP2Live_Core/modules/feature_telemetry.js",
+      "bytes": 6552,
+      "sha256": "fe28af266b894a32dbd3495f53bb6f96d276574b03db6c2d640c4a3f5696361c"
+    },
+    {
+      "path": "Plugins/IP2Live_Core/modules/game-state/darklights_state.js",
+      "bytes": 6246,
+      "sha256": "93e52efdcae4b85828d98c53bbf6e06906952f0ed189c7d1fb2a5c18a245df99"
+    },
+    {
+      "path": "Plugins/IP2Live_Core/modules/game-state/floor_state_config.js",
+      "bytes": 1505,
+      "sha256": "c42961dc4b7c30fc6a3fbf35d2ce6e1880786a13b21d9a7f6a9f533cd078149f"
+    },
+    {
+      "path": "Plugins/IP2Live_Core/modules/game-state/game_state_manager.js",
+      "bytes": 39047,
+      "sha256": "1331c1ef0691d16fdff006a7946624809ad87975c085677811cd01e088017698"
+    },
+    {
+      "path": "Plugins/IP2Live_Core/modules/game-state/neural_life_force_manager.js",
+      "bytes": 41100,
+      "sha256": "239029bb30b2d2384a14b19ff6fd19dd27ec222ddf5fe6ae7d8f424df6f33bbe"
+    },
+    {
+      "path": "Plugins/IP2Live_Core/modules/game-state/security_light_state.js",
+      "bytes": 17332,
+      "sha256": "f8de7b5675a0bcba760206d5da55e51957a9e3610edf03784e32ebd1f1ba91db"
+    },
+    {
+      "path": "Plugins/IP2Live_Core/modules/game_manager.js",
+      "bytes": 231213,
+      "sha256": "1be8f41a2887144ef926bb4663f18a00d2b2a34ce2fd1e90021e6111da73e930"
+    },
+    {
+      "path": "Plugins/IP2Live_Core/modules/input_guard.js",
+      "bytes": 5711,
+      "sha256": "064eda0fd5eae700b8ee563f06b1813a90f1708c9a8b79cbe7499e312709d09f"
+    },
+    {
+      "path": "Plugins/IP2Live_Core/modules/lighting_manager.js",
+      "bytes": 26880,
+      "sha256": "c331f3711edf017a65b98440573e1c98488e5cfe3f57a1ba6d53ee52f10e6142"
+    },
+    {
+      "path": "Plugins/IP2Live_Core/modules/map_manager.js",
+      "bytes": 42289,
+      "sha256": "b630c40b7600bfa8e544468f0de9dcdf83b81681324641a07ada6b2ceffe2427"
+    },
+    {
+      "path": "Plugins/IP2Live_Core/modules/music_manager.js",
+      "bytes": 57136,
+      "sha256": "166be2b658b7ed62af01fb67f5c351e635b407ac26b83acd633074b528ce16d3"
+    },
+    {
+      "path": "Plugins/IP2Live_Core/modules/practice_mode.js",
+      "bytes": 14902,
+      "sha256": "af8f2ef5524c8fd72ddd7a1d448bcfcbf486ee1e23dbeffbea1f254924bfa9db"
+    },
+    {
+      "path": "Plugins/IP2Live_Core/modules/pvp_certificate.js",
+      "bytes": 5844,
+      "sha256": "1726726f5d7ce47c8c5ffa8912ff19b6894a8045aa0ff5a29df5bf38e0e9273b"
+    },
+    {
+      "path": "Plugins/IP2Live_Core/modules/pvp_mode.js",
+      "bytes": 27074,
+      "sha256": "54de7d103625330f8b13283643fa44647873b8c31ef1c38d7df8804bedb50fa8"
+    },
+    {
+      "path": "Plugins/IP2Live_Core/modules/pvp_rules.js",
+      "bytes": 8846,
+      "sha256": "5b3687ea1afbd2bf9bf864c8bb72585657a6dc3251efbc61b5620657b68f6aa6"
+    },
+    {
+      "path": "Plugins/IP2Live_Core/modules/quest_manager.js",
+      "bytes": 57683,
+      "sha256": "539afd8b4abe9b3ea36ed23d2c5db8dd3362c37cc3d7ec335696433f98cc6de5"
+    },
+    {
+      "path": "Plugins/IP2Live_Core/modules/quest_minimap.js",
+      "bytes": 56104,
+      "sha256": "762612dec4a17feca6ac458c234cea8c395567a62b34539d4697b9e4da6b6f53"
+    },
+    {
+      "path": "Plugins/IP2Live_Core/modules/report_learning_analytics.js",
+      "bytes": 87212,
+      "sha256": "a0e3519cc8a0587496a07611525600c6b6bf91711d6db67071f851e451ccb87e"
+    },
+    {
+      "path": "Plugins/IP2Live_Core/modules/report_manager.js",
+      "bytes": 330857,
+      "sha256": "f840d55b7daaa6ad02f871de9d0593c05ec3f6d428cb00d28e0f0f86a39ec9f7"
+    },
+    {
+      "path": "Plugins/IP2Live_Core/modules/screens/ar-diagnostic-rewind.js",
+      "bytes": 44434,
+      "sha256": "611724b80889e50d453ce7f0a050aaac30e5e6d149ae4549c088885bd8d11e52"
+    },
+    {
+      "path": "Plugins/IP2Live_Core/modules/screens/background-screen.js",
+      "bytes": 20962,
+      "sha256": "63737b9050af08a2dc38a37eb99a1e7cd7ce2e5f4007bc1e43f4e2a1f0c3f04e"
+    },
+    {
+      "path": "Plugins/IP2Live_Core/modules/screens/confir-popup.js",
+      "bytes": 31445,
+      "sha256": "9627121062be745f9d268b93f0ba9d42bd0ddeeb7c01aba8a84aa585789983d0"
+    },
+    {
+      "path": "Plugins/IP2Live_Core/modules/screens/credits.js",
+      "bytes": 39432,
+      "sha256": "19a4085ea55d0ef98a85a6d3249941c4e61b3de15548a17b0d10d814283e7235"
+    },
+    {
+      "path": "Plugins/IP2Live_Core/modules/screens/endless.js",
+      "bytes": 17770,
+      "sha256": "ba243aae3bdeef83416e478951a537f45926ccbd1789bc8a9970a7a0ade79644"
+    },
+    {
+      "path": "Plugins/IP2Live_Core/modules/screens/error-diagnostics.js",
+      "bytes": 31824,
+      "sha256": "17f07b1ac06cee8fd8f5d43e883f7d125025fa5a176df6bc6c4fccb4c687ec97"
+    },
+    {
+      "path": "Plugins/IP2Live_Core/modules/screens/export-report.js",
+      "bytes": 24960,
+      "sha256": "28f58df97104e2bb651854f77aae879898cdd806fe98ee31e22b23f59e74e857"
+    },
+    {
+      "path": "Plugins/IP2Live_Core/modules/screens/gameplay-pause.js",
+      "bytes": 118989,
+      "sha256": "f8262d19eafd5d8f967c014c711f1241a9e8c6125132ce9aef6b44ee4e3397b3"
+    },
+    {
+      "path": "Plugins/IP2Live_Core/modules/screens/keyboard-menu.js",
+      "bytes": 14421,
+      "sha256": "4f615db8acc289cab8e744d9933e3eb6781777db1bd91a5bce032709bcf89f7b"
+    },
+    {
+      "path": "Plugins/IP2Live_Core/modules/screens/load-game.js",
+      "bytes": 50018,
+      "sha256": "88f4fad1f355358e078d65e2caa12d99a6c447d909873eff358d954f6309a3c6"
+    },
+    {
+      "path": "Plugins/IP2Live_Core/modules/screens/loading-screen-2.js",
+      "bytes": 17565,
+      "sha256": "93bade3c9748133ef66bea5051353261451e061d11f3723152e5a0f7d2668730"
+    },
+    {
+      "path": "Plugins/IP2Live_Core/modules/screens/loading-screen.js",
+      "bytes": 41932,
+      "sha256": "f2837e1bb38da6bbf1bd55d45f40d526e6280bc461bf97aaf3a32c25e291ec3b"
+    },
+    {
+      "path": "Plugins/IP2Live_Core/modules/screens/main-menu.js",
+      "bytes": 90210,
+      "sha256": "ac7113232123134adc766fd01b0908ed0aac2b5eda4a8c30d77a06f458eaf89e"
+    },
+    {
+      "path": "Plugins/IP2Live_Core/modules/screens/menu-transition.js",
+      "bytes": 12216,
+      "sha256": "df39273b4d1925f6808f63952237c20921f101233cff50da66161d7cde56cf1d"
+    },
+    {
+      "path": "Plugins/IP2Live_Core/modules/screens/name-input.js",
+      "bytes": 43996,
+      "sha256": "5c1c461a43f5b826901d5ff09a246f082b05f3af711884889e98e1e89355eaf6"
+    },
+    {
+      "path": "Plugins/IP2Live_Core/modules/screens/neural-life-force-game-over.js",
+      "bytes": 21923,
+      "sha256": "91061c32f523b0addf98386f98950a01ffd1f02e73aafb9765c561a6107e88f4"
+    },
+    {
+      "path": "Plugins/IP2Live_Core/modules/screens/pause-menu.js",
+      "bytes": 72140,
+      "sha256": "d43a74a1c6c5fc3d8690ba09db869e897f9f05858a9c3c9f5c27f2a9ef3951eb"
+    },
+    {
+      "path": "Plugins/IP2Live_Core/modules/screens/practice-grid.js",
+      "bytes": 19180,
+      "sha256": "8db7b40299335abbb18a66cff27fb8a3998ea306a3e019aa27714074634b8fd2"
+    },
+    {
+      "path": "Plugins/IP2Live_Core/modules/screens/pvp.js",
+      "bytes": 75609,
+      "sha256": "9010d5b7aa69a854ef9c96289931c9ac020be3ea0f0272c7b17aac176c3ef425"
+    },
+    {
+      "path": "Plugins/IP2Live_Core/modules/screens/settings.js",
+      "bytes": 29765,
+      "sha256": "2b516bf6c168aca57a077b2e26c7338e97ac6e9cd3b3a1f913892f35acc41857"
+    },
+    {
+      "path": "Plugins/IP2Live_Core/modules/screens/story-ending.js",
+      "bytes": 48261,
+      "sha256": "49d7c1b00b4290564daf06e5d139a6b4cfca51a18eed2a6067fceb79fb084340"
+    },
+    {
+      "path": "Plugins/IP2Live_Core/modules/screens/story-epilogue-art.js",
+      "bytes": 26887,
+      "sha256": "c88c96d29150c44c520e27b1e063dfa14f30587a721b79af56ba76b28bf8fdc6"
+    },
+    {
+      "path": "Plugins/IP2Live_Core/modules/screens/story-epilogue.js",
+      "bytes": 965,
+      "sha256": "f1a32b3e7cf5a34a2ef28a6df9053a7517c720771455e135e3ec9ff50a533d8f"
+    },
+    {
+      "path": "Plugins/IP2Live_Core/modules/screens/story-prologue-art.js",
+      "bytes": 54470,
+      "sha256": "9dbceb6950bf4375b8663878ec3b2f9832ca2d4c3e9acffdde8d0fd2d0002585"
+    },
+    {
+      "path": "Plugins/IP2Live_Core/modules/screens/story-prologue.js",
+      "bytes": 19079,
+      "sha256": "6e8923b392fd9eb8703335995458906f563aaab7bdb7e2cd84e1131db2b67659"
+    },
+    {
+      "path": "Plugins/IP2Live_Core/modules/screens/world-title.js",
+      "bytes": 26667,
+      "sha256": "f4edf2a9d54b72ef58287b06f95ffab47549615b5469df50f0177923710f3570"
+    },
+    {
+      "path": "Plugins/IP2Live_Core/modules/story_autosave.js",
+      "bytes": 25213,
+      "sha256": "c8fff0fff1e230bdf23ee4f8cdfcc48e0bebb243ce3f29fa1c9554d8bdf5ff46"
+    },
+    {
+      "path": "Plugins/IP2Live_Core/modules/story_certificate.js",
+      "bytes": 12882,
+      "sha256": "8acc280089d17c0593e13efab332c4e9165147f0527be7aee14a652407dfa41f"
+    },
+    {
+      "path": "Plugins/IP2Live_Core/modules/story_completion.js",
+      "bytes": 8221,
+      "sha256": "eafc2832c2b14894b60feba394c2143f526c79196b6726cda09523e4120a0e9f"
+    },
+    {
+      "path": "Plugins/IP2Live_Core/modules/story_lore.js",
+      "bytes": 14632,
+      "sha256": "e430eb56e0b49b6cc2f381fcbee1de9d7f475cb05ecdff71dde2ef9a03058934"
+    },
+    {
+      "path": "Plugins/IP2Live_Core/modules/story_persistence.js",
+      "bytes": 5776,
+      "sha256": "ef96938e6f0133a425b760bb3283cdd2fde29132994bdc39cac3dacea2409032"
+    },
+    {
+      "path": "Plugins/IP2Live_Core/modules/tutorial.js",
+      "bytes": 100373,
+      "sha256": "56acd77b94c443f5440189886380e9ea711262fbb41f5b4de5b1773289e3f9f6"
+    },
+    {
+      "path": "Plugins/IP2Live_Core/modules/tutorial_replay.js",
+      "bytes": 14061,
+      "sha256": "6f969fe60aa89a58129a6e0611bc4346c1636badea19923efe90695f2b96853d"
+    },
+    {
+      "path": "README.md",
+      "bytes": 3708,
+      "sha256": "821719e75ffd8428083e92ffc63b358654752ee1340a1d8433dcefa9f5af2108"
+    },
+    {
+      "path": "Scripts/src/assets/README.md",
+      "bytes": 1334,
+      "sha256": "53f89a2a2e5781ffae69bc7bf8ea23872f1cfcf45393b38d03256f56262fead3"
+    },
+    {
+      "path": "Scripts/src/core/SurvivalEngine.js",
+      "bytes": 4096,
+      "sha256": "a833ba19a1006544e318da41bf007962def48ad2edf0affc23f62eb0ffc4dce0"
+    },
+    {
+      "path": "Scripts/src/core/ValidationEngine.js",
+      "bytes": 4158,
+      "sha256": "9fd3513293a5962d9fa9888278ebde0d1f93a1d3d3029c03f4c8d667b770787f"
+    },
+    {
+      "path": "Scripts/src/screens/CreditsScreen.js",
+      "bytes": 5316,
+      "sha256": "81efdeb001b12e0b943198ea50514fc20363f84413891e3eb1a242f99a01326a"
+    },
+    {
+      "path": "Scripts/src/screens/MainMenuScreen.js",
+      "bytes": 2743,
+      "sha256": "27a09010e656bf9393462d70ff6084224a47c852b4478c6b9b83905718b7a7de"
+    },
+    {
+      "path": "Scripts/src/screens/PauseMenuScreen.js",
+      "bytes": 2285,
+      "sha256": "72e9f8640ed7ba1cf6620095e33e918af1dd7da98c03b3c9df152102a14f5245"
+    },
+    {
+      "path": "Scripts/src/screens/SettingsScreen.js",
+      "bytes": 1591,
+      "sha256": "a1215135cce3ab1fb2fb3500b774c4c904a447407ef8ae3f719239b645da7dd9"
+    },
+    {
+      "path": "Scripts/src/storage/IndexedDBManager.js",
+      "bytes": 3537,
+      "sha256": "ab7e9ffa53e9ba165ff16d34b0bfcb30fb516b5bcb1225668debecb069b1f5b2"
+    },
+    {
+      "path": "Scripts/src/storage/PlayerProfileDAO.js",
+      "bytes": 3057,
+      "sha256": "2743a7107dd322da3bc133c963d03b4d39dc9b8f8e874de9c2795b667144b1f3"
+    },
+    {
+      "path": "Scripts/src/telemetry/PDFLayoutBuilder.js",
+      "bytes": 1488,
+      "sha256": "9fd7334a3dae93927c4fdc139818059c30e5461dd419320f29e6918124e35a79"
+    },
+    {
+      "path": "Scripts/src/telemetry/PerformanceLogger.js",
+      "bytes": 1515,
+      "sha256": "40c2a8bc3c5bde37257afb0e8bb0cb7fe292a5e4d80dd4ec4d0f1bc76f3939c2"
+    },
+    {
+      "path": "Scripts/src/telemetry/ReportExporter.js",
+      "bytes": 1666,
+      "sha256": "61d43d65ecf8a81fca46728dd0c313fa98844f1fb693288ef069ea3b058b9b02"
+    },
+    {
+      "path": "Scripts/src/tools/BinaryPad.js",
+      "bytes": 1012,
+      "sha256": "78753d28c43b420e528b7aa9b8b36e2de565f2cf86e43f0702c2d0b4c029911c"
+    },
+    {
+      "path": "Scripts/src/tools/SubnetOverlay.js",
+      "bytes": 764,
+      "sha256": "0679e73d693abd59ba673221701bf830c710cc24d3a014252565b534fc90ef6d"
+    },
+    {
+      "path": "Scripts/src/tools/ToolManager.js",
+      "bytes": 1387,
+      "sha256": "ac5ab930a8cb64d31e6ad1beea65a66eccad4d2d735cb3d1ea3e82dc69638187"
+    },
+    {
+      "path": "Scripts/src/tools/VLSMTreeHelper.js",
+      "bytes": 1035,
+      "sha256": "733e29227194065b8b3ae4087f1663077536cfe6beaa9a931c232f7667d038f6"
+    },
+    {
+      "path": "Scripts/src/ui/ARFeedbackOverlay.js",
+      "bytes": 1154,
+      "sha256": "60a267a92cfffae033da8be63254713a67efc417695035326f81241326063a6d"
+    },
+    {
+      "path": "Scripts/src/ui/HUDController.js",
+      "bytes": 1245,
+      "sha256": "0b1117ded68ac65beb3b5320f32bbf8c4ad28e73985f27061adcb24f6de7fecd"
+    },
+    {
+      "path": "Scripts/src/ui/JunctionBoxUI.js",
+      "bytes": 1194,
+      "sha256": "3e5dbfeb24a484c4ab0dd319300b08db4ed90a6ea7ae845d1d099e8a71a9b127"
+    },
+    {
+      "path": "Scripts/src/ui/confirPopup.js",
+      "bytes": 784,
+      "sha256": "ec28ef16280ed271d0e692814aea251ed8f96f2c7040ea5a14ce33695d2f3cbb"
+    },
+    {
+      "path": "animations.json",
+      "bytes": 213740,
+      "sha256": "f888f8a181ea41b1885ac9ca77d6ab04eefcf9b6e1d20089cae1590914479439"
+    },
+    {
+      "path": "armors.json",
+      "bytes": 20989,
+      "sha256": "b47265cf9ce41518f45af9a1f2a03099459a6f8b3f42bae202b2db469a5558ff"
+    },
+    {
+      "path": "battleSystem.json",
+      "bytes": 5140,
+      "sha256": "182440a10c7ccd21b46a5beabb9713dcd013cc8060083886b6c8db40b3d542b1"
+    },
+    {
+      "path": "classes.json",
+      "bytes": 19171,
+      "sha256": "43a85041ca7053c4a98929a844a4c9fe64c6da01f6610901051ad4259f2589e8"
+    },
+    {
+      "path": "commonEvents.json",
+      "bytes": 7265,
+      "sha256": "4dd96daa85a699aa42b9a5e7c1eb36d3bd099715bb8f9b71ef4f72dca6c9a986"
+    },
+    {
+      "path": "deployment/windows/main.js",
+      "bytes": 13141,
+      "sha256": "29c75c61b62bb9b1e76755e7b05e35ab9404e4a4639d8cd41517e5cc233bd839"
+    },
+    {
+      "path": "deployment/windows/package.json",
+      "bytes": 91,
+      "sha256": "893d6a91b8d9c6ff965dab0967d3925ad42c7c24b534e2646df16831b6930bcd"
+    },
+    {
+      "path": "deployment/windows/preload.cjs",
+      "bytes": 2265,
+      "sha256": "fa721f967c562b1f129e9e091be695de064a06d09420720a9da06635dc3b8bac"
+    },
+    {
+      "path": "deployment/windows/pvp-service.js",
+      "bytes": 18977,
+      "sha256": "86bf271bf79f5436aa15f93b0aa86148759115fcc4d46e5d39454db9e16d9494"
+    },
+    {
+      "path": "deployment/windows/storage-service.js",
+      "bytes": 29924,
+      "sha256": "2e60e7da8ee75c667b9e9ffe4e3848f0b46778deae10ee46a4eb055bd7156881"
+    },
+    {
+      "path": "dlcs.json",
+      "bytes": 8,
+      "sha256": "78203d73feb04035a411bda754638cea1dc734680f8acc651b0d25a830d3ddda"
+    },
+    {
+      "path": "docs/IP2Live_Deployment_and_Data_Guide.html",
+      "bytes": 69099,
+      "sha256": "18f593aad237d220b2389f473b70fe2ad79b948372a99f5da70a263daf1c24db"
+    },
+    {
+      "path": "docs/IP2Live_Offline_Save_Report_Music_Reliability_Plan.md",
+      "bytes": 12369,
+      "sha256": "b34d09c803f145d4f82810c71b6b224de5018d080787ced06ed4c57b624db045"
+    },
+    {
+      "path": "docs/PVP_Engine_Race.md",
+      "bytes": 18443,
+      "sha256": "690ccad46dbcfea2fd1759135e764654cedaf4e15dcd49780ca0096533e3130b"
+    },
+    {
+      "path": "docs/STORY_AUTOSAVE.md",
+      "bytes": 3017,
+      "sha256": "ca8e26917c942cd7d4461d63df7bf84980aa2140fe73a273ce4361463e34a133"
+    },
+    {
+      "path": "docs/combined-gameplay.md",
+      "bytes": 5672,
+      "sha256": "1e416853217a6f65f847e5fa1d677c77b1524dd2c54d857645dc2c3a484d7bbe"
+    },
+    {
+      "path": "docs/developer-gameplay-tests.md",
+      "bytes": 1905,
+      "sha256": "7fdb6d8d17d7b84274cc1d41f9f9608a5144ce3d6af7406a73ff2cd8df129365"
+    },
+    {
+      "path": "docs/endless-mode.md",
+      "bytes": 6204,
+      "sha256": "22ff77af1fc003e0b9c25ff822edd5b69db4eb9beed06b3f7daf0b7b6884e4ef"
+    },
+    {
+      "path": "docs/error-diagnostics.md",
+      "bytes": 9713,
+      "sha256": "6c8ac71db5f4c475a0a0477dc949e8f40ee870e065e4e81aec226c5791a0eff6"
+    },
+    {
+      "path": "docs/floor-states.md",
+      "bytes": 6075,
+      "sha256": "76201496491b0f26dee0a704cc328f7d6f0f7dd235321cec099fdbb049385462"
+    },
+    {
+      "path": "docs/gameplay-assessment-telemetry.md",
+      "bytes": 5370,
+      "sha256": "8cb05e7333d44dc634ae94c8de7d82ba8282912732f6e2fd9aeb79ff10e44ce3"
+    },
+    {
+      "path": "docs/gameplay-registration.md",
+      "bytes": 5228,
+      "sha256": "f3aa372a541d6626b07c3d38cdac46c088ddddca00d56d09d45f75e65eaf327a"
+    },
+    {
+      "path": "docs/gameplay-timers.md",
+      "bytes": 5099,
+      "sha256": "5264295b30fa7d6140997e2dd4d300d0ca32dbb5e61d76aa609d058cbc21fec7"
+    },
+    {
+      "path": "docs/gameplay5-redesign.md",
+      "bytes": 13908,
+      "sha256": "6bcd2783fc4d1211f744901d61fcff91faf08774c78a444f41f0531b715eec8a"
+    },
+    {
+      "path": "docs/gameplay5-tutorial.md",
+      "bytes": 3240,
+      "sha256": "b6665da8b89188dca20d467051cd16005458eca1f618304f590f513a8887dbc1"
+    },
+    {
+      "path": "docs/gameplay6-redesign.md",
+      "bytes": 10141,
+      "sha256": "826f42118cf1c2c20416a802bca56a419870475acd2d4e0500a4b7a1f7b03078"
+    },
+    {
+      "path": "docs/input-and-quest-recovery.md",
+      "bytes": 6270,
+      "sha256": "9b64071f353cc713f9625af87874a2d8969874c536d9489471c8bcde7ffb9255"
+    },
+    {
+      "path": "docs/learning-improvement-metrics.md",
+      "bytes": 6937,
+      "sha256": "cdc7cc554136b0177501c3892a28602b1b619181b318f2c7a32df53a81321cee"
+    },
+    {
+      "path": "docs/learning-report-telemetry.md",
+      "bytes": 11802,
+      "sha256": "c375b1befc42e21d4da477e039c79d89a0bd42636e54add8ee92d06e82a82827"
+    },
+    {
+      "path": "docs/midterm-execution-guide/IP2Live_Midterm_Execution_Guide.html",
+      "bytes": 46358,
+      "sha256": "ab63dbe2bfbded731cc2ceb5f73b57077bd73cefbe62d84804f847d987d45f14"
+    },
+    {
+      "path": "docs/midterm-execution-guide/IP2Live_Midterm_Execution_Guide.md",
+      "bytes": 38765,
+      "sha256": "e351b175e45572310d76496d40ad43853cab816112dda7d4d51d67633188abc0"
+    },
+    {
+      "path": "docs/midterm-execution-guide/build-guide.cjs",
+      "bytes": 13481,
+      "sha256": "f5332424523d99c9e6e69d3c84a409effaf503a83454a326b2a5b924ac9c5ea7"
+    },
+    {
+      "path": "docs/music-management.md",
+      "bytes": 7060,
+      "sha256": "c16830c9dd83bd84c967bb3d8fc3c7f3cae27025dcac9b288e116c5ea1a2e593"
+    },
+    {
+      "path": "docs/practice-endless-telemetry.md",
+      "bytes": 4399,
+      "sha256": "8b721a2317d91051c6c4f3a4efcedee596efbc9f23338a1d84e365d8aa7a1bb7"
+    },
+    {
+      "path": "docs/story-completion.md",
+      "bytes": 6589,
+      "sha256": "23e739b7c5b4b538b36a989cb9f9e384dde2ad11d504d966616fbe88452ca9ce"
+    },
+    {
+      "path": "docs/story-prologue.md",
+      "bytes": 9164,
+      "sha256": "e4cb7fb5c429f1137c68e3063d0bc531ddfab6a448c21e337d393f396c8f3510"
+    },
+    {
+      "path": "docs/story-save-persistence.md",
+      "bytes": 5018,
+      "sha256": "046285c6aaf374f3a3d4af5a0298bd1cc42e9daa915f4fa7b02ed70a01eff5b4"
+    },
+    {
+      "path": "docs/testing/error-diagnostics/RESULTS.md",
+      "bytes": 6644,
+      "sha256": "6310d0bc4621a239944c3cebc8935f00dac175ad207db777939e0410c00f9d8d"
+    },
+    {
+      "path": "fonts.json",
+      "bytes": 86,
+      "sha256": "5b984b83635f419f5ee46d8c64c937d12d3abaaea8363047e7287928dd708e8b"
+    },
+    {
+      "path": "heroes.json",
+      "bytes": 1872,
+      "sha256": "c1c643a86a95e4ccb7b5b7e7bc61d84fe4134e9f7aec7666b7a9f62f3519b954"
+    },
+    {
+      "path": "items.json",
+      "bytes": 21379,
+      "sha256": "a836987b40665b93756e4ee48111865f7bb112f006374ef7cfe3cb3970902c7f"
+    },
+    {
+      "path": "keyboard.json",
+      "bytes": 1365,
+      "sha256": "4fdfa951787d65f21c165667be62b368bd04d1830bca123ac7914623a1f7f0d2"
+    },
+    {
+      "path": "langs.json",
+      "bytes": 2145,
+      "sha256": "7a9bb01466985a2aec8ea9b7265419d90d8af5a43a26fd6caabe0277379eed72"
+    },
+    {
+      "path": "monsters.json",
+      "bytes": 21918,
+      "sha256": "7bafd0ad89e37935d9539e626ea24ad1c436d63891d844d1ea7561e6f7fec331"
+    },
+    {
+      "path": "pictures.json",
+      "bytes": 60187,
+      "sha256": "294638b75f5ffbb9b877b161a0f750dd670a9339399b50e37e652a8c8e0f0c2c"
+    },
+    {
+      "path": "scripts.json",
+      "bytes": 53,
+      "sha256": "a3a3f85ffe380ba26daa5649ae565da73bd45b5b0d52be57e2f1769ccb1ca854"
+    },
+    {
+      "path": "settings-game.json",
+      "bytes": 275,
+      "sha256": "7e25852ebe9fb176eb48834c6d21c6032bf5e69c4bad23215a569feced501f6c"
+    },
+    {
+      "path": "settings.json",
+      "bytes": 159,
+      "sha256": "1108ccf0184237d9357db952bfff7a62ad72581693f183a4273d3203f117ee90"
+    },
+    {
+      "path": "shapes.json",
+      "bytes": 689,
+      "sha256": "31de760adb7e63b370b0aec87d3a93d078699cd7ad43895805c7b3cc41b9f4af"
+    },
+    {
+      "path": "skills.json",
+      "bytes": 53271,
+      "sha256": "2bfa8d4638d40e14e6488aac8b1e2f5505328d34e22a741ca01e5ff866fdc182"
+    },
+    {
+      "path": "songs.json",
+      "bytes": 1648,
+      "sha256": "520eacbd281016d71eb39f35afaf7c812bdbe9aa26bd9203748a77b8a02ed328"
+    },
+    {
+      "path": "specialElements.json",
+      "bytes": 9582,
+      "sha256": "7ef2d25a9c17027e69cdd5168d2d4011e0840b750b60b2b0efd3df1ededd2ccf"
+    },
+    {
+      "path": "status.json",
+      "bytes": 5253,
+      "sha256": "a6ee369d335945f5cb72d8eb93378fcd0082297d737bca8c380e0dfdaddec8c7"
+    },
+    {
+      "path": "system.json",
+      "bytes": 5548,
+      "sha256": "fad599f729828ba13b459fa4712606d84300039cec7bb0200272f372227e281d"
+    },
+    {
+      "path": "tests/combined_gameplay.test.cjs",
+      "bytes": 26898,
+      "sha256": "c957e5376422910562acb9c2c01c41be69668e1f132b7da9c81f6435cec51bf1"
+    },
+    {
+      "path": "tests/confirmation_popup_design.test.cjs",
+      "bytes": 2218,
+      "sha256": "50af728018f801b845e02b0b2e2c0539a7978802efdf5753e5693dae08b6eb43"
+    },
+    {
+      "path": "tests/desktop_storage.test.cjs",
+      "bytes": 10662,
+      "sha256": "ecae42fa4d1796059857a7ca73373f4cde68a422cb5d834e279ab485623509a8"
+    },
+    {
+      "path": "tests/developer_ending.test.cjs",
+      "bytes": 7022,
+      "sha256": "b47becd595a3fe1773535137a6330ce3cb21f1f1fec528f5a2a8deaa7c2c82f2"
+    },
+    {
+      "path": "tests/developer_quest_failure_integration.test.cjs",
+      "bytes": 4472,
+      "sha256": "63e9062672c979c346e67cdc206c04b9f3f895ab31b4aa7a5f6b368299ee71c6"
+    },
+    {
+      "path": "tests/dialogue_typography.test.cjs",
+      "bytes": 16567,
+      "sha256": "cc47aecd331d1b8b7f51c7ee49d0e5a1c0048239115f447d74f0beb6c308746f"
+    },
+    {
+      "path": "tests/endless_mode.test.cjs",
+      "bytes": 26063,
+      "sha256": "df4807a5eacfe313641a5e044817da95e30f910814026b078bf5c5fe8f7826a8"
+    },
+    {
+      "path": "tests/error_diagnostics.test.cjs",
+      "bytes": 30796,
+      "sha256": "cc1d6ea43585a326acc8551bd589fa763e20aa412660ad263ecfd84aa881b609"
+    },
+    {
+      "path": "tests/feature_telemetry_report.test.cjs",
+      "bytes": 13058,
+      "sha256": "46cbca7fcd077007adb10c0a848d1373736415b176a7ab92e0756cd0e05f7bad"
+    },
+    {
+      "path": "tests/fixtures/combined_gameplay_preview.html",
+      "bytes": 8538,
+      "sha256": "5d8afa7df84619c16021066a69782d0eb44dc0e93f32a19e312afcb3b87a122b"
+    },
+    {
+      "path": "tests/fixtures/endless_preview.html",
+      "bytes": 3443,
+      "sha256": "d7b4bb08fff8cad058116a84f135df2ed1865ff318cc8f010903fa197c6adca1"
+    },
+    {
+      "path": "tests/fixtures/error_diagnostics_preview.html",
+      "bytes": 85321,
+      "sha256": "e2a20932d358fd909eef2aa99a2d78f8b19d4f4a33fa88c9d1d5ee8b0d9598cd"
+    },
+    {
+      "path": "tests/fixtures/gameplay5_segmentation_preview.html",
+      "bytes": 9985,
+      "sha256": "380c82e5eaee911649ded7267acdb4fb50e27619da0000b4d16f965d869fe6a0"
+    },
+    {
+      "path": "tests/fixtures/gameplay6_subnet_blaster_preview.html",
+      "bytes": 6731,
+      "sha256": "cf539571119b00b34a2f727081e73357957509184a2c9c1e640a60303ff57551"
+    },
+    {
+      "path": "tests/fixtures/gameplay_testing_grid_preview.html",
+      "bytes": 2245,
+      "sha256": "a330814fe3d8e8add69b8a65d396d536076db4c79e45b501106a8f9936ffb87e"
+    },
+    {
+      "path": "tests/fixtures/host_power_reactor_preview.html",
+      "bytes": 5100,
+      "sha256": "34191d7375692bd93a2b5008489700109be2bb34d9dd00f21e33f98e3c3a4f4e"
+    },
+    {
+      "path": "tests/fixtures/load_game_preview.html",
+      "bytes": 3453,
+      "sha256": "16824532150c6d8b37cb6c942ff69edf63af0159de8d6a55d254d9e0b57fdc8f"
+    },
+    {
+      "path": "tests/fixtures/main_menu_preview.html",
+      "bytes": 4415,
+      "sha256": "34e550bad826dc954866e544ef73be30a96f81844b6f06f75d56a5257e9ecebd"
+    },
+    {
+      "path": "tests/fixtures/pvp-lan-peer.mjs",
+      "bytes": 909,
+      "sha256": "4a1ed482355eee60a084d67c7af01263ef79a88dc009b8c29831d23dab816ab0"
+    },
+    {
+      "path": "tests/fixtures/pvp_preview.html",
+      "bytes": 5378,
+      "sha256": "ad0080cb49b11a881a615624161d1d8be3b1027c96f4204735e9eaba1fcb14e7"
+    },
+    {
+      "path": "tests/fixtures/settings_popup_preview.html",
+      "bytes": 3681,
+      "sha256": "0fff3f976b79039a925c67aea05ee6b132ac6be1d19b02ebebf9de7d26879ca7"
+    },
+    {
+      "path": "tests/fixtures/story_ending_preview.html",
+      "bytes": 4747,
+      "sha256": "555864852eb1d999903e4e46b35ff106588d700072e52e70636eef5a7dc672bc"
+    },
+    {
+      "path": "tests/fixtures/story_prologue_preview.html",
+      "bytes": 5247,
+      "sha256": "9aa607cb4b09d3d0c56b00d37ecfd39ba07b0ad959751ab6477dcb187daa6a17"
+    },
+    {
+      "path": "tests/floor_states.test.cjs",
+      "bytes": 16181,
+      "sha256": "8b5744b28f7df1bf4d45fc0e4ac2c40070bcf21a7eef7186501ac04b915a7825"
+    },
+    {
+      "path": "tests/game_manager_map_assignments.test.cjs",
+      "bytes": 4459,
+      "sha256": "8840987d9010dbad19166606764496e4873ee41f54d9d47a499342a4f813a8a8"
+    },
+    {
+      "path": "tests/gameplay5_class_lock.test.cjs",
+      "bytes": 10256,
+      "sha256": "44853814654327f6e2e47832ba1d021d31ac0043aad2f67bb14a38eb9ce72624"
+    },
+    {
+      "path": "tests/gameplay5_developer_exit.test.cjs",
+      "bytes": 5684,
+      "sha256": "5c8f04fa77ad0af2097bf5590145fa9f0b768886c938000de90ac9c6c57bea27"
+    },
+    {
+      "path": "tests/gameplay5_host_power_tool.test.cjs",
+      "bytes": 14646,
+      "sha256": "ccb187386f968801d9b336ec87a5cfa26cffd9fdbde492f01cbce8c0d1c9c04e"
+    },
+    {
+      "path": "tests/gameplay5_segmentation.test.cjs",
+      "bytes": 15402,
+      "sha256": "1bcb72d46d45a3b47a6145c023b522de39d5621d84e854d2e7c22a3ad6906ae9"
+    },
+    {
+      "path": "tests/gameplay5_tutorial_flow.test.cjs",
+      "bytes": 9439,
+      "sha256": "e221d01836e36a337c835ab7a963fd194ef9945f4e3ae6fe09e6e6dcea6017d4"
+    },
+    {
+      "path": "tests/gameplay6_developer_exit.test.cjs",
+      "bytes": 5098,
+      "sha256": "6a3cdd4b80315301ee4bd069c8e4b8b801bb3fdfb88d28698566275130c01ec3"
+    },
+    {
+      "path": "tests/gameplay6_subnet_blaster.test.cjs",
+      "bytes": 43436,
+      "sha256": "5d1b78cc43302bb2bd5f4f966342eb6e80b4a5036268f2b7f7fe0d409b7c08b4"
+    },
+    {
+      "path": "tests/gameplay_assessment_telemetry.test.cjs",
+      "bytes": 10414,
+      "sha256": "e8025c3780db43189a0e10be78425c8ab20d856d073d6dce75d866496eff49cf"
+    },
+    {
+      "path": "tests/gameplay_bgm.test.cjs",
+      "bytes": 3390,
+      "sha256": "1b1f2b8e18d61a14a53a53eff98659b4f9b4753f02cb946e22d26a062efe6c87"
+    },
+    {
+      "path": "tests/gameplay_completion_popup.test.cjs",
+      "bytes": 9530,
+      "sha256": "54b6bbae5a898c0898aafc2e49e1f41e8615d5f35c0e96361458d05c88223c1c"
+    },
+    {
+      "path": "tests/gameplay_pause_persistence.test.cjs",
+      "bytes": 22559,
+      "sha256": "f784d6ed0ea9a0f5612224a97e3a1c3b74e129e8b0b47e41221014c5de4c7a6a"
+    },
+    {
+      "path": "tests/gameplay_registration.test.cjs",
+      "bytes": 11720,
+      "sha256": "e7aefb94eeb0f681da5714926ab8492df24926d4e51d3954f349d8d0fb2cdc14"
+    },
+    {
+      "path": "tests/gameplay_testing_menu.test.cjs",
+      "bytes": 19631,
+      "sha256": "c2e4b328a48d677b0ad4a636bbec3e13df0a7fe82696371188879ac60d999930"
+    },
+    {
+      "path": "tests/gameplay_timers.test.cjs",
+      "bytes": 16531,
+      "sha256": "c39014ecb6a6b917bf8c157f8ca495d159ae91445c3d4da105aa1bc3dc1cd967"
+    },
+    {
+      "path": "tests/host_power_reactor.test.cjs",
+      "bytes": 16109,
+      "sha256": "bc2dd765848d2d2d3bcd2e993e9aef369bfc57b6f3264b6336b22fe609a11110"
+    },
+    {
+      "path": "tests/indexeddb_durability.test.cjs",
+      "bytes": 8490,
+      "sha256": "76c8b5ae6b27a2f4639fb0ff68c693c99e18dc6edc39e5f2b77180d37bb4a65b"
+    },
+    {
+      "path": "tests/input_quest_lifecycle.test.cjs",
+      "bytes": 18472,
+      "sha256": "3180d7dbede300f2da753e5e82c6ccff3db84737dcb36ec8ca533404c4c5e62d"
+    },
+    {
+      "path": "tests/ip_patch_panel_redesign.test.cjs",
+      "bytes": 8429,
+      "sha256": "124dbd87520d694a66ba41a9c976bcc2ac82d5798ff0b7275c409ae12b32c03c"
+    },
+    {
+      "path": "tests/ip_wires_dialogue_highlights.test.cjs",
+      "bytes": 5845,
+      "sha256": "3cfe858d18211eecf9e97f479f6289763ffcc5601153e3783afa5e143f7928f1"
+    },
+    {
+      "path": "tests/ip_wires_terminal_typography.test.cjs",
+      "bytes": 3904,
+      "sha256": "4f65bb1a2b89a4374fb9e3c5ccaaaaa6574c70a79d5a825eb1d5942ef8f02c5d"
+    },
+    {
+      "path": "tests/keybindings_lifecycle.test.cjs",
+      "bytes": 12804,
+      "sha256": "c2e312aa9d39d32bc1ca124dc17a737423662dc3ee730cc924ef640adc39737e"
+    },
+    {
+      "path": "tests/learning_progress.test.cjs",
+      "bytes": 11315,
+      "sha256": "9f378a99d716c6ecb27b345fad01c95fab55a7f24b009ac348a1e2bc8d8d1446"
+    },
+    {
+      "path": "tests/load_game_archive.test.cjs",
+      "bytes": 10612,
+      "sha256": "72cefb87cb98ecb9a043574482d1cf86f23fa53d789634ead7ad7c5d95429625"
+    },
+    {
+      "path": "tests/load_resume_dialogue_guards.test.cjs",
+      "bytes": 10945,
+      "sha256": "3bd796e0defb28971cde5a38d04087ee7d92b3dedde607e1beeb8432358ca999"
+    },
+    {
+      "path": "tests/load_resume_game_state.test.cjs",
+      "bytes": 12333,
+      "sha256": "bcf3860f9f9bb2f5bdac933ecf894ffecb53278750e2d77bda88b3e29e434cbc"
+    },
+    {
+      "path": "tests/loading_screen_typography.test.cjs",
+      "bytes": 5915,
+      "sha256": "6c06a2fe422c732f2af8c711bd6e58a0f6dab2239e933c0fd8ff08b77a236390"
+    },
+    {
+      "path": "tests/main_menu_animation.test.cjs",
+      "bytes": 4397,
+      "sha256": "761e1ebfe637676afe6c56643cf14cd77eade73dfcd336af670ddabc229b11dc"
+    },
+    {
+      "path": "tests/menu_transition.test.cjs",
+      "bytes": 16809,
+      "sha256": "acf6cde5cd9aaf98f8cdd0ae326f9a161b67a29a68b5977cef2f0771d37e058e"
+    },
+    {
+      "path": "tests/music_management.test.cjs",
+      "bytes": 31560,
+      "sha256": "391e253006d38e710749cd6145fc34987680fb0d17dc89d27233463e5276de59"
+    },
+    {
+      "path": "tests/music_registry.test.cjs",
+      "bytes": 5034,
+      "sha256": "bd404340a89381d7ea6a9152726832c47ea8a0daafed76e6efd5bc27e6483ec2"
+    },
+    {
+      "path": "tests/music_runtime.test.cjs",
+      "bytes": 7399,
+      "sha256": "61650c55431c2838c9d7dcffd157a3c98c82131e04e8f932b9bf117640c729bc"
+    },
+    {
+      "path": "tests/name_input_layout.test.cjs",
+      "bytes": 3316,
+      "sha256": "1e257d10f89da603947222bd0b69c96909948ff70a0c6b35ad5ba5a2e5a4eca1"
+    },
+    {
+      "path": "tests/neural_diagnostic_screens.test.cjs",
+      "bytes": 30785,
+      "sha256": "59acbbce12e27751df22fb1bf6eab807c25439bdaa8ba494693ccc2566c80848"
+    },
+    {
+      "path": "tests/neural_life_force_hud.test.cjs",
+      "bytes": 7964,
+      "sha256": "2ce2241b7c8dea7f962f2f553df675853d933dbea9b6554bc2e9d76b5dee0050"
+    },
+    {
+      "path": "tests/neural_life_force_manager.test.cjs",
+      "bytes": 16990,
+      "sha256": "d9c1802d583fa12d4bcd45b8e14229f9c7f329816010fe1af70a91fc0ecf5d40"
+    },
+    {
+      "path": "tests/neural_tutorial_replay.test.cjs",
+      "bytes": 17387,
+      "sha256": "063378d2859cf8ab483d491f150cd923411a8006eeb63adb165594b8c1763805"
+    },
+    {
+      "path": "tests/pause_menu_design.test.cjs",
+      "bytes": 8625,
+      "sha256": "de286a0cd5c55ef5219b7b9bbbb735dedbcd3c8568af50bf8d0d615d57a2d397"
+    },
+    {
+      "path": "tests/pause_rendering_performance.test.cjs",
+      "bytes": 7006,
+      "sha256": "8cba4196ae84ec012550f2a6ccb21783c7934701346681833cc580cc2f5249ff"
+    },
+    {
+      "path": "tests/pause_tv_transition.test.cjs",
+      "bytes": 7737,
+      "sha256": "152840300c64797a5bb36fb4747b26c3b186a3d2c79fa5c99a70e8c5900bdf57"
+    },
+    {
+      "path": "tests/popup_menu_controls.test.cjs",
+      "bytes": 6483,
+      "sha256": "239a1677f09395810e840869d4bcd0dac829162183a38ec779c910e61fcb39cf"
+    },
+    {
+      "path": "tests/practice_mode.test.cjs",
+      "bytes": 44601,
+      "sha256": "69cd3d9d1bcb2b86c298ea949f199e52ba9060e06f6023e9470581b48e47b0d3"
+    },
+    {
+      "path": "tests/pvp-certificate.test.cjs",
+      "bytes": 4989,
+      "sha256": "759fe3a1e3c4e46e9d6ae2a3dd2ffcaf5716aa944dba10cfd7dbf23d2f876766"
+    },
+    {
+      "path": "tests/pvp-desktop-bridge.test.mjs",
+      "bytes": 3960,
+      "sha256": "8d3415f5113a0b84331d4f3bd424b309d02c8cdc452f73de096eb6dc10211370"
+    },
+    {
+      "path": "tests/pvp-lan.test.mjs",
+      "bytes": 19880,
+      "sha256": "2a8b3c88fa3178371e9ab6f33c4a6b7ce50662139ab555b809756155df61f0cb"
+    },
+    {
+      "path": "tests/pvp-mode.test.cjs",
+      "bytes": 41872,
+      "sha256": "bb05fd015b494ab8ce9b3495429115df29dba923d6ad4433f858c8c783822f52"
+    },
+    {
+      "path": "tests/quest_hud_layout.test.cjs",
+      "bytes": 4666,
+      "sha256": "a782ed93bd9ed35b0af3772e1f5f5b170ed4899100b85611720f0e3916918c89"
+    },
+    {
+      "path": "tests/report_durability.test.cjs",
+      "bytes": 4912,
+      "sha256": "9449d44833c820c7fb5a146c98566db22220e64412f9fd6a2dd84fb1ebbd2217"
+    },
+    {
+      "path": "tests/report_export_security.test.cjs",
+      "bytes": 6782,
+      "sha256": "65d8f76877987c7fd4fe559b0d7b1f15090c731405e032bf9d0838313eacb9c2"
+    },
+    {
+      "path": "tests/report_learning_analytics.test.cjs",
+      "bytes": 24047,
+      "sha256": "36edf830a13053070ee91feed6abe5ac882c77e7b473a2c0865889e14587c0ab"
+    },
+    {
+      "path": "tests/report_learning_export.test.cjs",
+      "bytes": 11505,
+      "sha256": "6a67095248c3352d106bc33e385205e358963694696f65608f35606a50669eb2"
+    },
+    {
+      "path": "tests/save_lifecycle_guards.test.cjs",
+      "bytes": 5872,
+      "sha256": "f1fe7f190a7afcbd84075f16c0023f1d1d532421efefd8fa92f8a52d665bbce5"
+    },
+    {
+      "path": "tests/stage1_level3_gameplay_progression.test.cjs",
+      "bytes": 5264,
+      "sha256": "48a72d69ee4c4061154029991c75095370137839894cb715ee8daf04fc0d1b99"
+    },
+    {
+      "path": "tests/stage3_gameplay45_progression.test.cjs",
+      "bytes": 13526,
+      "sha256": "bd86a3dfe0b103eff0254010d6cd2161b93b7a051fea156a652a28e1c00e9519"
+    },
+    {
+      "path": "tests/story_autosave.test.cjs",
+      "bytes": 18855,
+      "sha256": "028de58eb10ae8ea23092fab4b04a07eab88191ac6156090cdf56db14ad8d62e"
+    },
+    {
+      "path": "tests/story_completion.test.cjs",
+      "bytes": 20830,
+      "sha256": "09ed9c9e4c42fba039c9595611bb02949f41999d02f88203382e0832a68a3b30"
+    },
+    {
+      "path": "tests/story_ending_audio.test.cjs",
+      "bytes": 3975,
+      "sha256": "b9cb772d2aa5521a48f422070ffbf82f247b97265a808f2764c25d9ebc386057"
+    },
+    {
+      "path": "tests/story_persistence.test.cjs",
+      "bytes": 14377,
+      "sha256": "4b2a8b1ca8eecbdca0882a6e82a7d4ef3b5d5d1be6f33c88cb4195792c33382e"
+    },
+    {
+      "path": "tests/story_prologue.test.cjs",
+      "bytes": 22911,
+      "sha256": "24a0fb9b799376736efbc36d123386297070a6d7d46ed4a135c1e5782b24a8e8"
+    },
+    {
+      "path": "tests/story_prologue_audio.test.cjs",
+      "bytes": 3929,
+      "sha256": "c603a2ee5b9d20815bb9aaad5584cf1c627c03e249a5ba4f99c69fdf21bbaf22"
+    },
+    {
+      "path": "tests/telemetry_learning_evidence.test.cjs",
+      "bytes": 15029,
+      "sha256": "688c498258ca4e47f58f4ed68f109337d1106494ac84e443be7f28d9907ec685"
+    },
+    {
+      "path": "tests/tutorial_cidr_defaults.test.cjs",
+      "bytes": 3612,
+      "sha256": "a815473b89e98c5d2473a0237128db0aea1cddd7d8e30e4948995f1e07dcabf9"
+    },
+    {
+      "path": "tests/tutorial_dialogue_centralization.test.cjs",
+      "bytes": 5077,
+      "sha256": "b523854dc0f1eecc5fa0f16d559089da20642a051819ddceb1c9c9035122ee9b"
+    },
+    {
+      "path": "tests/windows-release-preparation.test.mjs",
+      "bytes": 16131,
+      "sha256": "18fe9fc0874a6208cf5ad5636b5468136d85afcc9f91c3d91a9fa6cb7c87a9a1"
+    },
+    {
+      "path": "tests/windows-storage-service.test.mjs",
+      "bytes": 7507,
+      "sha256": "9b72d910fa70c385c123d8f34ca8b4ec61c9dd693f82820b0e5eaca7d5d70838"
+    },
+    {
+      "path": "tilesets.json",
+      "bytes": 687,
+      "sha256": "d20240774366f46b3d1c879e638fbe82f6d8facd9e3d664ef4e30c531a86ed08"
+    },
+    {
+      "path": "titlescreenGameover.json",
+      "bytes": 734,
+      "sha256": "e6847e41e6c5bd9d9ca6065ece632d67b4a60770419e5a000d90c8159781a67f"
+    },
+    {
+      "path": "tools/build-diagnostic-preview.cjs",
+      "bytes": 8409,
+      "sha256": "d6c620ba8654b311d479a011edd270ae46875cf763a3a07cd66d7bb46b69a510"
+    },
+    {
+      "path": "tools/generate-gameplay-bgm.cjs",
+      "bytes": 13576,
+      "sha256": "e8a1a9c163d220309c8036e1df2b821d6be405a3c7c4eac982ca52641d79c259"
+    },
+    {
+      "path": "tools/generate-story-ending-audio.cjs",
+      "bytes": 12526,
+      "sha256": "5fcf9c8740af1f0ef6d26681b360f4bd87401d8f60a4a21a31110113dc4f9e39"
+    },
+    {
+      "path": "tools/generate-story-prologue-audio.cjs",
+      "bytes": 13787,
+      "sha256": "8b2b9e31615c7693caafe96061c61b52ff8228b9f11d59eab3bc09f206d23024"
+    },
+    {
+      "path": "tools/prepare-windows-release.ps1",
+      "bytes": 22280,
+      "sha256": "677df8caaa7ead8668c7296baf77dd0ee4aee015c99e94d90d39a7a67e7e1e3a"
+    },
+    {
+      "path": "tools/render-combined.ps1",
+      "bytes": 2731,
+      "sha256": "747470dbb380d9e8b43258cef1b40b75df9b5f035fe67752834dafadd2f5fa9a"
+    },
+    {
+      "path": "tools/render-gameplay5.ps1",
+      "bytes": 2401,
+      "sha256": "83a4d5a5267919b81193d910430956b50f8f7fc5d40088ef6e65edcaa0402432"
+    },
+    {
+      "path": "tools/render-load-game.ps1",
+      "bytes": 2384,
+      "sha256": "db48db26078a2c120a71984acc179ae55d338fbaaf6dedc70396f62f2c7d25e3"
+    },
+    {
+      "path": "tools/render-main-menu.ps1",
+      "bytes": 2234,
+      "sha256": "2d6fb172392e89125a61dc33216b94cbfcf7ce6247c5b70fff5f6e24f3903843"
+    },
+    {
+      "path": "tools/render-pvp.ps1",
+      "bytes": 2217,
+      "sha256": "da808a034272305da59cc4e05049ed34d4226a6fe4b1eb24206e0ff37eae4420"
+    },
+    {
+      "path": "tools/render-settings.ps1",
+      "bytes": 1875,
+      "sha256": "af176cd1f3343cc279a1c9ce3480bcb5bfe9b64c0e4248969a16721094425f13"
+    },
+    {
+      "path": "tools/render-story-ending.ps1",
+      "bytes": 2919,
+      "sha256": "446fd781d40cc44939d917f8ab3d67eeca710614697682eb7b401a33208540d2"
+    },
+    {
+      "path": "tools/verify-story-autosave.cjs",
+      "bytes": 8828,
+      "sha256": "34299646ea0739bdb019cfc382db32723b4bfb5d822b4cbc70e6b3fe302adda2"
+    },
+    {
+      "path": "treeMaps.json",
+      "bytes": 1776,
+      "sha256": "397fbce9a328bd083e5299911e1afb73f76df3ec315f8d6ab362648d2754fd54"
+    },
+    {
+      "path": "troops.json",
+      "bytes": 4599,
+      "sha256": "13fa4babb762fb96e71f1a159de4360d482da083fb4cac45f60fc951f2cd9d73"
+    },
+    {
+      "path": "variables.json",
+      "bytes": 2054,
+      "sha256": "ed3dca42b044f52208e436701ed5380bb0af484e3e569252e65a90731382e5b2"
+    },
+    {
+      "path": "videos.json",
+      "bytes": 90,
+      "sha256": "b3aa61f9fc90e479762793fb984c6f97ff7aa93fbe0d28cc1f0343ae5b3a8129"
+    },
+    {
+      "path": "weapons.json",
+      "bytes": 16428,
+      "sha256": "5a4eddc2e7fb0d0fe54560665ae7f353c1a6527c4af357b7c5f5ee04708fadec"
+    }
+  ]
+}

@@ -6,7 +6,7 @@
  */
 
 const IP2LiveReportManager = {
-    VERSION: 'report-manager-20261013-01',
+    VERSION: 'report-manager-20261015-02',
     // This is the required recipient password for every report package.  Keeping
     // it in one place makes a future credential rotation deliberate and auditable.
     EXPORT_PASSWORD: '2627-IT228-G0102',
@@ -86,7 +86,7 @@ const IP2LiveReportManager = {
         const scopeDays = opts.scopeDays === 0 ? 0 : Math.max(1, Number(opts.scopeDays || 90) || 90);
         const format = String(opts.format || 'both').toLowerCase();
         const baseName = this._safeFileBase(String(opts.filenameBase || '').trim() || this._defaultFileBase(profileName));
-        const catalog = Array.isArray(opts.gameplayCatalog) ? opts.gameplayCatalog : [];
+        const catalog = this._resolveGameplayCatalog(opts.gameplayCatalog, []);
 
         await this.flush();
         const now = Date.now();
@@ -406,7 +406,7 @@ const IP2LiveReportManager = {
 
     _buildReportDTO(input) {
         const telemetry = Array.isArray(input.telemetry) ? input.telemetry : [];
-        const catalog = Array.isArray(input.gameplayCatalog) ? input.gameplayCatalog : [];
+        const catalog = this._resolveGameplayCatalog(input.gameplayCatalog, telemetry);
         const catalogByGameplay = this._catalogByGameplayId(catalog);
         const attempts = this._enrichAttemptRows(this._attemptRows(telemetry), catalogByGameplay);
         const assessedAttempts = attempts.filter(function (a) { return a.assessed; });
@@ -538,6 +538,8 @@ const IP2LiveReportManager = {
             learningProgress,
             progressEventAudit: { scope: learningProgress.allHistory ? 'all_recorded_history' : 'report_window', eventCount: progressEvents.length, records: this._clonePlain(progressEvents) },
             gameplayCatalog: this._clonePlain(catalog),
+            storyCompletions: Array.from(new Map(telemetry.filter(row => row && row.eventType === 'story_completed' && row.payload && row.payload.record)
+                .map(row => [row.payload.record.id, this._clonePlain(row.payload.record)])).values()),
             attemptsRaw: attempts,
             attemptMistakes: attemptMistakes,
             eventAudit: {
@@ -960,6 +962,20 @@ const IP2LiveReportManager = {
         return this._moduleDisplayName(this._moduleFamilyKey(gameplayId));
     },
 
+    _resolveGameplayCatalog(provided, events) {
+        const entries = new Map();
+        const add = entry => { if (entry && (entry.gameplayId || entry.id)) entries.set(entry.gameplayId || entry.id, Object.assign({}, entry, { gameplayId: entry.gameplayId || entry.id })); };
+        (Array.isArray(provided) ? provided : Object.values(provided || {})).forEach(add);
+        const gm = IP2Live.GameManager;
+        if (gm && typeof gm.getGameplayCatalog === 'function') gm.getGameplayCatalog().forEach(add);
+        for (const event of events || []) {
+            if (!event || !event.gameplayId || entries.has(event.gameplayId)) continue;
+            add(event.gameplayDefinition || { gameplayId: event.gameplayId, label: event.gameplayLabel || event.gameplayId,
+                competencyKey: event.competencyKey, competencyLabel: event.competencyLabel });
+        }
+        return Array.from(entries.values());
+    },
+
     _catalogByGameplayId(catalog) {
         const map = {};
         for (let i = 0; i < catalog.length; i++) {
@@ -1134,6 +1150,8 @@ const IP2LiveReportManager = {
             activeDurationKnown: active !== null && active >= 0,
             durationMethod: row.durationMethod || payload.durationMethod || result.durationMethod || 'wall_clock_only',
             gameplayVersion: row.gameplayVersion || payload.gameplayVersion || result.gameplayVersion || ((result.telemetrySchemaVersion || payload.telemetrySchemaVersion) ? 'decision_schema_' + (result.telemetrySchemaVersion || payload.telemetrySchemaVersion) : 'legacy_unversioned'),
+            definitionVersion: row.definitionVersion || row.gameplayDefinition && row.gameplayDefinition.definitionVersion || payload.definitionVersion || null,
+            gameplayDefinition: this._clonePlain(row.gameplayDefinition || null),
             practiceMode: !!(row.featureMode === 'practice' || payload.featureMode === 'practice' || row.practiceMode || payload.practiceMode || result.practiceMode || spec.practiceMode || context.practiceMode || row.practiceGameplay || spec.practiceGameplay),
             endlessMode: !!(row.featureMode === 'endless' || payload.featureMode === 'endless' || row.endlessMode || payload.endlessMode || result.endlessMode || spec.endlessMode || context.endlessMode),
             developerTesting: !!(row.developerTesting || row.developerTest || payload.developerTesting || payload.developerTest || result.developerTesting || result.developerTest || result.developerSkip || result.developerFail || context.developerTest || spec.developerTest || row.simulated || payload.simulated),
@@ -1197,7 +1215,7 @@ const IP2LiveReportManager = {
             row.stageLevel = stage.stageId > 0
                 ? 'Stage ' + stage.stageId + ' Level ' + stage.levelId
                 : stage.name;
-            row.gameplayLabel = gameplay.label || row.gameplayLabel || row.gameplayId;
+            row.gameplayLabel = row.gameplayDefinition && row.gameplayDefinition.label || gameplay.label || row.gameplayLabel || row.gameplayId;
             row.questLabel = row.questLabel || row.questId || 'Unassigned quest';
             row.mode = row.developerTesting ? 'Developer testing' : row.endlessMode ? 'Endless' : (row.practiceMode ? 'Practice' : (row.tutorial ? 'Guided tutorial' : 'Regular gameplay'));
             row.assessed = !row.cancelled && !row.developerTesting && !row.practiceMode && !row.endlessMode && !row.tutorial && ['passed', 'failed'].indexOf(row.outcome) !== -1;
@@ -1842,11 +1860,11 @@ const IP2LiveReportManager = {
         for (let i = 0; i < attempts.length; i++) {
             const a = attempts[i];
             const c = catalogByGameplay[a.gameplayId] || {};
-            const key = c.competencyKey || a.competencyKey || ('competency.' + (a.gameplayId || 'unknown'));
+            const key = a.competencyKey || c.competencyKey || ('competency.' + (a.gameplayId || 'unknown'));
             if (!byCompetency[key]) {
                 byCompetency[key] = {
                     competencyKey: key,
-                    competencyLabel: c.competencyLabel || a.competencyLabel || key,
+                    competencyLabel: a.competencyLabel || c.competencyLabel || key,
                     attempts: 0,
                     passed: 0,
                     retries: 0,
@@ -2070,6 +2088,16 @@ const IP2LiveReportManager = {
 
         this._pdfStartPage(ctx, { title: 'Stage Completion' });
         this._pdfRenderStageSection(ctx);
+        if ((report.storyCompletions || []).length) {
+            this._pdfStartPage(ctx, { title: 'Story Completion' });
+            this._pdfRenderTable(ctx.writer, { ctx, x: ctx.margin, y: ctx.contentTop, width: 520, title: 'Completed Story routes',
+                columns: [{ key: 'date', label: 'Completed', width: .25 }, { key: 'floors', label: 'Floors', width: .12 },
+                    { key: 'gameplays', label: 'Gameplay types', width: .18 }, { key: 'objectives', label: 'Objectives completed', width: .20 }, { key: 'run', label: 'Story run', width: .25 }],
+                rows: report.storyCompletions.map(record => ({ date: this._formatLocalDateTime(record.completedAt), floors: record.floors,
+                    gameplays: record.curriculum ? record.curriculum.gameplayCount : 'N/A',
+                    objectives: record.curriculum ? record.curriculum.completedObjectives + ' / ' + record.curriculum.objectiveCount : 'N/A', run: record.storyRunId || record.id })),
+                rowHeight: 34, maxCellLines: 3 });
+        }
 
         this._pdfStartPage(ctx, { title: 'Daily Trends' });
         this._pdfRenderDailySection(ctx);
@@ -4193,8 +4221,22 @@ const IP2LiveReportManager = {
             ],
         });
 
+        sheets.push(this._storyCompletionSheet(report));
         const xml = this._spreadsheetXml(sheets);
         return new Blob([xml], { type: 'application/vnd.ms-excel' });
+    },
+
+    _storyCompletionSheet(report) {
+        const rows = [['Completed At', 'Story Run', 'Player', 'Floors', 'Gameplay Types', 'Assigned Objectives', 'Completed Objectives', 'Gameplay Definitions']];
+        for (const record of report.storyCompletions || []) {
+            const curriculum = record.curriculum || {};
+            rows.push([record.completedAt, record.storyRunId || record.id, record.name, record.floors,
+                curriculum.gameplayCount === undefined ? 'N/A' : curriculum.gameplayCount,
+                curriculum.objectiveCount === undefined ? 'N/A' : curriculum.objectiveCount,
+                curriculum.completedObjectives === undefined ? 'N/A' : curriculum.completedObjectives,
+                this._stringifyCell(curriculum.gameplays || [])]);
+        }
+        return { name: 'Story Completion', frozenRows: 1, rows };
     },
 
     _feedbackText(item) {
@@ -4281,12 +4323,14 @@ const IP2LiveReportManager = {
         const encounterRows = [['Attempt ID', 'Gameplay Version', 'Encounter #', 'Stage', 'Level', 'Outcome', 'Asked Address', 'Class', 'Given Bits Mode', 'Host Bits', 'Borrowed Bits', 'Given Address', 'Correct Answer', 'Network', 'Broadcast', 'Expected Operator', 'Chosen Operator', 'Expected Block Size', 'Chosen Block Size', 'Preparation Time', 'Skipped Preparation?', 'Calculator Uses', 'Calculator Time', 'Active Decision Time', 'Barrier Impacts', 'Boss Impacts', 'Full Encounter Evidence']];
         const timingRows = [['Attempt ID', 'Gameplay', 'Version', 'Mode', 'Outcome', 'Regular Assessed?', 'Exclusion Reason', 'Decision Accuracy', 'Correct Decisions', 'Total Decisions', 'Incorrect Decisions', 'Internal Rounds', 'Elapsed Time', 'Active Time', 'Timing Method', 'Preparation Time', 'Preparation Skips', 'Calculator Uses', 'Calculator Time', 'Help Time', 'Assistance Time', 'Physical Bullets', 'Barrier Impacts', 'Boss Impacts', 'Phase Time Evidence', 'Timing Coverage']];
         const coverageRows = [['Gameplay', 'Gameplay ID', 'Competency', 'Instances', 'Regular Assessed', 'Accuracy Evidence Samples', 'Active Time Samples', 'Decision History Samples', 'Versions Observed', 'Coverage Status']];
+        coverageRows[0].push('Definition Revisions');
         const available = new Map((report.gameplayCatalog || []).map(game => [game.gameplayId, game]));
         for (const attempt of report.attemptsRaw || []) if (!available.has(attempt.gameplayId)) available.set(attempt.gameplayId, { gameplayId: attempt.gameplayId, label: attempt.gameplayLabel });
         for (const game of available.values()) {
             const rows = (report.attemptsRaw || []).filter(attempt => attempt.gameplayId === game.gameplayId);
             const decisionsKnown = rows.filter(attempt => Array.isArray((attempt.payload.result || {}).decisionHistory) && attempt.payload.result.decisionHistory.length > 0).length;
             coverageRows.push([game.label || game.gameplayId, game.gameplayId, game.competencyLabel || '', rows.length, rows.filter(attempt => attempt.assessed).length, rows.filter(attempt => attempt.accuracyKnown).length, rows.filter(attempt => attempt.activeDurationKnown).length, decisionsKnown, Array.from(new Set(rows.map(attempt => attempt.gameplayVersion))).join(', '), rows.length ? 'Recorded activity; review coverage counts' : 'No activity in selected window']);
+            coverageRows[coverageRows.length - 1].push(Array.from(new Set(rows.map(attempt => attempt.definitionVersion).filter(Boolean))).join(', '));
         }
         for (const attempt of report.attemptsRaw || []) {
             const payload = attempt.payload || {}, result = payload.result || {};
@@ -4491,6 +4535,7 @@ const IP2LiveReportManager = {
             ]);
         }
         sheets.push({ name: 'Attempts By Stage', rows: groupedRows });
+        sheets.push(this._storyCompletionSheet(report));
 
         const xml = this._spreadsheetXml(sheets);
         return new Blob([xml], { type: 'application/vnd.ms-excel' });

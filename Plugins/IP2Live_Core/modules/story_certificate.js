@@ -125,7 +125,9 @@
         label(ctx, endless ? 'For participating in IP2Live Endless Mode' : 'For successfully completing IP2Live Story Mode', center, 343, 14.5, '#173342', 'center', 510);
         label(ctx, endless ? Number(record.score).toLocaleString('en-US') + ' POINTS  /  ' + record.completedRounds + ' GAMEPLAYS SOLVED' :
             'From the first connection to the final APEX uplink.', center, 370, endless ? 16 : 11, endless ? '#173342' : '#667a7b', 'center', 500, endless);
-        label(ctx, 'IP addressing  /  CIDR  /  Subnetting  /  Network restoration', center, 405, 8.7, '#2e7772', 'center', 510);
+        const curriculum = !endless && record.curriculum;
+        label(ctx, curriculum ? curriculum.floors + ' FLOORS  /  ' + curriculum.gameplayCount + ' GAMEPLAY TYPES  /  ' + curriculum.completedObjectives + ' OBJECTIVES COMPLETED' :
+            'IP addressing  /  CIDR  /  Subnetting  /  Network restoration', center, 405, 8.7, '#2e7772', 'center', 510);
         trace(ctx, [[262, 446], [637, 446]], '#a8b8af', 0.6);
         label(ctx, endless ? 'ENDLESS EXPLORER' : 'STORY COMPLETE', 264, 470, 9, '#8f753e', 'left');
         const date = new Date(record.completedAt).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });

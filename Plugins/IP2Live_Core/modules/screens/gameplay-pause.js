@@ -139,6 +139,9 @@
             const originalOnKeyPressed = proto.onKeyPressed;
 
             proto.onKeyPressed = function (key) {
+                if (this.options && this.options.combinedMode) {
+                    return typeof originalOnKeyPressed === 'function' ? originalOnKeyPressed.apply(this, arguments) : true;
+                }
                 if (system._isCancelKey(key)) {
                     if (typeof this._closeGameplayOverlay === 'function' && this._closeGameplayOverlay()) return true;
                     system.open(
@@ -241,6 +244,7 @@
 
         _ownsCurrentGame(screen, claim) {
             if (!screen) return false;
+            if (screen.options && screen.options.combinedMode) return false;
             const game = this._game();
             const owner = this._screenOwners.get(screen);
             if (owner) return owner === game;
@@ -353,6 +357,7 @@
         },
 
         _canPauseScreen(screen) {
+            if (screen && screen.options && screen.options.combinedMode) return false;
             if (
                 !screen ||
                 screen._ip2liveGameplayExited ||
@@ -426,7 +431,7 @@
             const data = payload || {};
             const spec = data.spec || {};
             return !(data.developerTest || spec.developerTest || data.tutorialReplay || spec.tutorialReplay
-                || data.practiceMode || spec.practiceMode
+                || data.practiceMode || spec.practiceMode || data.combinedMode || spec.combinedMode
                 || data.endlessMode || spec.endlessMode || data.unlimitedMode || spec.unlimitedMode
                 || data.featureMode === 'endless' || spec.featureMode === 'endless'
                 || String(data.questId || spec.id || '').startsWith('developer.'));

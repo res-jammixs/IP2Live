@@ -10,7 +10,7 @@
             return !this.loading && !this.closed && !this.owner.closed && Manager.Stack.top===this.owner &&
                 !document.hidden && (!document.hasFocus || document.hasFocus());
         }
-        _startAudio() {} // The owner keeps the ending score continuous across chapters.
+        _startAudio() {} // The owner keeps one epilogue score continuous across all four slides.
         _syncAudio() {}
         _stopMusic() {}
         close() {

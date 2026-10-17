@@ -769,7 +769,8 @@ class IP2LiveVLSMAllocatorGameplayScreen extends Scene.Base {
     _recordAssessment(stepKey, submitted, expected, validation, extra = {}) {
         this.decisionHistory = this.decisionHistory || [];
         this.decisionHistory.push({ stepKey, concept: stepKey, submitted, expected, correct: !!validation.ok,
-            issueType: validation.issueType || (validation.ok ? null : 'invalid_allocation'), terminalType: this.terminalType, ...extra });
+            issueType: validation.issueType || (validation.ok ? null : 'invalid_allocation'),
+            detail: validation.reason, hint: validation.hint, terminalType: this.terminalType, ...extra });
     }
 
     _assessmentResult() {

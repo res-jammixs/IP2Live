@@ -111,7 +111,9 @@ IP2Live.StoryAutosave = {
         if (!this._ready(scene, this._game)) return false;
         const top = Manager.Stack.top;
         const screen = IP2Live.GameplayPause && IP2Live.GameplayPause.activeScreen;
-        return !top || top === scene || (screen && top === screen && !screen.finished && !screen.completed && !screen.menuOpen);
+        const combined = IP2Live.CombinedGameplay;
+        return !top || top === scene || (combined && top === combined.desktop && combined.session && combined.session.game === this._game) ||
+            (screen && top === screen && !screen.finished && !screen.completed && !screen.menuOpen);
     },
     tick(scene) {
         if (this._status) Manager.Stack.requestPaintHUD = true;
@@ -222,11 +224,12 @@ IP2Live.StoryAutosave = {
         if (!ctx || !status || Core.Game.current !== this._game || this._excluded()) return;
         if (!status.saving && Date.now() > status.until) { this._status = null; return; }
         const s = Math.min(ctx.canvas.width / 1280, ctx.canvas.height / 720);
+        const dockInset = IP2Live.CombinedGameplay ? IP2Live.CombinedGameplay.dockLayout(ctx).h : 0;
         ctx.save(); ctx.font = (12*s) + 'px Oxanium-Medium, sans-serif'; ctx.textAlign = 'right';
         const w = Math.min(ctx.canvas.width - 32*s, ctx.measureText(status.text).width + 28*s);
-        ctx.fillStyle = 'rgba(3,10,17,0.88)'; ctx.fillRect(ctx.canvas.width-w-16*s,ctx.canvas.height-45*s,w,28*s);
+        ctx.fillStyle = 'rgba(3,10,17,0.88)'; ctx.fillRect(ctx.canvas.width-w-16*s,ctx.canvas.height-45*s-dockInset,w,28*s);
         ctx.fillStyle = status.failed ? '#ef9a9f' : '#d8d79a';
-        ctx.fillText(status.text,ctx.canvas.width-30*s,ctx.canvas.height-27*s,w-20*s); ctx.restore();
+        ctx.fillText(status.text,ctx.canvas.width-30*s,ctx.canvas.height-27*s-dockInset,w-20*s); ctx.restore();
     },
     _describe(summary) {
         return summary.profileName + ' | ' + summary.location + ' | ' + new Date(summary.savedAt).toLocaleString();
